@@ -198,33 +198,27 @@ pub fn command_owns_unit(scope: &omdurman_types::CommandScope, identity: &UnitId
         omdurman_types::CommandScope::Tribes(tribes) => match identity {
             UnitIdentity::DervishTribal { tribe } => tribes.contains(tribe),
             UnitIdentity::DervishLeader(leader) => {
-                // Pinned-command leaders join the scope that covers their
-                // whole command; Sherif / Ali Wad Helu (§5.53: colour not
-                // fixed by the rules) stay communal.
+                // A leader joins the scope that covers his whole command
+                // (§5.53: his colour).
                 let pinned: Vec<DervishTribe> = pinned_command(leader);
                 !pinned.is_empty() && pinned.iter().all(|tribe| tribes.contains(tribe))
             }
             _ => false,
         },
         omdurman_types::CommandScope::Brigades(brigades) => match identity {
-            UnitIdentity::AngloEgyptianInfantry { brigade, .. } => brigades.contains(brigade),
+            UnitIdentity::AngloEgyptianInfantry { brigade, .. } => {
+                brigades.contains(&brigade.designation())
+            }
             _ => false,
         },
     }
 }
 
-/// The tribes a Dervish leader is *pinned* to command (§5.53), or an empty
-/// vector for leaders whose colour the rules do not fix down (their stacking
-/// `commands` is permissive, but they are nobody's exclusive troops).
+/// The tribes a Dervish leader commands (§5.53: his colour).
 fn pinned_command(leader: &DervishLeader) -> Vec<DervishTribe> {
-    let all: Vec<DervishTribe> = DervishTribe::iter().collect();
-    match leader {
-        DervishLeader::Sherif | DervishLeader::AliWadHelu => Vec::new(),
-        leader => all
-            .into_iter()
-            .filter(|tribe| leader.commands(*tribe))
-            .collect(),
-    }
+    DervishTribe::iter()
+        .filter(|tribe| leader.commands(*tribe))
+        .collect()
 }
 
 pub(crate) fn identity_for_section(
@@ -473,7 +467,7 @@ fn kitchener_block(col: u32, row: u32) -> Option<Classification> {
                 melee: 5,
                 movement: 12,
             },
-            identity: UnitIdentity::AngloEgyptianCavalry,
+            identity: UnitIdentity::AngloEgyptianCamelCorps,
             weapon: WeaponClass::Rifles,
         })
     };
@@ -501,14 +495,15 @@ fn kitchener_block(col: u32, row: u32) -> Option<Classification> {
         (2, 0) => leader(BritishLeader::Hunter),
         (0, 1) | (1, 1) | (2, 1) | (3, 1) | (4, 1) => friendlies(col),
         (3, 0) | (4, 0) => camel(),
-        // 1st Sudanese: IX, X, XI, XII (§5.54 brigade integrity).
-        (5, 0) => sudanese(1, Bn::First),
-        (6, 0) => sudanese(1, Bn::Second),
-        (7, 0) => sudanese(1, Bn::Third),
-        (5, 1) => sudanese(1, Bn::Fourth),
-        // 2nd Sudanese: XIII, XIV.
-        (6, 1) => sudanese(2, Bn::First),
-        (7, 1) => sudanese(2, Bn::Second),
+        // As printed (§5.54): IX, X, XI Sudanese are "1E" with II Egyptian
+        // (its first battalion, `egyptian_army_block`); XII, XIII, XIV are
+        // "2E" with VIII Egyptian.
+        (5, 0) => sudanese(1, Bn::Second),
+        (6, 0) => sudanese(1, Bn::Third),
+        (7, 0) => sudanese(1, Bn::Fourth),
+        (5, 1) => sudanese(2, Bn::Second),
+        (6, 1) => sudanese(2, Bn::Third),
+        (7, 1) => sudanese(2, Bn::Fourth),
         _ => None,
     }
 }
@@ -692,8 +687,30 @@ fn egyptian_army_block(col: u32, row: u32) -> Option<Classification> {
             identity: UnitIdentity::AngloEgyptianArtillery,
             weapon: WeaponClass::Artillery,
         }),
-        _ => ae_infantry(BrigadeNationality::Egyptian, col),
+        // As printed (§5.54): II Egyptian serves in 1E and VIII Egyptian in
+        // 2E, each beside three Sudanese battalions (`kitchener_block`); row
+        // 1 is 3E (III, IV, VII, XV) and 4E (I, V, VI, XVI).
+        (6, 0) => egyptian_battalion(1, BattalionOrdinal::First),
+        (7, 0) => egyptian_battalion(2, BattalionOrdinal::First),
+        (_, 1) => ae_infantry(BrigadeNationality::Egyptian, col + 8),
+        _ => None,
     }
+}
+
+/// One Egyptian battalion of brigade `number`E (§5.54).
+fn egyptian_battalion(number: u8, battalion: BattalionOrdinal) -> Option<Classification> {
+    Some(Classification {
+        kind: UnitKind::Infantry {
+            fire: 0,
+            melee: 0,
+            movement: 0,
+        },
+        identity: UnitIdentity::AngloEgyptianInfantry {
+            brigade: BrigadeId::egyptian(number),
+            battalion,
+        },
+        weapon: WeaponClass::Rifles,
+    })
 }
 
 fn ae_infantry(nationality: BrigadeNationality, col: u32) -> Option<Classification> {
@@ -1074,7 +1091,7 @@ mod tests {
         // The Camel Corps pair (§7.5 camel retreat; §9.14: 3-pt land unit).
         for col in [3, 4] {
             let p = profile_for(SectionName::Kitchener, col, 0).unwrap();
-            assert_eq!(p.identity, UnitIdentity::AngloEgyptianCavalry);
+            assert_eq!(p.identity, UnitIdentity::AngloEgyptianCamelCorps);
             assert!(matches!(p.kind, UnitKind::Camel { .. }));
         }
         // Sudanese IX–XIV (§5.54): two brigades, ordinals per battalion.
@@ -1093,6 +1110,51 @@ mod tests {
             }
             other => panic!("XIII Sudanese misresolved: {other:?}"),
         }
+    }
+
+    // §5.54: the brigades printed on the counters. The Egyptian Division's
+    // 1E and 2E each join one Egyptian battalion to three Sudanese ones; 3E
+    // and 4E are all Egyptian. Stacked as printed, each brigade integrates.
+    #[rulebook("§5.54")]
+    #[test]
+    fn egyptian_division_brigades_follow_the_printed_designations() {
+        use crate::{BrigadeIntegrity, brigade_integrity};
+        let brigade = |cells: &[(SectionName, u8, u8)]| {
+            let identities: Vec<UnitIdentity> = cells
+                .iter()
+                .map(|&(s, c, r)| profile_for(s, c, r).unwrap().identity)
+                .collect();
+            brigade_integrity(&identities)
+        };
+        use SectionName::{EgyptianArmy as Egy, Kitchener as Kit};
+        for (number, cells) in [
+            // II Egyptian + IX, X, XI Sudanese.
+            (1, [(Egy, 6, 0), (Kit, 5, 0), (Kit, 6, 0), (Kit, 7, 0)]),
+            // VIII Egyptian + XII, XIII, XIV Sudanese.
+            (2, [(Egy, 7, 0), (Kit, 5, 1), (Kit, 6, 1), (Kit, 7, 1)]),
+            // III, IV, VII, XV Egyptian.
+            (3, [(Egy, 0, 1), (Egy, 1, 1), (Egy, 2, 1), (Egy, 3, 1)]),
+            // I, V, VI, XVI Egyptian.
+            (4, [(Egy, 4, 1), (Egy, 5, 1), (Egy, 6, 1), (Egy, 7, 1)]),
+        ] {
+            assert_eq!(
+                brigade(&cells),
+                BrigadeIntegrity::Integrated(BrigadeId::egyptian(number)),
+                "{number}E"
+            );
+        }
+        // The old column grouping (IX-XII) is no brigade at all.
+        assert_eq!(
+            brigade(&[(Kit, 5, 0), (Kit, 6, 0), (Kit, 7, 0), (Kit, 5, 1)]),
+            BrigadeIntegrity::None
+        );
+        // A Sudanese battalion still counts as Sudan infantry (§9.321).
+        let ix = profile_for(Kit, 5, 0).unwrap().identity;
+        assert_eq!(
+            ix.brigade().map(|b| b.nationality),
+            Some(BrigadeNationality::Sudanese)
+        );
+        assert_eq!(ix.brigade().map(|b| b.to_string()), Some("1E".into()));
     }
 
     #[rulebook("§6.51")]

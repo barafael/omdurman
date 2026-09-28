@@ -12,7 +12,10 @@ mod setup;
 mod stacking;
 
 pub use movement::{MAX_MOVE_PATH_LEN, MovePlan};
-pub use setup::{FokCapGroup, MAX_CHAIN_HEXES, MAX_MINES, fok_cap_group};
+pub use setup::{
+    FokCapGroup, HISTORICAL_KERRERI_UNITS, MAX_CHAIN_HEXES, MAX_MINES, fok_cap_group,
+    historical_counter_in_play, historical_in_play,
+};
 pub(crate) use stacking::STACKING_LIMIT;
 pub use stacking::{stacking_rule, unit_projects_zoc_rule};
 
@@ -294,21 +297,19 @@ impl GameState {
         }
     }
 
-    /// Whether `hex` is "entrenched": Nile-side of a ZaribaTrench hexside
-    /// (§9.232: −2 melee for a Dervish attack on an entrenched unit). Reads
-    /// *effective* hexsides, so authored FoK trenches and any constructed
-    /// zariba both count.
+    /// Whether `hex` is "entrenched" (§9.232: "directly adjacent to (and on
+    /// the Nile River side of) a trench hexside"): a Zariba hex with a trench
+    /// hexside on its perimeter. The Nile side is the Zariba's own side --
+    /// the hex across the trench is the open desert, never the river. Reads
+    /// *effective* hexsides.
     pub fn is_zariba_entrenched(&self, hex: HexCoord) -> bool {
         use omdurman_types::HexsideKind::{ZaribaTrench, ZaribaTrenchEndA, ZaribaTrenchEndB};
-        for n in hex.neighbors() {
-            if self.hexside_effective_is(hex, n, |k| {
-                matches!(k, ZaribaTrench | ZaribaTrenchEndA | ZaribaTrenchEndB)
-            }) && self.board.is_nile(n)
-            {
-                return true;
-            }
-        }
-        false
+        self.board.is_zariba(hex)
+            && hex.neighbors().into_iter().any(|n| {
+                self.hexside_effective_is(hex, n, |k| {
+                    matches!(k, ZaribaTrench | ZaribaTrenchEndA | ZaribaTrenchEndB)
+                })
+            })
     }
 
     /// Whether `hex` has a zariba thorn hedge on its perimeter (§9.231: −2

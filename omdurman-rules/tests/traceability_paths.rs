@@ -117,6 +117,7 @@ mod rules_root_paths {
         let _ = omdurman_rules::UnitIdentity::may_enter_walled_city;
         let _ = omdurman_rules::UnitIdentity::dervish_stacking_group;
         let _ = omdurman_rules::DervishLeader::setup_letter;
+        let _ = omdurman_rules::DervishLeader::of_tribe;
     }
 
     // Fields on UnitState (§5.21, §5.3, §6.53).
@@ -174,6 +175,7 @@ mod rules_effects_paths {
         let _ = GameState::can_move_unit_to;
         let _ = GameState::can_move_gunboat;
         let _ = GameState::in_deployment_zone;
+        let _ = GameState::historical_set_up_area;
         let _ = GameState::can_fire_at;
         let _ = GameState::can_melee;
         let _ = GameState::can_advance_after_combat;
@@ -237,6 +239,8 @@ mod rules_submodule_paths {
         let _ = BoardInfo::is_walled_city;
         let _ = omdurman_rules::effects::GameState::zariba_entry_surcharge;
         let _ = omdurman_rules::effects::GameState::has_zariba_thorn_hedge;
+        let _ = omdurman_rules::effects::GameState::is_zariba_entrenched;
+        let _ = BoardInfo::compute_zariba;
     }
 
     // Field on BoardInfo (§5.11: the engine-side road data the movement

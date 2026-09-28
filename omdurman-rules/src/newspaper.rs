@@ -37,35 +37,31 @@ fn campaign_template(level: crate::CampaignVictoryLevel) -> &'static NewspaperTe
     }
 }
 
-/// Pick a Historical template from the two per-side levels (§9.24). The net
-/// result is `ae_level - d_level` (each cast to its discriminant); positive
-/// favours the Anglo-Egyptian, negative the Dervish, and zero is a draw. The
-/// magnitude selects which rung of the winner's ladder applies.
+/// Pick a Historical template from the two per-side levels (§9.24): the net
+/// result -- the higher level less the lower, read on the same scale -- goes
+/// to the side with the higher level; equal or adjacent levels are a draw.
+/// (Anglo-Egyptian Strategic against a Dervish Draw nets a Tactical victory,
+/// not a Strategic one.)
 fn historical_template(
     ae: HistoricalVictoryLevel,
     d: HistoricalVictoryLevel,
 ) -> &'static NewspaperTemplate {
-    let net = ae as i16 - d as i16;
-    if net > 0 {
-        // Anglo-Egyptian victory; the level is the AE rung.
-        match ae {
-            HistoricalVictoryLevel::Decisive => &NEWSPAPER_HISTORICAL_AE_DECISIVE,
-            HistoricalVictoryLevel::Strategic => &NEWSPAPER_HISTORICAL_AE_STRATEGIC,
-            HistoricalVictoryLevel::Tactical => &NEWSPAPER_HISTORICAL_AE_TACTICAL,
-            HistoricalVictoryLevel::Marginal => &NEWSPAPER_HISTORICAL_AE_MARGINAL,
-            HistoricalVictoryLevel::Draw => &NEWSPAPER_HISTORICAL_DRAW,
-        }
-    } else if net < 0 {
-        // Dervish victory; the level is the D rung.
-        match d {
-            HistoricalVictoryLevel::Decisive => &NEWSPAPER_HISTORICAL_D_DECISIVE,
-            HistoricalVictoryLevel::Strategic => &NEWSPAPER_HISTORICAL_D_STRATEGIC,
-            HistoricalVictoryLevel::Tactical => &NEWSPAPER_HISTORICAL_D_TACTICAL,
-            HistoricalVictoryLevel::Marginal => &NEWSPAPER_HISTORICAL_D_MARGINAL,
-            HistoricalVictoryLevel::Draw => &NEWSPAPER_HISTORICAL_DRAW,
-        }
-    } else {
-        &NEWSPAPER_HISTORICAL_DRAW
+    use crate::Player as P;
+    use HistoricalVictoryLevel as L;
+    match HistoricalVictoryLevel::net(ae, d) {
+        (None, _) | (_, L::Draw) => &NEWSPAPER_HISTORICAL_DRAW,
+        (Some(P::AngloEgyptian), level) => match level {
+            L::Decisive => &NEWSPAPER_HISTORICAL_AE_DECISIVE,
+            L::Strategic => &NEWSPAPER_HISTORICAL_AE_STRATEGIC,
+            L::Tactical => &NEWSPAPER_HISTORICAL_AE_TACTICAL,
+            L::Marginal | L::Draw => &NEWSPAPER_HISTORICAL_AE_MARGINAL,
+        },
+        (Some(P::Dervish), level) => match level {
+            L::Decisive => &NEWSPAPER_HISTORICAL_D_DECISIVE,
+            L::Strategic => &NEWSPAPER_HISTORICAL_D_STRATEGIC,
+            L::Tactical => &NEWSPAPER_HISTORICAL_D_TACTICAL,
+            L::Marginal | L::Draw => &NEWSPAPER_HISTORICAL_D_MARGINAL,
+        },
     }
 }
 
@@ -435,5 +431,30 @@ mod tests {
                 "{headline}"
             );
         }
+    }
+
+    // §9.24: the headline announces the *net* result. Anglo-Egyptian
+    // Strategic against a Dervish Draw nets a Tactical victory; the
+    // rulebook's worked example (Decisive against Strategic) nets a draw.
+    #[test]
+    fn historical_headline_follows_the_net_result() {
+        use HistoricalVictoryLevel as H;
+        let headline = |ae, d| newspaper_template(GameResult::Historical { ae, d }, false).headline;
+        assert_eq!(
+            headline(H::Strategic, H::Draw),
+            NEWSPAPER_HISTORICAL_AE_TACTICAL.headline
+        );
+        assert_eq!(
+            headline(H::Decisive, H::Strategic),
+            NEWSPAPER_HISTORICAL_DRAW.headline
+        );
+        assert_eq!(
+            headline(H::Draw, H::Tactical),
+            NEWSPAPER_HISTORICAL_D_MARGINAL.headline
+        );
+        assert_eq!(
+            headline(H::Decisive, H::Draw),
+            NEWSPAPER_HISTORICAL_AE_STRATEGIC.headline
+        );
     }
 }

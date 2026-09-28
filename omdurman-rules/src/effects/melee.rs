@@ -340,13 +340,19 @@ pub fn apply_resolve_melee(state: &mut GameState) -> Result<(), RuleError> {
                 && u.position.neighbors().contains(&attack.defender_hex)
         })
     });
-    if attack.defenders.is_empty() {
-        // Everyone retreated/eliminated already -- nothing to resolve, but the
-        // Dervish may still advance into the vacated hex (§7.6) if attackers
-        // remain. Treat as a melee with no defenders.
-    }
     // Resolution committed: close the §7.5 reaction window.
     state.pending_melee = None;
+    if attack.defenders.is_empty() {
+        // §7.5: every defender withdrew before the blow fell -- nothing to
+        // fight. No dice, and no mandatory advance: §7.6 binds only when "a
+        // melee attack eliminates all of the defenders". (The retreat itself
+        // opened the attackers' advance window.)
+        state.observations.push(Observation::MeleeLapsed {
+            attacker_hex: attack.attacker_hex,
+            defender_hex: attack.defender_hex,
+        });
+        return Ok(());
+    }
     resolve_melee_combat(state, &attack, attacker_roll, defender_roll);
     Ok(())
 }
@@ -442,13 +448,15 @@ pub fn mandatory_melee_modifiers(
             }
         }
     };
-    let mut attacker_modifiers = vec![standard(attack.attacker_player, &attack.attackers)];
     // §9.232: "−2 (instead of +2) melee modifier to Dervish units melee
-    // attacking an entrenched unit".
-    if attack.attacker_player == Player::Dervish && state.is_zariba_entrenched(attack.defender_hex)
+    // attacking an entrenched unit" -- the trench replaces the standard +2.
+    let attacker_modifiers = if attack.attacker_player == Player::Dervish
+        && state.is_zariba_entrenched(attack.defender_hex)
     {
-        attacker_modifiers.push(MeleeModifier::DervishVsTrenchedDefender);
-    }
+        vec![MeleeModifier::DervishVsTrenchedDefender]
+    } else {
+        vec![standard(attack.attacker_player, &attack.attackers)]
+    };
     let defender_modifiers = vec![standard(
         attack.attacker_player.opponent(),
         &attack.defenders,

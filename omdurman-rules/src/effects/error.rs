@@ -23,6 +23,27 @@ pub enum RuleError {
     #[error("hex {0} is outside this unit's deployment zone (§9.2/§9.3)")]
     OutsideDeploymentZone(HexCoord),
 
+    /// §9.211: the Anglo-Egyptian set-up areas of the Historical scenario.
+    #[error("{hex} is outside this unit's set-up area: {area}")]
+    HistoricalSetUpArea { hex: HexCoord, area: &'static str },
+
+    /// §9.212: "All remaining Dervish units set up within three hexes of
+    /// their leader as identified by color."
+    #[error(
+        "{hex} is more than three hexes from {leader}: Dervish units set up within three hexes of the leader of their colour (§9.212)"
+    )]
+    SetUpFarFromLeader {
+        hex: HexCoord,
+        leader: crate::DervishLeader,
+    },
+
+    /// §9.212: "All Dervish units must be set up out of the line of sight of
+    /// all Anglo-Egyptian units."
+    #[error(
+        "{hex} is in sight of the Anglo-Egyptian unit at {seen_from}: Dervish units set up out of the line of sight of all Anglo-Egyptian units (§9.212)"
+    )]
+    SetUpInEnemySight { hex: HexCoord, seen_from: HexCoord },
+
     #[error(
         "unit {0} is not in play at setup for this scenario (§9.111/§9.211/§9.212): it arrives as a reinforcement or is excluded"
     )]

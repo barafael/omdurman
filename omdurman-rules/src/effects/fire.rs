@@ -661,25 +661,28 @@ pub fn mandatory_fire_modifiers(state: &GameState, attack: &FireAttack) -> Vec<F
     if attack.kind == FireKind::Direct && attack.firing_player == Player::AngloEgyptian {
         modifiers.push(FireModifier::AngloEgyptianDirectFire);
         // §5.54/§6.24: brigade integrity (+1, cumulative) when all four
-        // battalions of one brigade are stacked in the same hex and all fire
-        // at this target hex -- i.e. the firers are exactly such a stack.
+        // battalions of a brigade are stacked in the same hex and all fire
+        // at this target hex. Other units may join the attack (§6.14) --
+        // another brigade's stack, a Maxim -- without costing the stack its
+        // bonus; it applies once per attack.
         let firers: Vec<&UnitPlacement> = attack
             .firers
             .iter()
             .filter_map(|id| state.find_unit(*id))
             .collect();
-        let co_stacked = firers
-            .first()
-            .is_some_and(|first| firers.iter().all(|u| u.position == first.position));
-        if co_stacked {
-            let identities: Vec<crate::UnitIdentity> =
-                firers.iter().map(|u| u.profile.identity).collect();
-            if matches!(
-                crate::brigade_integrity(&identities),
+        let integrated_stack = firers.iter().any(|u| {
+            let stack: Vec<crate::UnitIdentity> = firers
+                .iter()
+                .filter(|o| o.position == u.position)
+                .map(|o| o.profile.identity)
+                .collect();
+            matches!(
+                crate::brigade_integrity(&stack),
                 crate::BrigadeIntegrity::Integrated(_)
-            ) {
-                modifiers.push(FireModifier::BrigadeIntegrity);
-            }
+            )
+        });
+        if integrated_stack {
+            modifiers.push(FireModifier::BrigadeIntegrity);
         }
     }
     // §9.231/§9.232: the zariba die-roll penalties apply "on all *Dervish*

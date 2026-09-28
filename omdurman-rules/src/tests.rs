@@ -756,3 +756,31 @@ fn hexside_kind_classifies_blockers() {
     assert!(HexsideKind::KhorShambat.blocks_melee());
     assert!(!HexsideKind::Crest.blocks_melee());
 }
+
+// §9.24: "The lower value victory level is then subtracted from the higher
+// level to determine a player's net victory. For example, if the
+// Anglo-Egyptian player eliminates 104 Dervish units (decisive victory) but
+// loses 18 units doing it (Dervish Strategic), the Anglo-Egyptian player only
+// nets out with a draw."
+#[rulebook("§9.24")]
+#[test]
+fn historical_net_result_follows_the_worked_example() {
+    use crate::HistoricalVictoryLevel as L;
+    let ae = L::for_anglo_egyptian(104);
+    let d = L::for_dervish(18);
+    assert_eq!((ae, d), (L::Decisive, L::Strategic));
+    assert_eq!(L::net(ae, d), (None, L::Draw));
+    // A lopsided battle: Decisive against a Dervish draw nets a Strategic
+    // Anglo-Egyptian victory (5 - 1 = 4).
+    assert_eq!(
+        L::net(L::Decisive, L::Draw),
+        (Some(Player::AngloEgyptian), L::Strategic)
+    );
+    assert_eq!(
+        L::net(L::Marginal, L::Strategic),
+        (Some(Player::Dervish), L::Marginal)
+    );
+    assert_eq!(L::Draw.next_threshold(Player::AngloEgyptian), Some(30));
+    assert_eq!(L::Tactical.next_threshold(Player::Dervish), Some(15));
+    assert_eq!(L::Decisive.next_threshold(Player::Dervish), None);
+}

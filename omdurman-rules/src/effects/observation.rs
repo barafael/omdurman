@@ -169,4 +169,12 @@ pub enum Observation {
         /// retreat-vacated (§7.5).
         paragraphs: Vec<String>,
     },
+    /// A declared melee found its target hex empty at resolution: every
+    /// defender withdrew during the §7.5 reaction window. No dice are rolled
+    /// and no mandatory advance follows (§7.6 binds only when the melee
+    /// *eliminates* the defenders).
+    MeleeLapsed {
+        attacker_hex: HexCoord,
+        defender_hex: HexCoord,
+    },
 }

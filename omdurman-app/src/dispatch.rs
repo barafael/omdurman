@@ -427,5 +427,13 @@ fn format_observation(
                 ),
             ))
         }
+        Observation::MeleeLapsed { defender_hex, .. } => Some((
+            "Melee".into(),
+            format!(
+                "The defenders of ({},{}) withdrew before the blow fell (§7.5): the melee \
+                 lapses, with no roll and no forced advance (§7.6).",
+                defender_hex.q, defender_hex.r
+            ),
+        )),
     }
 }

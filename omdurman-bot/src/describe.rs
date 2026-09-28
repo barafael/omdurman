@@ -522,6 +522,14 @@ pub fn describe_observation(obs: &Observation) -> String {
             names(eligible),
             paragraphs.join(" §"),
         ),
+        Observation::MeleeLapsed {
+            attacker_hex,
+            defender_hex,
+        } => format!(
+            "MeleeLapsed {} -> {}: the defenders withdrew [§7.5]",
+            hex(*attacker_hex),
+            hex(*defender_hex),
+        ),
     }
 }
 

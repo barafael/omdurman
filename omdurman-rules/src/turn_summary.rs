@@ -247,16 +247,18 @@ impl TurnEventRecord {
 
 impl TurnSummary {
     /// Format the full turn as a structured text block for LLM input.
-    /// FALL OF KHARTOUM keeps no victory points (§9.35 counts Gordon's fate
-    /// and Dervish losses), so its VP bookkeeping never reaches the text.
+    /// Only the Campaign keeps victory points (§9.14): the Historical
+    /// scenario counts units eliminated (§9.24), FALL OF KHARTOUM Gordon's
+    /// fate and the Dervish losses (§9.35), so there the engine's VP
+    /// bookkeeping never reaches the text.
     pub fn format_for_llm(&self, scenario: omdurman_types::Scenario) -> String {
         let mut out = format!(
             "=== Turn {} ({}, {:?}) ===\n",
             self.turn.0, self.time, self.day_night,
         );
-        let fok = scenario == omdurman_types::Scenario::FallOfKhartoum;
+        let no_vp = scenario != omdurman_types::Scenario::Campaign;
         for event in &self.events {
-            if fok && matches!(event, TurnEventRecord::VpScored { .. }) {
+            if no_vp && matches!(event, TurnEventRecord::VpScored { .. }) {
                 continue;
             }
             out.push_str(&format!("- {}\n", event.format_for_dispatch()));
@@ -286,5 +288,36 @@ mod tests {
         }
         .format_for_dispatch();
         assert_eq!(line, "Mulazmin retreated from (13, 5) to (14, 6)");
+    }
+
+    /// Only the Campaign keeps victory points: the Historical scenario
+    /// (§9.24, units eliminated) and FALL OF KHARTOUM never feed VP lines to
+    /// the telegraph, and tell it not to mention points.
+    #[test]
+    fn only_the_campaign_reports_victory_points() {
+        use omdurman_types::Scenario;
+        let summary = TurnSummary {
+            turn: GameTurnIndex::new(1),
+            time: crate::turn_track::GameTime::SixAM,
+            day_night: DayNight::Day,
+            first_player: Player::Dervish,
+            events: vec![TurnEventRecord::VpScored {
+                source: VpSource::DervishUnitEliminated,
+                points: VpSource::DervishUnitEliminated.points(),
+                for_player: Player::AngloEgyptian,
+            }],
+        };
+        assert!(summary.format_for_llm(Scenario::Campaign).contains("VP"));
+        for scenario in [Scenario::Historical, Scenario::FallOfKhartoum] {
+            assert!(
+                !summary.format_for_llm(scenario).contains("VP"),
+                "{scenario:?}"
+            );
+            let (system, _) = crate::telegram_prompt::build_telegram_prompt(&summary, scenario);
+            assert!(
+                system.contains("never mention victory points"),
+                "{scenario:?}"
+            );
+        }
     }
 }

@@ -18,8 +18,11 @@ impl GameState {
 
     /// The "Units" line-of-sight blocker (§6.3 note a): a hex occupied by any
     /// non-gunboat, non-fort unit blocks LOS at that hex's terrain level.
-    /// Shared by [`Self::can_fire_at`] and [`Self::can_fire_at_wall`].
-    fn los_unit_blocker(&self) -> impl Fn(HexCoord) -> Option<crate::los_table::LosLevel> + '_ {
+    /// Shared by [`Self::can_fire_at`], [`Self::can_fire_at_wall`] and the
+    /// Historical set-up's out-of-sight rule (§9.212).
+    pub(crate) fn los_unit_blocker(
+        &self,
+    ) -> impl Fn(HexCoord) -> Option<crate::los_table::LosLevel> + '_ {
         move |hex| {
             let has_blocking_unit = self.units.iter().any(|u| {
                 u.position == hex

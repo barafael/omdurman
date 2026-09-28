@@ -232,7 +232,8 @@ impl GameState {
 
     /// Whether the ZOC of `unit` (standing next to `into`) reaches into
     /// `into` -- the §5.44 extent rules, in one place:
-    /// * not across a khor or a Zariba hexside;
+    /// * not across a khor;
+    /// * across a Zariba hexside only out of the Zariba, not into it;
     /// * not into or out of a Nile hex (gunboats excepted, §5.41);
     /// * not into a fort (it does extend *out* of one, even unoccupied);
     /// * "out of, but not into, a hut or building hex";
@@ -247,8 +248,17 @@ impl GameState {
             return false;
         }
         let city_outward = self.board.is_walled_city(from) && !self.board.is_walled_city(into);
+        let zariba_outward = self.board.is_zariba(from) && !self.board.is_zariba(into);
         match self.hexside_effective(from, into) {
             Some(HexsideKind::Wall | HexsideKind::Gate) if !city_outward => return false,
+            // "In the historical scenario ZOCs extend out of, but not into,
+            // the Zariba across a Zariba hexside" (also a constructed one).
+            Some(
+                HexsideKind::ZaribaThornHedge
+                | HexsideKind::ZaribaTrench
+                | HexsideKind::ZaribaTrenchEndA
+                | HexsideKind::ZaribaTrenchEndB,
+            ) if zariba_outward => {}
             Some(side)
                 if side.blocks_zoc() && !matches!(side, HexsideKind::Wall | HexsideKind::Gate) =>
             {

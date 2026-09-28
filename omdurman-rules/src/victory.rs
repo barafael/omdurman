@@ -209,6 +209,43 @@ impl HistoricalVictoryLevel {
         }
     }
 
+    /// The net result (§9.24): "the lower value victory level is then
+    /// subtracted from the higher level" -- the difference, read on the same
+    /// scale (1 draw ... 4 strategic), goes to the side with the higher
+    /// level. Equal levels are a draw. `None` for the winner means a draw.
+    pub fn net(ae: Self, d: Self) -> (Option<Player>, Self) {
+        let diff = ae as i16 - d as i16;
+        let level = match diff.unsigned_abs() {
+            0 | 1 => Self::Draw,
+            2 => Self::Marginal,
+            3 => Self::Tactical,
+            4 => Self::Strategic,
+            _ => Self::Decisive,
+        };
+        let winner = match (level, diff.signum()) {
+            (Self::Draw, _) => None,
+            (_, 1) => Some(Player::AngloEgyptian),
+            _ => Some(Player::Dervish),
+        };
+        (winner, level)
+    }
+
+    /// The fewest enemy units the side must have eliminated for the next
+    /// level up (§9.24), or `None` at Decisive.
+    pub fn next_threshold(self, for_player: Player) -> Option<i16> {
+        let steps: [i16; 4] = match for_player {
+            Player::AngloEgyptian => [30, 45, 60, 100],
+            Player::Dervish => [5, 10, 15, 30],
+        };
+        match self {
+            Self::Draw => Some(steps[0]),
+            Self::Marginal => Some(steps[1]),
+            Self::Tactical => Some(steps[2]),
+            Self::Strategic => Some(steps[3]),
+            Self::Decisive => None,
+        }
+    }
+
     /// Dervish level from the number of Anglo-Egyptian units eliminated
     /// (§9.24 right column): 0-4 draw, 5-9 marginal, 10-14 tactical,
     /// 15-29 strategic, 30+ decisive.
@@ -363,10 +400,12 @@ impl GameResult {
                 CampaignVictoryLevel::Tactical(p) => format!("{p} Tactical Victory"),
                 CampaignVictoryLevel::Decisive(p) => format!("{p} Decisive Victory"),
             },
-            GameResult::Historical { ae, d } => format!(
-                "Anglo-Egyptian {ae:?} vs Dervish {d:?} (net {:+})",
-                ae as i16 - d as i16
-            ),
+            GameResult::Historical { ae, d } => match HistoricalVictoryLevel::net(ae, d) {
+                (None, _) => format!("Draw (Anglo-Egyptian {ae:?} vs Dervish {d:?})"),
+                (Some(p), level) => {
+                    format!("{p} {level:?} Victory (Anglo-Egyptian {ae:?} vs Dervish {d:?})")
+                }
+            },
             GameResult::FoK(level) => level.to_string(),
         }
     }

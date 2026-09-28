@@ -66,6 +66,13 @@ pub struct BoardInfo {
     /// unannotated fringe sides).
     #[serde(default)]
     pub walled_city: Set<HexCoord>,
+    /// The Zariba's hexes (§9.211 "the 13 hexes of the Zariba"): the land
+    /// enclosed by the Zariba hexsides and the Nile, derived once at build
+    /// time (see [`Self::compute_zariba`]). It says which side of a trench
+    /// hexside is "the Nile River side" (§9.232) and bounds the
+    /// Anglo-Egyptian set-up (§9.211).
+    #[serde(default)]
+    pub zariba: Set<HexCoord>,
 }
 
 impl BoardInfo {
@@ -107,7 +114,67 @@ impl BoardInfo {
         // §5.23: derive the walled-city hexes as the area enclosed by the
         // annotated Wall/Gate/Breach ring (see `walled_city`).
         board.walled_city = board.compute_walled_city();
+        board.zariba = board.compute_zariba();
         board
+    }
+
+    /// The land hexes enclosed by the Zariba hexsides and the Nile (§9.211,
+    /// §9.232): flood each side of every Zariba hexside over land, blocked by
+    /// Zariba hexsides and the river. A region that reaches the map edge is
+    /// the open desert outside; a closed one is the Zariba. Empty on boards
+    /// without a closed Zariba line.
+    pub fn compute_zariba(&self) -> Set<HexCoord> {
+        let is_zariba = |kind: HexsideKind| {
+            matches!(
+                kind,
+                HexsideKind::ZaribaThornHedge
+                    | HexsideKind::ZaribaTrench
+                    | HexsideKind::ZaribaTrenchEndA
+                    | HexsideKind::ZaribaTrenchEndB
+            )
+        };
+        let is_land =
+            |hex: HexCoord| !matches!(self.terrain_at(hex), Some(Terrain::Nile { .. }) | None);
+        let mut inside: Set<HexCoord> = Default::default();
+        let mut outside: Set<HexCoord> = Default::default();
+        for (edge, _) in self.hexsides.iter().filter(|(_, k)| is_zariba(**k)) {
+            for seed in [edge.a, edge.b] {
+                if !is_land(seed) || inside.contains(&seed) || outside.contains(&seed) {
+                    continue;
+                }
+                let mut region: Set<HexCoord> = Default::default();
+                region.insert(seed);
+                let mut queue = std::collections::VecDeque::from([seed]);
+                let mut open = false;
+                while let Some(h) = queue.pop_front() {
+                    for n in h.neighbors() {
+                        if self.hexside_between(h, n).is_some_and(is_zariba) {
+                            continue;
+                        }
+                        match self.terrain_at(n) {
+                            None => open = true,
+                            Some(Terrain::Nile { .. }) => {}
+                            Some(_) => {
+                                if region.insert(n) {
+                                    queue.push_back(n);
+                                }
+                            }
+                        }
+                    }
+                }
+                if open {
+                    outside.extend(region);
+                } else {
+                    inside.extend(region);
+                }
+            }
+        }
+        inside
+    }
+
+    /// Whether `hex` is one of the Zariba's hexes (see [`Self::zariba`]).
+    pub fn is_zariba(&self, hex: HexCoord) -> bool {
+        self.zariba.contains(&hex)
     }
 
     /// Flood the walled city's interior from its landmarks, blocked by

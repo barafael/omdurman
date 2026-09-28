@@ -939,6 +939,7 @@
             terrain: Clear(
                 road: None,
             ),
+            setup_letter: Some(A),
         )),
         ((15, 5), (
             terrain: Clear(
@@ -1819,6 +1820,7 @@
             terrain: Clear(
                 road: None,
             ),
+            setup_letter: Some(D),
         )),
         ((20, 11), (
             terrain: Clear(
@@ -3194,6 +3196,7 @@
             terrain: Clear(
                 road: None,
             ),
+            setup_letter: Some(Y),
         )),
         ((26, 18), (
             terrain: Clear(
@@ -3708,6 +3711,7 @@
             terrain: Clear(
                 road: None,
             ),
+            setup_letter: Some(K),
         )),
         ((28, 22), (
             terrain: Clear(
@@ -4370,7 +4374,6 @@
             terrain: Clear(
                 road: None,
             ),
-            setup_letter: Some(A),
         )),
         ((31, 2), (
             terrain: Clear(
@@ -4421,7 +4424,6 @@
             terrain: Clear(
                 road: None,
             ),
-            setup_letter: Some(D),
         )),
         ((31, 12), (
             terrain: Clear(
@@ -4482,6 +4484,7 @@
             terrain: Clear(
                 road: None,
             ),
+            setup_letter: Some(S),
         )),
         ((31, 24), (
             terrain: Clear(
@@ -4652,7 +4655,6 @@
             terrain: Clear(
                 road: None,
             ),
-            setup_letter: Some(Y),
         )),
         ((32, 7), (
             terrain: Clear(
@@ -4678,7 +4680,6 @@
             terrain: Clear(
                 road: None,
             ),
-            setup_letter: Some(K),
         )),
         ((32, 12), (
             terrain: Clear(
@@ -4932,7 +4933,6 @@
             terrain: Clear(
                 road: None,
             ),
-            setup_letter: Some(S),
         )),
         ((33, 12), (
             terrain: Clear(
@@ -4945,7 +4945,7 @@
             ),
         )),
         ((33, 14), (
-            terrain: Building(
+            terrain: Clear(
                 road: None,
             ),
             name: Some("Zariba"),
@@ -4994,6 +4994,7 @@
             terrain: Clear(
                 road: None,
             ),
+            setup_letter: Some(O),
         )),
         ((33, 24), (
             terrain: Clear(
@@ -6482,7 +6483,6 @@
                 road: None,
             ),
             name: Some("Abu Alim"),
-            setup_letter: Some(K),
         )),
         ((40, 13), (
             terrain: Clear(

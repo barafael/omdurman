@@ -4,7 +4,6 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_rules::UnitIdentity;
-use omdurman_types::BrigadeNationality;
 
 use crate::GameStateResource;
 use crate::peers::Peers;
@@ -253,16 +252,7 @@ fn identity_description(identity: &UnitIdentity) -> String {
         UnitIdentity::DervishFort => "Dervish Fort".into(),
         UnitIdentity::DervishGunboat(g) => format!("Dervish Gunboat {g}"),
         UnitIdentity::AngloEgyptianInfantry { brigade, battalion } => {
-            let nat = match brigade.nationality {
-                BrigadeNationality::British => 'B',
-                BrigadeNationality::Egyptian => 'E',
-                BrigadeNationality::Sudanese => 'S',
-                BrigadeNationality::Friendlies => 'F',
-            };
-            format!(
-                "{} * {battalion} Btn",
-                format_args!("{}{}", brigade.number, nat)
-            )
+            format!("{brigade} * {battalion} Btn")
         }
         UnitIdentity::AngloEgyptianCavalry => "Cavalry".into(),
         UnitIdentity::AngloEgyptianCamelCorps => "Camel Corps".into(),

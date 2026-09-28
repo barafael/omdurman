@@ -115,38 +115,102 @@ impl HexCoord {
     }
 
     /// The hexes strictly *between* `self` and `other` (endpoints excluded),
-    /// in order from `self` toward `other`. Empty for adjacent or identical
-    /// hexes. Used for line-of-sight (rulebook §6.3): each step picks the
-    /// neighbour that most reduces the remaining distance, so the path is
-    /// consistent with this grid's [`neighbors`](Self::neighbors)/
-    /// [`distance`](Self::distance) convention regardless of the underlying
-    /// coordinate layout.
+    /// in order from `self` toward `other`: the straight line between the two
+    /// hex centres (rulebook §6.3's line of sight). Empty for adjacent or
+    /// identical hexes. Where the line runs exactly along a hexside it could
+    /// pass either hex; this one takes one side consistently, and
+    /// [`line_between_other_side`](Self::line_between_other_side) the other.
     pub fn line_between(self, other: HexCoord) -> Vec<HexCoord> {
-        let mut path = Vec::new();
-        let mut current = self;
-        // Each iteration strictly decreases the remaining distance, so the walk
-        // reaches `other` within `distance` steps. That relies on
-        // [`distance`](Self::distance) agreeing with
-        // [`neighbors`](Self::neighbors); when it did not, this bound silently
-        // truncated a wandering path instead of arriving. Kani proofs:
-        // `greedy_step_strictly_decreases`, `line_between_reaches_target`.
-        let max_steps = self.distance(other);
-        for _ in 0..max_steps {
-            if current == other {
-                break;
-            }
-            let next = current
-                .neighbors()
-                .into_iter()
-                .min_by_key(|n| n.distance(other))
-                .expect("hex always has six neighbours");
-            if next == other {
-                break;
-            }
-            path.push(next);
-            current = next;
+        HexLine::new(self, other, 1).collect()
+    }
+
+    /// [`line_between`](Self::line_between), resolving every hexside tie to
+    /// the other side. Equal to `line_between` unless the line runs along
+    /// hexsides somewhere.
+    pub fn line_between_other_side(self, other: HexCoord) -> Vec<HexCoord> {
+        HexLine::new(self, other, -1).collect()
+    }
+}
+
+/// The intervening hexes of a straight line between two hex centres (see
+/// [`HexCoord::line_between`]), as an allocation-free iterator.
+///
+/// Cube interpolation in integers: step `i` of `n` sits at
+/// `a + (b - a) * i / n` on the cube axes `(q, r - q, -r)` (the ones
+/// [`HexCoord::distance`] measures), rounded to the nearest hex. In units of
+/// `1 / (12 n)` every coordinate is an integer, and a nudge of
+/// `side * (1, 2, -3)` (summing to zero) moves exact half-way ties off the
+/// boundary without disturbing any other rounding (those sit at least 6 units
+/// away from it). Each axis carries its rounded value and remainder from step
+/// to step -- additions only, which keeps the Kani proofs of the ray
+/// tractable.
+#[derive(Clone, Copy, Debug)]
+pub struct HexLine {
+    /// Intervening hexes still to yield.
+    left: i32,
+    scale: i32,
+    half: i32,
+    /// Per cube axis: position = rounded * scale + remainder, with the
+    /// remainder in (-half, half].
+    rounded: [i32; 3],
+    remainder: [i32; 3],
+    step: [i32; 3],
+}
+
+impl HexLine {
+    /// The line from `from` to `to`; `side` (+1 / -1) picks the hex on
+    /// either side of a hexside tie.
+    pub fn new(from: HexCoord, to: HexCoord, side: i32) -> Self {
+        let n = from.distance(to) as i32;
+        let cube = |h: HexCoord| [h.q, h.r - h.q, -h.r];
+        let (a, b) = (cube(from), cube(to));
+        HexLine {
+            left: (n - 1).max(0),
+            scale: 12 * n,
+            half: 6 * n,
+            rounded: a,
+            remainder: [side, 2 * side, -3 * side],
+            step: [12 * (b[0] - a[0]), 12 * (b[1] - a[1]), 12 * (b[2] - a[2])],
         }
-        path
+    }
+
+    /// Advance one cube axis by one step; `|step| <= scale`, so one carry
+    /// restores the remainder's range.
+    fn advance(&mut self, k: usize) {
+        self.remainder[k] += self.step[k];
+        if self.remainder[k] > self.half {
+            self.remainder[k] -= self.scale;
+            self.rounded[k] += 1;
+        } else if self.remainder[k] <= -self.half {
+            self.remainder[k] += self.scale;
+            self.rounded[k] -= 1;
+        }
+    }
+}
+
+impl Iterator for HexLine {
+    type Item = HexCoord;
+
+    fn next(&mut self) -> Option<HexCoord> {
+        if self.left <= 0 {
+            return None;
+        }
+        self.left -= 1;
+        self.advance(0);
+        self.advance(1);
+        self.advance(2);
+        // Keep x + y + z = 0 by re-deriving the worst-rounded axis.
+        let [e0, e1, e2] = self.remainder.map(i32::abs);
+        let [x, y, z] = self.rounded;
+        // (q, r) = (x, -z); y only settles which of the other two to re-derive.
+        let (q, r) = if e0 > e1 && e0 > e2 {
+            (-y - z, -z)
+        } else if e1 > e2 {
+            (x, -z)
+        } else {
+            (x, x + y)
+        };
+        Some(HexCoord::new(q, r))
     }
 }
 
@@ -284,8 +348,9 @@ impl HexsideKind {
     ///
     /// The directional "out of, but not into" cases (gate, hut/building, Zariba)
     /// depend on which hex the projecting unit stands in, which a single hexside
-    /// cannot express; those are left to the caller. This predicate captures the
-    /// symmetric "does not extend across" cases.
+    /// cannot express; those are left to the caller (`GameState::zoc_extends`
+    /// lets a Zariba unit's ZOC out). This predicate captures the "does not
+    /// extend across" default.
     pub fn blocks_zoc(self) -> bool {
         matches!(
             self,
@@ -571,6 +636,10 @@ pub enum Location {
     /// held at the conclusion of play.
     #[strum(serialize = "Mahdi's Tomb")]
     MahdisTomb,
+    /// The hut hexes of the village of Kerreri: the Historical scenario's
+    /// set-up area for the Camel Corps, Egyptian Cavalry and Horse Artillery
+    /// (§9.211). Several hexes carry it.
+    Kerreri,
 }
 
 /// Rules-significant named areas spanning multiple hexes: the Campaign-game
@@ -619,6 +688,7 @@ impl Location {
             "white nile mouth" => Some(Location::WhiteNileMouth),
             "blue nile mouth" => Some(Location::BlueNileMouth),
             "mahdi's tomb" | "mahdis tomb" => Some(Location::MahdisTomb),
+            "kerreri" => Some(Location::Kerreri),
             _ => None,
         }
     }
@@ -1074,59 +1144,33 @@ pub struct BrigadeId {
 }
 
 impl BrigadeId {
-    /// The twelve Anglo-Egyptian brigade designations that may claim brigade
-    /// integrity (rulebook §5.54). Friendlies is intentionally excluded -- it
-    /// never integrates -- and is set on the editor dropdown separately.
-    pub const ALL: [BrigadeId; 12] = [
-        BrigadeId {
-            number: 1,
-            nationality: BrigadeNationality::British,
-        },
-        BrigadeId {
-            number: 2,
-            nationality: BrigadeNationality::British,
-        },
-        BrigadeId {
-            number: 3,
-            nationality: BrigadeNationality::British,
-        },
-        BrigadeId {
-            number: 4,
-            nationality: BrigadeNationality::British,
-        },
-        BrigadeId {
-            number: 1,
-            nationality: BrigadeNationality::Egyptian,
-        },
-        BrigadeId {
-            number: 2,
-            nationality: BrigadeNationality::Egyptian,
-        },
-        BrigadeId {
-            number: 3,
-            nationality: BrigadeNationality::Egyptian,
-        },
-        BrigadeId {
-            number: 4,
-            nationality: BrigadeNationality::Egyptian,
-        },
-        BrigadeId {
-            number: 1,
-            nationality: BrigadeNationality::Sudanese,
-        },
-        BrigadeId {
-            number: 2,
-            nationality: BrigadeNationality::Sudanese,
-        },
-        BrigadeId {
-            number: 3,
-            nationality: BrigadeNationality::Sudanese,
-        },
-        BrigadeId {
-            number: 4,
-            nationality: BrigadeNationality::Sudanese,
-        },
+    /// The six Anglo-Egyptian brigades printed on the counters (rulebook
+    /// §5.54): the 1st and 2nd British, and the Egyptian Division's 1st-4th
+    /// -- whose 1E and 2E each join one Egyptian battalion to three Sudanese
+    /// ones. Friendlies is intentionally excluded -- it never integrates --
+    /// and is set on the editor dropdown separately.
+    pub const ALL: [BrigadeId; 6] = [
+        BrigadeId::british(1),
+        BrigadeId::british(2),
+        BrigadeId::egyptian(1),
+        BrigadeId::egyptian(2),
+        BrigadeId::egyptian(3),
+        BrigadeId::egyptian(4),
     ];
+
+    /// The brigade as printed on the counter (§5.54: "2B", "3E"). A Sudanese
+    /// battalion keeps its own troop type (the FALL OF KHARTOUM order of
+    /// battle counts "Sudan infantry units", §9.321) but serves in an
+    /// Egyptian brigade: IX-XI Sudanese in 1E, XII-XIV in 2E.
+    pub const fn designation(self) -> BrigadeId {
+        match self.nationality {
+            BrigadeNationality::Sudanese => BrigadeId {
+                number: self.number,
+                nationality: BrigadeNationality::Egyptian,
+            },
+            _ => self,
+        }
+    }
 
     /// Convenience constructor for a British brigade (`xB`).
     pub const fn british(number: u8) -> Self {
@@ -1164,9 +1208,12 @@ impl BrigadeId {
 
 impl std::fmt::Display for BrigadeId {
     /// Renders as the printed designation, e.g.
-    /// `BrigadeId { number: 3, nationality: Egyptian }` -> `"3E"`.
+    /// `BrigadeId { number: 3, nationality: Egyptian }` -> `"3E"` (a
+    /// Sudanese battalion's brigade reads as its Egyptian designation, see
+    /// [`BrigadeId::designation`]).
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}{}", self.number, self.nationality.letter())
+        let printed = self.designation();
+        write!(f, "{}{}", printed.number, printed.nationality.letter())
     }
 }
 
@@ -1745,6 +1792,61 @@ mod tests {
     use super::*;
 
     #[test]
+    fn line_between_is_the_straight_line() {
+        // Not an L along the axes (the old greedy walk took all six r-steps
+        // first): (36,17) -> (33,23) interleaves them with the three q-steps.
+        let line = HexCoord::new(36, 17).line_between(HexCoord::new(33, 23));
+        let expected: Vec<HexCoord> = [
+            (36, 18),
+            (35, 18),
+            (35, 19),
+            (35, 20),
+            (34, 20),
+            (34, 21),
+            (34, 22),
+            (33, 22),
+        ]
+        .map(|(q, r)| HexCoord::new(q, r))
+        .to_vec();
+        assert_eq!(line, expected);
+        // A line exactly along a hexside can pass either hex.
+        let (a, b) = (HexCoord::new(0, 0), HexCoord::new(2, 1));
+        let mut sides = vec![a.line_between(b), a.line_between_other_side(b)];
+        sides.sort();
+        assert_eq!(
+            sides,
+            vec![vec![HexCoord::new(1, 0)], vec![HexCoord::new(1, 1)]]
+        );
+    }
+
+    /// Exhaustive over a 13 x 13 window: every relative offset out to
+    /// distance 12 (beyond any weapon range) -- the line depends only
+    /// on the offset, so this covers the Kani proofs' properties for all of
+    /// them.
+    #[test]
+    fn hex_lines_are_connected_advancing_and_reciprocal() {
+        let window = || (-6..=6).flat_map(|q| (-6..=6).map(move |r| HexCoord::new(q, r)));
+        for a in window() {
+            for b in window() {
+                for line in [a.line_between(b), a.line_between_other_side(b)] {
+                    assert_eq!(line.len(), (a.distance(b) as usize).saturating_sub(1));
+                    let mut prev = a;
+                    for hex in &line {
+                        assert!(prev.is_adjacent_to(*hex), "{a} -> {b}: gap at {hex}");
+                        assert!(hex.distance(b) < prev.distance(b));
+                        prev = *hex;
+                    }
+                    assert!(a == b || prev.is_adjacent_to(b));
+                }
+                // The same hexes seen from either end.
+                let mut back = b.line_between(a);
+                back.reverse();
+                assert_eq!(back, a.line_between(b), "{a} <-> {b}");
+            }
+        }
+    }
+
+    #[test]
     fn line_between_excludes_endpoints_and_steps_toward_target() {
         let a = HexCoord::new(0, 0);
         let b = HexCoord::new(3, 0);
@@ -1869,7 +1971,7 @@ mod tests {
 /// boards span q 2..39, r 0..48).
 #[cfg(kani)]
 mod verification {
-    use super::{HexCoord, HexsideRef};
+    use super::{HexCoord, HexLine, HexsideRef};
 
     /// Coordinate window for symbolic hexes. Comfortably contains both boards
     /// while keeping `distance` well clear of `i32` overflow.
@@ -1958,10 +2060,9 @@ mod verification {
         HexCoord::new(q, r)
     }
 
-    /// The greedy descent in `line_between` must make progress: from any hex
-    /// other than the target, *some* neighbour is strictly closer. When this
-    /// failed (4.6% of pairs under the old metric) the walk stalled and the
-    /// loop bound silently truncated a path that never arrived.
+    /// From any hex other than the target, *some* neighbour is strictly
+    /// closer -- the metric property every shortest path (and so the LOS ray)
+    /// relies on. It failed for 4.6% of pairs under the old metric.
     #[kani::proof]
     fn greedy_step_strictly_decreases() {
         let a = any_hex();
@@ -1975,26 +2076,33 @@ mod verification {
         assert!(best.distance(b) < a.distance(b));
     }
 
+    /// Either side of a hexside tie (`HexLine`'s `side`).
+    fn any_side() -> i32 {
+        if kani::any() { 1 } else { -1 }
+    }
+
     /// `line_between` yields exactly the intervening hexes: one per step
     /// between the endpoints, so the ray `[from, ..line, to]` is a connected
     /// chain that actually reaches `to`. `los_table::has_los` walks that ray
     /// with `windows(2)` and asks `hexside_between` about each consecutive
     /// pair, so a gap means blocking terrain is looked up on a non-adjacent
-    /// (i.e. nonexistent) edge.
+    /// (i.e. nonexistent) edge. (The proofs walk the allocation-free
+    /// [`HexLine`] that `line_between` and `line_between_other_side`
+    /// collect.)
     #[kani::proof]
     #[kani::unwind(14)]
     fn line_between_reaches_target() {
         let a = any_near_hex();
         let b = any_near_hex();
-        let line = a.line_between(b);
-        let d = a.distance(b) as usize;
-        // One hex per intervening step (empty when same or adjacent).
-        assert_eq!(line.len(), d.saturating_sub(1));
-        // Endpoints excluded.
-        for hex in &line {
-            assert!(*hex != a);
-            assert!(*hex != b);
+        let mut count = 0usize;
+        for hex in HexLine::new(a, b, any_side()) {
+            // Endpoints excluded.
+            assert!(hex != a);
+            assert!(hex != b);
+            count += 1;
         }
+        // One hex per intervening step (empty when same or adjacent).
+        assert_eq!(count, (a.distance(b) as usize).saturating_sub(1));
     }
 
     /// Every consecutive pair on the full LOS ray is adjacent -- the property
@@ -2006,11 +2114,10 @@ mod verification {
         let a = any_near_hex();
         let b = any_near_hex();
         kani::assume(a != b);
-        let line = a.line_between(b);
         let mut prev = a;
-        for hex in &line {
-            assert!(prev.is_adjacent_to(*hex));
-            prev = *hex;
+        for hex in HexLine::new(a, b, any_side()) {
+            assert!(prev.is_adjacent_to(hex));
+            prev = hex;
         }
         // ...and the last hop lands on the target.
         assert!(prev.is_adjacent_to(b));
@@ -2023,9 +2130,8 @@ mod verification {
     fn line_between_advances_monotonically() {
         let a = any_near_hex();
         let b = any_near_hex();
-        let line = a.line_between(b);
         let mut prev_dist = a.distance(b);
-        for hex in &line {
+        for hex in HexLine::new(a, b, any_side()) {
             let d = hex.distance(b);
             assert!(d < prev_dist);
             prev_dist = d;
@@ -2091,7 +2197,7 @@ mod verification {
 
     /// The five classifiers, exact per printed kind over the whole enum:
     /// walls block LOS/melee/movement/ZOC/advance (gates and breaches are
-    /// the printed exceptions), khors block ZOC and advance but not
+    /// the printed exceptions), khors block melee, ZOC and advance but not
     /// movement, crests block LOS only, the Zariba enclosure blocks
     /// movement and ZOC while thorn hedges additionally block melee and
     /// advance, and Khor Shambat behaves exactly like a generic khor.
@@ -2142,10 +2248,12 @@ mod verification {
             assert!(!k.blocks_movement());
             assert!(!k.blocks_zoc());
         }
-        // Khors block ZOC and advance-after-combat only (a gully is enterable).
+        // Khors block melee (Terrain Effects Chart: "May not melee across"),
+        // ZOC and advance-after-combat, not movement (a gully is enterable
+        // for +5 MP).
         if k == super::HexsideKind::Khor {
             assert!(!k.blocks_los());
-            assert!(!k.blocks_melee());
+            assert!(k.blocks_melee());
             assert!(!k.blocks_movement());
             assert!(k.blocks_zoc());
             assert!(k.blocks_advance_after_combat());

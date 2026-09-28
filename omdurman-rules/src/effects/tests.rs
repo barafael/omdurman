@@ -615,6 +615,73 @@ mod tests {
         assert_eq!(obs, (2, 1), "engine-derived §7.7 melee modifiers");
     }
 
+    // §5.54: an integrated brigade stack keeps its +1 when other units join
+    // its attack on the same hex (§6.14 combined fire); a stack short of one
+    // of its battalions has no integrity, whoever else fires.
+    #[rulebook("§5.54")]
+    #[test]
+    fn brigade_integrity_survives_combined_fire() {
+        let mut state = GameState::new(Scenario::Historical);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::AngloEgyptian;
+        let battalion = |state: &mut GameState, hex, number, battalion| {
+            let id = state.alloc_unit_id();
+            state.units.push(UnitPlacement {
+                id,
+                position: hex,
+                profile: UnitProfile {
+                    kind: UnitKind::Infantry {
+                        fire: 9,
+                        melee: 5,
+                        movement: 8,
+                    },
+                    identity: UnitIdentity::AngloEgyptianInfantry {
+                        brigade: BrigadeId::egyptian(number),
+                        battalion,
+                    },
+                    weapon: WeaponClass::Rifles,
+                    fire: Some(crate::FireFactor::Nine),
+                    melee: Some(crate::MeleeFactor::Five),
+                    movement: UnitMovement::Land(crate::MovementAllowance::Eight),
+                },
+                state: Default::default(),
+            });
+            id
+        };
+        use BattalionOrdinal::{First, Fourth, Second, Third};
+        let (a, b) = (HexCoord::new(0, 0), HexCoord::new(0, 1));
+        let mut firers: Vec<UnitId> = [First, Second, Third, Fourth]
+            .map(|o| battalion(&mut state, a, 3, o))
+            .to_vec();
+        // 4E's whole stack beside it joins the attack.
+        firers.extend([First, Second, Third, Fourth].map(|o| battalion(&mut state, b, 4, o)));
+        make_dervish_tribal(&mut state, HexCoord::new(1, 0));
+        let attack = |firers: Vec<UnitId>| FireAttack {
+            firing_player: Player::AngloEgyptian,
+            phase: Phase::OffensiveFire(FireSubPhase::DirectFire),
+            kind: FireKind::Direct,
+            firers,
+            target_hex: HexCoord::new(1, 0),
+            factor_row: FireFactorRow::Row41Plus,
+            modifiers: vec![],
+        };
+        assert_eq!(
+            mandatory_fire_modifiers(&state, &attack(firers.clone())),
+            vec![
+                FireModifier::AngloEgyptianDirectFire,
+                FireModifier::BrigadeIntegrity
+            ],
+            "two whole brigades firing together: +1 once"
+        );
+        // 3E's first battalion fires elsewhere: its stack lacks integrity,
+        // and 4E's three battalions alone are no brigade either.
+        let partial: Vec<UnitId> = firers[1..7].to_vec();
+        assert_eq!(
+            mandatory_fire_modifiers(&state, &attack(partial)),
+            vec![FireModifier::AngloEgyptianDirectFire]
+        );
+    }
+
     #[rulebook("§6.24", "§5.54")]
     #[test]
     fn brigade_integrity_modifier_is_engine_derived() {
@@ -2141,6 +2208,83 @@ mod tests {
 
         // (The infantry cannot retreat -- §7.5 is cavalry/camel only -- so
         // the window only ever opens via resolution or the last retreat.)
+    }
+
+    // §7.5/§7.6: when the lone defender withdraws before the blow falls, the
+    // declared melee lapses -- no roll, and no forced Dervish advance (§7.6
+    // binds only when the melee *eliminates* the defenders).
+    #[rulebook("§7.5")]
+    #[test]
+    fn melee_lapses_when_every_defender_withdrew() {
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::Melee;
+        state.active_player = Player::Dervish;
+        let cav_hex = HexCoord::new(5, 5);
+        let cavalry = state.alloc_unit_id();
+        state.units.push(UnitPlacement {
+            id: cavalry,
+            position: cav_hex,
+            profile: UnitProfile {
+                kind: UnitKind::Cavalry {
+                    fire: 0,
+                    melee: 0,
+                    movement: 0,
+                },
+                identity: UnitIdentity::AngloEgyptianCavalry,
+                weapon: WeaponClass::Rifles,
+                fire: Some(crate::FireFactor::Three),
+                melee: Some(crate::MeleeFactor::Five),
+                movement: UnitMovement::Land(crate::MovementAllowance::Eight),
+            },
+            state: Default::default(),
+        });
+        let attacker = make_dervish_tribal(&mut state, HexCoord::new(6, 5));
+        apply_effect(
+            &mut state,
+            &GameEffect::DeclareMelee {
+                attack: MeleeAttack {
+                    attacker_player: Player::Dervish,
+                    attacker_hex: HexCoord::new(6, 5),
+                    defender_hex: cav_hex,
+                    attackers: vec![attacker],
+                    defenders: vec![cavalry],
+                    attacker_modifiers: vec![MeleeModifier::DervishStandard],
+                    defender_modifiers: vec![MeleeModifier::AngloEgyptianStandard],
+                },
+                attacker_roll: DieRoll::Ten,
+                defender_roll: DieRoll::Ten,
+            },
+        )
+        .unwrap();
+        apply_effect(
+            &mut state,
+            &GameEffect::RetreatBeforeMelee {
+                unit_id: cavalry,
+                to: HexCoord::new(3, 5),
+            },
+        )
+        .unwrap();
+        state.observations.clear();
+        apply_effect(&mut state, &GameEffect::ResolveMelee).unwrap();
+        assert!(state.pending_melee.is_none());
+        assert_eq!(
+            state.find_unit(attacker).map(|u| u.position),
+            Some(HexCoord::new(6, 5)),
+            "no mandatory advance into a hex the defenders left"
+        );
+        assert!(
+            state
+                .observations
+                .iter()
+                .any(|o| matches!(o, Observation::MeleeLapsed { .. }))
+        );
+        assert!(
+            !state
+                .observations
+                .iter()
+                .any(|o| matches!(o, Observation::MeleeResolved { .. })),
+            "nothing to roll against"
+        );
     }
 
     #[test]
@@ -5539,6 +5683,120 @@ mod tests {
         );
     }
 
+    // §9.212: "All Dervish units must be set up out of the line of sight of
+    // all Anglo-Egyptian units" -- the army ashore; a gunboat's rough-level
+    // view over the slopes does not count.
+    #[rulebook("§9.212")]
+    #[test]
+    fn historical_dervish_set_up_out_of_sight_of_the_army() {
+        let mut state = GameState::new(Scenario::Historical);
+        let board = board_mut(&mut state);
+        for q in 0..8 {
+            board.terrain.insert(
+                HexCoord::new(q, 0),
+                Terrain::Clear {
+                    road: Default::default(),
+                },
+            );
+        }
+        board.terrain.insert(
+            HexCoord::new(0, 1),
+            Terrain::Nile {
+                direction: HexDirection::East,
+            },
+        );
+        state.setup_ready_ae = true;
+        let leader = UnitId::SheikElDin_0_0;
+        state.units.push(UnitPlacement {
+            id: leader,
+            position: HexCoord::new(6, 0),
+            profile: crate::unit_profiles::profile_for_unit(leader).unwrap(),
+            state: Default::default(),
+        });
+        let jehadia = |hex| UnitPlacement {
+            id: UnitId::Jehadia_0_0,
+            position: hex,
+            profile: crate::unit_profiles::profile_for_unit(UnitId::Jehadia_0_0).unwrap(),
+            state: Default::default(),
+        };
+        // A gunboat on the river sees down the open row: no matter.
+        make_old_gunboat(&mut state, HexCoord::new(0, 1));
+        assert!(state.can_deploy_unit(&jehadia(HexCoord::new(5, 0))).is_ok());
+        // An infantry battalion at (0,0) sees the whole open row.
+        make_ae_infantry(&mut state, HexCoord::new(0, 0));
+        assert!(matches!(
+            state.can_deploy_unit(&jehadia(HexCoord::new(5, 0))),
+            Err(RuleError::SetUpInEnemySight { seen_from, .. }) if seen_from == HexCoord::new(0, 0)
+        ));
+        // Rough ground between them hides the Jehadia (rough terrain blocks
+        // a ground-level view).
+        board_mut(&mut state).terrain.insert(
+            HexCoord::new(3, 0),
+            Terrain::Rough {
+                road: Default::default(),
+            },
+        );
+        assert!(state.can_deploy_unit(&jehadia(HexCoord::new(5, 0))).is_ok());
+        // Within three hexes of Sheik El Din only.
+        assert!(matches!(
+            state.can_deploy_unit(&jehadia(HexCoord::new(2, 0))),
+            Err(RuleError::SetUpFarFromLeader { .. })
+        ));
+    }
+
+    /// A Historical board with a one-hex Zariba at (1,1): the Nile on its
+    /// east, trench hexsides to the desert hexes (0,0), (0,1), (1,0) on its
+    /// west.
+    fn one_hex_zariba() -> GameState {
+        let mut state = GameState::new(Scenario::Historical);
+        let board = board_mut(&mut state);
+        for hex in [(1, 1), (0, 0), (0, 1), (1, 0)] {
+            board.terrain.insert(
+                HexCoord::new(hex.0, hex.1),
+                Terrain::Clear {
+                    road: Default::default(),
+                },
+            );
+        }
+        for hex in [(2, 1), (2, 2), (1, 2)] {
+            board.terrain.insert(
+                HexCoord::new(hex.0, hex.1),
+                Terrain::Nile {
+                    direction: HexDirection::East,
+                },
+            );
+        }
+        for outside in [(0, 0), (0, 1), (1, 0)] {
+            board.hexsides.insert(
+                HexsideRef::new(HexCoord::new(1, 1), HexCoord::new(outside.0, outside.1)),
+                HexsideKind::ZaribaTrench,
+            );
+        }
+        board.zariba = board.compute_zariba();
+        assert_eq!(board.zariba.len(), 1);
+        state
+    }
+
+    // §5.44: "In the historical scenario ZOCs extend out of, but not into,
+    // the Zariba across a Zariba hexside."
+    #[rulebook("§5.44")]
+    #[test]
+    fn zoc_extends_out_of_but_not_into_the_zariba() {
+        let mut state = one_hex_zariba();
+        state.phase = Phase::Movement;
+        make_ae_infantry(&mut state, HexCoord::new(1, 1));
+        make_dervish_tribal(&mut state, HexCoord::new(0, 0));
+        let infantry = UnitKind::Infantry {
+            fire: 1,
+            melee: 1,
+            movement: 9,
+        };
+        // Out of the Zariba: the desert at (1,0) is in the army's ZOC...
+        assert!(state.hex_in_enemy_zoc(HexCoord::new(1, 0), Player::Dervish, infantry));
+        // ...but the Dervish ZOC stops at the trench.
+        assert!(!state.hex_in_enemy_zoc(HexCoord::new(1, 1), Player::AngloEgyptian, infantry));
+    }
+
     // §9.232: a unit Nile-side adjacent to a trench hexside is entrenched:
     // Dervish fire against it carries -4, and Dervish melee -2 (instead of +2).
     #[rulebook("§9.232")]
@@ -5547,31 +5805,23 @@ mod tests {
         assert_eq!(FireModifier::ZaribaTrenchEntrenched.die_modifier(), -4);
         assert_eq!(MeleeModifier::DervishVsTrenchedDefender.die_modifier(), -2);
 
-        let mut state = GameState::new(Scenario::Historical);
-        // Nile at (0,0); the trench runs between (0,0) and (1,0), so a unit
-        // at (1,0) stands on the Nile side of the trench: entrenched.
-        board_mut(&mut state).terrain.insert(
-            HexCoord::new(0, 0),
-            Terrain::Nile {
-                direction: HexDirection::East,
-            },
-        );
-        board_mut(&mut state).hexsides.insert(
-            HexsideRef::new(HexCoord::new(0, 0), HexCoord::new(1, 0)),
-            HexsideKind::ZaribaTrench,
-        );
-        assert!(state.is_zariba_entrenched(HexCoord::new(1, 0)));
+        // The Nile side of the trench is the Zariba's own side -- the hex
+        // across it is open desert, as on the printed map.
+        let mut state = one_hex_zariba();
+        assert!(state.is_zariba_entrenched(HexCoord::new(1, 1)));
+        // The desert side of the same trench is not.
+        assert!(!state.is_zariba_entrenched(HexCoord::new(1, 0)));
 
         state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
         state.active_player = Player::Dervish;
-        let firer = make_dervish_tribal(&mut state, HexCoord::new(2, 0));
-        let target = make_ae_infantry(&mut state, HexCoord::new(1, 0));
+        let firer = make_dervish_tribal(&mut state, HexCoord::new(1, 0));
+        let target = make_ae_infantry(&mut state, HexCoord::new(1, 1));
         let mut attack = FireAttack {
             firing_player: Player::Dervish,
             phase: state.phase,
             kind: FireKind::Direct,
             firers: vec![firer],
-            target_hex: HexCoord::new(1, 0),
+            target_hex: HexCoord::new(1, 1),
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![],
         };
@@ -5582,19 +5832,22 @@ mod tests {
                 .contains(&FireModifier::ZaribaTrenchEntrenched)
         );
 
-        // ...and Dervish melee against the entrenched unit takes the -2
-        // DervishVsTrenchedDefender modifier alongside the +2 standard.
+        // ...and Dervish melee against the entrenched unit rolls at -2
+        // *instead of* the standard +2.
         let melee = MeleeAttack {
             attacker_player: Player::Dervish,
-            attacker_hex: HexCoord::new(2, 0),
-            defender_hex: HexCoord::new(1, 0),
+            attacker_hex: HexCoord::new(1, 0),
+            defender_hex: HexCoord::new(1, 1),
             attackers: vec![firer],
             defenders: vec![target],
             attacker_modifiers: vec![],
             defender_modifiers: vec![],
         };
         let (attacker_mods, _) = mandatory_melee_modifiers(&state, &melee);
-        assert!(attacker_mods.contains(&MeleeModifier::DervishVsTrenchedDefender));
+        assert_eq!(
+            attacker_mods,
+            vec![MeleeModifier::DervishVsTrenchedDefender]
+        );
     }
 
     // §9.342: every hex of the Fall-of-Khartoum mini-map is playable,
@@ -8039,11 +8292,11 @@ mod tests {
         for _ in 0..4 {
             make_dervish_tribal(&mut state, hex);
         }
-        // Ali Wad Helu: his colour is not pinned down by the rules, so he
-        // commands any tribe (§5.53) -- he free-stacks over the four Baggara.
-        let ali_wad_helu = state.alloc_unit_id();
+        // Yakub commands the grey Baggara (§5.53) -- he free-stacks over the
+        // four of them.
+        let yakub = state.alloc_unit_id();
         state.units.push(UnitPlacement {
-            id: ali_wad_helu,
+            id: yakub,
             position: hex,
             profile: UnitProfile {
                 kind: UnitKind::DervishLeader {
@@ -8051,7 +8304,7 @@ mod tests {
                     melee: 1,
                     movement: 15,
                 },
-                identity: UnitIdentity::DervishLeader(DervishLeader::AliWadHelu),
+                identity: UnitIdentity::DervishLeader(DervishLeader::Yakub),
                 weapon: WeaponClass::Melee,
                 fire: None,
                 melee: None,

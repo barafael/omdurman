@@ -35,40 +35,47 @@ impl BattalionOrdinal {
 /// match (§5.53) and the historical-scenario set-up hex (§9.212).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
 pub enum DervishLeader {
-    /// "K" set-up hex; controls Taiasha.
+    /// "K" set-up hex; black: the Taiasha (and the artillery).
+    #[strum(serialize = "Khalifa Abdullah")]
     KhalifaAbdullah,
-    /// "Y" set-up hex; Baggara/Jaalin command.
+    /// "Y" set-up hex; grey: Baggara and Jaalin.
     Yakub,
-    /// "S" set-up hex.
+    /// "S" set-up hex; red: the Danagla.
     Sherif,
-    /// "A" set-up hex.
+    /// "A" set-up hex; blue: Kehena and Degheim.
+    #[strum(serialize = "Ali Wad Helu")]
     AliWadHelu,
-    /// "O" set-up hex; commands Hadendowa.
+    /// "O" set-up hex; white: the Hadendowa.
+    #[strum(serialize = "Osman Digna")]
     OsmanDigna,
-    /// "D" set-up hex; commands Mulazmin & Jehadia.
+    /// "D" set-up hex; green: Mulazmin and Jehadia.
+    #[strum(serialize = "Sheik El Din")]
     SheikElDin,
 }
 
 impl DervishLeader {
     /// Whether this leader commands `tribe`, i.e. may stack with its units
     /// (§5.53: "Dervish leaders... may only stack with units of their command,
-    /// i.e. colour"). The rulebook gives the colour groupings by example; the
-    /// documented commands are Khalifa->Taiasha, Yakub->Baggara/Jaalin,
-    /// Osman Digna->Hadendowa, Sheik El Din->Mulazmin/Jehadia. Leaders whose
-    /// colour is not pinned down by the rules (Sherif, Ali Wad Helu) are treated
-    /// as commanding any tribe rather than over-restricting a legal stack.
+    /// i.e. colour"). The command is the leader's counter colour: Khalifa
+    /// black (Taiasha), Yakub grey (Baggara, Jaalin), Osman Digna white
+    /// (Hadendowa), Sheik El Din green (Mulazmin, Jehadia), Sherif red
+    /// (Danagla), Ali Wad Helu blue (Kehena, Degheim). Isa Zachneih, alone on
+    /// the east bank (§9.111), serves under no leader.
     pub fn commands(self, tribe: DervishTribe) -> bool {
-        match self {
-            DervishLeader::KhalifaAbdullah => tribe == DervishTribe::Taiasha,
-            DervishLeader::Yakub => {
-                matches!(tribe, DervishTribe::Baggara | DervishTribe::Jaalin)
-            }
-            DervishLeader::OsmanDigna => tribe == DervishTribe::Hadendowa,
-            DervishLeader::SheikElDin => {
-                matches!(tribe, DervishTribe::Mulazmin | DervishTribe::Jehadia)
-            }
-            // Colour not fixed by the rules text: do not restrict.
-            DervishLeader::Sherif | DervishLeader::AliWadHelu => true,
+        DervishLeader::of_tribe(tribe) == Some(self)
+    }
+
+    /// The leader whose colour `tribe` wears (see [`Self::commands`]): the
+    /// leader a Historical-scenario unit sets up near (§9.212).
+    pub fn of_tribe(tribe: DervishTribe) -> Option<DervishLeader> {
+        match tribe {
+            DervishTribe::Taiasha => Some(DervishLeader::KhalifaAbdullah),
+            DervishTribe::Baggara | DervishTribe::Jaalin => Some(DervishLeader::Yakub),
+            DervishTribe::Hadendowa => Some(DervishLeader::OsmanDigna),
+            DervishTribe::Mulazmin | DervishTribe::Jehadia => Some(DervishLeader::SheikElDin),
+            DervishTribe::Danagla => Some(DervishLeader::Sherif),
+            DervishTribe::Kehena | DervishTribe::Degheim => Some(DervishLeader::AliWadHelu),
+            DervishTribe::IsaZachneih => None,
         }
     }
 
@@ -115,7 +122,7 @@ pub enum BritishLeader {
 
 /// Named British gunboat (rulebook §6.64). Five "named" gunboats have howitzer
 /// fire; "old" gunboats do not (rulebook §2.32).
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum GunboatId {
     /// One of the five new-type named gunboats with howitzer capability.
     Named(NamedGunboat),
@@ -123,6 +130,18 @@ pub enum GunboatId {
     Old(OldGunboat),
     /// A Dervish gunboat (§9.111, §10.14).
     DervishGunboat(u8),
+}
+
+/// The boat's name for players ("Sultan", "Tamai"; a Dervish boat by number),
+/// not the variant ("Named").
+impl std::fmt::Display for GunboatId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GunboatId::Named(boat) => write!(f, "{boat}"),
+            GunboatId::Old(boat) => write!(f, "{boat}"),
+            GunboatId::DervishGunboat(n) => write!(f, "No. {n}"),
+        }
+    }
 }
 
 impl GunboatId {
@@ -149,6 +168,7 @@ pub enum NamedGunboat {
 /// in the Maxim Second Fire and Howitzer subphase (§6.42).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
 pub enum OldGunboat {
+    #[strum(serialize = "Lord Kitchener")]
     LordKitchener,
     Tamai,
     Metemmeh,
@@ -434,13 +454,7 @@ impl UnitIdentity {
             UnitIdentity::AngloEgyptianFort => "British Fort".into(),
             UnitIdentity::DervishGunboat(g) => format!("Dervish Gunboat {g}"),
             UnitIdentity::AngloEgyptianInfantry { brigade, battalion } => {
-                let nat = match brigade.nationality {
-                    BrigadeNationality::British => 'B',
-                    BrigadeNationality::Egyptian => 'E',
-                    BrigadeNationality::Sudanese => 'S',
-                    BrigadeNationality::Friendlies => 'F',
-                };
-                format!("{}{} {battalion} Btn", brigade.number, nat)
+                format!("{brigade} {battalion} Btn")
             }
             UnitIdentity::AngloEgyptianCavalry => "Cavalry".into(),
             UnitIdentity::AngloEgyptianCamelCorps => "Camel Corps".into(),
@@ -461,7 +475,10 @@ impl UnitIdentity {
 /// Only a full stack of four battalions qualifies.  Three or fewer may still
 /// stack and fire, but they receive no brigade-integrity bonus.
 pub fn brigade_integrity(identities: &[UnitIdentity]) -> BrigadeIntegrity {
-    let Some(brigade) = identities.first().and_then(|i| i.brigade()) else {
+    // Brigades as printed (§5.54): 1E is II Egyptian plus three Sudanese
+    // battalions (see `BrigadeId::designation`).
+    let printed = |i: &UnitIdentity| i.brigade().map(BrigadeId::designation);
+    let Some(brigade) = identities.first().and_then(printed) else {
         return BrigadeIntegrity::None;
     };
     // §5.54 names only "British, Sudanese, and Egyptian infantry" -- the
@@ -470,7 +487,7 @@ pub fn brigade_integrity(identities: &[UnitIdentity]) -> BrigadeIntegrity {
         return BrigadeIntegrity::None;
     }
     // Every firer must belong to the same brigade...
-    if !identities.iter().all(|i| i.brigade() == Some(brigade)) {
+    if !identities.iter().all(|i| printed(i) == Some(brigade)) {
         return BrigadeIntegrity::None;
     }
     // ...and all four battalion ordinals must be present.

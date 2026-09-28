@@ -316,10 +316,12 @@ enum LosBlock {
 /// unit features, then its note-e parallel-crest hexsides), then the crossed
 /// hexsides. Stops at the first block, so a boolean caller pays no more than
 /// the annotated path would.
+#[allow(clippy::too_many_arguments)]
 fn los_walk(
     board: &crate::board::BoardInfo,
     from: HexCoord,
     to: HexCoord,
+    line: Vec<HexCoord>,
     firer_level: LosLevel,
     target_level: LosLevel,
     unit_level_at: impl Fn(HexCoord) -> Option<LosLevel>,
@@ -333,7 +335,7 @@ fn los_walk(
 
     // Build the ray path: [from, intervening..., to].
     let mut path = vec![from];
-    path.extend(from.line_between(to));
+    path.extend(line);
     path.push(to);
 
     let total_steps = path.len().saturating_sub(1);
@@ -571,7 +573,7 @@ pub fn has_los(
         return true;
     }
 
-    los_walk(
+    los_rays(
         board,
         from,
         to,
@@ -582,6 +584,49 @@ pub fn has_los(
     )
     .1
     .is_none()
+}
+
+/// Walk the LOS ray from `from` to `to` (§6.3). A ray that runs exactly
+/// along hexsides has two candidate hex paths; it is clear if either is
+/// clear (as note d lets units fire down the length of a wall hexside),
+/// which also keeps line of sight reciprocal. Returns the path walked -- the
+/// clear one if any -- and the block on the first path when both are
+/// blocked.
+fn los_rays(
+    board: &crate::board::BoardInfo,
+    from: HexCoord,
+    to: HexCoord,
+    firer_level: LosLevel,
+    target_level: LosLevel,
+    unit_level_at: impl Fn(HexCoord) -> Option<LosLevel>,
+    breached: impl Fn(HexCoord, HexCoord) -> bool,
+) -> (Vec<HexCoord>, Option<LosBlock>) {
+    let line = from.line_between(to);
+    let other_side = from.line_between_other_side(to);
+    let first = los_walk(
+        board,
+        from,
+        to,
+        line.clone(),
+        firer_level,
+        target_level,
+        &unit_level_at,
+        &breached,
+    );
+    if first.1.is_none() || other_side == line {
+        return first;
+    }
+    let second = los_walk(
+        board,
+        from,
+        to,
+        other_side,
+        firer_level,
+        target_level,
+        &unit_level_at,
+        &breached,
+    );
+    if second.1.is_none() { second } else { first }
 }
 
 // ─── los_path_analysis ──────────────────────────────────────────────────
@@ -624,7 +669,7 @@ pub fn los_path_analysis(
             .collect();
     }
 
-    let (path, block) = los_walk(
+    let (path, block) = los_rays(
         board,
         from,
         to,
@@ -1250,6 +1295,35 @@ mod tests {
                 );
             }
         }
+    }
+
+    // §6.3: the ray is the straight line between the hex centres. Across
+    // the open plain south of the Zariba it crosses Jebel Surgham's rough
+    // slope at (35,19); the old greedy walk ran six hexes down the r axis
+    // first, round the slope, and saw the Historical Dervish set-up ground.
+    #[rulebook("§6.3")]
+    #[test]
+    fn los_ray_is_the_straight_line_on_the_campaign_board() {
+        let board = crate::board::BoardInfo::from_map_data(&crate::board_data::campaign_map_data());
+        assert!(matches!(
+            board.terrain_at(HexCoord::new(35, 19)),
+            Some(Terrain::Rough { .. })
+        ));
+        let (zariba, plain) = (HexCoord::new(36, 17), HexCoord::new(33, 23));
+        let sees = |a, b| {
+            has_los(
+                &board,
+                a,
+                b,
+                crate::FireKind::Direct,
+                LosLevel::Ground,
+                LosLevel::Ground,
+                |_| None,
+                |_, _| false,
+            )
+        };
+        assert!(!sees(zariba, plain));
+        assert!(!sees(plain, zariba), "line of sight is reciprocal");
     }
 
     #[rulebook("§6.3")]

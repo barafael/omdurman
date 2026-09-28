@@ -18,11 +18,14 @@ pub fn build_telegram_prompt(summary: &TurnSummary, scenario: Scenario) -> (Stri
             "at the Anglo-Egyptian headquarters near Omdurman, September 1898"
         }
     };
+    // Only the Campaign keeps victory points (§9.14); the Historical
+    // scenario counts units eliminated (§9.24), FALL OF KHARTOUM Gordon's
+    // fate and the Dervish losses (§9.35).
     let vp_rule = match scenario {
-        Scenario::FallOfKhartoum => {
+        Scenario::FallOfKhartoum | Scenario::Historical => {
             "- This battle keeps no score: never mention victory points or points.\n"
         }
-        Scenario::Campaign | Scenario::Historical => "",
+        Scenario::Campaign => "",
     };
     let system = format!(
         "You are a military telegraph operator {setting}. You write brief \

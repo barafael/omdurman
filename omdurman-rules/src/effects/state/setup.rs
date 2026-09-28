@@ -16,6 +16,48 @@ pub(crate) fn require_canonical_placement(p: &UnitPlacement) -> Result<(), RuleE
     Ok(())
 }
 
+/// Whether a counter of `identity` is in play in the Historical scenario:
+/// not GORDON or the "Friendlies" brigade (§9.211), not Isa Zachneih, the
+/// gunboats or the forts (§9.212).
+pub fn historical_in_play(identity: &crate::UnitIdentity) -> bool {
+    use crate::UnitIdentity;
+    match identity {
+        UnitIdentity::AngloEgyptianLeader(crate::BritishLeader::Gordon) => false,
+        identity if identity.is_friendlies() => false,
+        UnitIdentity::DervishTribal {
+            tribe: crate::DervishTribe::IsaZachneih,
+        } => false,
+        UnitIdentity::DervishGunboat(_)
+        | UnitIdentity::DervishFort
+        | UnitIdentity::AngloEgyptianFort => false,
+        _ => true,
+    }
+}
+
+/// Whether counter `id` is in play in the Historical scenario: a physical
+/// counter of the cut sheet ([`SectionName::SHEET_ORDER`]; the engine-only
+/// Kehena, Degheim, Danagla and Mulazmin ids duplicate counters printed in
+/// the leaders' blocks) of a type the scenario uses ([`historical_in_play`]).
+///
+/// [`SectionName::SHEET_ORDER`]: omdurman_types::SectionName::SHEET_ORDER
+pub fn historical_counter_in_play(id: UnitId) -> bool {
+    omdurman_types::SectionName::SHEET_ORDER.contains(&id.section_pos().0)
+        && crate::unit_profiles::profile_for_unit(id)
+            .is_some_and(|p| historical_in_play(&p.identity))
+}
+
+/// The Historical scenario's Kerreri detachment (§9.211): the two Camel
+/// Corps counters, the two Egyptian Cavalry squadrons and the Horse
+/// Artillery. (The 21st Lancers share the cavalry identity but set up in the
+/// Zariba, so the list is by counter.)
+pub const HISTORICAL_KERRERI_UNITS: [UnitId; 5] = [
+    UnitId::Kitchener_3_0,
+    UnitId::Kitchener_4_0,
+    UnitId::EgyptianArmy_0_0,
+    UnitId::EgyptianArmy_1_0,
+    UnitId::EgyptianArmy_2_0,
+];
+
 /// A Fall-of-Khartoum order-of-battle slot group (§9.321/§9.322): the
 /// manual counts by type and nationality, not by exact counter -- "two
 /// British infantry units" binds across all British battalions whatever
@@ -124,13 +166,13 @@ impl GameState {
                 "Dervish forces not yet deployed",
             ));
         }
-        // Fall of Khartoum pins both orders of battle (§9.321-9.322), so don't
-        // let the game leave Setup until each side has deployed its full
-        // contingent. The per-faction Ready button already gates on
-        // `setup_target_met`; this is defense-in-depth for the unbound
-        // "Begin battle" path and any future caller. Other scenarios have no
-        // fixed target (`setup_target_met` reduces to "at least one"), so they
-        // are unaffected.
+        // Fall of Khartoum and the Historical scenario pin both orders of
+        // battle (§9.211-9.212, §9.321-9.322), so don't let the game leave
+        // Setup until each side has deployed its full contingent. The
+        // per-faction Ready button already gates on `setup_target_met`; this
+        // is defense-in-depth for the unbound "Begin battle" path and any
+        // future caller. The Campaign has no fixed target
+        // (`setup_target_met` reduces to "at least one").
         if !self.setup_target_met(Player::AngloEgyptian) {
             return Err(RuleError::SetupIncomplete(
                 "Anglo-Egyptian order of battle not fully deployed",
@@ -162,14 +204,14 @@ impl GameState {
     }
 
     /// The number of units `player` must deploy before turn 1, when the scenario
-    /// pins it down. Only **Fall of Khartoum** has a bounded deploy-everything
-    /// setup -- British 17, Dervish 48 (§9.321-9.322), plus the §9.344 North Fort
-    /// (a scenario-fixed fort auto-placed by `FALL_OF_KHARTOUM_SETUP`). The
-    /// Historical scenario deploys by rule ("all remaining in the Zariba",
-    /// "within three hexes of a leader") and the Campaign is reinforcement-driven
-    /// (the A-E player starts with *no* units on the map, §9.113), so neither has
-    /// a fixed target: `None` there means "no hard count -- just show what's
-    /// deployed".
+    /// pins it down. **Fall of Khartoum**: British 17, Dervish 48
+    /// (§9.321-9.322), plus the scenario-fixed forts (Makran and Buri, the
+    /// §9.344 North Fort). **Historical**: every counter in play -- "all
+    /// remaining Anglo-Egyptian units set up in the 13 hexes of the Zariba",
+    /// "all remaining Dervish units set up within three hexes of their
+    /// leader" (§9.211/§9.212). The Campaign is reinforcement-driven (the A-E
+    /// player starts with *no* units on the map, §9.113): `None` there means
+    /// "no hard count -- just show what's deployed".
     pub fn setup_target(&self, player: Player) -> Option<usize> {
         match (self.scenario, player) {
             // 17 player-deployed garrison + the scenario-fixed Forts Makran
@@ -177,7 +219,17 @@ impl GameState {
             (Scenario::FallOfKhartoum, Player::AngloEgyptian) => Some(19),
             // 48 player-deployed entry force + 1 scenario-fixed North Fort fort.
             (Scenario::FallOfKhartoum, Player::Dervish) => Some(49),
-            _ => None,
+            (Scenario::Historical, player) => Some(
+                crate::UnitId::ALL
+                    .iter()
+                    .filter(|id| {
+                        historical_counter_in_play(**id)
+                            && crate::unit_profiles::profile_for_unit(**id)
+                                .is_some_and(|p| p.identity.owner() == player)
+                    })
+                    .count(),
+            ),
+            (Scenario::Campaign, _) => None,
         }
     }
 
@@ -210,13 +262,11 @@ impl GameState {
     ///   bottom row (no hex at `r+1`); the east edge is the diagonal of
     ///   rightmost hexes per row (no hex at `q+1`). Gunboats may also enter
     ///   from the west (Nile) edge (no hex at `q-1`).
-    /// - **Historical / Campaign** (§9.211-9.212, §9.11): permissive. The
-    ///   manual's constraints there are the 13 Zariba hexes, the Kerreri huts,
-    ///   and per-leader "within three hexes" color groups -- data the engine's
-    ///   `BoardInfo` does not carry (no Zariba-hex set, no Kerreri landmark, no
-    ///   per-unit leader color), so those are enforced by the scenario set-up
-    ///   plan / UI rather than this hex predicate. Documented, not silently
-    ///   dropped.
+    /// - **Historical / Campaign** (§9.211-9.212, §9.11): permissive here.
+    ///   The Historical areas depend on the counter and on what is already
+    ///   deployed (the Kerreri detachment, a leader's colour, the
+    ///   Anglo-Egyptians' line of sight), so [`Self::historical_set_up_area`]
+    ///   checks them per placement.
     pub fn in_deployment_zone(&self, player: Player, hex: HexCoord, is_boat: bool) -> bool {
         // No board attached -> permissive (unit tests, unbound session).
         if self.board.terrain.is_empty() {
@@ -242,7 +292,34 @@ impl GameState {
             return false;
         }
         match self.scenario {
-            Scenario::Historical | Scenario::Campaign => true,
+            Scenario::Campaign => true,
+            // The union of the §9.211/§9.212 set-up areas; which one binds a
+            // given counter is [`Self::historical_set_up_area`]'s business.
+            Scenario::Historical => match player {
+                Player::AngloEgyptian if is_boat => {
+                    hex.neighbors().into_iter().any(|n| self.board.is_zariba(n))
+                }
+                Player::AngloEgyptian => {
+                    self.board.is_zariba(hex)
+                        || self.board.location_at(hex) == Some(omdurman_types::Location::Kerreri)
+                }
+                Player::Dervish => {
+                    !is_boat
+                        && self.units.iter().any(|u| {
+                            matches!(u.profile.identity, crate::UnitIdentity::DervishLeader(_))
+                                && u.position.distance(hex) <= 3
+                        })
+                        && self
+                            .army_ashore_sighting(
+                                hex,
+                                self.board
+                                    .terrain_at(hex)
+                                    .map(crate::los_table::los_level)
+                                    .unwrap_or(crate::los_table::LosLevel::Ground),
+                            )
+                            .is_none()
+                }
+            },
             Scenario::FallOfKhartoum => {
                 // (§5.22 was already applied above.)
                 match player {
@@ -333,6 +410,102 @@ impl GameState {
         }
     }
 
+    /// Where a Historical-scenario counter may set up (§9.211/§9.212). The
+    /// Anglo-Egyptians: gunboats in Nile hexes adjacent to the Zariba; the
+    /// Camel Corps, Egyptian Cavalry and Horse Artillery in the Kerreri hut
+    /// hexes; everything else in the 13 hexes of the Zariba. The Dervishes
+    /// (who set up second, seeing the whole Anglo-Egyptian deployment):
+    /// within three hexes of the leader of their colour, and out of the line
+    /// of sight of the Anglo-Egyptian units ashore. The leaders themselves
+    /// are the scenario's fixed placements on the lettered hexes. Permissive
+    /// without a board, like [`Self::in_deployment_zone`].
+    ///
+    /// The gunboats are left out of the line-of-sight test: at rough level
+    /// (§6.3 note b) a boat beside the Zariba sees over Jebel Surgham's
+    /// slopes to the Y, K, S and O hexes themselves, so counting them would
+    /// forbid the very hexes the scenario pins the leaders to -- and most of
+    /// the ground around them.
+    pub fn historical_set_up_area(&self, placement: &UnitPlacement) -> Result<(), RuleError> {
+        use crate::UnitIdentity;
+        if self.board.terrain.is_empty() {
+            return Ok(());
+        }
+        let hex = placement.position;
+        if placement.profile.identity.owner() == Player::AngloEgyptian {
+            let (inside, area) = if placement.profile.kind.is_boat() {
+                (
+                    hex.neighbors().into_iter().any(|n| self.board.is_zariba(n)),
+                    "gunboats start in Nile hexes adjacent to the Zariba (§9.211)",
+                )
+            } else if HISTORICAL_KERRERI_UNITS.contains(&placement.id) {
+                (
+                    self.board.location_at(hex) == Some(omdurman_types::Location::Kerreri),
+                    "the Camel Corps, Egyptian Cavalry and Horse Artillery start in the \
+                     village of Kerreri hut hexes (§9.211)",
+                )
+            } else {
+                (
+                    self.board.is_zariba(hex),
+                    "the Anglo-Egyptian units set up in the 13 hexes of the Zariba (§9.211)",
+                )
+            };
+            return if inside {
+                Ok(())
+            } else {
+                Err(RuleError::HistoricalSetUpArea { hex, area })
+            };
+        }
+        let leader = match placement.profile.identity {
+            UnitIdentity::DervishTribal { tribe } => crate::DervishLeader::of_tribe(tribe),
+            // The three guns are the Khalifa's black counters.
+            UnitIdentity::DervishArtillery => Some(crate::DervishLeader::KhalifaAbdullah),
+            _ => None,
+        };
+        if let Some(leader) = leader {
+            let near = self.units.iter().any(|u| {
+                u.profile.identity == UnitIdentity::DervishLeader(leader)
+                    && u.position.distance(hex) <= 3
+            });
+            if !near {
+                return Err(RuleError::SetUpFarFromLeader { hex, leader });
+            }
+        }
+        let own_level =
+            crate::los_table::los_level_for_unit(placement.profile.kind, hex, &self.board);
+        match self.army_ashore_sighting(hex, own_level) {
+            Some(seen_from) => Err(RuleError::SetUpInEnemySight { hex, seen_from }),
+            None => Ok(()),
+        }
+    }
+
+    /// The hex of an Anglo-Egyptian land unit with a line of sight to `hex`
+    /// (at LOS level `level`), if any -- the §9.212 "out of the line of
+    /// sight" test (gunboats excluded, see [`Self::historical_set_up_area`]).
+    fn army_ashore_sighting(
+        &self,
+        hex: HexCoord,
+        level: crate::los_table::LosLevel,
+    ) -> Option<HexCoord> {
+        self.units
+            .iter()
+            .filter(|u| {
+                u.profile.identity.owner() == Player::AngloEgyptian && !u.profile.kind.is_boat()
+            })
+            .find(|u| {
+                crate::los_table::has_los(
+                    &self.board,
+                    u.position,
+                    hex,
+                    crate::FireKind::Direct,
+                    crate::los_table::los_level_for_unit(u.profile.kind, u.position, &self.board),
+                    level,
+                    self.los_unit_blocker(),
+                    |a, b| self.wall_is_breached(a, b),
+                )
+            })
+            .map(|u| u.position)
+    }
+
     /// Guard shared by every setup placement: the action is legal only during
     /// [`Phase::Setup`] (§9.2/§9.3/§10).
     fn require_setup_phase(&self) -> Result<(), RuleError> {
@@ -356,16 +529,26 @@ impl GameState {
         // reinforcement, §9.112/§9.113), and the Historical scenario excludes
         // its not-in-play units outright (§9.211/§9.212).
         self.unit_in_play_at_setup(placement)?;
+        // The scenario's own fixed counters (GORDON, the North Fort, the
+        // Historical leaders) are placed by the scenario at game start.
+        let fixed = crate::scenario_setup::is_fixed_placement(self.scenario, placement.id);
+        // Per-counter Historical areas first: they name the exact rule.
+        if self.scenario == Scenario::Historical && !fixed {
+            self.historical_set_up_area(placement)?;
+        }
+        // (The Historical leaders' letters lie outside the zone union, which
+        // is drawn around the leaders themselves.)
+        let exempt = fixed && self.scenario == Scenario::Historical;
         let owner = placement.profile.identity.owner();
-        if !self.in_deployment_zone(owner, placement.position, placement.profile.kind.is_boat()) {
+        if !exempt
+            && !self.in_deployment_zone(owner, placement.position, placement.profile.kind.is_boat())
+        {
             return Err(RuleError::OutsideDeploymentZone(placement.position));
         }
         self.check_stacking(placement, placement.position)?;
         // Set-up order (§9.111/§9.211/§9.321), checked after the placement's
         // own legality so a misplaced counter reports what is wrong with it.
-        // The scenario's own fixed counters (GORDON, the North Fort, the
-        // Historical leaders) are placed by the scenario at game start.
-        if !crate::scenario_setup::is_fixed_placement(self.scenario, placement.id) {
+        if !fixed {
             self.require_setup_turn(placement.profile.identity.owner())?;
         }
         // A peer may not invent unit values: the counter enters with its
@@ -426,21 +609,13 @@ impl GameState {
                 | UnitIdentity::DervishGunboat(_) => Ok(()),
                 _ => Err(RuleError::NotInPlay(placement.id)),
             },
-            Scenario::Historical => match placement.profile.identity {
-                // §9.211: GORDON and the "Friendlies" brigade are not in play.
-                UnitIdentity::AngloEgyptianLeader(crate::BritishLeader::Gordon) => {
+            Scenario::Historical => {
+                if historical_counter_in_play(placement.id) {
+                    Ok(())
+                } else {
                     Err(RuleError::NotInPlay(placement.id))
                 }
-                identity if identity.is_friendlies() => Err(RuleError::NotInPlay(placement.id)),
-                // §9.212: Isa Zachneih, gunboats, and forts are not in play.
-                UnitIdentity::DervishTribal {
-                    tribe: crate::DervishTribe::IsaZachneih,
-                } => Err(RuleError::NotInPlay(placement.id)),
-                UnitIdentity::DervishGunboat(_)
-                | UnitIdentity::DervishFort
-                | UnitIdentity::AngloEgyptianFort => Err(RuleError::NotInPlay(placement.id)),
-                _ => Ok(()),
-            },
+            }
             Scenario::FallOfKhartoum => {
                 // §9.321/§9.322 orders of battle with their exact per-type
                 // counts (grouped: the manual counts "two British infantry
