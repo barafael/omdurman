@@ -144,13 +144,10 @@ item when it is fixed.
 
 ## Verification
 
-- `score_elimination_records_exactly_what_it_scores` and
-  `river_mine_sinking_removes_the_gunboat` (both through elimination
-  scoring) do not finish locally: the first runs out of memory with ~10 GB
-  free (the architecture notes give 13-14 GB), the second was still in
-  symbolic execution at 7.8 GB after 20 minutes. Re-run them on a bigger box (the manual CI
-  `kani` job). Every other harness touched by the 2026-09 rules audit
-  verifies locally.
+- `score_elimination_records_exactly_what_it_scores` runs out of memory with
+  ~10 GB free: reading the pushed `Observation`s back out of the ledger
+  dominates the propositional reduction (see `docs/kani.md`). Verify it on a
+  bigger box (`run-kani.sh`), or find a cheaper way to state the check.
 - 22 Kani harnesses have no `// §N` annotation and are not tracked in
   `traceability.toml` (e.g. `distance_is_symmetric`, `game_over_is_absorbing`,
   `sink_chain_is_atomic`, `place_mine_is_atomic`).

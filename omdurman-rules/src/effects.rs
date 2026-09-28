@@ -141,6 +141,12 @@ mod tests;
 ///    `advance_phase`, `advance_phase` under the latch harness,
 ///    `resolve_melee_combat` under `ResolveMelee`) -- hence the `-Z stubbing`
 ///    and `--features kani` (logging gated out) defaults in `scripts/kani.sh`.
+/// 4. **Drop glue and loose unwind bounds.** Letting the state drop at the
+///    end walks every ledger's `Vec<String>` drop glue, and a blanket
+///    `unwind(14)` unrolls every loop the solver cannot bound to 14 trips.
+///    Harnesses end with [`GameState::kani_discard`] and use `unwind(4)`: the
+///    unwinding assertions stay on, so a bound that verifies is complete
+///    (see `docs/kani.md`).
 ///
 /// # Status
 ///
@@ -367,10 +373,11 @@ mod verification {
     // keeps the reachable code proportional to the effect under test.
 
     #[kani::proof]
-    #[kani::unwind(14)]
+    #[kani::unwind(4)]
     fn sink_chain_is_atomic() {
         let mut state = any_state();
         assert_atomic(&mut state, |s| apply_sink_chain(s, &[IDS[0]], DieRoll::Ten));
+        state.kani_discard();
     }
 
     /// Pinned to the Setup phase: every other phase rejects in
@@ -379,20 +386,22 @@ mod verification {
     /// the one that can mutate (the latch plus the auto-advance), which is
     /// what the atomicity proof is about.
     #[kani::proof]
-    #[kani::unwind(14)]
+    #[kani::unwind(4)]
     fn confirm_setup_ready_is_atomic() {
         let mut state = any_state();
         state.phase = Phase::Setup;
         let player = any_player();
         assert_atomic(&mut state, |s| apply_confirm_setup_ready(s, player));
+        state.kani_discard();
     }
 
     #[kani::proof]
-    #[kani::unwind(14)]
+    #[kani::unwind(4)]
     fn place_mine_is_atomic() {
         let mut state = any_state();
         let hex = any_hex();
         assert_atomic(&mut state, |s| apply_place_mine(s, hex));
+        state.kani_discard();
     }
 
     // -- Rung 2: one-way latches -------------------------------------------
@@ -402,16 +411,17 @@ mod verification {
     // un-set a latch.
 
     #[kani::proof]
-    #[kani::unwind(14)]
+    #[kani::unwind(4)]
     fn game_over_is_monotonic() {
         let mut state = any_state();
         state.game_over = true;
         let _ = apply_effect(&mut state, &GameEffect::ResolveMelee);
         assert!(state.game_over, "game_over was cleared");
+        state.kani_discard();
     }
 
     #[kani::proof]
-    #[kani::unwind(14)]
+    #[kani::unwind(4)]
     #[kani::stub(advance_phase, stub_advance_phase_ok)]
     fn setup_ready_latches_are_monotonic() {
         let mut state = any_state();
@@ -431,15 +441,17 @@ mod verification {
             state.setup_ready_dervish,
             "Dervish setup-ready latch was cleared"
         );
+        state.kani_discard();
     }
 
     #[kani::proof]
-    #[kani::unwind(14)]
+    #[kani::unwind(4)]
     fn dervish_desertion_latch_is_monotonic() {
         let mut state = any_state();
         state.dervish_deserted = true;
         let _ = apply_dervish_desertion(&mut state, any_die_roll(), &[]);
         assert!(state.dervish_deserted, "desertion latch was cleared");
+        state.kani_discard();
     }
 
     // -- Rung 3: post-conditions of a successful apply ---------------------
@@ -447,7 +459,7 @@ mod verification {
     /// After a successful apply no per-phase tracker may name a unit that has
     /// left the board -- the `prune_dead_trackers` post-condition.
     #[kani::proof]
-    #[kani::unwind(14)]
+    #[kani::unwind(4)]
     fn ok_leaves_no_dangling_tracker_refs() {
         let mut state = any_state();
         let hex = any_hex();
@@ -459,18 +471,20 @@ mod verification {
                 assert!(state.find_unit(*id).is_some());
             }
         }
+        state.kani_discard();
     }
 
     /// Once `game_over` is set every later effect is rejected up front and the
     /// state is frozen.
     #[kani::proof]
-    #[kani::unwind(14)]
+    #[kani::unwind(4)]
     fn game_over_is_absorbing() {
         let mut state = any_state();
         state.game_over = true;
         let before = snapshot(&state);
         assert!(apply_effect(&mut state, &GameEffect::ResolveMelee).is_err());
         assert!(snapshot(&state) == before);
+        state.kani_discard();
     }
 
     // -- Rung 4: ResolveMelee ----------------------------------------------
@@ -480,10 +494,11 @@ mod verification {
     /// used to `take()` `pending_melee` *before* delegating to
     /// the resolution, which rejected a wrong phase -- the same silent loss
     /// `advance_phase` already guards ("audit: 76 declared melees vanished this
-    /// way").
+    /// way"). `unwind(7)`: the attacker re-check scans the target's six
+    /// neighbours.
     // §7.5
     #[kani::proof]
-    #[kani::unwind(14)]
+    #[kani::unwind(7)]
     #[kani::stub(crate::effects::melee::resolve_melee_combat, stub_resolve_melee_combat)]
     fn resolve_melee_is_atomic() {
         let mut state = any_state();
@@ -501,6 +516,7 @@ mod verification {
             defender_roll: any_die_roll(),
         });
         assert_atomic(&mut state, apply_resolve_melee);
+        state.kani_discard();
     }
 
     // -- Rung 5: AdvancePhase ----------------------------------------------
@@ -525,7 +541,7 @@ mod verification {
     /// The Setup-side guard additionally needs an under-deployed board, which
     /// `any_state` (two units, one per side) cannot produce.
     #[kani::proof]
-    #[kani::unwind(14)]
+    #[kani::unwind(4)]
     #[kani::stub(end_player_turn, stub_end_player_turn)]
     fn advance_phase_is_atomic() {
         let mut state = any_state();
@@ -547,6 +563,7 @@ mod verification {
             .vacated_by_combat
             .insert(state.units[0].position, vec![IDS[0]]);
         assert_atomic(&mut state, advance_phase);
+        state.kani_discard();
     }
 
     // -- The stacking law (§5.51-5.53) -------------------------------------

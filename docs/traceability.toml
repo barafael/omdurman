@@ -108,7 +108,7 @@ tests = [
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 1168
+line = 1170
 symbol = "BrigadeId"
 
 [[mapping.impl]]
@@ -118,12 +118,12 @@ symbol = "UnitProfile"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/lib.rs"
-line = 14
+line = 16
 symbol = "BrigadeId"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 795
+line = 797
 symbol = "SpriteAnnotation"
 
 [[mapping]]
@@ -335,17 +335,17 @@ symbol = "movement_cost_with_road"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 583
+line = 585
 symbol = "Terrain::has_road"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 520
+line = 522
 symbol = "Terrain::passable_by_land"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 588
+line = 590
 symbol = "Terrain::is_crossroad"
 
 [[mapping.impl]]
@@ -481,17 +481,17 @@ tests = [
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 223
+line = 225
 symbol = "HexsideRef"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 258
+line = 260
 symbol = "HexsideKind"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 336
+line = 338
 symbol = "blocks_movement"
 
 [[mapping.impl]]
@@ -534,7 +534,7 @@ symbol = "GunboatMovement"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 1092
+line = 1094
 symbol = "is_boat"
 
 [[mapping]]
@@ -550,7 +550,7 @@ symbol = "Immobile"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 1049
+line = 1051
 symbol = "UnitKind::Fort"
 
 [[mapping.impl]]
@@ -699,12 +699,12 @@ symbol = "ZocReason"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 263
+line = 265
 symbol = "Wall"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 272
+line = 274
 symbol = "Khor"
 
 [[mapping.impl]]
@@ -718,7 +718,7 @@ symbol = "unit_projects_zoc"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 354
+line = 356
 symbol = "HexsideKind::blocks_zoc"
 
 [[mapping.impl]]
@@ -880,7 +880,7 @@ symbol = "BattalionOrdinal"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 1168
+line = 1170
 symbol = "BrigadeId"
 
 # =============================================================================
@@ -1231,16 +1231,16 @@ symbol = "has_los"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 301
+line = 303
 symbol = "HexsideKind::blocks_los"
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 301
+line = 303
 symbol = "Terrain::blocks_los"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 537
+line = 539
 symbol = "Terrain::is_los_trees"
 
 
@@ -1303,7 +1303,7 @@ symbol = "MaximSecondAndHowitzer"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 1110
+line = 1112
 symbol = "fires_twice"
 
 # §6.5 -- Special Unit Capabilities
@@ -1341,12 +1341,12 @@ symbol = "BritishLeader"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 1057
+line = 1059
 symbol = "BritishLeader"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 1098
+line = 1100
 symbol = "has_combat_factors"
 
 [[mapping]]
@@ -1368,7 +1368,7 @@ symbol = "is_friendlies"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 1140
+line = 1142
 symbol = "Friendlies"
 
 [[mapping]]
@@ -1508,7 +1508,7 @@ tests = [
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 269
+line = 271
 symbol = "Breach"
 
 [[mapping.impl]]
@@ -1636,7 +1636,7 @@ symbol = "apply_advance_after_combat"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 319
+line = 321
 symbol = "blocks_advance_after_combat"
 
 [[mapping.impl]]
@@ -1681,7 +1681,7 @@ symbol = "MeleeFactor::sum"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 1081
+line = 1083
 symbol = "may_be_melee_attacked"
 
 [[mapping]]
@@ -1700,7 +1700,7 @@ tests = [
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 308
+line = 310
 symbol = "blocks_melee"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state/melee.rs"
@@ -1739,17 +1739,17 @@ tests = [
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 1070
+line = 1072
 symbol = "may_melee_attack"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 1007
+line = 1009
 symbol = "UnitKind"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 840
+line = 842
 symbol = "DervishTribe"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state/melee.rs"
@@ -1787,7 +1787,7 @@ symbol = "apply_retreat_before_melee"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 1087
+line = 1089
 symbol = "may_retreat_before_melee"
 
 [[mapping.impl]]
@@ -1920,7 +1920,7 @@ symbol = "MovementAllowance::halve"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 907
+line = 909
 symbol = "DayNight"
 
 [[mapping.impl]]
@@ -2057,17 +2057,17 @@ symbol = "dervish_campaign_schedule"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 610
+line = 612
 symbol = "Location"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 720
+line = 722
 symbol = "SetupLetter"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 863
+line = 865
 symbol = "Faction"
 
 [[mapping]]
@@ -2200,7 +2200,7 @@ symbol = "CampaignVictoryLevel::from_superiority"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/victory.rs"
-line = 75
+line = 87
 symbol = "score_elimination"
 
 [[mapping.impl]]
@@ -2320,7 +2320,7 @@ symbol = "ZaribaThornHedge"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 277
+line = 279
 symbol = "ZaribaThornHedge"
 
 [[mapping.impl]]
@@ -2347,7 +2347,7 @@ symbol = "ZaribaTrenchEntrenched"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 279
+line = 281
 symbol = "ZaribaTrench"
 
 [[mapping.impl]]
@@ -2370,7 +2370,7 @@ tests = [
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 336
+line = 338
 symbol = "blocks_movement"
 
 [[mapping.impl]]
@@ -2471,7 +2471,7 @@ symbol = "ali_wad_helu"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 971
+line = 973
 symbol = "sections_for_picker"
 
 [[mapping]]
@@ -2583,7 +2583,7 @@ symbol = "is_nile_mouth_crossing"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-line = 635
+line = 637
 symbol = "Location::WhiteNileMouth"
 
 [[mapping]]

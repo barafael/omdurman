@@ -169,26 +169,26 @@ Certain charts and tables are needed to play the game. The Terrain Effects Chart
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-types/src/lib.rs", 1168) \ #github-link("omdurman-types/src/lib.rs", 1168)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L1168")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[BrigadeId]]]], [#raw("1166 │ /// same field for uniform handling.
-1167 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-1168 │ pub struct BrigadeId {
-1169 │     pub number: u8,
-1170 │     pub nationality: BrigadeNationality,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 1170) \ #github-link("omdurman-types/src/lib.rs", 1170)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L1170")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[BrigadeId]]]], [#raw("1168 │ /// same field for uniform handling.
+1169 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+1170 │ pub struct BrigadeId {
+1171 │     pub number: u8,
+1172 │     pub nationality: BrigadeNationality,", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/unit.rs", 514) \ #github-link("omdurman-rules/src/unit.rs", 514)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L514")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[UnitProfile]]]], [#raw("512 │ /// print no melee value).
 513 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 514 │ pub struct UnitProfile {
 515 │     pub kind: UnitKind,
 516 │     pub identity: UnitIdentity,", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/lib.rs", 14) \ #github-link("omdurman-rules/src/lib.rs", 14)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/lib.rs#L14")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[BrigadeId]]]], [#raw(" 12 │ 
- 13 │ use omdurman_types::{
- 14 │     BrigadeId, BrigadeNationality, DayNight, DervishTribe, HexCoord, Player, UnitKind,
- 15 │ };
- 16 │ ", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 795) \ #github-link("omdurman-types/src/lib.rs", 795)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L795")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[SpriteAnnotation]]]], [#raw("793 │ /// as an optional overlay over the compiled `sprite_data` fallback.
-794 │ #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-795 │ pub struct SpriteAnnotation {
-796 │     pub color: SpriteColor,
-797 │     pub faction: Option<Faction>,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/lib.rs", 16) \ #github-link("omdurman-rules/src/lib.rs", 16)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/lib.rs#L16")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[BrigadeId]]]], [#raw(" 14 │ 
+ 15 │ use omdurman_types::{
+ 16 │     BrigadeId, BrigadeNationality, DayNight, DervishTribe, HexCoord, Player, UnitKind,
+ 17 │ };
+ 18 │ ", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 797) \ #github-link("omdurman-types/src/lib.rs", 797)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L797")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[SpriteAnnotation]]]], [#raw("795 │ /// as an optional overlay over the compiled `sprite_data` fallback.
+796 │ #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+797 │ pub struct SpriteAnnotation {
+798 │     pub color: SpriteColor,
+799 │     pub faction: Option<Faction>,", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Covered by tests: #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::unit_profiles::british_army_row_zero_specials_classify_by_counter]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::unit_profiles::egyptian_army_row_zero_specials_classify_by_counter]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::unit_profiles::tribe_stats_come_from_annotation]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::unit_profiles::section_owner_dervish_sections]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::unit_profiles::section_owner_green_sections_are_dervish]]]
@@ -509,21 +509,21 @@ The Zariba trench and thorn hedge hexsides are built and in place in the histori
  87 │ pub fn movement_cost_with_road(terrain: Terrain, along_road: bool) -> Option<MovementAllowance> {
  88 │     if along_road && !terrain.is_nile() {
  89 │         Some(MovementAllowance::One)", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 583) \ #github-link("omdurman-types/src/lib.rs", 583)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L583")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Terrain::has_road]]]], [#raw("581 │ 
-582 │     /// Whether this hex has any road touching it.
-583 │     pub fn has_road(self) -> bool {
-584 │         !matches!(self.road(), Road::None)
-585 │     }", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 520) \ #github-link("omdurman-types/src/lib.rs", 520)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L520")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Terrain::passable_by_land]]]], [#raw("518 │ 
-519 │     /// Whether this terrain may be entered by land units (rulebook §5.11).
-520 │     pub fn passable_by_land(self) -> bool {
-521 │         !self.is_nile()
-522 │     }", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 588) \ #github-link("omdurman-types/src/lib.rs", 588)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L588")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Terrain::is_crossroad]]]], [#raw("586 │ 
-587 │     /// Whether roads converge at this hex's centre.
-588 │     pub fn is_crossroad(self) -> bool {
-589 │         matches!(self.road(), Road::Crossroad)
-590 │     }", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 585) \ #github-link("omdurman-types/src/lib.rs", 585)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L585")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Terrain::has_road]]]], [#raw("583 │ 
+584 │     /// Whether this hex has any road touching it.
+585 │     pub fn has_road(self) -> bool {
+586 │         !matches!(self.road(), Road::None)
+587 │     }", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 522) \ #github-link("omdurman-types/src/lib.rs", 522)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L522")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Terrain::passable_by_land]]]], [#raw("520 │ 
+521 │     /// Whether this terrain may be entered by land units (rulebook §5.11).
+522 │     pub fn passable_by_land(self) -> bool {
+523 │         !self.is_nile()
+524 │     }", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 590) \ #github-link("omdurman-types/src/lib.rs", 590)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L590")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Terrain::is_crossroad]]]], [#raw("588 │ 
+589 │     /// Whether roads converge at this hex's centre.
+590 │     pub fn is_crossroad(self) -> bool {
+591 │         matches!(self.road(), Road::Crossroad)
+592 │     }", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/board.rs", 462) \ #github-link("omdurman-rules/src/board.rs", 462)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/board.rs#L462")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[BoardInfo::roads]]]], [#raw("460 │             tiles: tiles.into_iter().collect(),
 461 │             hexsides: Vec::new(),
 462 │             roads: Vec::new(),
@@ -676,21 +676,21 @@ c) on the Anglo-Egyptian player's third turn the "Friendlies" unit may disembark
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-types/src/lib.rs", 223) \ #github-link("omdurman-types/src/lib.rs", 223)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L223")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[HexsideRef]]]], [#raw("221 │ /// data by [`HexsideRef`].
-222 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-223 │ pub struct HexsideRef {
-224 │     pub a: HexCoord,
-225 │     pub b: HexCoord,", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 258) \ #github-link("omdurman-types/src/lib.rs", 258)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L258")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[HexsideKind]]]], [#raw("256 │     strum::EnumIter,
-257 │ )]
-258 │ pub enum HexsideKind {
-259 │     /// City wall (Khartoum, walled city of Omdurman). Blocks LOS, blocks
-260 │     /// movement except across gates/breaches (§5.23), blocks ZOC into the city", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 336) \ #github-link("omdurman-types/src/lib.rs", 336)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L336")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[blocks_movement]]]], [#raw("334 │     /// `omdurman-rules`). The trench *end* variants are therefore intentionally
-335 │     /// not blocking.
-336 │     pub fn blocks_movement(self) -> bool {
-337 │         matches!(
-338 │             self,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 225) \ #github-link("omdurman-types/src/lib.rs", 225)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L225")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[HexsideRef]]]], [#raw("223 │ /// data by [`HexsideRef`].
+224 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+225 │ pub struct HexsideRef {
+226 │     pub a: HexCoord,
+227 │     pub b: HexCoord,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 260) \ #github-link("omdurman-types/src/lib.rs", 260)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L260")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[HexsideKind]]]], [#raw("258 │     strum::EnumIter,
+259 │ )]
+260 │ pub enum HexsideKind {
+261 │     /// City wall (Khartoum, walled city of Omdurman). Blocks LOS, blocks
+262 │     /// movement except across gates/breaches (§5.23), blocks ZOC into the city", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 338) \ #github-link("omdurman-types/src/lib.rs", 338)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L338")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[blocks_movement]]]], [#raw("336 │     /// `omdurman-rules`). The trench *end* variants are therefore intentionally
+337 │     /// not blocking.
+338 │     pub fn blocks_movement(self) -> bool {
+339 │         matches!(
+340 │             self,", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/unit.rs", 365) \ #github-link("omdurman-rules/src/unit.rs", 365)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L365")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[may_enter_walled_city]]]], [#raw("363 │     /// Taiasha bodyguard may enter. Anglo-Egyptian: any unit that can reach the
 364 │     /// walled city *except* gunboats and \"Friendlies\".
 365 │     pub fn may_enter_walled_city(&self) -> bool {
@@ -731,11 +731,11 @@ c) on the Anglo-Egyptian player's third turn the "Friendlies" unit may disembark
 263 │ pub struct GunboatMovement {
 264 │     pub upstream: MovementAllowance,
 265 │     pub downstream: MovementAllowance,", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 1092) \ #github-link("omdurman-types/src/lib.rs", 1092)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L1092")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[is_boat]]]], [#raw("1090 │ 
-1091 │     /// Gunboats use the split upstream/downstream movement allowance (§5.24).
-1092 │     pub fn is_boat(self) -> bool {
-1093 │         matches!(self, UnitKind::Gunboat { .. })
-1094 │     }", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 1094) \ #github-link("omdurman-types/src/lib.rs", 1094)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L1094")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[is_boat]]]], [#raw("1092 │ 
+1093 │     /// Gunboats use the split upstream/downstream movement allowance (§5.24).
+1094 │     pub fn is_boat(self) -> bool {
+1095 │         matches!(self, UnitKind::Gunboat { .. })
+1096 │     }", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Proven by: #box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[omdurman-types::src::lib::unit_kind_fire_and_movement_capability_law_is_exact]] #box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[omdurman-types::src::lib::hex_direction_from_index_is_total_mod_six]] #box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[omdurman-types::src::lib::nile_flow_rotation_composes_and_never_leaves_the_nile]]]
@@ -758,11 +758,11 @@ c) on the Anglo-Egyptian player's third turn the "Friendlies" unit may disembark
 529 │     Immobile,
 530 │ }
 531 │ ", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 1049) \ #github-link("omdurman-types/src/lib.rs", 1049)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L1049")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[UnitKind::Fort]]]], [#raw("1047 │     /// Permanent emplacement (§6.54): fire (artillery) / melee (defensive).
-1048 │     /// May not move once placed (§5.25).
-1049 │     Fort { fire: i32, melee: i32 },
-1050 │     /// Dervish leader (§6.51): fire / melee / movement. May melee attack (§7.4).
-1051 │     DervishLeader {", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 1051) \ #github-link("omdurman-types/src/lib.rs", 1051)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L1051")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[UnitKind::Fort]]]], [#raw("1049 │     /// Permanent emplacement (§6.54): fire (artillery) / melee (defensive).
+1050 │     /// May not move once placed (§5.25).
+1051 │     Fort { fire: i32, melee: i32 },
+1052 │     /// Dervish leader (§6.51): fire / melee / movement. May melee attack (§7.4).
+1053 │     DervishLeader {", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/unit.rs", 529) \ #github-link("omdurman-rules/src/unit.rs", 529)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/unit.rs#L529")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[UnitMovement::Immobile]]]], [#raw("527 │     Gunboat(GunboatMovement),
 528 │     /// Forts may not move once placed (§5.25).
 529 │     Immobile,
@@ -902,16 +902,16 @@ c) on the Anglo-Egyptian player's third turn the "Friendlies" unit may disembark
 584 │ pub enum ZocReason {
 585 │     /// Normal ZOC: any non-disrupted unit other than an Anglo-Egyptian
 586 │     /// leader (§5.41) projects ZOC into each of its six adjacent hexes.", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 263) \ #github-link("omdurman-types/src/lib.rs", 263)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L263")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Wall]]]], [#raw("261 │     /// (§5.44), blocks melee (§7.2), blocks advance-after-combat (§6.82).
-262 │     #[default]
-263 │     Wall,
-264 │     /// Gate hexside in a wall. ZOC extends *out of* the walled city through
-265 │     /// gates but not into it (§5.44). Melee may be made through a gate (§7.2).", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 272) \ #github-link("omdurman-types/src/lib.rs", 272)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L272")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Khor]]]], [#raw("270 │     /// Khor -- gully/wadi. ZOCs do not extend across (§5.44); advance after
-271 │     /// combat may not cross (§6.82).
-272 │     Khor,
-273 │     /// Crest line. Blocks LOS unless the firer is on the higher side
-274 │     /// (§6.3 note 7).", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 265) \ #github-link("omdurman-types/src/lib.rs", 265)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L265")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Wall]]]], [#raw("263 │     /// (§5.44), blocks melee (§7.2), blocks advance-after-combat (§6.82).
+264 │     #[default]
+265 │     Wall,
+266 │     /// Gate hexside in a wall. ZOC extends *out of* the walled city through
+267 │     /// gates but not into it (§5.44). Melee may be made through a gate (§7.2).", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 274) \ #github-link("omdurman-types/src/lib.rs", 274)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L274")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Khor]]]], [#raw("272 │     /// Khor -- gully/wadi. ZOCs do not extend across (§5.44); advance after
+273 │     /// combat may not cross (§6.82).
+274 │     Khor,
+275 │     /// Crest line. Blocks LOS unless the firer is on the higher side
+276 │     /// (§6.3 note 7).", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/effects/state/stacking.rs", 247) \ #github-link("omdurman-rules/src/effects/state/stacking.rs", 247)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state/stacking.rs#L247")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[zoc_extends]]]], [#raw("245 │     ///   only outward (\"out of, but not into, a walled city hex\"), across a
 246 │     ///   breach both ways.
 247 │     pub fn zoc_extends(&self, unit: &UnitPlacement, into: HexCoord) -> bool {
@@ -922,11 +922,11 @@ c) on the Anglo-Egyptian player's third turn the "Friendlies" unit may disembark
 204 │     pub fn unit_projects_zoc(
 205 │         &self,
 206 │         unit: &UnitPlacement,", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 354) \ #github-link("omdurman-types/src/lib.rs", 354)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L354")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[HexsideKind::blocks_zoc]]]], [#raw("352 │     /// lets a Zariba unit's ZOC out). This predicate captures the \"does not
-353 │     /// extend across\" default.
-354 │     pub fn blocks_zoc(self) -> bool {
-355 │         matches!(
-356 │             self,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 356) \ #github-link("omdurman-types/src/lib.rs", 356)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L356")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[HexsideKind::blocks_zoc]]]], [#raw("354 │     /// lets a Zariba unit's ZOC out). This predicate captures the \"does not
+355 │     /// extend across\" default.
+356 │     pub fn blocks_zoc(self) -> bool {
+357 │         matches!(
+358 │             self,", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/effects/state/stacking.rs", 222) \ #github-link("omdurman-rules/src/effects/state/stacking.rs", 222)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state/stacking.rs#L222")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[hex_in_enemy_zoc]]]], [#raw("220 │     /// does not extend into or out of a Nile hex. With no board loaded these
 221 │     /// reduce to the plain adjacency rule.
 222 │     pub fn hex_in_enemy_zoc(
@@ -1072,11 +1072,11 @@ c) on the Anglo-Egyptian player's third turn the "Friendlies" unit may disembark
  20 │     pub enum BattalionOrdinal {
  21 │         First = 1,
  22 │         Second = 2,", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 1168) \ #github-link("omdurman-types/src/lib.rs", 1168)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L1168")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[BrigadeId]]]], [#raw("1166 │ /// same field for uniform handling.
-1167 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-1168 │ pub struct BrigadeId {
-1169 │     pub number: u8,
-1170 │     pub nationality: BrigadeNationality,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 1170) \ #github-link("omdurman-types/src/lib.rs", 1170)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L1170")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[BrigadeId]]]], [#raw("1168 │ /// same field for uniform handling.
+1169 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+1170 │ pub struct BrigadeId {
+1171 │     pub number: u8,
+1172 │     pub nationality: BrigadeNationality,", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Proven by: #box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[omdurman-rules::src::verification::brigade_integrity_requires_all_four_distinct_battalions_of_one_brigade]]]
@@ -1156,21 +1156,21 @@ This table is located on the back of this rulebook and should be self-explanator
 584 │ pub fn has_los(
 585 │     board: &crate::board::BoardInfo,
 586 │     from: HexCoord,", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 301) \ #github-link("omdurman-types/src/lib.rs", 301)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L301")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[HexsideKind::blocks_los]]]], [#raw("299 │     /// (LOS table conditions 2–4, 7) and note (e) are handled by the engine
-300 │     /// in `omdurman_rules::los_table`, not by this predicate.
-301 │     pub fn blocks_los(self) -> bool {
-302 │         matches!(self, HexsideKind::Wall | HexsideKind::Crest)
-303 │     }", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 301) \ #github-link("omdurman-types/src/lib.rs", 301)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L301")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Terrain::blocks_los]]]], [#raw("299 │     /// (LOS table conditions 2–4, 7) and note (e) are handled by the engine
-300 │     /// in `omdurman_rules::los_table`, not by this predicate.
-301 │     pub fn blocks_los(self) -> bool {
-302 │         matches!(self, HexsideKind::Wall | HexsideKind::Crest)
-303 │     }", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 537) \ #github-link("omdurman-types/src/lib.rs", 537)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L537")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Terrain::is_los_trees]]]], [#raw("535 │     /// (§6.3 note 1). Retained for compatibility; the full LOS engine
-536 │     /// checks `Terrain::Trees` directly.
-537 │     pub fn is_los_trees(self) -> bool {
-538 │         matches!(self, Terrain::Trees { .. })
-539 │     }", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 303) \ #github-link("omdurman-types/src/lib.rs", 303)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L303")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[HexsideKind::blocks_los]]]], [#raw("301 │     /// (LOS table conditions 2–4, 7) and note (e) are handled by the engine
+302 │     /// in `omdurman_rules::los_table`, not by this predicate.
+303 │     pub fn blocks_los(self) -> bool {
+304 │         matches!(self, HexsideKind::Wall | HexsideKind::Crest)
+305 │     }", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 303) \ #github-link("omdurman-types/src/lib.rs", 303)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L303")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Terrain::blocks_los]]]], [#raw("301 │     /// (LOS table conditions 2–4, 7) and note (e) are handled by the engine
+302 │     /// in `omdurman_rules::los_table`, not by this predicate.
+303 │     pub fn blocks_los(self) -> bool {
+304 │         matches!(self, HexsideKind::Wall | HexsideKind::Crest)
+305 │     }", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 539) \ #github-link("omdurman-types/src/lib.rs", 539)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L539")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Terrain::is_los_trees]]]], [#raw("537 │     /// (§6.3 note 1). Retained for compatibility; the full LOS engine
+538 │     /// checks `Terrain::Trees` directly.
+539 │     pub fn is_los_trees(self) -> bool {
+540 │         matches!(self, Terrain::Trees { .. })
+541 │     }", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Proven by: #box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[omdurman-types::src::lib::line_between_forms_a_connected_ray]] #box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[omdurman-types::src::lib::hexside_blocking_classifiers_are_exact]] #box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[omdurman-rules::src::los_table::los_level_depends_only_on_the_ground]] #box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[omdurman-rules::src::los_table::los_level_overrides_hold_for_gunboats_and_forts]] #box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[omdurman-rules::src::los_table::blocking_grid_is_total_and_walls_block_ground_firers]]]
@@ -1554,11 +1554,11 @@ In Defensive Fire phase, all of the non-moving player's units may fire at any of
  48 │     MaximSecondAndHowitzer,
  49 │ }
  50 │ ", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 1110) \ #github-link("omdurman-types/src/lib.rs", 1110)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L1110")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[fires_twice]]]], [#raw("1108 │     /// Maxim guns fire twice per turn -- once in the Direct Fire Subphase and
-1109 │     /// again in the Maxim Second Fire Subphase (rulebook §6.42).
-1110 │     pub fn fires_twice(self) -> bool {
-1111 │         matches!(self, UnitKind::Maxim { .. })
-1112 │     }", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 1112) \ #github-link("omdurman-types/src/lib.rs", 1112)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L1112")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[fires_twice]]]], [#raw("1110 │     /// Maxim guns fire twice per turn -- once in the Direct Fire Subphase and
+1111 │     /// again in the Maxim Second Fire Subphase (rulebook §6.42).
+1112 │     pub fn fires_twice(self) -> bool {
+1113 │         matches!(self, UnitKind::Maxim { .. })
+1114 │     }", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Proven by: #box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[omdurman-types::src::lib::unit_kind_fire_and_movement_capability_law_is_exact]]]
@@ -1579,16 +1579,16 @@ In Defensive Fire phase, all of the non-moving player's units may fire at any of
 115 │ pub enum BritishLeader {
 116 │     Kitchener,
 117 │     Gatacre,", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 1057) \ #github-link("omdurman-types/src/lib.rs", 1057)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L1057")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[BritishLeader]]]], [#raw("1055 │     },
-1056 │     /// Anglo-Egyptian leader (§6.51): movement only.
-1057 │     BritishLeader { movement: i32 },
-1058 │     /// Wall-breach marker placed by artillery fire (§6.63). Not a combat unit.
-1059 │     Breech,", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 1098) \ #github-link("omdurman-types/src/lib.rs", 1098)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L1098")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[has_combat_factors]]]], [#raw("1096 │     /// British leaders print a movement factor only (§6.51); other kinds carry
-1097 │     /// fire and/or melee factors. Markers carry no stats.
-1098 │     pub fn has_combat_factors(self) -> bool {
-1099 │         !matches!(
-1100 │             self,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 1059) \ #github-link("omdurman-types/src/lib.rs", 1059)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L1059")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[BritishLeader]]]], [#raw("1057 │     },
+1058 │     /// Anglo-Egyptian leader (§6.51): movement only.
+1059 │     BritishLeader { movement: i32 },
+1060 │     /// Wall-breach marker placed by artillery fire (§6.63). Not a combat unit.
+1061 │     Breech,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 1100) \ #github-link("omdurman-types/src/lib.rs", 1100)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L1100")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[has_combat_factors]]]], [#raw("1098 │     /// British leaders print a movement factor only (§6.51); other kinds carry
+1099 │     /// fire and/or melee factors. Markers carry no stats.
+1100 │     pub fn has_combat_factors(self) -> bool {
+1101 │         !matches!(
+1102 │             self,", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Proven by: #box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[omdurman-types::src::lib::unit_kind_fire_and_movement_capability_law_is_exact]]]
@@ -1609,11 +1609,11 @@ In Defensive Fire phase, all of the non-moving player's units may fire at any of
 339 │     pub fn is_friendlies(&self) -> bool {
 340 │         matches!(
 341 │             self,", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 1140) \ #github-link("omdurman-types/src/lib.rs", 1140)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L1140")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Friendlies]]]], [#raw("1138 │     /// Native volunteer brigade -- the Shaggyeh (§6.52). Do not receive
-1139 │     /// brigade integrity (§5.54 enumerates only British/Egyptian/Sudanese).
-1140 │     Friendlies,
-1141 │ }
-1142 │ ", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 1142) \ #github-link("omdurman-types/src/lib.rs", 1142)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L1142")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Friendlies]]]], [#raw("1140 │     /// Native volunteer brigade -- the Shaggyeh (§6.52). Do not receive
+1141 │     /// brigade integrity (§5.54 enumerates only British/Egyptian/Sudanese).
+1142 │     Friendlies,
+1143 │ }
+1144 │ ", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Proven by: #box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[omdurman-rules::src::effects::fire::range_table_player_for_routes_friendlies_and_fok_to_the_dervish_table]]]
@@ -1770,11 +1770,11 @@ Five units in the game have howitzer fire capability. These are the five named B
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-types/src/lib.rs", 269) \ #github-link("omdurman-types/src/lib.rs", 269)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L269")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Breach]]]], [#raw("267 │     /// Breach in a wall (artillery/§6.63 or Royal Engineers/§6.53). ZOC both
-268 │     /// ways; LOS no longer blocked across the hexside.
-269 │     Breach,
-270 │     /// Khor -- gully/wadi. ZOCs do not extend across (§5.44); advance after
-271 │     /// combat may not cross (§6.82).", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 271) \ #github-link("omdurman-types/src/lib.rs", 271)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L271")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Breach]]]], [#raw("269 │     /// Breach in a wall (artillery/§6.63 or Royal Engineers/§6.53). ZOC both
+270 │     /// ways; LOS no longer blocked across the hexside.
+271 │     Breach,
+272 │     /// Khor -- gully/wadi. ZOCs do not extend across (§5.44); advance after
+273 │     /// combat may not cross (§6.82).", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/effects/effect.rs", 236) \ #github-link("omdurman-rules/src/effects/effect.rs", 236)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/effect.rs#L236")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[ArtilleryBreachWall]]]], [#raw("234 │     /// pre-rolled d10 used for the CRT lookup; range/LOS are re-derived by the
 235 │     /// engine from the firers and `target`.
 236 │     ArtilleryBreachWall {
@@ -1867,11 +1867,11 @@ Five units in the game have howitzer fire capability. These are the five named B
  40 │             apply_advance_after_combat(state, *unit_id, *to)
  41 │         }
  42 │         GameEffect::ConstructZariba { unit_ids, hexside } => {", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 319) \ #github-link("omdurman-types/src/lib.rs", 319)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L319")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[blocks_advance_after_combat]]]], [#raw("317 │ 
-318 │     /// Whether advance-after-combat may *not* cross this side (§6.82, §7.6).
-319 │     pub fn blocks_advance_after_combat(self) -> bool {
-320 │         matches!(
-321 │             self,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 321) \ #github-link("omdurman-types/src/lib.rs", 321)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L321")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[blocks_advance_after_combat]]]], [#raw("319 │ 
+320 │     /// Whether advance-after-combat may *not* cross this side (§6.82, §7.6).
+321 │     pub fn blocks_advance_after_combat(self) -> bool {
+322 │         matches!(
+323 │             self,", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/effects/state/melee.rs", 177) \ #github-link("omdurman-rules/src/effects/state/melee.rs", 177)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state/melee.rs#L177")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[can_advance_after_combat]]]], [#raw("175 │     /// player's unit, not artillery, adjacent to `to`, no enemy in `to`, and
 176 │     /// the stacking law kept with any friendly units that advanced first.
 177 │     pub fn can_advance_after_combat(&self, unit_id: UnitId, to: HexCoord) -> Result<(), RuleError> {
@@ -1913,11 +1913,11 @@ Five units in the game have howitzer fire capability. These are the five named B
  53 │     pub fn sum<'a>(factors: impl IntoIterator<Item = &'a MeleeFactor>) -> u16 {
  54 │         factors.into_iter().map(|f| f.value()).sum()
  55 │     }", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 1081) \ #github-link("omdurman-types/src/lib.rs", 1081)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L1081")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[may_be_melee_attacked]]]], [#raw("1079 │ 
-1080 │     /// Gunboats neither attack nor are attacked in melee (§7.1).
-1081 │     pub fn may_be_melee_attacked(self) -> bool {
-1082 │         !matches!(self, UnitKind::Gunboat { .. })
-1083 │     }", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 1083) \ #github-link("omdurman-types/src/lib.rs", 1083)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L1083")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[may_be_melee_attacked]]]], [#raw("1081 │ 
+1082 │     /// Gunboats neither attack nor are attacked in melee (§7.1).
+1083 │     pub fn may_be_melee_attacked(self) -> bool {
+1084 │         !matches!(self, UnitKind::Gunboat { .. })
+1085 │     }", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Proven by: #box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[omdurman-types::src::lib::unit_kind_melee_capability_law_is_exact]]]
@@ -1935,11 +1935,11 @@ Five units in the game have howitzer fire capability. These are the five named B
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-types/src/lib.rs", 308) \ #github-link("omdurman-types/src/lib.rs", 308)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L308")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[blocks_melee]]]], [#raw("306 │     /// Effects Chart, Khor: \"May not melee across\"). Gates and breaches are
-307 │     /// passable to melee.
-308 │     pub fn blocks_melee(self) -> bool {
-309 │         matches!(
-310 │             self,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 310) \ #github-link("omdurman-types/src/lib.rs", 310)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L310")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[blocks_melee]]]], [#raw("308 │     /// Effects Chart, Khor: \"May not melee across\"). Gates and breaches are
+309 │     /// passable to melee.
+310 │     pub fn blocks_melee(self) -> bool {
+311 │         matches!(
+312 │             self,", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/effects/state/melee.rs", 29) \ #github-link("omdurman-rules/src/effects/state/melee.rs", 29)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state/melee.rs#L29")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[can_melee]]]], [#raw(" 27 │     /// that may be melee-attacked (gunboats may not -- §7.1), and no wall or
  28 │     /// thorn-hedge hexside blocks the attack (§7.2).
  29 │     pub fn can_melee(&self, attacker: UnitId, defender_hex: HexCoord) -> Result<(), RuleError> {
@@ -1989,21 +1989,21 @@ Five units in the game have howitzer fire capability. These are the five named B
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-types/src/lib.rs", 1070) \ #github-link("omdurman-types/src/lib.rs", 1070)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L1070")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[may_melee_attack]]]], [#raw("1068 │     /// Rulebook §7.4 -- only infantry, cavalry, camel and Dervish leaders may
-1069 │     /// melee *attack*. All others (except gunboats) may melee *defend* (§7.1).
-1070 │     pub fn may_melee_attack(self) -> bool {
-1071 │         matches!(
-1072 │             self,", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 1007) \ #github-link("omdurman-types/src/lib.rs", 1007)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L1007")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[UnitKind]]]], [#raw("1005 │ /// `Some(UnitKind::Marker)` or `None`.
-1006 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
-1007 │ pub enum UnitKind {
-1008 │     /// Foot infantry (§2.3): fire / melee / movement.
-1009 │     Infantry {", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 840) \ #github-link("omdurman-types/src/lib.rs", 840)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L840")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[DervishTribe]]]], [#raw("838 │     strum::EnumIter,
-839 │ )]
-840 │ pub enum DervishTribe {
-841 │     Baggara,
-842 │     Jaalin,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 1072) \ #github-link("omdurman-types/src/lib.rs", 1072)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L1072")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[may_melee_attack]]]], [#raw("1070 │     /// Rulebook §7.4 -- only infantry, cavalry, camel and Dervish leaders may
+1071 │     /// melee *attack*. All others (except gunboats) may melee *defend* (§7.1).
+1072 │     pub fn may_melee_attack(self) -> bool {
+1073 │         matches!(
+1074 │             self,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 1009) \ #github-link("omdurman-types/src/lib.rs", 1009)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L1009")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[UnitKind]]]], [#raw("1007 │ /// `Some(UnitKind::Marker)` or `None`.
+1008 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
+1009 │ pub enum UnitKind {
+1010 │     /// Foot infantry (§2.3): fire / melee / movement.
+1011 │     Infantry {", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 842) \ #github-link("omdurman-types/src/lib.rs", 842)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L842")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[DervishTribe]]]], [#raw("840 │     strum::EnumIter,
+841 │ )]
+842 │ pub enum DervishTribe {
+843 │     Baggara,
+844 │     Jaalin,", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/effects/state/melee.rs", 29) \ #github-link("omdurman-rules/src/effects/state/melee.rs", 29)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state/melee.rs#L29")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[can_melee]]]], [#raw(" 27 │     /// that may be melee-attacked (gunboats may not -- §7.1), and no wall or
  28 │     /// thorn-hedge hexside blocks the attack (§7.2).
  29 │     pub fn can_melee(&self, attacker: UnitId, defender_hex: HexCoord) -> Result<(), RuleError> {
@@ -2036,11 +2036,11 @@ Five units in the game have howitzer fire capability. These are the five named B
  37 │             apply_retreat_before_melee(state, *unit_id, *to)
  38 │         }
  39 │         GameEffect::AdvanceAfterCombat { unit_id, to } => {", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 1087) \ #github-link("omdurman-types/src/lib.rs", 1087)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L1087")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[may_retreat_before_melee]]]], [#raw("1085 │     /// Cavalry and camel units may retreat two hexes from an infantry melee
-1086 │     /// attack (§7.5).
-1087 │     pub fn may_retreat_before_melee(self) -> bool {
-1088 │         matches!(self, UnitKind::Cavalry { .. } | UnitKind::Camel { .. })
-1089 │     }", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 1089) \ #github-link("omdurman-types/src/lib.rs", 1089)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L1089")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[may_retreat_before_melee]]]], [#raw("1087 │     /// Cavalry and camel units may retreat two hexes from an infantry melee
+1088 │     /// attack (§7.5).
+1089 │     pub fn may_retreat_before_melee(self) -> bool {
+1090 │         matches!(self, UnitKind::Cavalry { .. } | UnitKind::Camel { .. })
+1091 │     }", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/scalars.rs", 126) \ #github-link("omdurman-rules/src/scalars.rs", 126)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/scalars.rs#L126")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[HexDistance]]]], [#raw("124 │ /// (rulebook §6.22, §7.5).
 125 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 126 │ pub struct HexDistance(pub(crate) u16);
@@ -2175,11 +2175,11 @@ Five units in the game have howitzer fire capability. These are the five named B
  88 │     pub fn halve(self) -> Self {
  89 │         let v = self.value() / 2;
  90 │         MovementAllowance::try_from(v).expect(\"halved value always a named variant\")", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 907) \ #github-link("omdurman-types/src/lib.rs", 907)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L907")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[DayNight]]]], [#raw("905 │ /// (rulebook §8.1).
-906 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-907 │ pub enum DayNight {
-908 │     Day,
-909 │     Night,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 909) \ #github-link("omdurman-types/src/lib.rs", 909)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L909")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[DayNight]]]], [#raw("907 │ /// (rulebook §8.1).
+908 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+909 │ pub enum DayNight {
+910 │     Day,
+911 │     Night,", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/range_effects.rs", 71) \ #github-link("omdurman-rules/src/range_effects.rs", 71)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/range_effects.rs#L71")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[night_max_range]]]], [#raw(" 69 │ 
  70 │ /// The halved maximum range at night (§8.1): round down, minimum 1.
  71 │ pub fn night_max_range(weapon: WeaponClass, ae: bool) -> u8 {
@@ -2417,11 +2417,11 @@ Alternatively, a decisive victory is awarded to the Anglo-Egyptian player if he 
 171 │     pub fn from_superiority(s: VictoryPoints) -> Self {
 172 │         let net = s.0;
 173 │         // Positive -> Anglo-Egyptian thresholds: 15/30/50", block: true, lang: "rs")],
-  [#vscode-link("omdurman-rules/src/effects/victory.rs", 75) \ #github-link("omdurman-rules/src/effects/victory.rs", 75)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/victory.rs#L75")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[score_elimination]]]], [#raw(" 73 │ /// elimination under `cause`. The owner is derived from the unit's identity,
- 74 │ /// so unlike the historical signature there is no caller-supplied player.
- 75 │ pub fn score_elimination(state: &mut GameState, unit_id: UnitId, cause: ElimCause) {
- 76 │     if let Some(unit) = state.find_unit(unit_id) {
- 77 │         let identity = unit.profile.identity;", block: true, lang: "rs")],
+  [#vscode-link("omdurman-rules/src/effects/victory.rs", 87) \ #github-link("omdurman-rules/src/effects/victory.rs", 87)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/victory.rs#L87")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[score_elimination]]]], [#raw(" 85 │ /// elimination under `cause`. The owner is derived from the unit's identity,
+ 86 │ /// so unlike the historical signature there is no caller-supplied player.
+ 87 │ pub fn score_elimination(state: &mut GameState, unit_id: UnitId, cause: ElimCause) {
+ 88 │     if let Some(unit) = state.find_unit(unit_id) {
+ 89 │         let identity = unit.profile.identity;", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/scalars.rs", 178) \ #github-link("omdurman-rules/src/scalars.rs", 178)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/scalars.rs#L178")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[VictoryPoints]]]], [#raw("176 │ /// (rulebook §9.14).
 177 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
 178 │ pub struct VictoryPoints(pub(crate) i32);
@@ -2674,21 +2674,21 @@ The Dervish player then loses one victory level if he has lost 16–23 units, tw
  69 │ pub fn dervish_campaign_schedule() -> ReinforcementSchedule {
  70 │     ReinforcementSchedule {
  71 │         player: Player::Dervish,", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 610) \ #github-link("omdurman-types/src/lib.rs", 610)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L610")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Location]]]], [#raw("608 │ /// `Display` is the name as printed on the map (\"Fort Buri\"), for players.
-609 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::Display)]
-610 │ pub enum Location {
-611 │     #[strum(serialize = \"Fort Makran\")]
-612 │     FortMakran,", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 720) \ #github-link("omdurman-types/src/lib.rs", 720)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L720")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[SetupLetter]]]], [#raw("718 │ /// Each letter marks a specific hex where a Dervish leader is placed.
-719 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::Display)]
-720 │ pub enum SetupLetter {
-721 │     Y,
-722 │     K,", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 863) \ #github-link("omdurman-types/src/lib.rs", 863)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L863")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Faction]]]], [#raw("861 │ /// `Some(BrigadeId::friendlies())`.
-862 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-863 │ pub enum Faction {
-864 │     Dervish {
-865 │         tribe: DervishTribe,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 612) \ #github-link("omdurman-types/src/lib.rs", 612)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L612")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Location]]]], [#raw("610 │ /// `Display` is the name as printed on the map (\"Fort Buri\"), for players.
+611 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::Display)]
+612 │ pub enum Location {
+613 │     #[strum(serialize = \"Fort Makran\")]
+614 │     FortMakran,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 722) \ #github-link("omdurman-types/src/lib.rs", 722)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L722")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[SetupLetter]]]], [#raw("720 │ /// Each letter marks a specific hex where a Dervish leader is placed.
+721 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::Display)]
+722 │ pub enum SetupLetter {
+723 │     Y,
+724 │     K,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 865) \ #github-link("omdurman-types/src/lib.rs", 865)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L865")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Faction]]]], [#raw("863 │ /// `Some(BrigadeId::friendlies())`.
+864 │ #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+865 │ pub enum Faction {
+866 │     Dervish {
+867 │         tribe: DervishTribe,", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Proven by: #box(fill: blue.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: blue.darken(30%), weight: "bold")[omdurman-rules::src::reinforcements::wave_for_turn_answers_exactly_on_the_printed_schedule]]]
@@ -2831,11 +2831,11 @@ The Dervish player then loses one victory level if he has lost 16–23 units, tw
  28 │     ZaribaThornHedge,
  29 │     /// -4 trench defensive modifier (§9.232). Only applies vs. \"entrenched\"
  30 │     /// units (those Nile-side of the trench hexside).", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 277) \ #github-link("omdurman-types/src/lib.rs", 277)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L277")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[ZaribaThornHedge]]]], [#raw("275 │     Crest,
-276 │     /// Historical-scenario thorn-hedge segment of the Zariba (§9.231).
-277 │     ZaribaThornHedge,
-278 │     /// Historical-scenario trench segment of the Zariba (§9.232).
-279 │     ZaribaTrench,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 279) \ #github-link("omdurman-types/src/lib.rs", 279)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L279")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[ZaribaThornHedge]]]], [#raw("277 │     Crest,
+278 │     /// Historical-scenario thorn-hedge segment of the Zariba (§9.231).
+279 │     ZaribaThornHedge,
+280 │     /// Historical-scenario trench segment of the Zariba (§9.232).
+281 │     ZaribaTrench,", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/effects/state.rs", 349) \ #github-link("omdurman-rules/src/effects/state.rs", 349)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state.rs#L349")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[has_zariba_thorn_hedge]]]], [#raw("347 │     /// *effective* hexsides, so constructed (§5.3) and authored hedges both
 348 │     /// count.
 349 │     pub fn has_zariba_thorn_hedge(&self, hex: HexCoord) -> bool {
@@ -2859,11 +2859,11 @@ The Dervish player then loses one victory level if he has lost 16–23 units, tw
  31 │     ZaribaTrenchEntrenched,
  32 │ }
  33 │ ", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 279) \ #github-link("omdurman-types/src/lib.rs", 279)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L279")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[ZaribaTrench]]]], [#raw("277 │     ZaribaThornHedge,
-278 │     /// Historical-scenario trench segment of the Zariba (§9.232).
-279 │     ZaribaTrench,
-280 │     /// One of the two end hexsides of a Zariba trench segment that connect to
-281 │     /// the Nile River (§9.233).  Units may only enter/leave the Zariba via", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 281) \ #github-link("omdurman-types/src/lib.rs", 281)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L281")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[ZaribaTrench]]]], [#raw("279 │     ZaribaThornHedge,
+280 │     /// Historical-scenario trench segment of the Zariba (§9.232).
+281 │     ZaribaTrench,
+282 │     /// One of the two end hexsides of a Zariba trench segment that connect to
+283 │     /// the Nile River (§9.233).  Units may only enter/leave the Zariba via", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/effects/state.rs", 337) \ #github-link("omdurman-rules/src/effects/state.rs", 337)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/effects/state.rs#L337")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[is_zariba_entrenched]]]], [#raw("335 │     /// the hex across the trench is the open desert, never the river. Reads
 336 │     /// *effective* hexsides.
 337 │     pub fn is_zariba_entrenched(&self, hex: HexCoord) -> bool {
@@ -2886,11 +2886,11 @@ The Dervish player then loses one victory level if he has lost 16–23 units, tw
   columns: (1.2fr, 1.8fr, 5fr),
   stroke: 0.4pt + luma(190),
   [*File*], [*Symbol*], [*Code Snippet*],
-  [#vscode-link("omdurman-types/src/lib.rs", 336) \ #github-link("omdurman-types/src/lib.rs", 336)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L336")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[blocks_movement]]]], [#raw("334 │     /// `omdurman-rules`). The trench *end* variants are therefore intentionally
-335 │     /// not blocking.
-336 │     pub fn blocks_movement(self) -> bool {
-337 │         matches!(
-338 │             self,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 338) \ #github-link("omdurman-types/src/lib.rs", 338)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L338")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[blocks_movement]]]], [#raw("336 │     /// `omdurman-rules`). The trench *end* variants are therefore intentionally
+337 │     /// not blocking.
+338 │     pub fn blocks_movement(self) -> bool {
+339 │         matches!(
+340 │             self,", block: true, lang: "rs")],
   [#vscode-link("omdurman-rules/src/terrain_chart.rs", 100) \ #github-link("omdurman-rules/src/terrain_chart.rs", 100)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-rules/src/terrain_chart.rs#L100")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[hexside_movement_surcharge]]]], [#raw(" 98 │ /// (a Gate or Breach costs +1; the Wall itself is closed), and the §9.233
  99 │ /// +2 MP Zariba trench ends (the rest of the Zariba is closed, §9.23).
 100 │ pub fn hexside_movement_surcharge(hexside: Option<HexsideKind>) -> Option<i16> {
@@ -2964,11 +2964,11 @@ The Dervish player then loses one victory level if he has lost 16–23 units, tw
 398 │ pub fn ali_wad_helu(col: u32, row: u32) -> Option<Classification> {
 399 │     match (col, row) {
 400 │         (0, 0) => dervish_leader(DervishLeader::AliWadHelu),", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 971) \ #github-link("omdurman-types/src/lib.rs", 971)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L971")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[sections_for_picker]]]], [#raw("969 │     /// counter of those two forces and leave the §9.322 entry force -- and
-970 │     /// with it the setup Ready gate (§9.2/§9.3) -- unplaceable.
-971 │     pub fn sections_for_picker(self) -> Option<&'static [SectionName]> {
-972 │         match self {
-973 │             Scenario::Campaign | Scenario::Historical => None,", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 973) \ #github-link("omdurman-types/src/lib.rs", 973)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L973")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[sections_for_picker]]]], [#raw("971 │     /// counter of those two forces and leave the §9.322 entry force -- and
+972 │     /// with it the setup Ready gate (§9.2/§9.3) -- unplaceable.
+973 │     pub fn sections_for_picker(self) -> Option<&'static [SectionName]> {
+974 │         match self {
+975 │             Scenario::Campaign | Scenario::Historical => None,", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Covered by tests: #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::deployment_requires_the_canonical_counter]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::fok_has_no_reinforcements]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::unit_profiles::ali_wad_helu_block_resolves_leader_and_degelim_tribes]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::tests::fok_setup_flow::degheim_counters_resolve_to_the_degheim_tribe]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::fok_setup_complete_requires_full_oob]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::fok_dervish_land_unit_rejected_on_nile]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-types::src::lib::fok_picker_allowlist_has_dervish_entry_force_blocks]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::fok_order_of_battle_dervish]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::fok_dervish_east_edge_on_diamond_board]] #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::fok_dervish_pay_their_entry_hex_on_turn_one]]]
@@ -3080,11 +3080,11 @@ The Dervish player then loses one victory level if he has lost 16–23 units, tw
 408 │     pub fn is_nile_mouth_crossing(&self, from: HexCoord, to: HexCoord) -> bool {
 409 │         let white = self
 410 │             .board", block: true, lang: "rs")],
-  [#vscode-link("omdurman-types/src/lib.rs", 635) \ #github-link("omdurman-types/src/lib.rs", 635)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L635")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Location::WhiteNileMouth]]]], [#raw("633 │     /// a British gunboat may cross to the Blue Nile mouth for 6 upstream MP.
-634 │     #[strum(serialize = \"White Nile mouth\")]
-635 │     WhiteNileMouth,
-636 │     /// The off-board mouth of the Blue Nile branch (FALL OF KHARTOUM §9.345).
-637 │     #[strum(serialize = \"Blue Nile mouth\")]", block: true, lang: "rs")],
+  [#vscode-link("omdurman-types/src/lib.rs", 637) \ #github-link("omdurman-types/src/lib.rs", 637)],  [#link("https://github.com/barafael/omdurman/blob/HEAD/omdurman-types/src/lib.rs#L637")[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[Location::WhiteNileMouth]]]], [#raw("635 │     /// a British gunboat may cross to the Blue Nile mouth for 6 upstream MP.
+636 │     #[strum(serialize = \"White Nile mouth\")]
+637 │     WhiteNileMouth,
+638 │     /// The off-board mouth of the Blue Nile branch (FALL OF KHARTOUM §9.345).
+639 │     #[strum(serialize = \"Blue Nile mouth\")]", block: true, lang: "rs")],
 )
 #v(0.5em)
 #text(size: 9pt, fill: luma(80))[Covered by tests: #box(fill: green.transparentize(85%), inset: (left: 0.3em, right: 0.3em, top: 0.1em, bottom: 0.1em), radius: 2pt)[#text(size: 8pt, fill: green.darken(30%), weight: "bold")[omdurman-rules::src::effects::tests::fok_gunboat_crosses_between_nile_mouths]]]

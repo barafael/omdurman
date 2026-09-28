@@ -10,6 +10,8 @@
 //! Tuple structs remain only for values with an unbounded range (movement
 //! points, hex distances, victory points, game-turn indices).
 
+#![forbid(unsafe_code)]
+
 use omdurman_types::{
     BrigadeId, BrigadeNationality, DayNight, DervishTribe, HexCoord, Player, UnitKind,
 };

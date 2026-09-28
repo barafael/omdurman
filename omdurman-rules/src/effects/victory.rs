@@ -16,28 +16,22 @@ pub(crate) fn diff_eliminated(state: &GameState, before: Vec<UnitId>) -> Vec<Uni
 ///
 /// 1. score the elimination and record it under `cause` (§9.14);
 /// 2. remove the unit from the board;
-/// 3. cascade: a sunk gunboat takes its loaded "Friendlies" unit down with
+/// 3. GORDON's death in FALL OF KHARTOUM records the turn that fixes the
+///    §9.35 victory level (§9.346); [`apply_effect`] then ends the game;
+/// 4. cascade: a sunk gunboat takes its loaded "Friendlies" unit down with
 ///    it (§5.21, recorded as [`ElimCause::LostWithTransport`], and scored --
-///    the unit is just as dead);
-/// 4. GORDON's death in FALL OF KHARTOUM records the turn that fixes the
-///    §9.35 victory level (§9.346); [`apply_effect`] then ends the game.
+///    the unit is just as dead).
 ///
 /// A no-op for a unit that is not on the board.
 pub(crate) fn eliminate_unit(state: &mut GameState, unit_id: UnitId, cause: ElimCause) {
-    let Some(pos) = state.units.iter().position(|u| u.id == unit_id) else {
+    let Some(unit) = take_off_the_board(state, unit_id, cause) else {
         return;
     };
-    let unit = state.units[pos];
-    score_elimination(state, unit_id, cause);
-    // Unit ids are unique in `state.units`, so removing the single match is
-    // the same filter `retain` would do -- spelled with `position`+`remove`
-    // because `Vec::retain`'s closure-driven symex is intractable under Kani
-    // (see the river-mine harnesses).
-    state.units.remove(pos);
-    state.eliminated.push(unit_id);
-
     if matches!(unit.profile.kind, UnitKind::Gunboat { .. }) {
-        // §5.21: the loaded unit goes down with the ship.
+        // §5.21: the loaded unit goes down with the ship. A passenger is
+        // never itself a gunboat, so the cascade is one level deep -- spelled
+        // without recursion, which Kani would unroll to the unwind bound
+        // with the whole scoring path at every level.
         let mut lost: Vec<UnitId> = Vec::new();
         for u in &state.units {
             if u.state.loaded_on == Some(unit_id) {
@@ -53,10 +47,27 @@ pub(crate) fn eliminate_unit(state: &mut GameState, unit_id: UnitId, cause: Elim
             state.friendlies_transport = None;
         }
         for id in lost {
-            eliminate_unit(state, id, ElimCause::LostWithTransport);
+            take_off_the_board(state, id, ElimCause::LostWithTransport);
         }
     }
+}
 
+/// Steps 1-3 of [`eliminate_unit`] for one unit; the unit as it stood, or
+/// `None` when it is not on the board.
+fn take_off_the_board(
+    state: &mut GameState,
+    unit_id: UnitId,
+    cause: ElimCause,
+) -> Option<UnitPlacement> {
+    let pos = state.units.iter().position(|u| u.id == unit_id)?;
+    let unit = state.units[pos];
+    score_elimination(state, unit_id, cause);
+    // Unit ids are unique in `state.units`, so removing the single match is
+    // the same filter `retain` would do -- spelled with `position`+`remove`
+    // because `Vec::retain`'s closure-driven symex is intractable under Kani
+    // (see the river-mine harnesses).
+    state.units.remove(pos);
+    state.eliminated.push(unit_id);
     if unit.profile.identity.is_gordon()
         && state.scenario == Scenario::FallOfKhartoum
         && state.gordon_eliminated_turn.is_none()
@@ -67,6 +78,7 @@ pub(crate) fn eliminate_unit(state: &mut GameState, unit_id: UnitId, cause: Elim
             turn: state.current_turn,
         });
     }
+    Some(unit)
 }
 
 /// Score victory points for eliminating a unit (rulebook §9.14) and record the
@@ -232,7 +244,7 @@ mod verification {
     /// with `bank_of == Some(West)`).
     // §9.14
     #[kani::proof]
-    #[kani::unwind(14)]
+    #[kani::unwind(4)]
     fn vp_source_for_routes_every_elimination_to_the_printed_source() {
         use crate::VpSource;
         let identity = any_vp_identity();
@@ -286,10 +298,11 @@ mod verification {
     /// *she* was the unit eliminated -- and a 0-pt elimination (a fort)
     /// still records the elimination itself while scoring nothing.
     ///
-    /// Memory note: even with a roster-free state and the `bank_of` stub
-    /// below, this harness's symex/SAT instance peaks around 13-14 GB
-    /// (it OOMs on a 12 GB desktop but verifies on ~16 GB CI runners).
-    /// If it OOMs locally, that is a resource limit, not a proof failure.
+    /// Memory note: the symex is small (~63k steps at `unwind(4)`, the state
+    /// discarded rather than dropped), but reading the pushed `Observation`s
+    /// back out of the ledger drives the propositional reduction past ~10 GB
+    /// (the length checks alone verify in 5 s). If it OOMs locally, that is
+    /// a resource limit, not a proof failure.
     /// Replacement for `BoardInfo::bank_of` in the `score_elimination`
     /// harness: the harness's board is `BoardInfo::default()` (no terrain),
     /// on which the real `bank_of` returns `None` for *every* hex (there is
@@ -306,7 +319,7 @@ mod verification {
     // §9.14
     #[kani::stub(BoardInfo::bank_of, stub_bank_of_none_on_empty_board)]
     #[kani::proof]
-    #[kani::unwind(14)]
+    #[kani::unwind(4)]
     fn score_elimination_records_exactly_what_it_scores() {
         let isa: bool = kani::any();
         // Roster-free state: the property is about score_elimination's
@@ -344,13 +357,34 @@ mod verification {
         assert!(state.victory.events.len() == events_before + scored);
         // The Isa-Zachneih latch is exactly hers.
         assert!(state.isa_zachneih_eliminated == isa);
+        // Exactly the new observations, in order: the score (carrying the
+        // same printed points and scorer) and then the elimination itself.
+        // Indexed rather than scanned: a filter over a symbolic-length slice
+        // of `Observation`s is what ran this harness out of memory.
+        let target = UnitId::ALL[0];
+        let new = &state.observations[observations_before..];
         if isa {
-            // The observation carries the same printed points and scorer.
-            let victory_observations = state.observations[observations_before..]
-                .iter()
-                .filter(|o| matches!(o, Observation::VictoryScored { .. }))
-                .count();
-            assert!(victory_observations == 1);
+            let isa_source = VpSource::IsaZachneihEliminated;
+            assert!(new.len() == 2);
+            assert!(matches!(
+                new[0],
+                Observation::VictoryScored { source, points, for_player }
+                    if source == isa_source
+                        && points == isa_source.points()
+                        && for_player == isa_source.who_scores()
+            ));
+            assert!(matches!(
+                new[1],
+                Observation::UnitEliminated { id, vp_source: Some(source), .. }
+                    if id == target && source == isa_source
+            ));
+        } else {
+            assert!(new.len() == 1);
+            assert!(matches!(
+                new[0],
+                Observation::UnitEliminated { id, vp_source: None, .. } if id == target
+            ));
         }
+        state.kani_discard();
     }
 }

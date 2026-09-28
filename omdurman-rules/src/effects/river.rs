@@ -328,7 +328,7 @@ mod verification {
     /// -- and leaves the boat afloat and unflagged.
     // §10.12 §10.13
     #[kani::proof]
-    #[kani::unwind(14)]
+    #[kani::unwind(4)]
     fn river_mine_triggers_even_on_a_harmless_roll() {
         let hex = HexCoord::new(0, 0);
         let mut state = state_with_mined_boat(false);
@@ -339,6 +339,7 @@ mod verification {
             Some(boat) => assert!(!boat.state.engines_lost),
             None => panic!("no-effect band sank the gunboat"),
         }
+        state.kani_discard();
     }
 
     /// §10.12: a roll in the engines-lost band (5-7; here the band edge 5)
@@ -346,7 +347,7 @@ mod verification {
     /// the game.
     // §10.12
     #[kani::proof]
-    #[kani::unwind(14)]
+    #[kani::unwind(4)]
     fn river_mine_engine_loss_arms_the_drift_flag() {
         let hex = HexCoord::new(0, 0);
         let mut state = state_with_mined_boat(false);
@@ -357,13 +358,14 @@ mod verification {
             Some(boat) => assert!(boat.state.engines_lost),
             None => panic!("engines-lost band sank the gunboat"),
         }
+        state.kani_discard();
     }
 
     /// §10.12: a roll in the sunk band (8-10; here the band edge 8) removes
     /// the gunboat from the board entirely.
     // §10.12
     #[kani::proof]
-    #[kani::unwind(14)]
+    #[kani::unwind(4)]
     fn river_mine_sinking_removes_the_gunboat() {
         let hex = HexCoord::new(0, 0);
         let mut state = state_with_mined_boat(false);
@@ -371,6 +373,7 @@ mod verification {
         assert!(result.is_ok());
         assert!(state.mines[0].triggered);
         assert!(state.find_unit(UnitId::ALL[0]).is_none());
+        state.kani_discard();
     }
 
     /// Re-entering an already-triggered mine is rejected with the mine
@@ -378,7 +381,7 @@ mod verification {
     /// rejection is atomic (no band re-rolled, no casualty).
     // §10.13
     #[kani::proof]
-    #[kani::unwind(14)]
+    #[kani::unwind(4)]
     fn a_triggered_mine_never_fires_again() {
         let roll = any_roll();
         let hex = HexCoord::new(0, 0);
@@ -388,6 +391,7 @@ mod verification {
         assert!(apply_river_mine(&mut state, UnitId::ALL[0], hex, roll).is_err());
         assert!(state.mines[0].triggered);
         assert!(state.units.len() == units_before);
+        state.kani_discard();
     }
 
     /// §10.14: the Dervish player's own gunboats pass mined hexes with no
@@ -396,7 +400,7 @@ mod verification {
     /// available against the British player.
     // §10.14
     #[kani::proof]
-    #[kani::unwind(14)]
+    #[kani::unwind(4)]
     fn dervish_gunboats_pass_mined_hexes_unharmed() {
         let hex = HexCoord::new(0, 0);
         let mut state = state_with_mined_boat(true);
@@ -409,5 +413,7 @@ mod verification {
         let mut fresh = state_with_mined_boat(true);
         assert!(apply_river_mine(&mut fresh, UnitId::ALL[0], hex, DieRoll::Ten).is_err());
         assert!(fresh.find_unit(UnitId::ALL[0]).is_some());
+        state.kani_discard();
+        fresh.kani_discard();
     }
 }

@@ -18,16 +18,14 @@ generated and the proof picks up the new variant automatically.
 
 The proofs live in `#[cfg(kani)] mod verification` blocks next to the code
 they constrain, plus the crate-level `omdurman-rules/src/verification.rs`.
-Today the suite runs 93 harnesses. The source has 93 `#[kani::proof]`
-attributes (22 in `omdurman-types`, 71 in `omdurman-rules`), but that raw
+Today the suite runs 91 harnesses. The source has 91 `#[kani::proof]`
+attributes (22 in `omdurman-types`, 69 in `omdurman-rules`), but that raw
 count is off in two directions. One attribute is the `prove_value_enum!`
 template in `verification.rs`, which expands to five harnesses. Four more
 sit in `quantifier_experiment.rs`, gated behind the `kani-quantifiers`
-feature that the script never enables. Do not read the 93 as "all
-verified": the river-mine and
-elimination harnesses have not been re-run since the `eliminate_unit`
-changes, and `score_elimination_records_exactly_what_it_scores` is
-memory-bound (below). Both are tracked in [open-issues.md](open-issues.md).
+feature that the script never enables. Do not read the count as "all
+verified": `score_elimination_records_exactly_what_it_scores` is
+memory-bound (below), tracked in [open-issues.md](open-issues.md).
 
 ## Running it
 
@@ -140,8 +138,41 @@ way on `score_elimination_records_exactly_what_it_scores`:
    try; external SMT solvers (`--smtlib-solver`) would trade time for memory
    but none are installed here.
 
-Never tune unwind bounds below what the Vec pushes and scans actually need —
-an unwind failure is a proof you no longer have.
+## Making a harness cheaper without weakening it
+
+Measured on this suite (September 2026); each is safe because it changes what
+the solver has to *carry*, never what it has to *prove*:
+
+- **Discard the state instead of dropping it.** A harness that lets its
+  `GameState` fall out of scope makes CBMC walk the drop glue of every ledger —
+  `Observation` and `TurnEventRecord` carry `Vec<String>`s, each unrolled to
+  the unwind bound. End with `state.kani_discard()` (a `mem::forget`): every
+  assertion has already run, the engine has no `unsafe` (`forbid`) and no
+  `Drop` impl of its own, and Kani does not check leaks. `sink_chain_is_atomic`
+  went from 1.31M steps / 187 s to 233k / 24 s.
+- **Use the tightest unwind bound that verifies.** Unwinding assertions are on,
+  so a bound that is too low fails loudly ("unwinding assertion loop N") — it
+  cannot silently prove less. A bound that verifies is a complete proof. Most
+  loops in the state harnesses scan two or three units, yet the whole set used
+  `unwind(14)`, and every loop whose trip count the solver cannot fold (a
+  slice over a merged heap pointer) was unrolled 14 times.
+  `river_mine_sinking_removes_the_gunboat` went from unfinished after 20 min to
+  130 s at `unwind(4)`.
+- **No recursion on proof paths.** `eliminate_unit` used to recurse for a sunk
+  gunboat's passenger; CBMC unrolled the recursion to the bound with the whole
+  scoring path at every level. The cascade is one level deep by the rules (a
+  passenger is never a gunboat), so it is now a loop over a helper.
+- **Run heavy harnesses alone.** Parallel jobs share RAM; three of our "OOMs"
+  were two big harnesses side by side. Size `KANI_JOBS` by memory, not cores.
+
+What did *not* help: pre-reserving ledger capacity, `--arrays-uf-always`, and
+splitting a symbolic `bool` into two concrete runs.
+
+The remaining outlier is `score_elimination_records_exactly_what_it_scores`:
+its symex is small now (63k steps), but *reading an `Observation` back out of
+the ledger* makes the propositional reduction exceed ~10 GB (the length checks
+alone verify in 5 s). It needs a machine with more memory, or a cheaper way to
+state "the pushed observation is exactly this" than reading it back.
 
 ## Checklist: adding a proof
 

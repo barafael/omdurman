@@ -503,4 +503,16 @@ impl GameState {
             game_result: None,
         }
     }
+
+    /// End a harness without dropping the state. Dropping walks the drop glue
+    /// of every ledger -- `Observation` and `TurnEventRecord` carry
+    /// `Vec<String>` payloads, each unrolled to the unwind bound -- which
+    /// dominated the symex of the heaviest harnesses (`sink_chain_is_atomic`:
+    /// 1.31M steps / 187 s with the drop, 233k / 24 s without). Skipping it
+    /// proves no less: every assertion has already run, the engine holds no
+    /// `unsafe` (`#![forbid(unsafe_code)]`) and no `Drop` impl of its own,
+    /// so the drop glue is std's, and Kani does not check for leaks.
+    pub(crate) fn kani_discard(self) {
+        core::mem::forget(self);
+    }
 }
