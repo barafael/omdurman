@@ -1541,3 +1541,47 @@ mod mode_transition_tests {
         assert!(crate::game_in_progress(&turn, &recorder));
     }
 }
+
+/// Every system the game registers has a valid parameter set. Bevy reports a
+/// conflicting pair -- two `ResMut` of one resource (B0002), say one hidden
+/// inside a `SystemParam` -- only when a schedule is initialised, i.e. when
+/// the app first runs, so no other test sees it. Build the whole game
+/// headless (no window, no GPU) and initialise every schedule without
+/// running a frame.
+#[test]
+fn every_system_has_valid_parameters() {
+    use bevy::prelude::*;
+    let mut app = App::new();
+    app.add_plugins(
+        DefaultPlugins
+            .set(WindowPlugin {
+                primary_window: None,
+                exit_condition: bevy::window::ExitCondition::DontExit,
+                ..default()
+            })
+            .set(bevy::render::RenderPlugin {
+                render_creation: bevy::render::settings::WgpuSettings {
+                    backends: None,
+                    ..default()
+                }
+                .into(),
+                ..default()
+            })
+            .disable::<bevy::winit::WinitPlugin>(),
+    );
+    crate::add_game(&mut app, "smoke-test".into());
+    app.finish();
+    app.cleanup();
+    // (Initialising a schedule may itself touch `Schedules`, so take it out
+    // of the world rather than `resource_scope` it.)
+    let world = app.world_mut();
+    let mut schedules = world
+        .remove_resource::<Schedules>()
+        .expect("the app has schedules");
+    for (label, schedule) in schedules.iter_mut() {
+        schedule
+            .initialize(world)
+            .unwrap_or_else(|e| panic!("schedule {label:?}: {e}"));
+    }
+    world.insert_resource(schedules);
+}
