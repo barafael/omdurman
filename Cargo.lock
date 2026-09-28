@@ -6657,6 +6657,7 @@ dependencies = [
  "strum",
  "tempfile",
  "thiserror 2.0.20",
+ "traceability-macro",
  "uuid",
  "wasm-bindgen",
  "web-sys",
@@ -6722,6 +6723,7 @@ dependencies = [
  "strum",
  "test-case",
  "tokio",
+ "traceability-macro",
  "tracing",
  "tracing-subscriber",
  "uuid",
@@ -6753,6 +6755,7 @@ dependencies = [
  "serde",
  "serde_with",
  "strum",
+ "traceability-macro",
 ]
 
 [[package]]
@@ -9206,6 +9209,7 @@ dependencies = [
  "serde",
  "serde_json",
  "toml",
+ "traceability-lsp",
 ]
 
 [[package]]

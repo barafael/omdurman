@@ -55,7 +55,7 @@
 }
 
 #let github-link(rel, line) = {
-  let url = "https://github.com/barafael/omdurman/blob/HEAD/" + rel + "#L" + str(line)
+  let url = "https://github.com/barafael/omdurman/blob/" + data.rev + "/" + rel + "#L" + str(line)
   link(url)[
     #text(size: 8pt, fill: luma(100), "GH:" + rel + ":" + str(line))
   ]
@@ -183,10 +183,18 @@
       #text(size: 8.5pt, fill: luma(120), style: "italic")[See also: #s.see_also.join(", ")]
       #v(0.3em)
     ]
+    #if s.clause != none [
+      #block(width: 100%, fill: luma(246), stroke: (left: 2pt + green.darken(20%)), inset: 0.5em)[
+        #text(size: 9pt)[*Clause:* \u{201C}#s.clause\u{201D}]
+        #if s.witness != none [ \ #text(size: 9pt)[*Witness:* #raw(s.witness)]]
+        #if s.approximation != none [ \ #text(size: 9pt, fill: orange.darken(35%))[*Approximation:* #s.approximation]]
+      ]
+      #v(0.3em)
+    ]
     #if s.impls.len() > 0 [
       #let rows = s.impls.map(imp => (
         [#vscode-link(imp.file, imp.line) \ #github-link(imp.file, imp.line)],
-        [#link("https://github.com/barafael/omdurman/blob/HEAD/" + imp.file + "#L" + str(imp.line))[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[#imp.symbol]]]],
+        [#link("https://github.com/barafael/omdurman/blob/" + data.rev + "/" + imp.file + "#L" + str(imp.line))[#highlight(fill: yellow.transparentize(70%))[#text(weight: "bold")[#imp.symbol]]]],
         [#if imp.snippet != "" [#render-snippet(imp)]],
       )).flatten()
       #table(

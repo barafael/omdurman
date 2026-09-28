@@ -46,6 +46,7 @@ mod wall_ring_tests {
     /// §5.23: the walled city must be the area *enclosed* by the annotated
     /// Wall/Gate/Breach ring, anchored at the Palace (and the Mahdi's Tomb on
     /// the Omdurman board). These tests pin the compiled boards' derivations.
+    #[traceability_macro::rulebook("§5.23")]
     #[test]
     fn campaign_walled_city_is_enclosed_by_walls() {
         let board = BoardInfo::from_map_data(&campaign_map_data());
@@ -90,6 +91,7 @@ mod wall_ring_tests {
     /// friendly fort; they may be meleed and shot by artillery), not little
     /// walled cities: no wall hexside may ring them. (Their printed outlines
     /// were authored as walls, sealing every fort garrison in for the game.)
+    #[traceability_macro::rulebook("§6.54")]
     #[test]
     fn fok_forts_are_not_walled_in() {
         let board = BoardInfo::from_map_data(&fall_of_khartoum_map_data());

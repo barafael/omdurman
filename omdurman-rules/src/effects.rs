@@ -502,6 +502,7 @@ mod verification {
     /// way"). `unwind(7)`: the attacker re-check scans the target's six
     /// neighbours.
     // §7.5
+    #[traceability_macro::rulebook("§7.5")]
     #[kani::proof]
     #[kani::unwind(7)]
     #[kani::stub(crate::effects::melee::resolve_melee_combat, stub_resolve_melee_combat)]
@@ -545,6 +546,7 @@ mod verification {
     /// `vacated_by_combat.clear()` above *any* of them trips this harness.
     /// The Setup-side guard additionally needs an under-deployed board, which
     /// `any_state` (two units, one per side) cannot produce.
+    #[traceability_macro::rulebook("§7.5", "§6.82", "§7.6")]
     #[kani::proof]
     #[kani::unwind(4)]
     #[kani::stub(end_player_turn, stub_end_player_turn)]
@@ -686,6 +688,7 @@ mod verification {
     /// not apply. `EnemyCohabitation` fires on the first rule of the law, so
     /// the biconditional is exact.
     // §5.51
+    #[traceability_macro::rulebook("§5.51")]
     #[kani::proof]
     fn stacking_rule_cohabitation_is_exact() {
         let a = stack_unit(any_stack_identity(), UnitId::ALL[0]);
@@ -706,6 +709,7 @@ mod verification {
     /// its own group). With both units Dervish, group purity is the only
     /// rule that can fire, so the biconditional is exact.
     // §5.52
+    #[traceability_macro::rulebook("§5.52")]
     #[kani::proof]
     fn stacking_rule_group_purity_is_exact() {
         // Symbolic group identity: index 0..=9 is a tribe, 10 is artillery.
@@ -737,6 +741,7 @@ mod verification {
     /// one-directional bug (reject the Hadendowa joining the gun, but accept
     /// the gun joining the Hadendowa) cannot survive this.
     // §5.51
+    #[traceability_macro::rulebook("§5.51")]
     #[kani::proof]
     fn stacking_rule_is_symmetric() {
         let a = stack_unit(any_stack_identity(), UnitId::ALL[0]);
@@ -750,6 +755,7 @@ mod verification {
     /// own colour, so a second Dervish leader is the one thing that makes the
     /// stack illegal. The biconditional is exact.
     // §5.51
+    #[traceability_macro::rulebook("§5.51", "§5.53")]
     #[kani::proof]
     fn stacking_rule_leaders_are_free_stacking() {
         let leader = |dervish: bool, id: UnitId| {
@@ -786,6 +792,7 @@ mod verification {
     /// limit firing before the group/leader checks, `OverLimit` is the exact
     /// error).
     // §5.51
+    #[traceability_macro::rulebook("§5.51")]
     #[kani::proof]
     fn stacking_rule_limit_is_four_counted_units() {
         // One symbolic tribe shared by every counter in the stack.
@@ -810,6 +817,7 @@ mod verification {
     /// (symbolic across both factions' boats and the counter's tribe), while
     /// a lone gunboat is a legal stack.
     // §5.51
+    #[traceability_macro::rulebook("§5.51")]
     #[kani::proof]
     fn stacking_rule_gunboat_never_shares() {
         let dervish_boat = stack_unit(
@@ -856,6 +864,7 @@ mod verification {
     /// monotone (a higher roll never deserts fewer) and bounded 1..=15 (1½×1
     /// = 1.5 floors to 1; 1½×10 = 15).
     // §8.2
+    #[traceability_macro::rulebook("§8.2")]
     #[kani::proof]
     fn desertion_count_is_one_and_a_half_times_the_roll() {
         let i: usize = kani::any();
@@ -882,6 +891,7 @@ mod verification {
     /// *only* against an enemy gunboat (every other unit projects normally,
     /// forts included -- §5.44).
     // §5.41
+    #[traceability_macro::rulebook("§5.41", "§5.44")]
     #[kani::proof]
     fn unit_projects_zoc_matches_manual_clauses() {
         let mut unit = stack_unit(any_stack_identity(), UnitId::ALL[0]);
@@ -924,6 +934,7 @@ mod verification {
     /// §6.64: a shell lands on the designated hex or on one of its six
     /// neighbours -- never further (the printed diagram is one ring).
     // §6.64
+    #[traceability_macro::rulebook("§6.64")]
     #[kani::proof]
     fn scatter_lands_on_or_next_to_the_target() {
         let q: i32 = kani::any();

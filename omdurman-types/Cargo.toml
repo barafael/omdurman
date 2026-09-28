@@ -20,3 +20,10 @@ workspace = true
 serde = { workspace = true }
 serde_with = { workspace = true }
 strum = { workspace = true }
+
+# `#[rulebook]` on the Kani proofs (proof builds only) and on tests.
+[target.'cfg(kani)'.dependencies]
+traceability-macro = { path = "../traceability-macro" }
+
+[dev-dependencies]
+traceability-macro = { path = "../traceability-macro" }

@@ -1,93 +1,125 @@
-//! Drift-resilient resolution of `[[mapping.impl]]` symbols to concrete
-//! locations in source files.
+//! Resolution of `[[mapping.impl]]` symbols to locations in source files.
 //!
-//! The TOML `line` field is known to drift (a rename/edit shifts the symbol
-//! while the anchor stays). We never trust it blindly: we search the cited
-//! file for the symbol and prefer the occurrence nearest to the declared line,
-//! falling back to the first file-wide occurrence. Callers can compare the
-//! resolved line with the declared line to emit a drift diagnostic.
+//! The matrix names a file and a symbol, never a line: the line is found
+//! here, at the symbol's *definition* (`fn`, `struct`, `enum`, `trait`,
+//! `type`, `const`, `static`, `mod`, `macro_rules!`, an enum variant or a
+//! struct field), falling back to its first use in code. Comments never
+//! count. Moving code therefore never touches the matrix; renames are caught
+//! by the compiler anchors in `omdurman-rules/tests/traceability_paths.rs`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
-
-/// Window (in lines, either side) around the declared line in which a symbol
-/// match is considered "at the anchor".
-pub const LINE_WINDOW: usize = 8;
 
 /// Result of resolving a symbol within a file.
 #[derive(Debug, Clone)]
 pub struct Resolved {
     pub file: PathBuf,
+    /// 1-based line (1 when not found).
     pub line: usize,
     pub byte_col: usize,
-    /// `true` if the resolved line is within `LINE_WINDOW` of the declared
-    /// TOML line (i.e. the anchor is not stale).
-    pub within_window: bool,
-    /// Whether the symbol was found at all.
+    /// Whether the symbol occurs in the file's code at all.
     pub found: bool,
 }
 
-/// Search `file` for `symbol`, preferring occurrences near `declared_line`
-/// (1-based). The symbol may be a full path like `effects::apply_river_mine`;
-/// we match on its final `::`-segment.
-pub fn resolve_symbol(file: &Path, declared_line: u32, symbol: &str) -> Resolved {
-    let content = match fs::read_to_string(file) {
-        Ok(c) => c,
-        Err(_) => {
-            return Resolved {
-                file: file.to_path_buf(),
-                line: declared_line as usize,
-                byte_col: 0,
-                within_window: false,
-                found: false,
-            };
-        }
-    };
-    let lines: Vec<&str> = content.lines().collect();
-    let key = symbol.rsplit("::").next().unwrap_or(symbol);
-
-    // Collect all matching (line, col) pairs, in line order.
-    let mut matches: Vec<(usize, usize)> = Vec::new();
-    for (i, line) in lines.iter().enumerate() {
-        if let Some(col) = line.find(key) {
-            matches.push((i + 1, col));
-        }
-    }
-
-    let Some(&(first_line, first_col)) = matches.first() else {
-        return Resolved {
+/// Resolve `symbol` (a full path like `effects::apply_river_mine` is matched
+/// on its last `::` segment) in `file`.
+pub fn resolve_symbol(file: &Path, symbol: &str) -> Resolved {
+    let located = fs::read_to_string(file)
+        .ok()
+        .and_then(|text| locate_symbol(&text, symbol));
+    match located {
+        Some((line, byte_col)) => Resolved {
             file: file.to_path_buf(),
-            line: declared_line as usize,
+            line,
+            byte_col,
+            found: true,
+        },
+        None => Resolved {
+            file: file.to_path_buf(),
+            line: 1,
             byte_col: 0,
-            within_window: false,
             found: false,
-        };
-    };
-
-    let cited = declared_line as usize;
-    let best = matches
-        .iter()
-        .min_by_key(|(l, _)| l.abs_diff(cited))
-        .copied()
-        .unwrap_or((first_line, first_col));
-    let (best_line, best_col) = best;
-
-    let within_window = best_line.abs_diff(cited) <= LINE_WINDOW;
-    // Prefer the in-window occurrence over a file-wide one for navigation.
-    let (line, col) = if within_window {
-        (best_line, best_col)
-    } else {
-        // A stray match far from the anchor: use it but flag as drifted.
-        (first_line, first_col)
-    };
-
-    Resolved {
-        file: file.to_path_buf(),
-        line,
-        byte_col: col,
-        within_window,
-        found: true,
+        },
     }
+}
+
+/// `(1-based line, byte column)` of `symbol`'s definition in `text`, else of
+/// its first whole-word occurrence in code; `None` if it only appears in
+/// comments or not at all.
+pub fn locate_symbol(text: &str, symbol: &str) -> Option<(usize, usize)> {
+    let key = symbol.rsplit("::").next().unwrap_or(symbol);
+    let mut first_use = None;
+    let mut first_member = None;
+    for (i, line) in text.lines().enumerate() {
+        let code = line.split("//").next().unwrap_or(line);
+        for col in word_occurrences(code, key) {
+            match definition_kind(code, col, key) {
+                Some(Definition::Item) => return Some((i + 1, col)),
+                Some(Definition::Member) => {
+                    first_member.get_or_insert((i + 1, col));
+                }
+                None => {
+                    first_use.get_or_insert((i + 1, col));
+                }
+            }
+        }
+    }
+    first_member.or(first_use)
+}
+
+enum Definition {
+    /// `fn key`, `struct key`, ...: certainly the definition.
+    Item,
+    /// `key(..),` / `key: T` / `key = ..` opening a line: a variant or field
+    /// (or, rarely, a statement -- hence second choice).
+    Member,
+}
+
+fn is_ident(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+/// Byte columns of whole-word occurrences of `key` in `code`.
+fn word_occurrences<'a>(code: &'a str, key: &'a str) -> impl Iterator<Item = usize> + 'a {
+    code.match_indices(key)
+        .map(|(col, _)| col)
+        .filter(move |&col| {
+            let before = code[..col].chars().next_back();
+            let after = code[col + key.len()..].chars().next();
+            !before.is_some_and(is_ident) && !after.is_some_and(is_ident)
+        })
+}
+
+fn definition_kind(code: &str, col: usize, key: &str) -> Option<Definition> {
+    const KEYWORDS: [&str; 10] = [
+        "fn",
+        "struct",
+        "enum",
+        "trait",
+        "type",
+        "const",
+        "static",
+        "mod",
+        "union",
+        "macro_rules!",
+    ];
+    let before = code[..col].trim_end();
+    for keyword in KEYWORDS {
+        if let Some(prefix) = before.strip_suffix(keyword)
+            && !prefix.chars().next_back().is_some_and(is_ident)
+        {
+            return Some(Definition::Item);
+        }
+    }
+    let lead = before.trim_start();
+    let opens_line =
+        lead.is_empty() || lead == "pub" || (lead.starts_with("pub(") && lead.ends_with(')'));
+    let after = code[col + key.len()..].trim_start();
+    let member_shape = after.is_empty()
+        || after.starts_with(['(', '{', ','])
+        || (after.starts_with(':') && !after.starts_with("::"))
+        || (after.starts_with('=') && !after.starts_with("==") && !after.starts_with("=>"));
+    (opens_line && member_shape).then_some(Definition::Member)
 }
 
 /// The range of a whole `symbol` occurrence starting at `line`/`byte_col`
@@ -106,28 +138,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn finds_symbol_and_detects_drift() {
-        let dir = std::env::temp_dir().join("traceability-lsp-resolve-test");
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("file.rs");
-        std::fs::write(
-            &path,
-            "fn other() {}\nfn apply_river_mine() {}\nfn apply_demolition() {}\n",
-        )
-        .unwrap();
+    fn finds_the_definition_not_the_first_use() {
+        let text = "// apply_river_mine in a comment\nfn other() { apply_river_mine(); }\n\
+                    pub(crate) fn apply_river_mine() {}\n";
+        assert_eq!(
+            locate_symbol(text, "effects::apply_river_mine"),
+            Some((3, 14))
+        );
+    }
 
-        let near = resolve_symbol(&path, 2, "apply_river_mine");
-        assert!(near.found);
-        assert!(near.within_window);
-        assert_eq!(near.line, 2);
+    #[test]
+    fn finds_variants_and_fields() {
+        let text = "enum E {\n    Wall,\n    Gate(u8),\n}\nstruct S {\n    pub loaded_on: u8,\n}\n";
+        assert_eq!(locate_symbol(text, "Gate"), Some((3, 4)));
+        assert_eq!(locate_symbol(text, "loaded_on"), Some((6, 8)));
+    }
 
-        let drifted = resolve_symbol(&path, 99, "apply_river_mine");
-        assert!(drifted.found);
-        assert!(!drifted.within_window);
-        assert_eq!(drifted.line, 2);
-
-        let missing = resolve_symbol(&path, 1, "does_not_exist");
-        assert!(!missing.found);
-        std::fs::remove_dir_all(&dir).ok();
+    #[test]
+    fn comments_and_partial_words_do_not_count() {
+        let text = "// Wall\nfn walled() {}\n";
+        assert_eq!(locate_symbol(text, "Wall"), None);
+        assert_eq!(locate_symbol(text, "wall"), None);
     }
 }

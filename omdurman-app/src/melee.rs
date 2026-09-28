@@ -604,6 +604,7 @@ mod tests {
     /// §6.82/§7.6: one click advances the whole selected stack into the
     /// vacated hex, up to the four-unit limit (§5.51) -- not just its first
     /// eligible unit.
+    #[traceability_macro::rulebook("§5.51", "§6.82", "§7.6")]
     #[test]
     fn one_click_advances_the_stack_up_to_the_stacking_limit() {
         let mut gs = GameState::new(Scenario::Campaign);

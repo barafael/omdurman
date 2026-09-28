@@ -327,6 +327,7 @@ mod verification {
     /// a stream of drifting gunboats can never grind the same mine twice
     /// -- and leaves the boat afloat and unflagged.
     // §10.12 §10.13
+    #[traceability_macro::rulebook("§10.12", "§10.13")]
     #[kani::proof]
     #[kani::unwind(4)]
     fn river_mine_triggers_even_on_a_harmless_roll() {
@@ -346,6 +347,7 @@ mod verification {
     /// sets the drift-with-the-current flag on the gunboat, for the rest of
     /// the game.
     // §10.12
+    #[traceability_macro::rulebook("§10.12")]
     #[kani::proof]
     #[kani::unwind(4)]
     fn river_mine_engine_loss_arms_the_drift_flag() {
@@ -364,6 +366,7 @@ mod verification {
     /// §10.12: a roll in the sunk band (8-10; here the band edge 8) removes
     /// the gunboat from the board entirely.
     // §10.12
+    #[traceability_macro::rulebook("§10.12")]
     #[kani::proof]
     #[kani::unwind(4)]
     fn river_mine_sinking_removes_the_gunboat() {
@@ -380,6 +383,7 @@ mod verification {
     /// record and the board untouched -- the latch is one-way and the
     /// rejection is atomic (no band re-rolled, no casualty).
     // §10.13
+    #[traceability_macro::rulebook("§10.13")]
     #[kani::proof]
     #[kani::unwind(4)]
     fn a_triggered_mine_never_fires_again() {
@@ -399,6 +403,7 @@ mod verification {
     /// possible roll, and in particular the mine stays untriggered and
     /// available against the British player.
     // §10.14
+    #[traceability_macro::rulebook("§10.14")]
     #[kani::proof]
     #[kani::unwind(4)]
     fn dervish_gunboats_pass_mined_hexes_unharmed() {

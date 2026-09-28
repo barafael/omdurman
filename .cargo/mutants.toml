@@ -1,0 +1,13 @@
+# cargo-mutants configuration (the mutation gate: CI `mutation-gate` job,
+# `cargo run -p traceability-lsp --bin mutation-gate`).
+#
+# Mutants that are genuinely equivalent -- no rule-visible behaviour can
+# tell them apart -- are excluded here by name regex, one per entry, each
+# with a comment saying why. Do not exclude a mutant just because no test
+# kills it: write the test.
+exclude_re = [
+    # stacking_rule's pair loop starts each unit's partners at `i + 1`; the
+    # mutant `i * 1` also pairs every unit with itself, and a unit never
+    # cohabits with itself or mixes groups/colours with itself.
+    'replace \+ with \* in stacking_rule',
+]

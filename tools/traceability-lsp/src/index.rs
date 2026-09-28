@@ -33,8 +33,6 @@ pub struct ResolvedImpl {
     pub file: PathBuf,
     pub line: usize,
     pub byte_col: usize,
-    /// True when the resolved line sits within the declared anchor window.
-    pub within_window: bool,
 }
 
 /// The full navigable graph for one workspace snapshot.
@@ -106,14 +104,13 @@ impl TraceIndex {
         for req in &requirements {
             for imp in &req.impls {
                 let file = root.join(&imp.file);
-                let resolved = resolve_symbol(&file, imp.line, &imp.symbol);
+                let resolved = resolve_symbol(&file, &imp.symbol);
                 resolved_impls.push(ResolvedImpl {
                     section: req.section.clone(),
                     symbol: imp.symbol.clone(),
                     file,
                     line: resolved.line,
                     byte_col: resolved.byte_col,
-                    within_window: resolved.within_window,
                 });
             }
         }

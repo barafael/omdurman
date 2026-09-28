@@ -34,13 +34,24 @@ pub struct Mapping {
     /// covers its whole domain, a test covers the cases it enumerates.
     #[serde(default)]
     pub proofs: Vec<String>,
+    /// The manual's own words for the rule an `implemented` section's code
+    /// enforces, quoted verbatim (checked against the OCR manual text).
+    #[serde(default)]
+    pub clause: Option<String>,
+    /// The one test or proof whose job is that clause; it must be listed in
+    /// `tests` or `proofs`.
+    #[serde(default)]
+    pub witness: Option<String>,
+    /// Where the implementation deliberately departs from the clause, and why.
+    #[serde(default)]
+    pub approximation: Option<String>,
 }
 
-/// A single `[[mapping.impl]]` site. `line` is 1-based and may drift; the
-/// `resolve` module re-locates symbols robustly rather than trusting it.
+/// A single `[[mapping.impl]]` site: a file and a symbol in it. There is no
+/// line number; `resolve` locates the symbol's definition.
 #[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct ImplSite {
     pub file: String,
-    pub line: u32,
     pub symbol: String,
 }

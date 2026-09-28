@@ -1648,6 +1648,7 @@ mod verification {
     /// level. If road state ever leaked into the level lookup, road hexes
     /// would silently shadow the printed LOS table.
     // §6.3
+    #[traceability_macro::rulebook("§6.3")]
     #[kani::proof]
     #[kani::unwind(14)]
     fn los_level_depends_only_on_the_ground() {
@@ -1681,6 +1682,7 @@ mod verification {
     /// over a wall from a lower-flying firer, so they must not degrade
     /// into terrain lookups.
     // §6.3
+    #[traceability_macro::rulebook("§6.3")]
     #[kani::proof]
     #[kani::unwind(14)]
     fn los_level_overrides_hold_for_gunboats_and_forts() {
@@ -1711,6 +1713,7 @@ mod verification {
     /// the nested `&[&[BlockingRule]]` static makes the pointer reads
     /// intractable for the solver (measured: hours vs seconds).
     // §6.3
+    #[traceability_macro::rulebook("§6.3")]
     #[kani::proof]
     #[kani::unwind(14)]
     fn blocking_grid_is_total_and_walls_block_ground_firers() {

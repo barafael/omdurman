@@ -143,6 +143,7 @@ mod verification {
     /// is 7 or better; every lower roll scatters to a ring hex. The full d10
     /// domain, proven over the authored table.
     // §6.64
+    #[traceability_macro::rulebook("§6.64")]
     #[kani::proof]
     fn scatter_is_center_exactly_for_rolls_7_to_10() {
         let roll = any_roll();

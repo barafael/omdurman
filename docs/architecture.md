@@ -29,7 +29,7 @@ through at all.
 | `omdurman-app` | yes | The Bevy binary: rendering, input, egui UI, camera, net glue, seats, the in-game AI driver (`bot_player.rs`). |
 | `omdurman-bot` | via net | Headless AI playthrough driver and the in-game AI's decision logic: random, aggressive, LLM-advised and Kitchener/Khalifa commander agents, invariant checks, an offline log auditor. |
 | `traceability-macro` | — | The `#[rulebook("§N")]` proc-macro attribute. |
-| `tools/traceability-typst` | — | Regenerates the traceability PDF; `fix_lines` re-syncs line numbers. |
+| `tools/traceability-typst` | — | Generates the traceability report (`traceability.typ` / PDF); CI builds it, Pages publishes it. |
 | `tools/traceability-lsp` | — | LSP server + VS Code client for rulebook↔code navigation; shares its `checks` with the rules test. |
 | `tools/map-editor` | yes | Native-only board authoring (terrain, hexsides, roads, overlay calibration, set-up letters, entrance areas), the unit-sheet cutting grid and the sprite-annotation editor; writes the RON data files under `omdurman-app/assets/`. |
 | `tools/asset-editor` | no (eframe/egui) | Native-only editor for the rules-data RON tables under `Boardgame - Remember_Gordon/tables/`, with undo/redo and engine cross-checks. |
@@ -367,16 +367,15 @@ is `omdurman-bot`, driven in-app by `bot_player.rs`.
 ## 8. Validating changes
 
 - `cargo test -p omdurman-rules` — engine unit + integration tests.
-- `cargo test -p omdurman-rules --test traceability` — keeps rulebook↔code mapping honest; a
-  symbol rename without a TOML update fails (and `traceability_paths.rs` fails to compile).
+- `cargo test -p omdurman-rules --test traceability` — keeps the rulebook index honest; a
+  symbol rename without a TOML update fails (and `traceability_paths.rs` fails to compile),
+  and every implemented section needs a verbatim clause and a witness.
+- `cargo run -p traceability-lsp --bin mutation-gate -- --in-diff <diff>` — the mutation gate
+  CI runs on every change: the rulebook tests must catch mutants in the code they cite.
 - `cargo run -p omdurman-app` (native) / `trunk serve` (WASM). CI gate is
   `trunk build --release` for `wasm32-unknown-unknown` — keep it green on dependency changes.
-- After moving code: `cargo run -p traceability-typst --bin fix_lines` re-syncs `line` fields.
-  Adding or removing lines in a cited file drifts every `line` below it, so run this before
-  trusting a traceability failure.
-- After editing `docs/traceability.toml`: regenerate the report, or
-  `committed_data_json_is_fresh` fails —
-  `cargo run -p traceability-typst --bin traceability-typst -- docs/traceability.toml traceability.typ tools/traceability-typst/data.json`.
+- The traceability report is generated, not committed (CI artifact; published on Pages):
+  `cargo run -p traceability-typst -- docs/traceability.toml traceability.typ tools/traceability-typst/data.json`.
 - `cargo test -p omdurman-bot` — the strongest whole-engine regression signal (random playthroughs
   with per-effect invariant checks). Takes ~10 minutes; the invariants proptest alone is ~30s.
 - `./scripts/kani.sh -p omdurman-types -p omdurman-rules` — the proof suite (§9; the script

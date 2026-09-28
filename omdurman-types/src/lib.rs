@@ -1901,6 +1901,7 @@ mod tests {
     //   FoK order of battle.
     // - HadendowaForts: the North Fort is a scenario-fixed placement (§9.344),
     //   not player-deployed.
+    #[traceability_macro::rulebook("§9.344", "§9.322")]
     #[test]
     fn fok_picker_allowlist_has_dervish_entry_force_blocks() {
         let allowed = Scenario::FallOfKhartoum
@@ -2004,6 +2005,7 @@ mod verification {
     /// `distance == 1` must be the *same* predicate. Movement, ZOC, melee
     /// adjacency and fire ranges all mix the two freely.
     // §6.22
+    #[traceability_macro::rulebook("§6.22")]
     #[kani::proof]
     fn adjacency_iff_distance_one() {
         let a = any_hex();
@@ -2088,6 +2090,7 @@ mod verification {
     /// Every consecutive pair on the full LOS ray is adjacent -- the property
     /// `has_los`'s `windows(2)` hexside lookups depend on.
     // §6.3
+    #[traceability_macro::rulebook("§6.3")]
     #[kani::proof]
     #[kani::unwind(14)]
     fn line_between_forms_a_connected_ray() {
@@ -2121,6 +2124,7 @@ mod verification {
     // -- HexsideRef canonicalisation (§5.23; keys the per-edge hexside map) --
 
     // §5.23
+    #[traceability_macro::rulebook("§5.23")]
     #[kani::proof]
     fn hexside_ref_is_order_independent() {
         let a = any_hex();
@@ -2182,6 +2186,7 @@ mod verification {
     /// movement and ZOC while thorn hedges additionally block melee and
     /// advance, and Khor Shambat behaves exactly like a generic khor.
     // §5.23 §5.44 §6.3 §6.82 §7.2
+    #[traceability_macro::rulebook("§5.23", "§5.44", "§6.3", "§6.82", "§7.2")]
     #[kani::proof]
     fn hexside_blocking_classifiers_are_exact() {
         let k = any_hexside();
@@ -2271,6 +2276,7 @@ mod verification {
     /// entrance at all; if it ever lost its ZOC block, the enclosure would
     /// leak zones across its gate.
     // §9.233
+    #[traceability_macro::rulebook("§9.233")]
     #[kani::proof]
     fn zariba_trench_ends_differ_only_in_the_entry_rule() {
         let i: usize = kani::any();
@@ -2359,6 +2365,7 @@ mod verification {
     /// and `has_combat_factors` freely, so these must stay mutually
     /// consistent.
     // §7.1 §7.4 §7.5
+    #[traceability_macro::rulebook("§7.1", "§7.4", "§7.5")]
     #[kani::proof]
     fn unit_kind_melee_capability_law_is_exact() {
         let k = any_unit_kind();
@@ -2403,6 +2410,7 @@ mod verification {
     /// allowance (§5.24), and British leaders print a movement factor only
     /// -- no combat factors (§6.51).
     // §6.42
+    #[traceability_macro::rulebook("§6.42", "§6.51", "§5.24")]
     #[kani::proof]
     fn unit_kind_fire_and_movement_capability_law_is_exact() {
         let k = any_unit_kind();
@@ -2434,6 +2442,7 @@ mod verification {
     /// player. Zones of control reduce to "owner != mover" through this
     /// function.
     // §5.41
+    #[traceability_macro::rulebook("§5.41")]
     #[kani::proof]
     fn player_opponent_is_a_fixed_point_free_involution() {
         use super::Player;
@@ -2452,6 +2461,7 @@ mod verification {
     /// this way to step a drifting gunboat downstream), and out of range it
     /// wraps instead of panicking.
     // §5.24
+    #[traceability_macro::rulebook("§5.24")]
     #[kani::proof]
     fn hex_direction_from_index_is_total_mod_six() {
         use super::HexDirection;
@@ -2474,6 +2484,7 @@ mod verification {
     /// The map editor's flow calibration and the gunboat downstream step
     /// both lean on this.
     // §5.24
+    #[traceability_macro::rulebook("§5.24")]
     #[kani::proof]
     fn nile_flow_rotation_composes_and_never_leaves_the_nile() {
         use super::{HexDirection, Road, Terrain};
@@ -2521,6 +2532,7 @@ mod verification {
     /// road), so the movement overlay authored on the map can never leak
     /// into river hexes or silently change kind.
     // §5.11
+    #[traceability_macro::rulebook("§5.11")]
     #[kani::proof]
     fn terrain_road_state_round_trips() {
         use super::{GroundKind, Road, Terrain};

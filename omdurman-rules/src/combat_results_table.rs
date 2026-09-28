@@ -420,6 +420,7 @@ mod verification {
     /// in-bounds by construction and every `Eliminate` payload stays within
     /// the printed 1..=5, for the entire table.
     // §CRT
+    #[traceability_macro::rulebook("§CRT")]
     #[kani::proof]
     fn crt_eliminate_count_stays_within_printed_bounds() {
         let row = any_row();
@@ -432,6 +433,7 @@ mod verification {
     /// For every fire-factor row the result is non-decreasing in the modified
     /// die roll -- a better roll is never worse, anywhere on the table.
     // §CRT
+    #[traceability_macro::rulebook("§CRT")]
     #[kani::proof]
     fn crt_is_monotone_in_the_die_roll_for_every_row() {
         let row = any_row();

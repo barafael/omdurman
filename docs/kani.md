@@ -52,19 +52,18 @@ full suite — and RAM, not CPU, is the binding constraint.
 
 ## The annotation contract
 
-Proofs are traceability citizens. A harness that pins a rule clause carries a
-`// §N` line above `#[kani::proof]` — **not** `#[rulebook(...)]`, because the
-proof modules are `cfg(kani)` on the lib, where dev-dependencies (and the
-proc-macro) do not exist. The fully-qualified harness name must appear in the
+Proofs are traceability citizens. A harness that pins a rule clause carries
+`#[traceability_macro::rulebook("§N")]` above `#[kani::proof]` (the macro is a
+`cfg(kani)`-only dependency of the proof crates; the qualified path saves an
+import in every proof module). The fully-qualified harness name must appear in the
 `proofs = [...]` array of the matching `[[mapping]]` in
 `docs/traceability.toml`, and the mapping is bijective in both directions: an
 annotated harness not listed in the TOML fails the build, and so does a listed
 harness whose annotation went missing. The gate only sees annotated harnesses:
-22 suite harnesses carry no `// §N` and are not tracked (support lemmas such
-as `distance_is_symmetric`, `game_over_is_absorbing`, `sink_chain_is_atomic`;
-see [open-issues.md](open-issues.md)). The scanner walks upward from the
-attribute and stops at the first blank line, so a `§` comment separated from
-`#[kani::proof]` by a blank line does not count. Scoping matters as much as
+22 suite harnesses carry no `#[rulebook]` and are not tracked (support lemmas
+such as `distance_is_symmetric`, `game_over_is_absorbing`,
+`sink_chain_is_atomic`; see [open-issues.md](open-issues.md)). A `§` in a
+comment is a citation, never coverage. Scoping matters as much as
 existence: a proof that a modifier *clamps to 1..=10* does not prove that the
 modifier *is +2*. Name harnesses after the property, not the function.
 
@@ -233,13 +232,14 @@ exhaustive one.
 
 1. State the property as a biconditional or an exact bound over the whole
    domain — not a sample.
-2. `// §N` above `#[kani::proof]`, matching an `implemented` mapping's
-   section; add the fully-qualified name to that mapping's `proofs` array.
+2. `#[traceability_macro::rulebook("§N")]` above `#[kani::proof]`, matching
+   an `implemented` mapping's section; add the fully-qualified name to that
+   mapping's `proofs` array.
 3. Build the minimal state (`kani_minimal()`, or a smaller local helper);
    stub heavy cascades only with an exactness argument in the doc comment.
 4. Run the harness alone, then the suite; note the runtime if notable.
-5. Regenerate the traceability artifacts (`fix_lines`, then the typst tool)
-   if you moved cited code — the PDF renders proofs in blue above the tests.
+5. Build the report locally if you want to see it (CI builds and publishes
+   it) — the PDF renders proofs in blue above the tests.
 
 The suite is the proof of the proofs: run `./scripts/kani.sh -p
 omdurman-types -p omdurman-rules` before you trust the word "verified".

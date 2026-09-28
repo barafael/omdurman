@@ -1,11 +1,11 @@
 //! Test annotation collection.
 //!
-//! Two styles exist in the codebase:
-//!   * `#[rulebook("§6.22")]` attributes above `#[test]` fns (omdurman-rules)
-//!   * `// §X.Y` comment blocks above `#[test]` fns (omdurman-app)
+//! One style counts: a `#[rulebook("§6.22")]` attribute (or the qualified
+//! `#[traceability_macro::rulebook(...)]`) on a `#[test]` fn or a Kani proof
+//! harness. A `§` in a comment is a citation, never coverage.
 //!
-//! `scan_test_entries` source-scans both styles across the workspace and
-//! records file/line so navigation and code lens can point at the test.
+//! `scan_test_entries` source-scans the workspace and records file/line so
+//! navigation and code lens can point at the test.
 //! The coverage check (`collect_test_annotations`) is a thin aggregation
 //! over the same scan, so it does not depend on a prior build having
 //! populated `target/rulebook_entries.jsonl`.
@@ -14,15 +14,15 @@ use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::scan::{collect_rs_files, extract_section_refs_from_str};
+use crate::scan::collect_rs_files;
 
 /// Collect all annotated tests for the coverage check, keyed by
 /// `crate::module::fn_name` (the file path as module path).
 ///
 /// Keys are fully qualified so same-named test fns in different files can
 /// never merge in the coverage map: the TOML `tests = [...]` arrays must list
-/// the qualified name. Source-scans every relevant crate for both annotation
-/// styles (`#[rulebook("§...")]` attributes and `// §` comments). This used to
+/// the qualified name. Source-scans every relevant crate for `#[rulebook]`
+/// attributes. This used to
 /// load `target/rulebook_entries.jsonl` (written by the `#[rulebook]`
 /// proc-macro during `cfg(test)` builds of `omdurman-rules`), but that made
 /// the traceability test fragile: running `cargo test -p omdurman-rules --test
@@ -112,8 +112,8 @@ pub struct TestEntry {
     pub line: usize,
 }
 
-/// Source-scan the workspace for annotated tests in either style, recording
-/// locations. Uses disk contents only; does not require the jsonl to be fresh.
+/// Source-scan the workspace for `#[rulebook]`-annotated tests and proofs,
+/// recording locations. Uses disk contents only; does not require the jsonl to be fresh.
 pub fn scan_test_entries(root: &Path) -> Vec<TestEntry> {
     let mut out: Vec<TestEntry> = Vec::new();
     for dir in [
@@ -145,83 +145,31 @@ fn scan_file_test_entries(path: &Path, out: &mut Vec<TestEntry>) {
     let lines: Vec<&str> = content.lines().collect();
 
     for (i, line) in lines.iter().enumerate() {
-        // Style 1: #[rulebook("§...")] above #[test] fn.
-        if let Some(attr) = line.trim().strip_prefix("#[rulebook(") {
-            // The attribute tail is `)]` after the last argument; trim it so
-            // `#[rulebook("§4")]` -> `"§4"` rather than `"§4")]`. Without this
-            // the section ended up as `§4")]` and never matched the TOML's `§4`.
-            let attr = attr.trim_end().trim_end_matches(")]");
-            let sections: BTreeSet<String> = attr
-                .split(',')
-                .filter_map(|s| {
-                    let s = s.trim().trim_matches('"').trim().to_string();
-                    if s.starts_with('§') && !s.is_empty() {
-                        Some(s)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            if sections.is_empty() {
-                continue;
-            }
-            // A `#[rulebook]` attribute only counts when it annotates an
-            // actual `#[test]` fn -- never a helper. `#[ignore]`d tests are
-            // excluded: an ignored test is not coverage.
-            if let Some((fn_line, name, kind)) = locate_test(&lines, i + 1, true, EntryKind::Test) {
-                out.push(TestEntry {
-                    name,
-                    kind,
-                    sections,
-                    file: path.to_path_buf(),
-                    line: fn_line,
-                });
-            }
+        // `#[rulebook("§...")]` (or the qualified `traceability_macro::`
+        // form) on a `#[test]` fn or a Kani proof -- the only annotation.
+        // A `§` in a comment is a citation (it must name a mapped section),
+        // never coverage.
+        let trimmed = line.trim();
+        let Some(attr) = trimmed
+            .strip_prefix("#[rulebook(")
+            .or_else(|| trimmed.strip_prefix("#[traceability_macro::rulebook("))
+        else {
             continue;
-        }
-
-        // Style 2: // § comments above #[test] or #[kani::proof].
-        //
-        // Kani harnesses use this style rather than `#[rulebook]`: the proof
-        // modules are `#[cfg(kani)]` on the *lib*, where dev-dependencies (and
-        // so the `traceability_macro` proc-macro) are not available.
-        let trimmed_line = line.trim();
-        if !trimmed_line.starts_with("#[test]") && !trimmed_line.starts_with("#[kani::proof") {
-            continue;
-        }
-        let mut sections = BTreeSet::new();
-        let mut ignored_above = false;
-        let mut j = i;
-        while j > 0 {
-            j -= 1;
-            let prev = lines[j].trim();
-            if prev.is_empty() {
-                break;
-            }
-            if let Some(rest) = prev.strip_prefix("//") {
-                extract_section_refs_from_str(rest.trim(), &mut sections);
-            } else if prev.starts_with("#[") {
-                if prev.starts_with("#[ignore") {
-                    ignored_above = true;
-                }
-                // Other attributes (e.g. #[should_panic]) don't break the run.
-            } else {
-                break;
-            }
-        }
+        };
+        // The attribute tail is `)]` after the last argument; trim it so
+        // `#[rulebook("§4")]` -> `"§4"` rather than `"§4")]`.
+        let attr = attr.trim_end().trim_end_matches(")]");
+        let sections: BTreeSet<String> = attr
+            .split(',')
+            .map(|s| s.trim().trim_matches('"').trim().to_string())
+            .filter(|s| s.starts_with('§'))
+            .collect();
         if sections.is_empty() {
             continue;
         }
-        // `#[ignore]` above or between `#[test]` and the fn excludes the test
-        // (locate_test already returns None for a `#[ignore]` below).
-        let seed_kind = if trimmed_line.starts_with("#[kani::proof") {
-            EntryKind::Proof
-        } else {
-            EntryKind::Test
-        };
-        if let Some((fn_line, name, kind)) = locate_test(&lines, i + 1, false, seed_kind)
-            && !ignored_above
-        {
+        // It only counts on an actual `#[test]` fn or proof harness -- never
+        // a helper -- and not on an `#[ignore]`d one.
+        if let Some((fn_line, name, kind)) = locate_test(&lines, i + 1) {
             out.push(TestEntry {
                 name,
                 kind,
@@ -233,50 +181,42 @@ fn scan_file_test_entries(path: &Path, out: &mut Vec<TestEntry>) {
     }
 }
 
-/// Starting the scan `after` the `#[rulebook]`/`#[test]` marker line (0-based),
-/// find the `fn name` line within a few lines. Returns the 1-based fn line.
-///
-/// `require_test_attr` (style 1): a `#[test]` line must appear between the
-/// `#[rulebook]` attribute and the fn, so annotated helpers never count as
-/// tests. Returns `None` for `#[ignore]`d fns: an ignored test is not coverage.
-fn locate_test(
-    lines: &[&str],
-    after: usize,
-    require_test_attr: bool,
-    seed_kind: EntryKind,
-) -> Option<(usize, String, EntryKind)> {
-    let mut seen_test = !require_test_attr;
-    let mut kind = seed_kind;
+/// Starting the scan `after` the `#[rulebook]` line (0-based), find the
+/// `fn name` line among the attributes (and comments) that follow. Returns
+/// the 1-based fn line, or `None` when no `#[test]` / Kani proof attribute
+/// (`#[kani::proof]` or `#[cfg_attr(kani, kani::proof)]`) precedes the fn,
+/// or the fn is `#[ignore]`d: an ignored test is not coverage.
+fn locate_test(lines: &[&str], after: usize) -> Option<(usize, String, EntryKind)> {
+    let mut kind = None;
     let mut ignored = false;
-    for (k, line) in lines.iter().enumerate().skip(after).take(4) {
+    for (k, line) in lines.iter().enumerate().skip(after).take(12) {
         let trimmed = line.trim();
         if trimmed.starts_with("#[ignore") {
             ignored = true;
+        } else if trimmed == "#[test]" {
+            kind.get_or_insert(EntryKind::Test);
+        } else if trimmed.starts_with("#[kani::proof")
+            || trimmed.starts_with("#[cfg_attr(kani, kani::proof")
+        {
+            // A Kani harness counts as coverage the same way a test does: it
+            // proves the cited section over its whole bounded input domain.
+            kind = Some(EntryKind::Proof);
+        } else if trimmed.starts_with("#[") || trimmed.starts_with("//") {
             continue;
-        }
-        if trimmed == "#[test]" {
-            seen_test = true;
-            continue;
-        }
-        // A Kani harness counts as coverage the same way a test does: it is
-        // run by `cargo kani` (scripts/kani.sh) and proves the cited section
-        // over its whole bounded input domain.
-        if trimmed.starts_with("#[kani::proof") {
-            seen_test = true;
-            kind = EntryKind::Proof;
-            continue;
-        }
-        if trimmed.starts_with("#[") {
-            continue;
-        }
-        if let Some(rest) = trimmed.strip_prefix("fn ") {
-            if !seen_test || ignored {
+        } else {
+            // The fn line ends the attribute run; anything else is no test.
+            let rest = trimmed.strip_prefix("fn ")?;
+            if ignored {
                 return None;
             }
-            let name = rest.split('(').next().unwrap_or(rest).trim().to_string();
-            return Some((k + 1, name, kind));
+            let name = rest
+                .split(['(', '<'])
+                .next()
+                .unwrap_or(rest)
+                .trim()
+                .to_string();
+            return Some((k + 1, name, kind?));
         }
-        return None;
     }
     None
 }

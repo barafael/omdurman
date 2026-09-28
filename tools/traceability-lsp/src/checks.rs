@@ -9,7 +9,6 @@ use std::fs;
 use std::path::Path;
 
 use crate::manual;
-use crate::resolve::LINE_WINDOW;
 use crate::scan::collect_section_refs;
 use crate::schema::{PSEUDO_SECTIONS, Traceability};
 use crate::tests::{EntryKind, collect_annotations_of_kind, collect_test_annotations};
@@ -68,7 +67,7 @@ pub fn check_matrix(root: &Path) -> MatrixReport {
     };
     report.num_mappings = table.mappings.len();
 
-    let mut all_impls: Vec<(String, u32, String)> = Vec::new();
+    let mut all_impls: Vec<(String, String)> = Vec::new();
 
     for m in &table.mappings {
         match m.status.as_str() {
@@ -80,7 +79,7 @@ pub fn check_matrix(root: &Path) -> MatrixReport {
                     ));
                 }
                 for imp in &m.impls {
-                    all_impls.push((imp.file.clone(), imp.line, imp.symbol.clone()));
+                    all_impls.push((imp.file.clone(), imp.symbol.clone()));
                 }
             }
             "descriptive" | "implicit" | "out-of-scope" => {
@@ -100,9 +99,58 @@ pub fn check_matrix(root: &Path) -> MatrixReport {
         }
     }
 
-    // ---- Check 1b: impl sites exist and the symbol is (nearly) there -------
+    // ---- Check 1c: every implemented section states its clause and witness --
+    // The clause is the manual's own sentence(s) for the rule the code
+    // enforces, verbatim; the witness is the test or proof whose job it is.
+    let manual_text = manual_section_texts();
+    for m in &table.mappings {
+        let head = format!("{} \"{}\"", m.section, m.title);
+        if m.status != "implemented" {
+            if m.clause.is_some() || m.witness.is_some() || m.approximation.is_some() {
+                report.failures.push(format!(
+                    "{head} is '{}' but has a clause, witness or approximation (only implemented sections do)",
+                    m.status
+                ));
+            }
+            continue;
+        }
+        match &m.clause {
+            None => report.failures.push(format!(
+                "{head} has no clause -- quote the manual's rule its code enforces"
+            )),
+            // Pseudo-sections (printed charts) have no manual paragraph to
+            // quote; their clause describes the chart.
+            Some(_) if PSEUDO_SECTIONS.contains(&m.section.as_str()) => {}
+            Some(clause) => {
+                let section = m.section.trim_start_matches('§');
+                let found = manual_text
+                    .get(section)
+                    .is_some_and(|text| normalize_prose(text).contains(&normalize_prose(clause)));
+                if !found {
+                    report.failures.push(format!(
+                        "{head}: clause is not verbatim in the manual's §{section} text: \"{clause}\""
+                    ));
+                }
+            }
+        }
+        match &m.witness {
+            None => report.failures.push(format!(
+                "{head} has no witness -- name the test or proof for its clause"
+            )),
+            Some(w) if !m.tests.contains(w) && !m.proofs.contains(w) => {
+                report.failures.push(format!(
+                    "{head}: witness '{w}' is not listed in its tests or proofs"
+                ));
+            }
+            Some(_) => {}
+        }
+    }
+
+    // ---- Check 1b: impl sites exist and the symbol is in the cited file -----
+    // No line numbers: the symbol is located in the file's code (comments do
+    // not count), and renames are the compiler anchors' job (Check 4).
     report.num_impls = all_impls.len();
-    for (file, line, symbol) in &all_impls {
+    for (file, symbol) in &all_impls {
         let full_path = root.join(file);
         if !full_path.exists() {
             report
@@ -111,32 +159,10 @@ pub fn check_matrix(root: &Path) -> MatrixReport {
             continue;
         }
         let content = fs::read_to_string(&full_path).unwrap_or_default();
-        let lines: Vec<&str> = content.lines().collect();
-        let search_key = symbol.rsplit("::").next().unwrap_or(symbol);
-        let cited = (*line as usize).saturating_sub(1);
-        let lo = cited.saturating_sub(LINE_WINDOW);
-        let hi = (cited + LINE_WINDOW + 1).min(lines.len());
-        // Match only the *code* part of each line: a symbol that survives only
-        // in a `//` / `///` comment near the cited line must not satisfy the
-        // anchor check. (Heuristic: `//` inside a string literal also truncates
-        // -- acceptable, since cited symbols are Rust identifiers.)
-        let near = lines.get(lo..hi).is_some_and(|w| {
-            w.iter()
-                .any(|l| l.split("//").next().unwrap_or(l).contains(search_key))
-        });
-        if !near {
-            let anywhere = content.contains(search_key);
-            let here = lines
-                .get(cited)
-                .map(|l| l.trim().chars().take(80).collect::<String>())
-                .unwrap_or_else(|| "out of range".to_string());
-            let why = if anywhere {
-                "line has drifted (symbol exists elsewhere in the file)"
-            } else {
-                "symbol not found in file"
-            };
+        if crate::resolve::locate_symbol(&content, symbol).is_none() {
+            let key = symbol.rsplit("::").next().unwrap_or(symbol);
             report.failures.push(format!(
-                "{file}:{line}: '{symbol}' (key '{search_key}') -- {why} (line {line}: {here:?})",
+                "{file}: '{symbol}' (key '{key}') -- symbol not found in file"
             ));
         }
     }
@@ -212,7 +238,7 @@ pub fn check_matrix(root: &Path) -> MatrixReport {
     // ---- Check 4: every cited symbol is compiler-anchored -----------------
     let paths_file = fs::read_to_string(root.join("omdurman-rules/tests/traceability_paths.rs"))
         .unwrap_or_default();
-    for (_, _, symbol) in &all_impls {
+    for (_, symbol) in &all_impls {
         let key = symbol.rsplit("::").next().unwrap_or(symbol);
         if !paths_file.contains(key) {
             report.failures.push(format!(
@@ -226,7 +252,7 @@ pub fn check_matrix(root: &Path) -> MatrixReport {
     // (the paths -> matrix direction; Check 4 is matrix -> paths).
     let toml_symbol_keys: std::collections::BTreeSet<String> = all_impls
         .iter()
-        .map(|(_, _, s)| s.rsplit("::").next().unwrap_or(s).to_string())
+        .map(|(_, s)| s.rsplit("::").next().unwrap_or(s).to_string())
         .collect();
     let anchors = anchors_from_paths_file(&paths_file);
     // Owning-type `use` items that only exist so `let _ = Type::member;`
@@ -251,6 +277,37 @@ pub fn check_matrix(root: &Path) -> MatrixReport {
     }
 
     report
+}
+
+/// Each manual section's text (number without `§` -> its paragraph lines).
+fn manual_section_texts() -> std::collections::HashMap<String, String> {
+    let path = manual_path();
+    let text = fs::read_to_string(&path).unwrap_or_default();
+    let lines: Vec<&str> = text.lines().collect();
+    crate::manual::index_manual(&path)
+        .into_iter()
+        .map(|s| {
+            let from = s.start_line.saturating_sub(1);
+            let to = s.end_line.min(lines.len());
+            (s.num, lines.get(from..to).unwrap_or_default().join(" "))
+        })
+        .collect()
+}
+
+/// Prose compared for the clause check: markdown emphasis dropped, quotes,
+/// dashes and whitespace unified.
+pub fn normalize_prose(s: &str) -> String {
+    let unified: String = s
+        .chars()
+        .filter(|c| !matches!(c, '*' | '_'))
+        .map(|c| match c {
+            '\u{2018}' | '\u{2019}' => '\'',
+            '\u{201C}' | '\u{201D}' => '"',
+            '\u{2013}' | '\u{2014}' => '-',
+            c => c,
+        })
+        .collect();
+    unified.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Identifiers that appear in `traceability_paths.rs` anchor forms but are

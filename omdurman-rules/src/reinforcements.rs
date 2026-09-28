@@ -274,6 +274,7 @@ mod verification {
     /// query), and past the schedule -- where every remaining unit must
     /// already have entered -- there is no wave for any `u8` turn.
     // §9.112 §9.113
+    #[traceability_macro::rulebook("§9.112", "§9.113")]
     #[kani::proof]
     fn wave_for_turn_answers_exactly_on_the_printed_schedule() {
         let t: u8 = kani::any();

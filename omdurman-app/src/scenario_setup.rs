@@ -232,6 +232,7 @@ mod tests {
     }
 
     // §9.212
+    #[traceability_macro::rulebook("§9.212")]
     #[test]
     fn historical_places_all_six_leaders_when_anchors_present() {
         let map = map_with(&[
@@ -263,6 +264,7 @@ mod tests {
     }
 
     // §9.212
+    #[traceability_macro::rulebook("§9.212")]
     #[test]
     fn missing_anchor_is_reported_not_dropped_silently() {
         // Only the A hex exists; the other five leaders are unresolved.
@@ -273,6 +275,7 @@ mod tests {
     }
 
     // §9.111
+    #[traceability_macro::rulebook("§9.111")]
     #[test]
     fn campaign_has_no_fixed_placements() {
         let map = map_with(&[(28, 21, SetupLetter::K)]);
@@ -291,6 +294,7 @@ mod tests {
     }
 
     // §9.321, §9.344, §9.346
+    #[traceability_macro::rulebook("§9.321", "§9.344", "§9.346")]
     #[test]
     fn fall_of_khartoum_places_gordon_in_the_palace() {
         // §9.321/§9.346: GORDON (British_Boats 3,1) starts in the Palace hex.
@@ -354,6 +358,7 @@ mod tests {
     }
 
     // §9.321
+    #[traceability_macro::rulebook("§9.321")]
     #[test]
     fn fall_of_khartoum_reports_missing_palace() {
         // No Palace on the map -> GORDON is surfaced as unresolved, not dropped.
@@ -367,6 +372,7 @@ mod tests {
     // §9.321/§9.344 -- the FoK map's fort landmarks sit at the correct hexes:
     // Fort Makran at (4,1) is an AE set-up fort (§9.321); the Dervish-
     // controlled North Fort is at (19,3) (§9.344).
+    #[traceability_macro::rulebook("§9.344", "§9.321")]
     #[test]
     fn fall_of_khartoum_fort_landmarks_sit_at_the_correct_hexes() {
         let loaded = crate::board_state::LoadedAnnotations::from_board_ron();
@@ -432,6 +438,7 @@ mod tests {
 
     // §9.344 -- the auto-setup done-gate must not key off allocated UnitIds,
     // which are sequential opaque tokens unrelated to the sprite position.
+    #[traceability_macro::rulebook("§9.344")]
     #[test]
     fn placement_done_gate_matches_by_identity_not_allocated_id() {
         let map = map_with_named(&[(7, 9, "Palace"), (4, 1, "North Fort")]);

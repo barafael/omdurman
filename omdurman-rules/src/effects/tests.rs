@@ -657,7 +657,7 @@ mod tests {
     // §5.54: an integrated brigade stack keeps its +1 when other units join
     // its attack on the same hex (§6.14 combined fire); a stack short of one
     // of its battalions has no integrity, whoever else fires.
-    #[rulebook("§5.54")]
+    #[rulebook("§5.54", "§6.14")]
     #[test]
     fn brigade_integrity_survives_combined_fire() {
         let mut state = GameState::new(Scenario::Historical);
@@ -2260,7 +2260,7 @@ mod tests {
     // §7.5/§7.6: when the lone defender withdraws before the blow falls, the
     // declared melee lapses -- no roll, and no forced Dervish advance (§7.6
     // binds only when the melee *eliminates* the defenders).
-    #[rulebook("§7.5")]
+    #[rulebook("§7.5", "§7.6")]
     #[test]
     fn melee_lapses_when_every_defender_withdrew() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -5294,7 +5294,7 @@ mod tests {
     // §6.54: "The −3 defensive value is deducted from the die roll of enemy
     // fire attacks on friendly units stacked inside the fort" -- anyone may
     // fire at the garrison; only the fort itself is the artillery's (§6.62).
-    #[rulebook("§6.54")]
+    #[rulebook("§6.54", "§6.62")]
     #[test]
     fn the_units_inside_a_fort_are_fired_at_with_its_minus_three() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -5515,7 +5515,7 @@ mod tests {
     // §6.63/§6.3/§5.23: a breach is an *opening* -- the authored board stays
     // static, and every game-time read (effective hexside kind, LOS) treats
     // the breached wall as passable.
-    #[rulebook("§6.63")]
+    #[rulebook("§6.63", "§6.3", "§5.23")]
     #[test]
     fn breach_is_an_opening_for_los_and_effective_kinds() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -7285,6 +7285,7 @@ mod tests {
     }
 
     // §6.64
+    #[rulebook("§6.64")]
     #[test]
     fn named_gunboat_has_howitzer() {
         assert!(GunboatId::Named(crate::NamedGunboat::Sultan).has_howitzer());
@@ -7292,6 +7293,7 @@ mod tests {
     }
 
     // §2.32
+    #[rulebook("§2.32")]
     #[test]
     fn old_gunboat_lacks_howitzer() {
         assert!(!GunboatId::Old(crate::OldGunboat::LordKitchener).has_howitzer());
@@ -7299,6 +7301,7 @@ mod tests {
     }
 
     // §6.64
+    #[rulebook("§6.64")]
     #[test]
     fn named_gunboat_may_fire_howitzer_in_second_subphase() {
         let mut state = playing(Scenario::Campaign);
@@ -7313,6 +7316,7 @@ mod tests {
     }
 
     // §2.32
+    #[rulebook("§2.32")]
     #[test]
     fn old_gunboat_rejected_from_howitzer_subphase() {
         let mut state = playing(Scenario::Campaign);
@@ -7330,6 +7334,7 @@ mod tests {
     }
 
     // §6.64: named gunboat in direct fire still uses the Artillery line.
+    #[rulebook("§6.64")]
     #[test]
     fn named_gunboat_direct_fire_uses_artillery_weapon() {
         let mut state = playing(Scenario::Campaign);
@@ -7363,6 +7368,7 @@ mod tests {
     }
 
     // §6.64: Dervish gunboats have no howitzer.
+    #[rulebook("§6.64")]
     #[test]
     fn dervish_gunboat_lacks_howitzer() {
         assert!(!GunboatId::DervishGunboat(1).has_howitzer());
@@ -7373,7 +7379,7 @@ mod tests {
     // §6.14 *permits* combining ("players may combine fire"); the player
     // chooses the subunits of the attack, so the explicit-firer builder
     // honors a lone unit while the combined builder still sums the stack.
-    #[rulebook("§6.13")]
+    #[rulebook("§6.13", "§6.14")]
     #[test]
     fn single_unit_fires_alone_from_a_stack() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -7649,7 +7655,7 @@ mod tests {
     // §9.111: only the Dervish initial force deploys at Campaign setup --
     // the rest arrive as §9.112/§9.113 reinforcements, and the
     // Anglo-Egyptian side deploys nothing at all.
-    #[rulebook("§9.111")]
+    #[rulebook("§9.111", "§9.112", "§9.113")]
     #[test]
     fn campaign_setup_rejects_non_initial_force() {
         let mut state = GameState::new(Scenario::Campaign); // permissive zone
@@ -7790,7 +7796,7 @@ mod tests {
     // types exist at all, and their exact counts. Dervish fort counters play
     // no role (§9.344: the single North Fort is a scenario-fixed placement),
     // nor do Dervish gunboats or any non-entry tribe.
-    #[rulebook("§9.322", "§9.344")]
+    #[rulebook("§9.322", "§9.344", "§9.321")]
     #[test]
     fn fok_order_of_battle_dervish() {
         let mut state = GameState::new(Scenario::FallOfKhartoum); // permissive zone
@@ -7932,6 +7938,7 @@ mod tests {
     // British infantry units" covers 1B First + 1B Second; a third battalion
     // (whatever its ordinal) is rejected. Likewise the gunboat cap binds
     // across the four old-style boat counters.
+    #[rulebook("§9.321")]
     #[test]
     fn fok_caps_bind_across_counter_variants() {
         let mut state = GameState::new(Scenario::FallOfKhartoum);
@@ -8853,7 +8860,7 @@ mod tests {
     /// §6.82/§7.6: a rejected `AdvancePhase` must not drop the
     /// advance-after-combat windows. The `vacated_by_combat.clear()` used to
     /// run before the `MeleePendingResolution` guard.
-    #[rulebook("§6.82")]
+    #[rulebook("§6.82", "§7.6")]
     #[test]
     fn rejected_advance_phase_keeps_vacated_windows() {
         let mut state = playing(Scenario::Campaign);
@@ -9289,7 +9296,7 @@ mod tests {
     // §6.42 Maxim/Howitzer subphase never holds an action there and is
     // skipped -- both after the Anglo-Egyptian defensive fire and after
     // their offensive fire. (Other scenarios keep it.)
-    #[rulebook("§9.321")]
+    #[rulebook("§9.321", "§6.42")]
     #[test]
     fn fall_of_khartoum_has_no_maxim_howitzer_subphase() {
         let seq = |scenario, player| {
@@ -9331,7 +9338,7 @@ mod tests {
     // hexside" -- one standing in either hex that shares it, not a unit
     // merely next to one of those hexes -- and never a leader (GORDON could
     // otherwise die to a breach, §9.346).
-    #[rulebook("§6.63")]
+    #[rulebook("§6.63", "§9.346")]
     #[test]
     fn breach_casualty_stands_at_the_wall() {
         let mut state = playing(Scenario::FallOfKhartoum);
@@ -10340,7 +10347,7 @@ mod tests {
     // §7.5/§5.23: a retreat is movement -- never through the enemy, never
     // into the walled city for a unit barred from it -- but it may end
     // beside friends, under the stacking law.
-    #[rulebook("§7.5")]
+    #[rulebook("§7.5", "§5.23")]
     #[test]
     fn a_retreat_needs_an_open_path_and_may_join_friends() {
         let mut state = playing(Scenario::Campaign);
@@ -10458,7 +10465,7 @@ mod tests {
 
     // §6.53 -> §6.62: a fort the Royal Engineers demolish takes one of the
     // enemy units inside it with it.
-    #[rulebook("§6.53")]
+    #[rulebook("§6.53", "§6.62")]
     #[test]
     fn a_demolished_fort_takes_an_occupant_with_it() {
         let mut state = playing(Scenario::Campaign);
@@ -10555,7 +10562,7 @@ mod tests {
 
     // §5.26/§6.51: a reinforcement entering an enemy ZOC stops there; a
     // Dervish one entering a lone British leader's hex eliminates him.
-    #[rulebook("§5.26")]
+    #[rulebook("§5.26", "§6.51")]
     #[rulebook("§6.51")]
     #[test]
     fn entering_reinforcements_stop_in_zoc_and_overrun_lone_leaders() {
@@ -10643,7 +10650,7 @@ mod tests {
     }
 
     // §6.41/§6.42: batteries breach walls in the Direct Fire subphase only.
-    #[rulebook("§6.63")]
+    #[rulebook("§6.63", "§6.41", "§6.42")]
     #[test]
     fn walls_are_breached_in_the_direct_fire_subphase_only() {
         let mut state = playing(Scenario::Campaign);
@@ -10757,7 +10764,7 @@ mod tests {
     // §10.11/§10.21: the river obstacles lie in Nile hexes south of the
     // hexrow where the Khor Shambat empties into the Nile; the chain is a
     // line of adjacent hexes.
-    #[rulebook("§10.11")]
+    #[rulebook("§10.11", "§10.21")]
     #[rulebook("§10.21")]
     #[test]
     fn river_obstacles_lie_south_of_the_khor_shambat() {

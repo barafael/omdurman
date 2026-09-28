@@ -727,6 +727,7 @@ mod serde_tests {
     // §1.1: a seat's command scope round-trips through serde with
     // deterministic (BTreeSet-ordered) contents, so every peer and the
     // replay see the identical binding.
+    #[traceability_macro::rulebook("§1.1")]
     #[test]
     fn start_game_commands_round_trip() {
         let event = GameEvent::StartGame {
@@ -776,6 +777,7 @@ mod serde_tests {
     // `commands` keyed by session `PeerId`) still deserialize -- the old keys
     // are ignored and the game loads seatless, so legacy saved games stay
     // reviewable.
+    #[traceability_macro::rulebook("§1.1")]
     #[test]
     fn legacy_start_game_without_commands_still_loads() {
         let legacy = serde_json::json!({
@@ -887,6 +889,7 @@ mod serde_tests {
     }
 
     // §1.1: brigade scopes serialize as their printed designation set.
+    #[traceability_macro::rulebook("§1.1")]
     #[test]
     fn brigade_scope_display_and_membership() {
         let mut set = BTreeSet::new();

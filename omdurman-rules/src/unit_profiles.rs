@@ -1309,7 +1309,7 @@ mod tests {
     // brigades; Army claims nothing -- communal units (artillery, gunboats,
     // forts, cavalry, unbrigaded infantry) are claimable by no scope and so
     // are every faction member's to act on.
-    #[rulebook("§1.1")]
+    #[rulebook("§1.1", "§5.53")]
     #[test]
     fn command_owns_unit_follows_tribes_and_brigades() {
         use omdurman_types::CommandScope;
@@ -1394,7 +1394,7 @@ mod tests {
     // §9.111/§9.112: the counter sheet holds the Campaign order of battle --
     // 17 forts (the 17th cut into the Hadendowa block) and each tribe's
     // printed strength.
-    #[rulebook("§9.111")]
+    #[rulebook("§9.111", "§9.112")]
     #[rulebook("§9.112")]
     #[test]
     fn dervish_roster_matches_the_order_of_appearance() {

@@ -327,6 +327,7 @@ mod late_joiner_tests {
     /// A `PlaceUnit` is a deployment during Setup and a reinforcement entry
     /// during a Movement phase.
     // §9.112
+    #[traceability_macro::rulebook("§9.112")]
     #[test]
     fn place_unit_translates_by_phase() {
         use omdurman_rules::effects::GameEffect;
@@ -426,6 +427,7 @@ mod late_joiner_tests {
     // -- scenario selects the board (§dual-map) -------------------------------
 
     // §9.31
+    #[traceability_macro::rulebook("§9.31")]
     #[test]
     fn scenario_maps_to_board() {
         use omdurman_types::Scenario;
@@ -445,6 +447,7 @@ mod late_joiner_tests {
     /// board, and `LoadedAnnotations` (initialised from compiled codegen data)
     /// must keep both boards' data regardless of which board is live.
     // §9.31
+    #[traceability_macro::rulebook("§9.31")]
     #[test]
     fn start_game_scenario_selects_board() {
         use omdurman_types::Scenario;
@@ -475,6 +478,7 @@ mod late_joiner_tests {
     // command scopes (live and replay paths share `apply_start_game`, so a
     // late joiner gates on the same commands) and restarts the local
     // member's setup readiness.
+    #[traceability_macro::rulebook("§1.1")]
     #[test]
     fn replayed_start_game_stages_commands_and_resets_ready() {
         use omdurman_types::{CommandScope, DervishTribe};
@@ -1709,6 +1713,7 @@ fn ai_plays_headless(
 
 /// The Historical scenario, AI against AI, to the §9.24 result. About a
 /// minute in a debug build; run with `cargo test -p omdurman-app -- --ignored`.
+#[traceability_macro::rulebook("§9.24")]
 #[test]
 #[ignore = "long: a full Historical game headless"]
 fn ai_plays_historical_headless() {

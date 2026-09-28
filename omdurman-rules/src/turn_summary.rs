@@ -262,6 +262,7 @@ mod tests {
     /// Only the Campaign keeps victory points: the Historical scenario
     /// (§9.24, units eliminated) and FALL OF KHARTOUM never feed VP lines to
     /// the telegraph, and tell it not to mention points.
+    #[traceability_macro::rulebook("§9.24")]
     #[test]
     fn only_the_campaign_reports_victory_points() {
         use omdurman_types::Scenario;

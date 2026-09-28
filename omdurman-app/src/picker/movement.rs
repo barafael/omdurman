@@ -425,6 +425,7 @@ mod tests {
     /// leg cost must match the engine's `movement_cost_for`, or the app plots
     /// routes the engine rejects at commit (the plotted move then silently
     /// does nothing).
+    #[traceability_macro::rulebook("§9.233")]
     #[test]
     fn trench_end_crossing_costs_two_extra_mp() {
         let a = HexCoord::new(0, 0);
@@ -519,6 +520,7 @@ mod tests {
     /// (max of up/down) can't express them, so `gunboat_cap_ok` re-derives the
     /// engine's rule per leg; a plotted route the engine would reject must
     /// never be confirmable.
+    #[traceability_macro::rulebook("§5.24")]
     #[test]
     fn gunboat_cap_gate_mirrors_the_engine() {
         let (mut gs, id, section) = gunboat_state();
@@ -600,6 +602,7 @@ mod tests {
     /// §5.24: a boat that went upstream earlier this turn has the *upstream*
     /// allowance as its remaining budget (not the larger downstream one), so
     /// re-selecting it must not offer more hexes than the engine will accept.
+    #[traceability_macro::rulebook("§5.24")]
     #[test]
     fn remaining_mp_respects_the_sticky_upstream_cap() {
         let (mut gs, id, section) = gunboat_state();

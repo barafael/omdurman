@@ -504,6 +504,7 @@ mod verification {
     /// `saturating_sub` in the accessors -- so `Some` iff `t <= len`,
     /// *including* turn 0.
     // §9.12
+    #[traceability_macro::rulebook("§9.12", "§9.22", "§9.33", "§9.341")]
     #[kani::proof]
     #[kani::unwind(14)]
     fn scenario_turn_indexing_is_exact_for_every_scenario() {
@@ -542,6 +543,7 @@ mod verification {
     /// day run from turn 1 (the printed track's day turns never interleave
     /// with night before turn 9).
     // §8.2
+    #[traceability_macro::rulebook("§8.2")]
     #[kani::proof]
     #[kani::unwind(14)]
     fn desertion_event_is_unique_to_the_first_night_turn() {
@@ -571,6 +573,7 @@ mod verification {
     /// one: it is what gates the night rules for Anglo-Egyptian movement
     /// and ranges.
     // §9.33 §9.341
+    #[traceability_macro::rulebook("§9.33", "§9.341")]
     #[kani::proof]
     #[kani::unwind(14)]
     fn fall_of_khartoum_night_window_is_turn_one() {

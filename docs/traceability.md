@@ -1,146 +1,154 @@
-# Traceability in the Omdurman codebase: a matrix that cannot rot
+# Traceability in the Omdurman codebase: an index, and the evidence behind it
 
-*How this repo keeps a 1982 rulebook and a Rust engine provably paired — and
-where the guarantees end.*
+*How this repo pairs a 1982 rulebook with a Rust engine, what the checks
+prove, and what they cannot.*
 
 ---
 
-## The problem
+## What it is
 
-This engine claims to be a faithful transcription of a printed rulebook.
-Claims rot. Comments drift, tests get renamed, symbols move, sections get
-reworded, and six months later nobody can say which line of code implements
-which sentence of the manual — or, worse, everybody *believes* they can.
-This repo's answer is a machine-checked matrix, enforced on every `cargo
-test` run, that makes every direction of drift a build failure.
+`docs/traceability.toml` is a **rulebook index**: one `[[mapping]]` per
+section of the manual, naming the code that implements it, the tests and
+proofs that exercise it, and -- for every implemented section -- the manual's
+own words for the rule the code enforces (`clause`) and the one test or proof
+whose job that rule is (`witness`).
+
+It is an index, not a verdict. An index can be perfectly consistent while the
+code is wrong: in September 2026 an audit against the manual fixed fifteen
+sections that were all marked `implemented`, with one to eleven tests each.
+The structural checks keep the index from rotting; the **evidence** that the
+code follows the rules comes from two further layers -- clauses with
+witnesses, and the mutation gate -- and from reading the manual.
 
 ## The artifacts
 
 | Artifact | Role |
 |---|---|
 | `Boardgame - Remember_Gordon/Manual/RememberGordonManual.md` | The requirement: OCR-corrected transcription of the printed rulebook. |
-| `docs/traceability.toml` | The matrix: one `[[mapping]]` per manual section, with `[[mapping.impl]]` sites (file, line, symbol), `tests`, `proofs`, `status`, and optional `note`/`page`. |
-| `omdurman-rules/tests/traceability_paths.rs` | Compiler anchors: every cited symbol referenced as a real `use`/item path — a rename breaks the build, not a string search. |
-| `tools/traceability-lsp` | The check library (`checks.rs`) shared by the cargo test and the editor LSP, plus the annotation scanner. |
-| `tools/traceability-typst` | `fix_lines` (line re-sync) and the PDF generator (`traceability.typ`, `data.json`, rendered with the `typst` CLI). |
-| `traceability_macro` | The `#[rulebook("§N")]` proc-macro annotating tests. |
+| `docs/traceability.toml` | The index: per section `status`, `[[mapping.impl]]` sites (`file`, `symbol`), `tests`, `proofs`, and for implemented sections `clause`, `witness` and an optional `approximation`. |
+| `omdurman-rules/tests/traceability_paths.rs` | Compiler anchors: every cited symbol as a real `use`/item path -- a rename breaks the build. |
+| `tools/traceability-lsp` | The checks (`checks.rs`), shared by `cargo test` and the editor LSP; the annotation scanner; the symbol resolver; the `mutation-gate` binary. |
+| `tools/traceability-typst` | The report generator (`traceability.typ`, `data.json`, compiled with `typst`). Not committed: CI builds it, Pages publishes it at `https://barafael.github.io/omdurman/traceability.pdf`. |
+| `traceability_macro` | `#[rulebook("§N")]`, the one annotation that counts. |
 
-## The six structural checks
+## Layer 1: the index (structural checks)
 
-`cargo test -p omdurman-rules --test traceability` runs all of them; the LSP
-runs the same code live. Failure strings are byte-identical in both.
+`cargo test -p omdurman-rules --test traceability`; the LSP shows the same
+failures live.
 
-1. **Impl sites are real.** `implemented` mappings must list `[[impl]]`
-   entries; other statuses must not. Each symbol must appear in *code* (the
-   comment part of a line is stripped) within 8 lines of the cited `line`.
-2. **Every citation is mapped.** Every `§N` mention in Rust source has a
-   `[[mapping]]` (a bare `§5` is covered by its `§5.x` children).
-3. **Matrix → manual.** Every mapping section exists in the manual text.
-4. **Every cited symbol is compiler-anchored** in `traceability_paths.rs`.
-5. **Manual → matrix.** Every manual section has a mapping — container
-   headings become `status = "descriptive"`.
-6. **Anchors → matrix.** Every anchor in the paths file is cited by some
-   `[[impl]]` (owning-type imports and a small `Some/Ok/Err/std` allowlist
-   excepted). The two files cannot drift apart.
+1. **Impl sites are real.** `implemented` mappings list `[[impl]]` entries;
+   other statuses must not. Each symbol must occur in the cited file's code
+   (comments do not count). There are no line numbers: the resolver finds the
+   symbol's definition (`fn`, `struct`, variant, field ...) when the report is
+   built, so moving code never touches the index.
+2. **Every citation is mapped**, both ways: every `§N` in Rust source names a
+   mapped section, every mapping names a manual section, and every manual
+   section has a mapping (containers are `descriptive`).
+3. **Every cited symbol is compiler-anchored** in `traceability_paths.rs`,
+   and every anchor is cited.
+4. **Coverage is a hard gate.** Every implemented mapping lists at least one
+   test that exists, is not `#[ignore]`d, and carries `#[rulebook("§N")]` for
+   the section. `tests` and `proofs` are bijective with the attributes in
+   source. Only the attribute counts: a `§` in a comment is a citation, never
+   coverage, so rewording a doc comment cannot change coverage.
 
-On top of the structure sits **coverage as a hard gate**: every
-`implemented` mapping must list at least one test that (a) exists, (b) is
-not `#[ignore]`d, and (c) carries the section's annotation. Tests and proofs
-are bijective with their annotations *in both directions*: an annotated test
-missing from the TOML fails, and so does a listed test whose annotation was
-removed.
+## Layer 2: clauses and witnesses (reviewable evidence)
 
-## Annotation mechanics
+Every implemented section states **which rule** it enforces and **which test**
+proves it:
 
-- Tests: `#[rulebook("§6.24", "§5.54")]` directly above `#[test]`. Multiple
-  sections are fine; the test must then be listed under each.
-- Kani proofs: `// §N` above `#[kani::proof]` — never `#[rulebook]`, because
-  the `cfg(kani)` proof modules live on the lib where dev-dependencies (and
-  the proc-macro) are unavailable. `///` doc comments count too: the scanner
-  reads any `//`-prefixed line (including `///`) walking upward from the
-  attribute until a blank line.
-- `#[ignore]`d tests are not coverage and are excluded from the bijection.
-- The scanner keys on trailing identifiers, so `UnitKind::may_melee_attack`
-  matches on `may_melee_attack`; qualify with the owning type for readability.
+```toml
+clause = "If Dervish leaders elect to stack, however, they may only stack with units of their command (i.e. color)."
+witness = "omdurman-rules::src::effects::tests::dervish_leader_stacks_only_with_command_colour"
+```
 
-## Statuses and the honesty valve
+- The clause must be **verbatim** in the manual section's text (whitespace,
+  emphasis and quote/dash styles normalised). A paraphrase that drifts from
+  the rulebook fails. Pseudo-sections without manual text (the Combat Results
+  Table, `§CRT`) describe their chart instead.
+- The witness must be one of the section's listed tests or proofs.
+- `approximation` says where the code deliberately departs from the clause
+  and why. The report shows it in orange under the clause.
 
-- `implemented` — code exists and is test-covered.
-- `descriptive` — narrative or pure container heading; must not carry impls
-  or tests (the gates enforce this).
-- `implicit` — a real convention that needs no enforcement (e.g. "fire is
-  voluntary" in a purely reactive engine); the `note` argues the reading.
-- `out-of-scope` — physical components, printed-table scans, setup fluff.
+The report prints clause, witness and approximation above each section's code,
+so a reviewer reads the rule next to the test that claims it. What the check
+cannot do is read the witness: whether it asserts the clause is the reviewer's
+call. Witnesses that only cover part of their clause are listed in
+[open-issues.md](open-issues.md) as tests to write.
 
-The `note` field is the honesty valve. When only part of a manual section is
-engine-enforced — the Zariba builders' end-of-turn adjacency is not
-re-checked, the fort's −3 fire defence has no term in
-`mandatory_fire_modifiers` — the note says so in the mapping itself. A reader
-of the PDF sees the gap next to the green checkmark. Undocumented partial
-implementation is the one failure mode this system does not catch on its own.
+## Layer 3: the mutation gate (machine-checked evidence)
+
+`cargo run -p traceability-lsp --bin mutation-gate`; the CI job
+`mutation-gate` runs it on every push and pull request with `--in-diff`.
+
+For every engine function an implemented section cites, cargo-mutants mutates
+it (flips comparisons, replaces return values, deletes branches) and runs
+**only the engine tests of the sections that cite it**. A mutant those tests
+all miss means the cited code can change without any rulebook test noticing.
+On a change, only mutants on changed lines are tested: new and edited rule
+code must be pinned by its sections' tests, and old code is checked as it is
+touched. A cited function with mutants but no engine test fails too.
+
+Genuinely equivalent mutants (no rule-visible behaviour can tell them apart)
+go in `.cargo/mutants.toml`, each with a comment saying why. A mutant no test
+kills is not equivalent; write the test.
+
+## Statuses and notes
+
+- `implemented` -- code, tests, a clause and a witness.
+- `descriptive` -- narrative or container heading; no impls, tests or clause.
+- `implicit` -- a real convention that needs no enforcement; the `note` argues
+  the reading.
+- `out-of-scope` -- physical components, printed-table scans, setup fluff.
+
+`note` carries other caveats; unlike `approximation` it is not in the report.
 
 ## Where the guarantees end
 
-The gates prove *structure*: that symbols exist, lines point somewhere real,
-tests carry the right annotations, the mapping covers the manual. They cannot
-prove *meaning*. Three failure classes survive every green check:
+- **Witnesses are chosen, not checked.** The gate proves a section's tests
+  pin its cited code; whether the witness asserts the clause is read by a
+  person.
+- **Uncited code is ungated.** The mutation gate only mutates functions the
+  index cites; a rule implemented somewhere the index does not point is
+  invisible to it.
+- **Self-referential proofs** prove the constants they encode (see
+  `docs/kani.md`); a mis-transcribed table stays green.
+- **The manual is an OCR transcription.** "Verbatim" means verbatim against
+  it, not against the printed page.
 
-1. **Annotation-deep tests.** A test annotated §7.3 that asserts only
-   `is_ok()` would pass on a sequential implementation of a simultaneous
-   rule. The annotation is a claim; only the assertions honour it.
-2. **Self-referential proofs.** A harness named
-   `movement_column_matches_the_printed_chart` proves the chart matches *the
-   constants encoded in the harness*. If those constants mis-transcribe the
-   paper, the proof is green forever (see `docs/kani.md`).
-3. **Data divergence.** The manual `.md` has no Terrain Effects Chart
-   transcription, so the engine's chart is invisible to the matrix-to-manual
-   check; a wrong table verified the wrong rules until someone read the scan.
-   The chart now has a RON transcription
-   (`Boardgame - Remember_Gordon/tables/terrain_effects_chart.ron`) that a
-   parity test checks against `terrain_chart.rs` cell by cell. That closes the
-   engine-vs-transcription gap, not the transcription-vs-scan gap, and the
-   manual `.md` still lacks the chart.
-
-The remedy is a four-way audit: for each mapping, read the manual sentence,
-the cited code, the whole test body, and the proof property, and judge
-whether each would fail on a plausible wrong implementation. The matrix makes
-that audit cheap by handing you the shortlist; it cannot do the audit for
-you.
+The remedy stays the audit: read the manual sentence, the cited code, the
+witness body. The index makes that audit cheap; the clauses make its
+conclusions visible; the mutation gate keeps them from silently eroding.
 
 ## Workflow
 
 **Adding a rule:** cite the section in a comment at the implementation
-(`(rulebook §6.11)`), add the `[[mapping]]` with at least one
-`#[rulebook]`-annotated test, anchor the symbol in `traceability_paths.rs`.
-Container headings get `descriptive` and nothing else.
+(`(rulebook §6.11)`); add the `[[mapping]]` with `status = "implemented"`,
+the impl sites, a verbatim `clause`, a `witness`, and at least one
+`#[rulebook]`-annotated test; anchor the symbols in `traceability_paths.rs`.
 
 **Renaming a symbol:** update the `symbol` in the TOML *and* the anchor in
-`traceability_paths.rs` — miss either and the build fails.
+`traceability_paths.rs`.
 
-**Moving code:** run `cargo run -p traceability-typst --bin fix_lines` to
-re-sync `line` fields (it scores definition sites, preferring the nearest
-match to the old line).
+**Moving code:** nothing to do.
 
-**Regenerating the PDF artifacts** (commit with the TOML; a stale
-`data.json` fails the freshness gate):
+**Building the report locally:**
 
 ```sh
-cargo run -p traceability-typst --bin traceability-typst -- \
+cargo run -p traceability-typst -- \
     docs/traceability.toml traceability.typ tools/traceability-typst/data.json
 typst compile traceability.typ traceability.pdf
 ```
 
-One caveat for editors: the traceability LSP's diagnostics are only as good
-as its workspace root — unrooted, it reports every test as "not found" and
-every listed test as unlisted. The cargo test is the authority; do not chase
-ghosts from a badly-rooted editor session.
+**Running the mutation gate locally** (copies the tree; `--in-place` is for
+CI's throwaway checkout):
 
-## What the matrix buys
+```sh
+cargo run -p traceability-lsp --bin mutation-gate -- --section §5.51
+git diff --no-ext-diff origin/main > my.diff
+cargo run -p traceability-lsp --bin mutation-gate -- --in-diff my.diff
+```
 
-A rename is caught by the compiler, a moved symbol by the line check, a
-deleted test by the coverage gate, an orphaned annotation by the bijection,
-a dropped manual section by the reverse mapping. That is the whole surface of
-*structural* rot, closed. The semantic layer — does the code actually *do*
-what §N says, and does the test actually *pin* it — remains a human
-discipline, exercised by audit and encoded honestly in `note`s. The matrix
-cannot make the engine faithful; it makes unfaithfulness visible.
+One caveat for editors: the LSP's diagnostics are only as good as its
+workspace root -- unrooted, it reports every test as "not found". The cargo
+test is the authority.

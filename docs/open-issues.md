@@ -144,6 +144,32 @@ item when it is fixed.
 
 ## Verification
 
+- Weak clause witnesses (`docs/traceability.toml`): the named test asserts
+  only part of its section's clause. Write the missing test, then make it the
+  witness.
+  - §2.32: nothing checks that Maxims fire on the Maxims line and artillery
+    and old gunboats on the Artillery line.
+  - §6.11: nothing checks that each counter carries its printed fire factor.
+  - §6.41: nothing asserts allocate-everything-then-resolve (the engine does
+    not enforce it; see the approximation).
+  - §6.42: no test shows a named gunboat firing howitzer fire.
+  - §9.33: nothing pins the early end when GORDON falls.
+  - §9.344: nothing checks that the North Fort fort may fire its guns.
+  - §9.345: nothing checks that six upstream movement points are debited.
+  - §10.22: no British gunboat is moved toward the chain.
+
+- Mutation-gate debt: mutants the citing sections' tests miss, from a pilot
+  over the sections the 2026-09 audit fixed (7 of its 20 functions finished
+  before the run was stopped for memory, plus §5.51). The gate runs on the
+  changed lines of a change, so these block only when that code is edited;
+  `cargo run -p traceability-lsp --bin mutation-gate` without `--in-diff`
+  lists them all (~500 mutants, a few hours).
+  - §6.64 `apply_howitzer_fire`: 5 of 7 missed (the phase, firer and target
+    guards).
+  - §7.3/§7.6 `apply_resolve_melee`: 2 of 5 (the attacker re-check).
+  - §10.12-14 `apply_river_mine`: 1 of 5.
+  - §5.51 `check_stacking`: 1 of 4; `stacking_rule`: 8 of 26 (a lone
+    gunboat, the group-purity guard, the leader-colour arms).
 - The expensive Kani tier (`omdurman-rules/src/effects/expensive.rs`) has not
   been run to completion: each harness takes longer than 20 minutes on a
   desktop. Run it on a big machine (`KANI_EXPENSIVE=1 ./run-kani.sh`) and
@@ -153,6 +179,6 @@ item when it is fixed.
   `FriendliesTransport` are unreachable. A small real board would need a
   cheap proof-build hasher for `BoardInfo`'s maps (a symbolic hex hashed
   with SipHash on every lookup is prohibitive).
-- 22 Kani harnesses have no `// §N` annotation and are not tracked in
+- 22 Kani harnesses have no `#[rulebook]` annotation and are not tracked in
   `traceability.toml` (e.g. `distance_is_symmetric`, `game_over_is_absorbing`,
   `sink_chain_is_atomic`, `place_mine_is_atomic`).

@@ -26,13 +26,56 @@ struct Mapping {
     proofs: Vec<String>,
     #[serde(rename = "impl", default)]
     impls: Vec<ImplSite>,
+    /// The manual's rule this section's code enforces, verbatim.
+    #[serde(default)]
+    clause: Option<String>,
+    /// The test or proof whose job is that clause.
+    #[serde(default)]
+    witness: Option<String>,
+    /// Where the implementation departs from the clause, and why.
+    #[serde(default)]
+    approximation: Option<String>,
+}
+
+/// The clause block of a section: the quoted rule, its witness and any
+/// approximation. Mirrored in `traceability-template.typ`.
+fn clause_block(m: &Mapping) -> String {
+    let Some(clause) = &m.clause else {
+        return String::new();
+    };
+    let mut out = format!(
+        "#block(width: 100%, fill: luma(246), stroke: (left: 2pt + green.darken(20%)), inset: 0.5em)[#text(size: 9pt)[*Clause:* \u{201C}{}\u{201D}]",
+        typst_content(clause)
+    );
+    if let Some(witness) = &m.witness {
+        out.push_str(&format!(
+            " \\ #text(size: 9pt)[*Witness:* #raw(\"{}\")]",
+            witness.replace('\\', "\\\\").replace('"', "\\\"")
+        ));
+    }
+    if let Some(approximation) = &m.approximation {
+        out.push_str(&format!(
+            " \\ #text(size: 9pt, fill: orange.darken(35%))[*Approximation:* {}]",
+            typst_content(approximation)
+        ));
+    }
+    out.push_str("]\n#v(0.3em)\n");
+    out
 }
 
 #[derive(serde::Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 struct ImplSite {
     file: String,
-    line: u32,
     symbol: String,
+}
+
+impl ImplSite {
+    /// The symbol's line, found at its definition (the matrix holds no line
+    /// numbers; see `traceability_lsp::resolve`).
+    fn line(&self, root: &Path) -> u32 {
+        traceability_lsp::resolve::resolve_symbol(&root.join(&self.file), &self.symbol).line as u32
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -425,16 +468,11 @@ mod tests {
         );
     }
 
-    /// The committed `data.json` must match a fresh regeneration from
-    /// `docs/traceability.toml` + the OCR manual. A stale artifact fails here;
-    /// fix by re-running the generator and committing both outputs:
-    ///
-    /// ```sh
-    /// cargo run -p traceability-typst -- docs/traceability.toml \
-    ///     traceability.typ tools/traceability-typst/data.json
-    /// ```
+    /// The real matrix generates: both outputs build, every mapping reaches
+    /// the data document, and the markup names every section. (The outputs
+    /// are not committed; CI builds them and publishes the PDF on Pages.)
     #[test]
-    fn committed_data_json_is_fresh() {
+    fn the_report_generates_from_the_real_matrix() {
         let root = workspace_root();
         let toml_content =
             fs::read_to_string(root.join("docs/traceability.toml")).expect("read toml");
@@ -444,46 +482,16 @@ mod tests {
             .join("RememberGordonManual.md");
         let manual_sections = parse_manual_sections(&manual_path);
         let data = build_data(&table, &manual_sections, &root);
-        let fresh = serde_json::to_string_pretty(&data).expect("serialize data JSON");
-
-        let committed_path = root.join("tools/traceability-typst/data.json");
-        let committed = fs::read_to_string(&committed_path)
-            .unwrap_or_else(|e| panic!("cannot read {}: {e}", committed_path.display()));
-        // The regenerated document embeds the workspace root as an absolute
-        // path (it drives the PDF's `vscode://file/` deep links), so a fresh
-        // regeneration on a different machine — CI's
-        // `/home/runner/work/...` vs a developer's checkout — differs in
-        // exactly that one field. Normalize the `root` value on BOTH sides
-        // (they are different machines' paths, so replacing only the local
-        // root is not enough); everything else must still match
-        // byte-for-byte.
-        let normalize_root = |s: String| -> String {
-            let key = "\"root\": \"";
-            match s.find(key) {
-                Some(start) => {
-                    let value_start = start + key.len();
-                    match s[value_start..].find('"') {
-                        Some(len) => {
-                            let mut out = String::with_capacity(s.len());
-                            out.push_str(&s[..value_start]);
-                            out.push_str("<WORKSPACE_ROOT>");
-                            out.push_str(&s[value_start + len..]);
-                            out
-                        }
-                        None => s,
-                    }
-                }
-                None => s,
-            }
-        };
-        assert_eq!(
-            normalize_root(fresh.trim_end().to_string()),
-            normalize_root(committed.trim_end().to_string()),
-            "{} is stale -- regenerate with `cargo run -p traceability-typst -- \
-             docs/traceability.toml traceability.typ tools/traceability-typst/data.json` \
-             and commit it",
-            committed_path.display()
-        );
+        assert_eq!(data.total_mappings, table.mappings.len());
+        serde_json::to_string_pretty(&data).expect("serialize data JSON");
+        let markup = generate_typst(&table, &manual_sections, &root);
+        for m in &table.mappings {
+            assert!(
+                markup.contains(&m.section),
+                "{} missing from the report",
+                m.section
+            );
+        }
     }
 }
 
@@ -617,8 +625,19 @@ fn chapter_title(key: &str) -> String {
 // Typst preamble
 // ---------------------------------------------------------------------------
 
+/// The commit the report's GitHub links point at: `GITHUB_SHA` when built in
+/// GitHub Actions (the published report cites exactly the code it was built
+/// from), else `HEAD`.
+fn source_rev() -> String {
+    std::env::var("GITHUB_SHA")
+        .ok()
+        .filter(|sha| !sha.is_empty())
+        .unwrap_or_else(|| "HEAD".to_string())
+}
+
 fn generate_preamble(root: &Path) -> String {
     let root_str = root.to_string_lossy().replace('\\', "/");
+    let rev = source_rev();
     format!(
         r##"#set page(paper: "a4", margin: (top: 2cm, bottom: 2cm, left: 2.5cm, right: 2cm))
 #set text(font: ("EB Garamond", "Libertinus Serif", "DejaVu Serif"), size: 10pt)
@@ -666,7 +685,7 @@ fn generate_preamble(root: &Path) -> String {
 }}
 
 #let github-link(rel, line) = {{
-  let url = "https://github.com/barafael/omdurman/blob/HEAD/" + rel + "#L" + str(line)
+  let url = "https://github.com/barafael/omdurman/blob/{rev}/" + rel + "#L" + str(line)
   link(url)[
     #text(size: 8pt, fill: luma(100), "GH:" + rel + ":" + str(line))
   ]
@@ -841,6 +860,8 @@ fn generate_typst(
                 out.push_str("\n#v(0.3em)\n");
             }
 
+            out.push_str(&clause_block(m));
+
             // Implementation sites (with GitHub links, line numbers, highlighted symbols)
             if !m.impls.is_empty() {
                 out.push_str("#table(\n");
@@ -850,7 +871,8 @@ fn generate_typst(
 
                 for imp in &m.impls {
                     let file_path = root.join(&imp.file);
-                    let snippet_lines = extract_snippet_lines(&file_path, imp.line, 2);
+                    let line = imp.line(root);
+                    let snippet_lines = extract_snippet_lines(&file_path, line, 2);
                     let ext = file_extension(&imp.file);
 
                     // Build snippet with line numbers
@@ -865,13 +887,13 @@ fn generate_typst(
                     // File cell with both VS Code and GitHub links
                     out.push_str(&format!(
                         "  [#vscode-link(\"{}\", {}) \\ #github-link(\"{}\", {})],",
-                        imp.file, imp.line, imp.file, imp.line
+                        imp.file, line, imp.file, line
                     ));
 
                     // Symbol cell with highlight, linked to GitHub
                     out.push_str(&format!(
-                        "  [#link(\"https://github.com/barafael/omdurman/blob/HEAD/{}#L{}\")[#highlight(fill: yellow.transparentize(70%))[#text(weight: \"bold\")[{}]]]],",
-                        imp.file, imp.line, imp.symbol
+                        "  [#link(\"https://github.com/barafael/omdurman/blob/{}/{}#L{}\")[#highlight(fill: yellow.transparentize(70%))[#text(weight: \"bold\")[{}]]]],",
+                        source_rev(), imp.file, line, imp.symbol
                     ));
 
                     if snippet.is_empty() {
@@ -986,6 +1008,8 @@ fn generate_typst(
 #[derive(serde::Serialize)]
 struct DataDocument {
     root: String,
+    /// The commit the GitHub links point at (see `source_rev`).
+    rev: String,
     total_mappings: usize,
     total_impl_sites: usize,
     status_counts: BTreeMap<String, usize>,
@@ -1014,6 +1038,9 @@ struct SectionData {
     impls: Vec<ImplData>,
     tests: Vec<String>,
     proofs: Vec<String>,
+    clause: Option<String>,
+    witness: Option<String>,
+    approximation: Option<String>,
 }
 
 /// One tokenized piece of manual prose: plain text, a `§` reference, or inline
@@ -1421,7 +1448,8 @@ fn see_also_list(
 
 fn build_impl(imp: &ImplSite, root: &Path) -> ImplData {
     let file_path = root.join(&imp.file);
-    let snippet_lines = extract_snippet_lines(&file_path, imp.line, 2);
+    let line = imp.line(root);
+    let snippet_lines = extract_snippet_lines(&file_path, line, 2);
     let snippet: String = snippet_lines
         .iter()
         .map(|(num, line)| format!("{:>3} │ {}", num, line))
@@ -1430,7 +1458,7 @@ fn build_impl(imp: &ImplSite, root: &Path) -> ImplData {
 
     ImplData {
         file: imp.file.clone(),
-        line: imp.line,
+        line,
         symbol: imp.symbol.clone(),
         snippet,
         ext: file_extension(&imp.file).to_string(),
@@ -1489,6 +1517,9 @@ fn build_data(
                     impls: m.impls.iter().map(|imp| build_impl(imp, root)).collect(),
                     tests: m.tests.clone(),
                     proofs: m.proofs.clone(),
+                    clause: m.clause.clone(),
+                    witness: m.witness.clone(),
+                    approximation: m.approximation.clone(),
                 }
             })
             .collect();
@@ -1532,6 +1563,7 @@ fn build_data(
 
     DataDocument {
         root: root.to_string_lossy().replace('\\', "/"),
+        rev: source_rev(),
         total_mappings: table.mappings.len(),
         total_impl_sites: table.mappings.iter().map(|m| m.impls.len()).sum(),
         status_counts,

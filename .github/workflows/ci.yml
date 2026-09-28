@@ -44,7 +44,7 @@ jobs:
     steps:
       # The repo's canonical line endings are LF, and several tests assert
       # byte-identical round trips over committed text files (asset-editor
-      # tables, splash's embedded text, the traceability data.json). Windows
+      # tables, splash's embedded text). Windows
       # runners default to core.autocrlf=true, which would CRLF-convert the
       # checkout and fail all of them.
       - name: Disable git autocrlf
@@ -229,3 +229,74 @@ jobs:
           grep -nE "panicked at|test result: FAILED|^error\[" ci_traceability.log | head -9 | while IFS= read -r line; do
             echo "::error::${line:0:300}"
           done
+
+      # The report is not committed: build it here so every PR can download
+      # the PDF it would publish (and a template error fails the PR, not the
+      # Pages deploy). The deploy workflow publishes it for main.
+      - uses: typst-community/setup-typst@v4
+        with:
+          typst-version: "0.15"
+
+      - name: Traceability report
+        run: |
+          cargo run -p traceability-typst -- docs/traceability.toml traceability.typ tools/traceability-typst/data.json
+          typst compile traceability.typ traceability.pdf
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: traceability-report
+          path: traceability.pdf
+
+  # The rulebook tests must pin the code they cite: on every change, each
+  # mutant cargo-mutants makes on a changed line of a function that an
+  # `implemented` section of docs/traceability.toml cites must fail one of
+  # the engine tests of the sections citing it
+  # (tools/traceability-lsp/src/bin/mutation-gate.rs). Accepted equivalent
+  # mutants go in .cargo/mutants.toml with a comment.
+  mutation-gate:
+    name: Mutation gate
+    runs-on: ubuntu-latest
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mutants
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-mutation-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-mutation-
+
+      - name: The change under test
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git diff --no-ext-diff "origin/${{ github.base_ref }}...HEAD" > gate.diff
+          elif ! git diff --no-ext-diff "${{ github.event.before }}" "${{ github.sha }}" > gate.diff 2>/dev/null; then
+            git diff --no-ext-diff HEAD~1 HEAD > gate.diff
+          fi
+          echo "$(grep -c '^+++ ' gate.diff) file(s) changed"
+
+      - name: Mutation gate
+        shell: bash
+        run: |
+          if [ ! -s gate.diff ]; then echo "empty diff"; exit 0; fi
+          cargo run -p traceability-lsp --bin mutation-gate -- --in-diff gate.diff --in-place
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutation-gate
+          path: target/mutation-gate

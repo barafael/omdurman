@@ -789,6 +789,7 @@ mod verification {
     /// `dervish_range_effects`) -- the authored rows can never leak a band
     /// from outside the printed distance window, for any `u16` distance.
     // §6.22
+    #[traceability_macro::rulebook("§6.22")]
     #[kani::proof]
     fn range_effects_are_out_of_range_outside_the_printed_ten_hex_distance_window() {
         let weapon = any_weapon();
@@ -805,6 +806,7 @@ mod verification {
     /// the very next range is not -- i.e. it really is the last in-range hex
     /// of the authored row, for every weapon and faction.
     // §6.22
+    #[traceability_macro::rulebook("§6.22")]
     #[kani::proof]
     fn max_day_range_is_the_last_in_range_hex() {
         let weapon = any_weapon();
@@ -834,6 +836,7 @@ mod verification {
     /// The night cap is the day max halved (round down) and floored at one --
     /// "all fire ranges are halved (round down, but range 1 stays range 1)".
     // §8.1
+    #[traceability_macro::rulebook("§8.1")]
     #[kani::proof]
     fn night_cap_is_halved_day_max_floored_at_one() {
         let weapon = any_weapon();
@@ -848,6 +851,7 @@ mod verification {
     /// Night fire is the day table gated by the night cap: beyond the cap
     /// `OutOfRange`, within it exactly the daytime band.
     // §8.1
+    #[traceability_macro::rulebook("§8.1")]
     #[kani::proof]
     fn night_range_effects_gates_the_day_band_by_the_cap() {
         let weapon = any_weapon();

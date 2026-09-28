@@ -19,7 +19,6 @@ struct TomlBlock {
 /// One `[[mapping.impl]]` entry located in the TOML text.
 #[derive(Debug, Clone)]
 struct ImplLine {
-    declared: u32,
     file_line: usize,
     symbol_line: usize,
     file: String,
@@ -30,7 +29,7 @@ struct ImplLine {
 fn toml_blocks(text: &str) -> Vec<TomlBlock> {
     let mut blocks: Vec<TomlBlock> = Vec::new();
     let mut cur: Option<TomlBlock> = None;
-    // (file, declared_line, symbol) for the current [[mapping.impl]].
+    // (file, symbol) for the current [[mapping.impl]].
     let mut imp: Option<ImplLine> = None;
 
     for (i, line) in text.lines().enumerate() {
@@ -52,7 +51,6 @@ fn toml_blocks(text: &str) -> Vec<TomlBlock> {
 
         if trimmed == "[[mapping.impl]]" {
             imp = Some(ImplLine {
-                declared: 0,
                 file_line: line_no,
                 symbol_line: line_no,
                 file: String::new(),
@@ -71,8 +69,6 @@ fn toml_blocks(text: &str) -> Vec<TomlBlock> {
             if let Some(rest) = trimmed.strip_prefix("file = ") {
                 cur_imp.file = quoted(rest);
                 cur_imp.file_line = line_no;
-            } else if let Some(rest) = trimmed.strip_prefix("line = ") {
-                cur_imp.declared = rest.trim().parse().unwrap_or(0);
             } else if let Some(rest) = trimmed.strip_prefix("symbol = ") {
                 cur_imp.symbol = quoted(rest);
                 cur_imp.symbol_line = line_no;
@@ -104,17 +100,14 @@ enum Failure {
     UnknownStatus(String, String),
     ManualMissing(String),
     ImplFileMissing(String),
-    ImplDrifted {
-        file: String,
-        line: u32,
-        symbol: String,
-    },
     ImplMissing {
         file: String,
-        line: u32,
         symbol: String,
     },
     NotAnchored(String),
+    /// Any other `{section} ...` failure (clause/witness checks): shown on
+    /// the section's block.
+    SectionScoped(String, String),
     OrphanCitation {
         src_path: String,
         section: String,
@@ -138,30 +131,16 @@ fn parse_failure(s: &str) -> Option<Failure> {
         return Some(Failure::ImplFileMissing(rest.to_string()));
     }
 
-    // `{file}:{line}: '{symbol}' (key '...') -- {why} (line ...)`
+    // `{file}: '{symbol}' (key '...') -- symbol not found in file`
     if let Some((head, tail)) = s.split_once(" -- ")
+        && tail.starts_with("symbol not found")
         && let Some((symbol_head, _)) = head.split_once(" (key '")
-        && let Some((file_line, sym)) = symbol_head.split_once(": '")
+        && let Some((file, sym)) = symbol_head.split_once(": '")
     {
-        let symbol = sym.split('\'').next().unwrap_or("").to_string();
-        if let Some((file, line)) = file_line.rsplit_once(':')
-            && let Ok(line) = line.trim().parse::<u32>()
-        {
-            if tail.starts_with("line has drifted") {
-                return Some(Failure::ImplDrifted {
-                    file: file.to_string(),
-                    line,
-                    symbol,
-                });
-            }
-            if tail.starts_with("symbol not found") {
-                return Some(Failure::ImplMissing {
-                    file: file.to_string(),
-                    line,
-                    symbol,
-                });
-            }
-        }
+        return Some(Failure::ImplMissing {
+            file: file.to_string(),
+            symbol: sym.split('\'').next().unwrap_or("").to_string(),
+        });
     }
 
     // `{src_path} cites {section} which has no [[mapping]] entry`
@@ -234,6 +213,7 @@ fn parse_failure(s: &str) -> Option<Failure> {
         if s.contains(" not found in OCR manual ") {
             return Some(Failure::ManualMissing(section));
         }
+        return Some(Failure::SectionScoped(section, s.to_string()));
     }
 
     None
@@ -243,16 +223,11 @@ fn block_for<'a>(blocks: &'a [TomlBlock], section: &str) -> Option<&'a TomlBlock
     blocks.iter().find(|b| b.section == section)
 }
 
-fn find_impl<'a>(
-    blocks: &'a [TomlBlock],
-    file: &str,
-    line: u32,
-    symbol: &str,
-) -> Option<&'a ImplLine> {
+fn find_impl<'a>(blocks: &'a [TomlBlock], file: &str, symbol: &str) -> Option<&'a ImplLine> {
     blocks
         .iter()
         .flat_map(|b| b.impls.iter())
-        .find(|i| i.file == file && i.declared == line && i.symbol == symbol)
+        .find(|i| i.file == file && i.symbol == symbol)
 }
 
 fn find_impl_by_symbol<'a>(blocks: &'a [TomlBlock], symbol: &str) -> Option<&'a ImplLine> {
@@ -303,16 +278,13 @@ fn rs_diagnostics(index: &TraceIndex, path: &std::path::Path) -> Vec<Diagnostic>
 
     for f in &matrix.failures {
         match parse_failure(f) {
-            Some(Failure::ImplDrifted { file, line, .. })
-            | Some(Failure::ImplMissing { file, line, .. })
-                if file == rel =>
-            {
+            Some(Failure::ImplMissing { file, .. }) if file == rel => {
                 out.push(Diagnostic::new(
-                    full_line(text, line as usize),
+                    full_line(text, 1),
                     Some(DiagnosticSeverity::ERROR),
                     None,
                     Some("traceability".into()),
-                    "impl anchor in docs/traceability.toml does not match this location"
+                    "an impl site in docs/traceability.toml cites a symbol this file does not define"
                         .to_string(),
                     None,
                     None,
@@ -443,22 +415,18 @@ fn toml_diagnostics(index: &TraceIndex) -> Vec<Diagnostic> {
                     ));
                 }
             }
-            Some(Failure::ImplDrifted { file, line, symbol }) => {
-                if let Some(imp) = find_impl(&blocks, &file, line, &symbol) {
+            Some(Failure::ImplMissing { file, symbol }) => {
+                if let Some(imp) = find_impl(&blocks, &file, &symbol) {
                     out.push(err(
                         text,
                         imp.symbol_line,
-                        format!("'{symbol}' — line has drifted (declared line {line})"),
+                        format!("'{symbol}' — symbol not found in {file}"),
                     ));
                 }
             }
-            Some(Failure::ImplMissing { file, line, symbol }) => {
-                if let Some(imp) = find_impl(&blocks, &file, line, &symbol) {
-                    out.push(err(
-                        text,
-                        imp.symbol_line,
-                        format!("'{symbol}' — symbol not found in file (declared line {line})"),
-                    ));
+            Some(Failure::SectionScoped(section, message)) => {
+                if let Some(b) = block_for(&blocks, &section) {
+                    out.push(err(text, b.section_line, message));
                 }
             }
             Some(Failure::NotAnchored(symbol)) => {

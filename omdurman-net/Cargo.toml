@@ -42,6 +42,7 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 tokio = { workspace = true, features = ["rt"] }
 
 [dev-dependencies]
+traceability-macro = { path = "../traceability-macro" }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 matchbox_signaling = { workspace = true }
 futures = { workspace = true }

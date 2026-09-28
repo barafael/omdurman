@@ -1183,6 +1183,7 @@ mod verification {
     /// table; otherwise each player consults their own. The band returned
     /// is exactly the routed table's answer for the physical distance.
     // §6.22 §9.343
+    #[traceability_macro::rulebook("§6.22", "§9.343")]
     #[kani::proof]
     fn range_band_for_routes_to_the_right_faction_table() {
         use crate::range_effects::{ae_range_effects, dervish_range_effects};
@@ -1205,6 +1206,7 @@ mod verification {
     /// else fires on their owner's -- except in Fall of Khartoum, where
     /// every unit in the game fires on the Dervish table.
     // §6.52 §9.343
+    #[traceability_macro::rulebook("§6.52", "§9.343")]
     #[kani::proof]
     fn range_table_player_for_routes_friendlies_and_fok_to_the_dervish_table() {
         let scenario = any_scenario();
@@ -1236,6 +1238,7 @@ mod verification {
     /// 0 passes the cap but the day table itself rules it out of range;
     /// the cap is only an upper gate.)
     // §8.1
+    #[traceability_macro::rulebook("§8.1")]
     #[kani::proof]
     fn night_capped_distance_is_some_exactly_within_the_night_max() {
         use crate::range_effects::night_max_range;

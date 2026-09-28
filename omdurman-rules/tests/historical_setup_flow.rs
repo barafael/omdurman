@@ -45,7 +45,7 @@ fn deploy_first(
 }
 
 // §9.211, §9.212
-#[rulebook("§9.211")]
+#[rulebook("§9.211", "§9.212")]
 #[rulebook("§9.212")]
 #[test]
 fn historical_setup_completes_on_the_campaign_board() {

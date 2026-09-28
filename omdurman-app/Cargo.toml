@@ -48,6 +48,7 @@ dotenvy = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
+traceability-macro = { path = "../traceability-macro" }
 
 [features]
 # Development tooling: in-app Bevy world/resource inspector (egui-based).

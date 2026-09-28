@@ -55,6 +55,7 @@ prove_value_enum!(movement_allowance_value_roundtrips, MovementAllowance);
 /// variant, and would panic). This proves it holds for all variants,
 /// including any added later.
 // §8.1
+#[traceability_macro::rulebook("§8.1")]
 #[kani::proof]
 fn movement_allowance_halve_never_panics() {
     let i: usize = kani::any();
@@ -82,6 +83,7 @@ fn any_roll() -> DieRoll {
 /// the 1..=10 clamp makes it total, which also makes the
 /// `unwrap_or(DieRoll::Ten)` fallback unreachable.
 // §6.24
+#[traceability_macro::rulebook("§6.24")]
 #[kani::proof]
 fn die_roll_apply_modifier_is_total() {
     let roll = any_roll();
@@ -111,6 +113,7 @@ fn die_roll_zero_modifier_is_identity() {
 /// Applying any single fire modifier keeps the roll legal, including
 /// `FireModifier::Terrain(n)` for an arbitrary `n` -- the variant that
 /// carries an unbounded `i16` straight off the wire (§6.23).
+#[traceability_macro::rulebook("§6.23")]
 #[kani::proof]
 fn fire_modifier_keeps_roll_legal() {
     let n: i16 = kani::any();
@@ -129,6 +132,7 @@ fn fire_modifier_keeps_roll_legal() {
 
 /// Same for melee modifiers (§7.7, §9.232).
 // §7.7
+#[traceability_macro::rulebook("§7.7", "§9.232")]
 #[kani::proof]
 fn melee_modifier_keeps_roll_legal() {
     let mods = [
@@ -149,6 +153,7 @@ fn melee_modifier_keeps_roll_legal() {
 /// -- and *only* Anglo-Egyptian, and only at night. The Dervish player's
 /// allowances and every day-turn allowance pass through unchanged.
 // §8.1
+#[traceability_macro::rulebook("§8.1")]
 #[kani::proof]
 fn night_halving_is_ae_only_and_day_neutral() {
     use super::effective_movement_at_night;
@@ -174,6 +179,7 @@ fn night_halving_is_ae_only_and_day_neutral() {
 /// symbolic battalion): any duplicate or mixed brigade destroys the bonus,
 /// any full same-brigade set grants it carrying that brigade.
 // §5.54
+#[traceability_macro::rulebook("§5.54")]
 #[kani::proof]
 fn brigade_integrity_requires_all_four_distinct_battalions_of_one_brigade() {
     use super::brigade_integrity;
@@ -240,6 +246,7 @@ fn brigade_integrity_requires_all_four_distinct_battalions_of_one_brigade() {
 /// band index = `(total-1)/5` clamped to the top row) and is monotone,
 /// so a stronger attack never consults a weaker row.
 // §6.22
+#[traceability_macro::rulebook("§6.22")]
 #[kani::proof]
 fn fire_factor_row_from_total_matches_printed_bands() {
     use crate::combat_results_table::FireFactorRow;
@@ -286,6 +293,7 @@ fn campaign_level_rank(level: &CampaignVictoryLevel) -> i32 {
 /// tactical / 30+ decisive; and net superiority never scores *against*
 /// the side that holds it (monotone along the whole ladder).
 // §9.14
+#[traceability_macro::rulebook("§9.14")]
 #[kani::proof]
 fn campaign_victory_levels_match_manual_superiority_table() {
     use super::CampaignVictoryLevel as V;
@@ -332,6 +340,7 @@ fn campaign_victory_levels_match_manual_superiority_table() {
 /// column 0-4/5-9/10-14/15-29/30+ (draw through decisive), monotone in
 /// eliminations, with negative counts clamped to draw.
 // §9.24
+#[traceability_macro::rulebook("§9.24")]
 #[kani::proof]
 fn historical_victory_ladders_match_manual_bands() {
     use super::HistoricalVictoryLevel;
@@ -377,6 +386,7 @@ fn historical_victory_ladders_match_manual_bands() {
 /// resolves exactly: GORDON dies turn 5 with 24 Dervish losses nets a
 /// British marginal.
 // §9.35
+#[traceability_macro::rulebook("§9.35")]
 #[kani::proof]
 fn fok_victory_ladder_penalties_shift_monotonically() {
     use super::FoKVictoryLevel;
@@ -427,6 +437,7 @@ fn fok_victory_ladder_penalties_shift_monotonically() {
 /// saturating-division-free reference so a new band or a rounding drift
 /// is caught.
 // §6.16
+#[traceability_macro::rulebook("§6.16")]
 #[kani::proof]
 fn range_band_halved_is_max_of_one_and_floor_half() {
     let raw: u16 = kani::any();
@@ -445,6 +456,7 @@ fn range_band_halved_is_max_of_one_and_floor_half() {
 /// is applied. Holds for every band (howitzers' minimum range is about
 /// *distance*, not raw strength, so it does not violate this).
 // §6.16
+#[traceability_macro::rulebook("§6.16")]
 #[kani::proof]
 fn range_band_apply_is_monotone_in_raw() {
     let a: u16 = kani::any();
@@ -464,6 +476,7 @@ fn range_band_apply_is_monotone_in_raw() {
 /// Tripled/Doubled/Normal scale by 3/2/1 (with saturating arithmetic so a
 /// huge factor cannot wrap), and `OutOfRange` zeroes the strength.
 // §6.22
+#[traceability_macro::rulebook("§6.22")]
 #[kani::proof]
 fn range_band_multiplier_arithmetic_is_exact() {
     let raw: u16 = kani::any();
@@ -485,6 +498,7 @@ fn range_band_multiplier_arithmetic_is_exact() {
 /// `fire.rs`) without depending on table cell values. `div_ceil` is the
 /// overflow-safe spelling of `(n+1)/2` that the CRT path already uses.
 // §CRT
+#[traceability_macro::rulebook("§6.16", "§CRT")]
 #[kani::proof]
 fn disrupt_half_is_rounded_up() {
     let n: usize = kani::any();
@@ -509,6 +523,7 @@ fn disrupt_half_is_rounded_up() {
 /// over the whole d10 domain -- a reshuffled band edge would desync the
 /// engine from the printed optional rule.
 // §10.12
+#[traceability_macro::rulebook("§10.12")]
 #[kani::proof]
 fn mine_result_bands_match_the_printed_rule() {
     let roll = any_roll();
@@ -535,6 +550,7 @@ fn mine_result_bands_match_the_printed_rule() {
 /// the table the whole victory ledger folds over, so a drifted value
 /// silently changes every scenario verdict.
 // §9.14
+#[traceability_macro::rulebook("§9.14")]
 #[kani::proof]
 fn vp_source_points_and_scorer_match_the_printed_schedule() {
     use super::VpSource;

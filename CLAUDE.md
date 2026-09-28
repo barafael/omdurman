@@ -40,11 +40,17 @@ The rulebook <-> code traceability check (see "Traceability" below):
 cargo test -p omdurman-rules --test traceability
 ```
 
-Regenerate `traceability.typ` / `data.json` (the crate has two binaries, so `--bin` is
-required; `traceability.pdf` then needs the `typst` CLI):
+Build the traceability report locally (CI builds and publishes it; it is not committed):
 
 ```shell
-cargo run -p traceability-typst --bin traceability-typst -- docs/traceability.toml traceability.typ tools/traceability-typst/data.json
+cargo run -p traceability-typst -- docs/traceability.toml traceability.typ tools/traceability-typst/data.json
+typst compile traceability.typ traceability.pdf
+```
+
+Run the mutation gate (the CI job runs it on the change's diff):
+
+```shell
+cargo run -p traceability-lsp --bin mutation-gate -- --section §5.51
 ```
 
 Run the Kani proof suite (see `docs/architecture.md` §9). Kani has no native Windows
@@ -64,8 +70,9 @@ clones the repo and runs everything on a big machine (`KANI_EXPENSIVE=1 ./run-ka
 same harnesses run under `cargo test` as a randomized test (`EXPENSIVE_SAMPLES=<n>` for more).
 
 CI (`.github/workflows/ci.yml`) runs, per push/PR: `cargo fmt --check`, `cargo clippy
---workspace --all-targets -- -D warnings`, `cargo test --workspace`, and the traceability
-gates — plus the existing Pages deploy. The Kani suite is *not* a push/PR gate: GitHub
+--workspace --all-targets -- -D warnings`, `cargo test --workspace`, the traceability
+gates (plus the report PDF as an artifact) and the mutation gate — plus the Pages deploy,
+which also publishes the report. The Kani suite is *not* a push/PR gate: GitHub
 runners kept killing the job with shutdown signals (exit 143, all harnesses green every
 time), so the job is gated to `workflow_dispatch` — run it manually when wanted, and
 locally via the script above (the authoritative check). CI builds with
@@ -291,38 +298,45 @@ There is no in-app editor — board/asset authoring happens in `tools/map-editor
 
 ## Traceability
 
-`docs/traceability.toml` is the bijective rulebook ↔ code mapping.
-`cargo test -p omdurman-rules --test traceability` enforces (checks shared with
+`docs/traceability.toml` is the rulebook index: one `[[mapping]]` per manual section, naming the
+code that implements it, its tests and proofs, and for `implemented` sections the manual's rule
+the code enforces (`clause`, quoted verbatim) and the one test or proof whose job it is
+(`witness`). It is an index, not a proof of correctness -- the evidence is the witnesses and the
+mutation gate. `cargo test -p omdurman-rules --test traceability` enforces (checks shared with
 the editor LSP in `tools/traceability-lsp/src/checks.rs`):
 
-- `implemented` mappings list `[[mapping.impl]]` sites (`file`, `line`, `symbol`);
-  the symbol must really exist near the cited line (comment mentions don't count).
-- Every `§N` citation in Rust source has a mapping, and every mapping section
-  exists in the OCR manual (matrix ↔ manual, both directions).
+- `implemented` mappings list `[[mapping.impl]]` sites (`file`, `symbol` -- no line numbers;
+  the symbol must occur in the file's code, comments don't count) and a `clause` found verbatim
+  in the manual section's text plus a `witness` listed in its `tests`/`proofs`. An optional
+  `approximation` says where the code deliberately departs from the clause.
+- Every `§N` citation in Rust source names a mapped section, and mappings and manual sections
+  correspond in both directions.
 - Every cited symbol is compiler-anchored in `omdurman-rules/tests/traceability_paths.rs`
-  (a real `use`/item path — a rename breaks the build), and every anchor there
-  is cited by the matrix (paths ↔ matrix, both directions).
-- **Coverage is hard**: every `implemented` mapping lists at least one
-  `tests = [...]` entry (fully qualified `crate::module::fn_name`) whose test
-  carries a `#[rulebook("§N")]`/`// §N` annotation for that section and is not
-  `#[ignore]`d (`implemented_mappings_are_tested`).
-- The generated PDF input is snapshot-checked: committed
-  `tools/traceability-typst/data.json` must match a fresh regeneration
-  (`committed_data_json_is_fresh` in the traceability-typst crate). Regenerate with
-  `cargo run -p traceability-typst --bin traceability-typst -- docs/traceability.toml traceability.typ tools/traceability-typst/data.json`.
-- **Kani proofs** are tracked the same way in a `proofs = [...]` array parallel to `tests`,
-  bijective in both directions. Annotate a harness with `// §N` above `#[kani::proof]` — *not*
-  `#[rulebook]`, because the proof modules are `cfg(kani)` on the lib where dev-dependencies
-  (and so the proc-macro) are unavailable. The PDF renders proofs in blue above the green tests.
+  (a real `use`/item path -- a rename breaks the build), and every anchor there is cited.
+- **Coverage is hard**: every `implemented` mapping lists at least one `tests = [...]` entry
+  (fully qualified `crate::module::fn_name`, the file path as module path) whose test carries a
+  `#[rulebook("§N")]` attribute for that section and is not `#[ignore]`d. The attribute is the
+  only annotation that counts; a `§` in a comment is a citation, never coverage.
+- **Kani proofs** are tracked the same way in a `proofs = [...]` array, bijective in both
+  directions. They use the qualified `#[traceability_macro::rulebook("§N")]` (the macro is a
+  `cfg(kani)`-only dependency of the proof crates). The PDF renders proofs in blue above the
+  green tests.
+- **The mutation gate** (CI job `mutation-gate`, `cargo run -p traceability-lsp --bin
+  mutation-gate [-- --in-diff <diff>]`): every cargo-mutants mutant on a changed line of an
+  engine function a section cites must fail one of the engine tests of the sections citing it.
+  Accepted equivalent mutants go in `.cargo/mutants.toml`, each with a reason.
 
 When adding code that implements a new rulebook section, cite the section in a comment
-(`(rulebook §6.11)`) *and* add the matching `[[mapping]]` entry with at least one
-annotated test. Container headings get `status = "descriptive"` (no impls/tests).
-When renaming a symbol, update its `symbol` field in `traceability.toml` **and** the
-anchor in `traceability_paths.rs`, or the build will fail. After moving code, re-sync
-`line` fields with `cargo run -p traceability-typst --bin fix_lines`, then regenerate
-`traceability.typ` + `tools/traceability-typst/data.json` (`cargo run -p
-traceability-typst`) and the PDF, and commit them together with the TOML.
+(`(rulebook §6.11)`) *and* add the matching `[[mapping]]` with a clause, a witness and at least
+one annotated test. Container headings get `status = "descriptive"` (no impls/tests). When
+renaming a symbol, update its `symbol` field in `traceability.toml` **and** the anchor in
+`traceability_paths.rs`, or the build will fail. Moving code needs no matrix change.
+
+The report (`traceability.typ`, `traceability.pdf`, `tools/traceability-typst/data.json`) is
+generated, not committed: CI builds it on every run (downloadable artifact) and the Pages
+deploy publishes it at `https://barafael.github.io/omdurman/traceability.pdf`. Locally:
+`cargo run -p traceability-typst -- docs/traceability.toml traceability.typ
+tools/traceability-typst/data.json && typst compile traceability.typ traceability.pdf`.
 
 ### Traceability PDF layout fidelity
 

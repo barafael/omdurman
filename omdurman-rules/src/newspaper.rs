@@ -395,6 +395,7 @@ mod tests {
 
     // §9.35: the loss penalty can turn GORDON's death into a British result,
     // so the FoK headline follows his fate, never the level alone.
+    #[traceability_macro::rulebook("§9.35")]
     #[test]
     fn fok_headlines_never_contradict_gordons_fate() {
         let british = [L::BritishDecisive, L::BritishTactical, L::BritishMarginal];
@@ -420,6 +421,7 @@ mod tests {
     // §9.24: the headline announces the *net* result. Anglo-Egyptian
     // Strategic against a Dervish Draw nets a Tactical victory; the
     // rulebook's worked example (Decisive against Strategic) nets a draw.
+    #[traceability_macro::rulebook("§9.24")]
     #[test]
     fn historical_headline_follows_the_net_result() {
         use HistoricalVictoryLevel as H;

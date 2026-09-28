@@ -23,3 +23,11 @@ todo.md
 /Boardgame - Remember_Gordon/tables/txt-backup/
 /Boardgame - Remember_Gordon/tables/units.ron.bak
 *.log
+
+# Generated traceability report (built in CI, published on GitHub Pages)
+/traceability.typ
+/traceability.pdf
+/tools/traceability-typst/data.json
+
+# run-kani.sh clone, when run from the repo root
+/omdurman-kani/

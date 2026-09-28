@@ -43,6 +43,18 @@ jobs:
           MATCHBOX_SERVER: ${{ vars.MATCHBOX_SERVER || 'wss://omdurman-matchbox.fly.dev' }}
         run: trunk build --release --public-url "/${{ github.event.repository.name }}/"
 
+      # The rulebook traceability report, published next to the game at
+      # https://<owner>.github.io/<repo>/traceability.pdf. Its GitHub links
+      # point at this commit (`GITHUB_SHA`).
+      - uses: typst-community/setup-typst@v4
+        with:
+          typst-version: "0.15"
+
+      - name: Traceability report
+        run: |
+          cargo run -p traceability-typst -- docs/traceability.toml traceability.typ tools/traceability-typst/data.json
+          typst compile traceability.typ dist/traceability.pdf
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

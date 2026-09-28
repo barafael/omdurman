@@ -475,6 +475,7 @@ mod verification {
     /// is the printed Road row's own wording ("cost of 1 MP"), so the proof
     /// pins the flat override rather than a monotonicity claim.
     // §5.11
+    #[traceability_macro::rulebook("§5.11")]
     #[kani::proof]
     fn movement_column_matches_the_printed_chart() {
         let g: usize = kani::any();
@@ -503,6 +504,7 @@ mod verification {
     /// and a hex with no annotation on the board defends like Clear (0) --
     /// the rule-neutral answer an unloaded board must produce.
     // §6.23
+    #[traceability_macro::rulebook("§6.23")]
     #[kani::proof]
     fn defence_column_never_helps_the_attacker() {
         let g: usize = kani::any();

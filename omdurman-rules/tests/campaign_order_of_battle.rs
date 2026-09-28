@@ -137,7 +137,7 @@ fn movement(state: &mut GameState, player: Player, turn: u8) {
 }
 
 // §9.112/§9.113: reinforcements enter through their printed entrance areas.
-#[rulebook("§9.112")]
+#[rulebook("§9.112", "§9.113")]
 #[rulebook("§9.113")]
 #[test]
 fn reinforcements_enter_through_their_entrance_areas() {

@@ -239,6 +239,7 @@ mod verification {
     /// east-bank default applies -- the west-bank case is the same lookup
     /// with `bank_of == Some(West)`).
     // §9.14
+    #[traceability_macro::rulebook("§9.14")]
     #[kani::proof]
     #[kani::unwind(4)]
     fn vp_source_for_routes_every_elimination_to_the_printed_source() {

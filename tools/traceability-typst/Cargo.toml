@@ -6,6 +6,8 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+# The shared resolver locates each cited symbol (the matrix has no lines).
+traceability-lsp = { path = "../traceability-lsp" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }

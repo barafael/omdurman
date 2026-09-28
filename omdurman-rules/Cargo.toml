@@ -50,6 +50,11 @@ rand_chacha = { workspace = true }
 # Only for the `kani-expensive` wire-format proofs.
 postcard = { workspace = true, optional = true }
 
+# `#[rulebook]` on the Kani proofs (the proof modules are `cfg(kani)` on the
+# lib, where dev-dependencies are not available). Proof builds only.
+[target.'cfg(kani)'.dependencies]
+traceability-macro = { path = "../traceability-macro" }
+
 [dev-dependencies]
 # The sampled run of the expensive wire-format harnesses.
 postcard = { workspace = true }
