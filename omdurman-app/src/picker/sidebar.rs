@@ -446,6 +446,19 @@ pub fn unit_picker_ui(
                 }
             }
         }
+        if matches!(state.0.scenario, Scenario::Historical) {
+            // §9.211/§9.212: GORDON, the Friendlies, Isa Zachneih, the
+            // gunboats and the forts sit this battle out.
+            for unit in &mut picker_ctx.picker.available {
+                let in_play =
+                    unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
+                        .and_then(omdurman_rules::unit_profiles::profile_for_unit)
+                        .is_some_and(|p| omdurman_rules::effects::historical_in_play(&p.identity));
+                if !in_play {
+                    unit.visible = false;
+                }
+            }
+        }
         if matches!(state.0.scenario, Scenario::FallOfKhartoum) {
             use omdurman_rules::effects::fok_cap_group;
             // §9.321/§9.322: the FoK order of battle is exactly the set of

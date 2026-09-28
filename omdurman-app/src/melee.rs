@@ -121,6 +121,15 @@ pub fn handle_melee_combat(
     };
 
     // `can_melee` checks hexside blocking (§7.2) internally via `self.board`.
+    // A refused attack on an enemy-held hex says why; clicks elsewhere stay
+    // quiet (they are selections, not declarations).
+    let enemy_there = gs.0.units.iter().any(|u| {
+        u.position == target
+            && gs
+                .0
+                .find_unit(attacker)
+                .is_some_and(|a| a.profile.identity.owner() != u.profile.identity.owner())
+    });
     match gs.0.can_melee(attacker, target) {
         Ok(()) => {}
         Err(omdurman_rules::effects::RuleError::MeleeBlockedByHexside(_, _)) => {
@@ -129,9 +138,28 @@ pub fn handle_melee_combat(
                 target.r = target.r,
                 "melee blocked by hexside"
             );
+            use omdurman_types::HexsideKind;
+            let why = match gs.0.hexside_effective(attacker_hex, target) {
+                Some(HexsideKind::ZaribaThornHedge) => {
+                    "no melee across the Zariba's thorn hedge, in either direction (§9.231)"
+                }
+                Some(HexsideKind::Khor | HexsideKind::KhorShambat) => {
+                    "no melee across a khor (Terrain Effects Chart)"
+                }
+                Some(HexsideKind::Wall) => {
+                    "no melee across a wall hexside, only through a gate or breach (§7.2)"
+                }
+                _ => "the hexside between blocks melee (§7.2)",
+            };
+            if enemy_there && let Some(dispatches) = submit.dispatches.as_deref_mut() {
+                dispatches.push("Field Telegraph", format!("Melee refused — {why}."));
+            }
             return;
         }
-        Err(_) => {
+        Err(error) => {
+            if enemy_there && let Some(dispatches) = submit.dispatches.as_deref_mut() {
+                dispatches.push("Field Telegraph", format!("Melee refused — {error}."));
+            }
             return;
         }
     }
@@ -201,8 +229,11 @@ pub fn melee_reaction_ui(
                     target.q, target.r
                 ),
             );
+            let withdrawn = !gs.0.units.iter().any(|u| u.position == target);
             if local_is_attacker {
-                ui.label(if retreat_possible {
+                ui.label(if withdrawn {
+                    "The defenders withdrew (§7.5): resolving ends the attack."
+                } else if retreat_possible {
                     "Defenders may retreat. Resolve when ready."
                 } else {
                     "Resolve when ready."
@@ -210,6 +241,8 @@ pub fn melee_reaction_ui(
                 if ui.button("\u{2694} Resolve Melee").clicked() {
                     submit.submit(&gs.0, GameEvent::Effect(GameEffect::ResolveMelee));
                 }
+            } else if withdrawn {
+                ui.label("Your units withdrew (§7.5). Waiting for the attacker.");
             } else if retreat_possible {
                 ui.label("You may retreat threatened cavalry/camel: click the");
                 ui.label("attacked hex, then a highlighted hex two away.");
@@ -427,7 +460,7 @@ pub fn melee_combat_preview_ui(
             MeleeModifier::DervishStandard => "+2 Dervish standard (\u{00a7}7.7)".to_string(),
             MeleeModifier::AngloEgyptianStandard => "+1 A-E standard (\u{00a7}7.7)".to_string(),
             MeleeModifier::DervishVsTrenchedDefender => {
-                "-2 vs trenched defender (\u{00a7}9.232)".to_string()
+                "-2 instead of +2 vs an entrenched defender (\u{00a7}9.232)".to_string()
             }
             MeleeModifier::FriendliesStandard => {
                 "+2 Friendlies, Dervish modifier (\u{00a7}6.52)".to_string()
@@ -441,7 +474,7 @@ pub fn melee_combat_preview_ui(
             MeleeModifier::DervishStandard => "+2 Dervish standard (\u{00a7}7.7)".to_string(),
             MeleeModifier::AngloEgyptianStandard => "+1 A-E standard (\u{00a7}7.7)".to_string(),
             MeleeModifier::DervishVsTrenchedDefender => {
-                "-2 vs trenched defender (\u{00a7}9.232)".to_string()
+                "-2 instead of +2 vs an entrenched defender (\u{00a7}9.232)".to_string()
             }
             MeleeModifier::FriendliesStandard => {
                 "+2 Friendlies, Dervish modifier (\u{00a7}6.52)".to_string()

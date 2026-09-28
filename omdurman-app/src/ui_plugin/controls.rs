@@ -117,6 +117,8 @@ pub(crate) fn game_control_section(
     if !in_setup {
         if crate::fok_panel::is_fok(state) {
             crate::fok_panel::fok_status_section(ui, state);
+        } else if state.0.scenario == omdurman_types::Scenario::Historical {
+            historical_scoreboard(ui, state);
         } else {
             victory_point_scoreboard(ui, state);
         }
@@ -236,7 +238,57 @@ fn end_phase_button(
     }
 }
 
-/// The Campaign/Historical §9.14 victory-point scoreboard. Extracted from
+/// The Historical scenario's progress (§9.24): each side's level comes from
+/// the enemy units it has eliminated -- not victory points -- and the net
+/// result is the higher level less the lower.
+fn historical_scoreboard(ui: &mut egui::Ui, state: &crate::GameStateResource) {
+    use omdurman_rules::HistoricalVictoryLevel as Level;
+    use omdurman_types::Player;
+    let dervish_lost = state.0.victory.units_eliminated_by(Player::AngloEgyptian);
+    let ae_lost = state.0.victory.units_eliminated_by(Player::Dervish);
+    let ae = Level::for_anglo_egyptian(dervish_lost);
+    let d = Level::for_dervish(ae_lost);
+    ui.label(
+        egui::RichText::new("Score")
+            .strong()
+            .color(crate::ui::palette::HEADING),
+    );
+    let row = |ui: &mut egui::Ui, who: Player, killed: i16, level: Level, color| {
+        let next = level
+            .next_threshold(who)
+            .map(|n| format!(" (next at {n})"))
+            .unwrap_or_default();
+        ui.label(
+            egui::RichText::new(format!("{who}: {killed} eliminated, {level:?}{next}"))
+                .color(color),
+        );
+    };
+    row(
+        ui,
+        Player::AngloEgyptian,
+        dervish_lost,
+        ae,
+        crate::ui::palette::AE,
+    );
+    row(ui, Player::Dervish, ae_lost, d, crate::ui::palette::DERVISH);
+    let (text, color) = match Level::net(ae, d) {
+        (None, _) => ("Net: Draw".to_string(), crate::ui::palette::TEXT_MUTED),
+        (Some(p), level) => (
+            format!("Net: {p} {level:?}"),
+            if p == Player::AngloEgyptian {
+                crate::ui::palette::AE
+            } else {
+                crate::ui::palette::DERVISH
+            },
+        ),
+    };
+    ui.horizontal(|ui| {
+        ui.colored_label(color, text);
+        crate::rulebook::ref_link(ui, "9.24", 11.0);
+    });
+}
+
+/// The Campaign §9.14 victory-point scoreboard. Extracted from
 /// `game_control_section` so the FoK scenario can swap in its own
 /// victory-progress panel ([`crate::fok_panel::fok_status_section`]) instead.
 fn victory_point_scoreboard(ui: &mut egui::Ui, state: &crate::GameStateResource) {

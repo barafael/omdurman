@@ -324,10 +324,24 @@ pub fn diff_path(prev: &MovementPath, next: &MovementPath) -> Vec<PathDiff> {
 pub fn observe_picker_state(
     game_state: Option<Res<crate::GameStateResource>>,
     state: Res<PickerState>,
+    picker: Option<Res<crate::picker::UnitPicker>>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     mut prev: Local<Option<SelectionSummary>>,
 ) {
-    let current = summarize_selection(&state, &placed_units, game_state.as_deref());
+    let mut current = summarize_selection(&state, &placed_units, game_state.as_deref());
+    // Name the counter in hand (auto-next picks it without a sidebar click,
+    // so no `pick` event names it).
+    if let (SelectionSummary::Placing { unit, .. }, PickerState::Placing { unit_idx, .. }) =
+        (&mut current, &*state)
+        && let Some(u) = picker.as_deref().and_then(|p| p.available.get(*unit_idx))
+    {
+        *unit = format!(
+            "{unit} ({} {},{})",
+            u.section_name.display_name(),
+            u.col,
+            u.row
+        );
+    }
     if prev.as_ref() != Some(&current) {
         let from = prev.take().unwrap_or(SelectionSummary::Idle);
         selection(&from, &current, &Stamp::of(game_state.as_deref()));

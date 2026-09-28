@@ -532,7 +532,7 @@ pub fn movement_overlay_mesh(
             rings.ring(MovementHexRing, reached, 1.5, 1.0, &hex.assets.light_green);
             green_spawned += 1;
         } else {
-            rings.ring(MovementRangeRing, reached, 1.5, 1.0, &hex.assets.gray);
+            rings.ring(MovementRangeRing, reached, 1.5, 1.0, &hex.assets.reach);
             gray_spawned += 1;
         }
     }
@@ -560,7 +560,7 @@ pub fn deployment_zone_overlay_mesh(
     game_state: Option<Res<crate::GameStateResource>>,
     peers: crate::peers::Peers,
     existing: Query<Entity, With<DeploymentZoneRing>>,
-    mut last_key: Local<Option<omdurman_types::Player>>,
+    mut last_key: Local<Option<(omdurman_types::Player, usize, bool)>>,
     (generation, mut seen_generation): (Res<OverlayGeneration>, Local<u32>),
 ) {
     if generation.invalidates(&mut seen_generation) {
@@ -587,12 +587,16 @@ pub fn deployment_zone_overlay_mesh(
     // Whose zone to show: the local faction, or the active player in an unbound
     // session (no faction binding).
     let who = peers.local().unwrap_or(gs.0.active_player);
-    if *last_key == Some(who) {
+    // The zones can depend on what is already deployed (the Historical
+    // Dervish set up out of the Anglo-Egyptians' sight, §9.212), so the
+    // deployed count and the first side's Ready are part of the key.
+    let key = (who, gs.0.units.len(), gs.0.setup_ready_ae);
+    if *last_key == Some(key) {
         return; // unchanged -- leave the rings in place
     }
     let existing: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &existing);
-    *last_key = Some(who);
+    *last_key = Some(key);
 
     let origin = layout.adjusted_origin(&overlay.params);
     let size = overlay.params.hex_size;

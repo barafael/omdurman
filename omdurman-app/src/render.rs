@@ -36,6 +36,10 @@ pub mod overlay_palette {
     pub const RING_HOVER: Color = Color::srgb(1.0, 0.97, 0.55);
     /// Neutral grey ring.
     pub const RING_NEUTRAL: Color = Color::srgb(0.4, 0.4, 0.4);
+    /// Movement range: hexes the selected mover can still reach. Teal, so it
+    /// reads against the sepia map and its printed dark hex grid (grey did
+    /// not).
+    pub const RING_REACH: Color = Color::srgb(0.05, 0.62, 0.72);
     /// Translucent yellow ring / fill.
     pub const RING_YELLOW: Color = Color::srgba(1.0, 0.85, 0.0, 0.4);
     /// Grey-blue "unit has acted" ring.
@@ -229,6 +233,8 @@ pub struct HexRingAssets {
     /// Translucent fill for the cursor hex when placement is illegal / idle.
     pub marker_red: Handle<StandardMaterial>,
     pub gray: Handle<StandardMaterial>,
+    /// Movement-range outline (see `overlay_palette::RING_REACH`).
+    pub reach: Handle<StandardMaterial>,
     pub yellow: Handle<StandardMaterial>,
     pub path_shadow: Handle<StandardMaterial>,
     pub fire_arrow: Handle<StandardMaterial>,
@@ -265,6 +271,7 @@ pub fn spawn_hex_ring_assets(
     let marker_green = materials.add(unlit_alpha_material(op::MARKER_LEGAL));
     let marker_red = materials.add(unlit_alpha_material(op::MARKER_ILLEGAL));
     let gray = materials.add(unlit_alpha_material(op::RING_NEUTRAL));
+    let reach = materials.add(unlit_alpha_material(op::RING_REACH));
     let yellow = materials.add(unlit_alpha_material(op::RING_YELLOW));
     let path_shadow = materials.add(unlit_alpha_material(op::PATH_SHADOW));
     let fire_arrow = materials.add(unlit_alpha_material(op::FIRE_ARROW));
@@ -284,6 +291,7 @@ pub fn spawn_hex_ring_assets(
         marker_green,
         marker_red,
         gray,
+        reach,
         yellow,
         path_shadow,
         fire_arrow,

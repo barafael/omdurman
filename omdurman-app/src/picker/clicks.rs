@@ -291,11 +291,24 @@ fn picker_click(
                     .is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup))
                 && !deploy_hex_allowed(game_state, &picker_ctx.picker, unit_idx, coord) =>
         {
-            // Off-zone: keep the unit in hand and say why nothing happened.
-            return Some(format!(
-                "({}, {}) is outside your deployment zone.",
-                coord.q, coord.r
-            ));
+            // Off-zone: keep the unit in hand and say why nothing happened --
+            // the engine's own reason when it has a specific one (the
+            // Historical set-up areas, §9.211/§9.212).
+            let specific = game_state.and_then(|gs| {
+                let candidate = deploy_candidate(&picker_ctx.picker, unit_idx, coord)?;
+                match gs.0.can_deploy_unit(&candidate) {
+                    Err(omdurman_rules::effects::RuleError::OutsideDeploymentZone(_)) | Ok(()) => {
+                        None
+                    }
+                    Err(e) => Some(e.to_string()),
+                }
+            });
+            return Some(specific.unwrap_or_else(|| {
+                format!(
+                    "({}, {}) is outside your deployment zone.",
+                    coord.q, coord.r
+                )
+            }));
         }
         ActiveSelection::Placing {
             unit_idx,
@@ -340,6 +353,7 @@ fn picker_click(
                 remaining_mp,
                 forced_stop,
                 movement_path: &mut picker_ctx.movement_path,
+                refusal: None,
             };
             if let Some(event) = sel.handle(
                 &picker_ctx.placed_units,
@@ -354,8 +368,12 @@ fn picker_click(
                     .action_writer
                     .write(events::LocalAction { event });
             }
+            let refusal = sel.refusal.take();
             if matches!(&*picker_ctx.state, PickerState::Idle) {
                 picker_ctx.commands.entity(source).remove::<Selected>();
+            }
+            if let Some(reason) = refusal {
+                return Some(reason);
             }
         }
         // Outside the movement phase a single-unit selection is an *action*
@@ -414,6 +432,7 @@ fn picker_click(
                 initial_mp: sel.initial_mp.clone(),
                 forced_stop: sel.forced_stop,
                 movement_path: &mut picker_ctx.movement_path,
+                refusal: None,
             };
             if let Some(event) = sel_click.handle(
                 &picker_ctx.placed_units,
@@ -426,6 +445,9 @@ fn picker_click(
                 picker_ctx
                     .action_writer
                     .write(events::LocalAction { event });
+            }
+            if let Some(reason) = sel_click.refusal {
+                return Some(reason);
             }
         }
         // A stale movement stack in a non-movement phase: combat target
@@ -1013,12 +1035,24 @@ impl PlacingClick<'_, '_, '_> {
     }
 }
 
+/// The slip for a destination the route finder cannot reach (§5.11-§5.4:
+/// movement points, terrain, zones of control, blocked hexsides).
+fn no_route_reason(goal: HexCoord, budget: i16) -> String {
+    format!(
+        "No route to ({}, {}) within {budget} MP: terrain costs, zones of control (§5.4) \
+         or impassable hexsides stand in the way. The outlined hexes are in reach.",
+        goal.q, goal.r
+    )
+}
+
 struct SelectedClick<'a> {
     state: &'a mut PickerState,
     game_map: &'a GameMap,
     remaining_mp: i16,
     forced_stop: bool,
     movement_path: &'a mut MovementPath,
+    /// Why a clicked destination could not be reached, for the slip.
+    refusal: Option<String>,
 }
 
 impl SelectedClick<'_> {
@@ -1050,6 +1084,7 @@ impl SelectedClick<'_> {
             game_state,
         ) else {
             info!(?start, ?goal, budget, "no legal route to the clicked hex");
+            self.refusal = Some(no_route_reason(goal, budget));
             return;
         };
         let mut from = start;
@@ -1254,6 +1289,8 @@ struct SelectedStackClick<'a, 'w, 's> {
     initial_mp: Vec<i16>,
     forced_stop: bool,
     movement_path: &'a mut MovementPath,
+    /// Why a clicked destination could not be reached, for the slip.
+    refusal: Option<String>,
 }
 
 impl SelectedStackClick<'_, '_, '_> {
@@ -1285,6 +1322,7 @@ impl SelectedStackClick<'_, '_, '_> {
             game_state,
         ) else {
             info!(?start, ?goal, budget, "no legal route to the clicked hex");
+            self.refusal = Some(no_route_reason(goal, budget));
             return;
         };
         let mut from = start;
@@ -1568,6 +1606,7 @@ pub(crate) fn confirm_movement_path(
                 remaining_mp: 0,
                 forced_stop: false,
                 movement_path: &mut picker_ctx.movement_path,
+                refusal: None,
             };
             if let Some(event) =
                 sel.commit_path(&picker_ctx.placed_units, source, game_state.as_deref())
@@ -1586,6 +1625,7 @@ pub(crate) fn confirm_movement_path(
                 initial_mp: sel.initial_mp.clone(),
                 forced_stop: sel.forced_stop,
                 movement_path: &mut picker_ctx.movement_path,
+                refusal: None,
             };
             for event in sel_click.commit_path(
                 &picker_ctx.placed_units,

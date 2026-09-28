@@ -152,13 +152,16 @@ pub mod palette {
     // -- Action-card fills (translucent tints over the board) --------------------
 
     /// Fire preview card.
-    pub const CARD_FIRE: Color32 = Color32::from_rgba_unmultiplied_const(40, 20, 20, 220);
-    /// Declared-melee card.
-    pub const CARD_MELEE_DECLARED: Color32 = Color32::from_rgba_unmultiplied_const(40, 30, 30, 220);
+    pub const CARD_FIRE: Color32 = Color32::from_rgba_unmultiplied_const(40, 20, 20, 245);
+    /// Declared-melee card. Near-opaque: it carries the retreat instructions
+    /// and sits over the busiest part of the map (egui blends in linear
+    /// light, so 220 read as roughly half transparent there).
+    pub const CARD_MELEE_DECLARED: Color32 = Color32::from_rgba_unmultiplied_const(40, 30, 30, 248);
     /// Melee preview card.
-    pub const CARD_MELEE: Color32 = Color32::from_rgba_unmultiplied_const(50, 30, 10, 220);
-    /// Fire-allocation tray.
-    pub const CARD_ALLOCATION: Color32 = Color32::from_rgba_unmultiplied_const(30, 30, 40, 220);
+    pub const CARD_MELEE: Color32 = Color32::from_rgba_unmultiplied_const(50, 30, 10, 245);
+    /// Fire-allocation tray (long rows of firers and modifiers over the
+    /// board: kept near-opaque, see `CARD_MELEE_DECLARED`).
+    pub const CARD_ALLOCATION: Color32 = Color32::from_rgba_unmultiplied_const(30, 30, 40, 245);
     /// Positive / friendly card (Friendlies transport, Gordon holds).
     pub const CARD_GOOD: Color32 = Color32::from_rgba_unmultiplied_const(35, 50, 30, 210);
     /// Negative card (Gordon fallen).
