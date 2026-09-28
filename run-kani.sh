@@ -8,24 +8,27 @@
 # and $WORKDIR (the clone, its build artifacts and the log).
 #
 # Env: REPO_URL, BRANCH (main), WORKDIR (./omdurman-kani), KANI_VERSION (0.67.0),
-#      KANI_JOBS (default: one harness per 32 GB of free RAM, at most one per CPU).
+#      KANI_JOBS (default: one harness per 32 GB of free RAM, at most one per CPU),
+#      KANI_EXPENSIVE=1 (add the expensive tier: omdurman-rules/src/effects/expensive.rs,
+#      the sequencing proofs in omdurman-types/src/net_seq.rs).
 set -euo pipefail
 
 REPO_URL=${REPO_URL:-https://github.com/barafael/omdurman.git}
 BRANCH=${BRANCH:-main}
 WORKDIR=${WORKDIR:-$PWD/omdurman-kani}
 KANI_VERSION=${KANI_VERSION:-0.67.0}
+export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH" # where cargo-kani lands
 
 # 1. Kani: prebuilt through cargo-binstall if that is already installed, else
 #    built with cargo install. `cargo kani setup` fetches CBMC and Kani's nightly.
-if ! cargo kani --version 2>/dev/null | grep -qxF "cargo-kani $KANI_VERSION"; then
+if ! cargo-kani --version 2>/dev/null | grep -qxF "cargo-kani $KANI_VERSION"; then
   if cargo binstall -V >/dev/null 2>&1; then
     cargo binstall -y --locked "kani-verifier@$KANI_VERSION"
   else
     cargo install --locked "kani-verifier@$KANI_VERSION"
   fi
 fi
-[ -d "$HOME/.kani/kani-$KANI_VERSION" ] || cargo kani setup
+[ -d "$HOME/.kani/kani-$KANI_VERSION" ] || cargo-kani setup
 
 # 2. Source: clone, or move an existing clone to the branch tip.
 if [ -d "$WORKDIR/.git" ]; then
@@ -49,7 +52,10 @@ export KANI_JOBS KANI_TARGET_DIR="$WORKDIR/target/kani"
 log="$WORKDIR/kani-$(date +%Y%m%d-%H%M%S).log"
 echo "== $(git rev-parse --short HEAD), KANI_JOBS=$KANI_JOBS, log: $log"
 status=0
-./scripts/kani.sh -p omdurman-types -p omdurman-rules "$@" 2>&1 | tee "$log" || status=$?
+features=""
+if [ "${KANI_EXPENSIVE:-}" = 1 ]; then features="--features kani-expensive"; fi
+# shellcheck disable=SC2086 # $features is intentionally word-split
+./scripts/kani.sh -p omdurman-types -p omdurman-rules $features "$@" 2>&1 | tee "$log" || status=$?
 
 echo "== summary"
 grep -E "Verification failed for|out of memory|Complete -" "$log" || true

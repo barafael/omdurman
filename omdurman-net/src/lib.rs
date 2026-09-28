@@ -380,48 +380,7 @@ pub const SEQ_STABILIZE_SECS: f32 = 1.0;
 /// the room is dead anyway and it may bootstrap on the wiped record.
 pub const RESYNC_BOOTSTRAP_SECS: f32 = 15.0;
 
-/// Bounded ring of recently applied submission uids. Large enough to cover
-/// every uid that could still be re-delivered (retransmit retries and echoes
-/// are re-sent within seconds; stale post-failover streams within the churn
-/// window), small enough to stay flat in memory over a long game.
-#[derive(Default)]
-pub struct RecentUids {
-    set: std::collections::HashSet<u64>,
-    order: std::collections::VecDeque<u64>,
-}
-
-impl RecentUids {
-    const CAP: usize = 4096;
-
-    /// Returns `true` if the uid was newly inserted (first application),
-    /// `false` if it was already known (duplicate delivery).
-    pub fn insert(&mut self, uid: u64) -> bool {
-        if !self.set.insert(uid) {
-            return false;
-        }
-        self.order.push_back(uid);
-        while self.order.len() > Self::CAP {
-            let evicted = self.order.pop_front().expect("non-empty");
-            self.set.remove(&evicted);
-        }
-        true
-    }
-
-    pub fn contains(&self, uid: u64) -> bool {
-        self.set.contains(&uid)
-    }
-
-    /// Replace the contents with `uids` (in application order, so the most
-    /// recent ones survive the cap). Used when a history install replaces
-    /// the local record: the dedup set must describe the *installed* line,
-    /// not the discarded one.
-    pub fn rebuild(&mut self, uids: impl IntoIterator<Item = u64>) {
-        *self = Self::default();
-        for uid in uids {
-            self.insert(uid);
-        }
-    }
-}
+pub use omdurman_types::net_seq::{RecentUids, SEQ_GAP_TIMEOUT_SECS};
 
 /// A `NetMsg::Sequenced` delivery as the receive path handles it: the
 /// canonical seq, the submission uid, the event, and the peer it came from.
@@ -433,88 +392,15 @@ pub struct SequencedDelivery {
     pub from: PeerId,
 }
 
-/// How long a seq gap may persist in the [`ReorderBuffer`] before the guest
-/// gives up waiting for the missing deliveries and requests the canonical
-/// history instead.
-pub const SEQ_GAP_TIMEOUT_SECS: f32 = 1.5;
-
-/// Guest-side reorder buffer for `Sequenced` deliveries that arrive past the
-/// next expected seq. Applying such an event immediately would run it
-/// against a state missing the events in between; instead it waits here
-/// until the gap fills (contiguous runs are then applied in order) or the
-/// gap outlives [`SEQ_GAP_TIMEOUT_SECS`], at which point the receive path
-/// requests the canonical history (see [`ReorderBuffer::tick`]).
-#[derive(Default)]
-pub struct ReorderBuffer {
-    pending: std::collections::BTreeMap<u32, SequencedDelivery>,
-    /// Seconds the buffer has been continuously non-empty.
-    stalled_secs: f32,
-    /// Whether the current stall already triggered a history request.
-    reported: bool,
-}
-
-impl ReorderBuffer {
-    /// Upper bound on buffered deliveries. Past it the history request is
-    /// the recovery path anyway, so further deliveries are dropped.
-    pub const CAP: usize = 1024;
-
-    /// Buffer `delivery`. Returns `false` if it was not stored (buffer full).
-    /// A later delivery at an already-buffered seq replaces the earlier one.
-    pub fn insert(&mut self, delivery: SequencedDelivery) -> bool {
-        if self.pending.len() >= Self::CAP && !self.pending.contains_key(&delivery.seq) {
-            return false;
-        }
-        self.pending.insert(delivery.seq, delivery);
-        true
-    }
-
-    /// Discard every buffered delivery below `expected` (already covered by
-    /// an applied event or an installed history) and pop the one at
-    /// `expected`, if buffered.
-    pub fn pop_next(&mut self, expected: u32) -> Option<SequencedDelivery> {
-        self.pending = self.pending.split_off(&expected);
-        let next = self.pending.remove(&expected);
-        if self.pending.is_empty() {
-            self.stalled_secs = 0.0;
-            self.reported = false;
-        }
-        next
-    }
-
-    /// Advance the stall clock by `dt`. Returns `true` exactly once per
-    /// stall, when the buffer has been non-empty for longer than
-    /// [`SEQ_GAP_TIMEOUT_SECS`].
-    pub fn tick(&mut self, dt: f32) -> bool {
-        if self.pending.is_empty() {
-            self.stalled_secs = 0.0;
-            self.reported = false;
-            return false;
-        }
-        self.stalled_secs += dt;
-        if self.stalled_secs > SEQ_GAP_TIMEOUT_SECS && !self.reported {
-            self.reported = true;
-            return true;
-        }
-        false
-    }
-
-    pub fn len(&self) -> usize {
-        self.pending.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.pending.is_empty()
-    }
-
-    /// The lowest buffered seq, if any.
-    pub fn first_seq(&self) -> Option<u32> {
-        self.pending.keys().next().copied()
-    }
-
-    pub fn clear(&mut self) {
-        *self = Self::default();
+impl omdurman_types::net_seq::Sequenced for SequencedDelivery {
+    fn seq(&self) -> u32 {
+        self.seq
     }
 }
+
+/// Guest-side reorder buffer for `Sequenced` deliveries (see
+/// [`omdurman_types::net_seq::ReorderBuffer`], where it is proven).
+pub type ReorderBuffer = omdurman_types::net_seq::ReorderBuffer<SequencedDelivery>;
 
 #[derive(Resource, Default)]
 pub struct NetState {

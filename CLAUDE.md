@@ -58,6 +58,11 @@ KANI_JOBS=8 ./scripts/kani.sh -p omdurman-types -p omdurman-rules
 ./scripts/kani.sh -p omdurman-rules --harness verification::die_roll_apply_modifier_is_total
 ```
 
+The expensive tier (every effect kind's safety, movement legality, effect pairs, wire format,
+sequencing; hours and tens of GB per job) needs `--features kani-expensive`; `run-kani.sh`
+clones the repo and runs everything on a big machine (`KANI_EXPENSIVE=1 ./run-kani.sh`). The
+same harnesses run under `cargo test` as a randomized test (`EXPENSIVE_SAMPLES=<n>` for more).
+
 CI (`.github/workflows/ci.yml`) runs, per push/PR: `cargo fmt --check`, `cargo clippy
 --workspace --all-targets -- -D warnings`, `cargo test --workspace`, and the traceability
 gates — plus the existing Pages deploy. The Kani suite is *not* a push/PR gate: GitHub
@@ -77,7 +82,9 @@ Six workspace crates plus three tools, all sharing `edition = "2024"`:
 
 - **`omdurman-types`** — leaf crate, no Bevy. Pure serde types shared by everything else (`HexCoord`,
   `SectionName` (+ `SHEET_ORDER`, the canonical counter-sheet section order shared by the picker
-  and the map editor), `MapData`, `SpriteAnnotation`, hexside/Nile/overlay types, `Faction`, `Brigade`).
+  and the map editor), `MapData`, `SpriteAnnotation`, hexside/Nile/overlay types, `Faction`, `Brigade`),
+  plus the net layer's sequencing primitives (`net_seq`: `RecentUids`, `ReorderBuffer`, here so
+  Kani can prove them without Bevy).
   Must stay dependency-light so both the rules engine and the net layer can depend on it.
 - **`omdurman-rules`** — the rules engine. No Bevy. Defines `GameState`, `GameEffect`, and
   `apply_effect`: every legal mutation flows through `effects::apply_effect`. Effects carry

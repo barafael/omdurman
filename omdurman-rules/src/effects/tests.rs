@@ -10851,4 +10851,72 @@ mod tests {
         assert_eq!(state.active_player, Player::Dervish);
         assert_eq!(state.mp_spent(d), 3, "huts cost 3 MP to enter");
     }
+
+    // §9.14: `score_elimination` records exactly what it scores -- one new
+    // ledger event carrying the routed source, the score observation with
+    // the same printed points and scorer, then the elimination itself; the
+    // Isa-Zachneih flag set if and only if *she* was eliminated -- and a
+    // 0-pt elimination (a fort) records the elimination while scoring
+    // nothing. Exhaustive over both shapes: this was a Kani harness whose
+    // only symbolic input was this bool, and reading the pushed
+    // observations back took the solver past 230 GB.
+    #[rulebook("§9.14")]
+    #[test]
+    fn score_elimination_records_exactly_what_it_scores() {
+        use crate::effects::victory::score_elimination;
+        for isa in [false, true] {
+            let mut state = GameState::kani_minimal();
+            let identity = if isa {
+                UnitIdentity::DervishTribal {
+                    tribe: DervishTribe::IsaZachneih,
+                }
+            } else {
+                UnitIdentity::DervishFort
+            };
+            let target = UnitId::ALL[0];
+            state.units.push(UnitPlacement {
+                id: target,
+                position: HexCoord::new(0, 0),
+                profile: crate::UnitProfile {
+                    kind: UnitKind::Infantry {
+                        fire: 3,
+                        melee: 6,
+                        movement: 9,
+                    },
+                    identity,
+                    weapon: crate::WeaponClass::Melee,
+                    fire: None,
+                    melee: None,
+                    movement: crate::UnitMovement::Immobile,
+                },
+                state: UnitState::default(),
+            });
+            score_elimination(&mut state, target, ElimCause::Combat);
+            assert_eq!(state.victory.events.len(), usize::from(isa));
+            assert_eq!(state.isa_zachneih_eliminated, isa);
+            let new = &state.observations[..];
+            if isa {
+                let source = VpSource::IsaZachneihEliminated;
+                assert_eq!(new.len(), 2);
+                assert!(matches!(
+                    new[0],
+                    Observation::VictoryScored { source: s, points, for_player }
+                        if s == source
+                            && points == source.points()
+                            && for_player == source.who_scores()
+                ));
+                assert!(matches!(
+                    new[1],
+                    Observation::UnitEliminated { id, vp_source: Some(s), .. }
+                        if id == target && s == source
+                ));
+            } else {
+                assert_eq!(new.len(), 1);
+                assert!(matches!(
+                    new[0],
+                    Observation::UnitEliminated { id, vp_source: None, .. } if id == target
+                ));
+            }
+        }
+    }
 }

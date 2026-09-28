@@ -356,10 +356,15 @@ mod tests {
     fn campaign_track_label_and_day_night_agree() {
         // The rule-bearing CAMPAIGN_TURN_TRACK must agree with the printed
         // labels in TurnLabel::from_turn: every "NIGHT" cell is a Night turn
-        // and every clock-time cell is a Day turn.
-        for turn in 1u8..=22 {
+        // and every clock-time cell is a Day turn; every turn on the track
+        // has a label and nothing off it does. Exhaustive over every `u8`
+        // (this was also a Kani harness, which drowned in the formatting of
+        // the label text past 230 GB).
+        for turn in 0..=u8::MAX {
+            let label = TurnLabel::from_turn(turn);
+            assert_eq!(label.is_some(), (1..=22).contains(&turn), "turn {turn}");
+            let Some(label) = label else { continue };
             let entry = campaign_turn(GameTurnIndex(turn)).unwrap();
-            let label = TurnLabel::from_turn(turn).unwrap();
             let text = label.to_string();
             let labelled_night = text.contains("NIGHT");
             assert_eq!(
@@ -471,7 +476,7 @@ mod tests {
 /// can reach but no test bothers to sample.
 #[cfg(kani)]
 mod verification {
-    use super::{GameTurnIndex, TurnEvent, TurnLabel};
+    use super::{GameTurnIndex, TurnEvent};
     use super::{campaign_turn, fall_of_khartoum_turn, historical_turn, scenario_turn};
     use omdurman_types::{DayNight, Scenario};
 
@@ -576,26 +581,6 @@ mod verification {
         if let Some(entry) = entry {
             assert!((entry.day_night == DayNight::Night) == (t == 1));
             assert!(entry.event == TurnEvent::None);
-        }
-    }
-
-    /// §9.12: the printed 9×3 snake-layout labels agree with the
-    /// rule-bearing track everywhere on it: a "NIGHT" cell is exactly a
-    /// night turn, every in-range turn has a label, and nothing outside
-    /// 1..=22 does. The editor renders `TurnLabel`s; this proof keeps the
-    /// decoration from drifting away from what the engine enforces.
-    // §9.12
-    #[kani::proof]
-    #[kani::unwind(14)]
-    fn turn_labels_agree_with_the_rule_bearing_track() {
-        let t: u8 = kani::any();
-        let label = TurnLabel::from_turn(t);
-        assert!(label.is_some() == (t >= 1 && t <= CAMPAIGN_LEN));
-        if let Some(label) = label
-            && let Some(entry) = campaign_turn(GameTurnIndex::new(t))
-        {
-            let labelled_night = label.to_string().contains("NIGHT");
-            assert!(labelled_night == (entry.day_night == DayNight::Night));
         }
     }
 }

@@ -240,3 +240,20 @@ fn historical_setup_completes_on_the_campaign_board() {
     .unwrap();
     assert_ne!(state.phase, omdurman_rules::Phase::Setup);
 }
+
+/// `setup_target`'s Historical counts are constants (no roster walk on the
+/// engine path); they must match every counter in play.
+#[test]
+fn historical_setup_targets_match_the_roster() {
+    let state = GameState::new(Scenario::Historical);
+    for player in [Player::AngloEgyptian, Player::Dervish] {
+        let in_play = UnitId::ALL
+            .iter()
+            .filter(|id| {
+                omdurman_rules::effects::historical_counter_in_play(**id)
+                    && profile_for_unit(**id).is_some_and(|p| p.identity.owner() == player)
+            })
+            .count();
+        assert_eq!(state.setup_target(player), in_play, "{player:?}");
+    }
+}

@@ -144,10 +144,15 @@ item when it is fixed.
 
 ## Verification
 
-- `score_elimination_records_exactly_what_it_scores` runs out of memory with
-  ~10 GB free: reading the pushed `Observation`s back out of the ledger
-  dominates the propositional reduction (see `docs/kani.md`). Verify it on a
-  bigger box (`run-kani.sh`), or find a cheaper way to state the check.
+- The expensive Kani tier (`omdurman-rules/src/effects/expensive.rs`) has not
+  been run to completion: each harness takes longer than 20 minutes on a
+  desktop. Run it on a big machine (`KANI_EXPENSIVE=1 ./run-kani.sh`) and
+  read its `cover!` results; its randomized `cargo test` twin passes.
+- The expensive tier runs on the empty board, where the accepted halves of
+  `ConstructZariba`, `ArtilleryBreachWall`, `Demolition` and
+  `FriendliesTransport` are unreachable. A small real board would need a
+  cheap proof-build hasher for `BoardInfo`'s maps (a symbolic hex hashed
+  with SipHash on every lookup is prohibitive).
 - 22 Kani harnesses have no `// §N` annotation and are not tracked in
   `traceability.toml` (e.g. `distance_is_symmetric`, `game_over_is_absorbing`,
   `sink_chain_is_atomic`, `place_mine_is_atomic`).

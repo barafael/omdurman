@@ -180,21 +180,17 @@ fn vp_source_for(
 /// `scripts/kani.sh`). `vp_source_for` is the single lookup that decides
 /// what an elimination is worth; these harnesses hold it to the printed
 /// §9.14 schedule over a symbolic elimination (identity and hex chosen by
-/// the solver, rule-neutral board), and hold `score_elimination` to its
-/// ledger post-conditions.
+/// the solver, rule-neutral board). `score_elimination`'s ledger
+/// post-conditions are an exhaustive test instead
+/// (`effects::tests::score_elimination_records_exactly_what_it_scores`).
 #[cfg(kani)]
 mod verification {
     // `use super::*` reaches only this file's own items; everything else is
     // imported from where it is defined (the crate root, the effects root's
     // public re-exports, or `omdurman-types`).
     use super::*;
-    use crate::board::NileBank;
-    use crate::effects::{ElimCause, GameState, Observation};
-    use crate::{
-        HexCoord, UnitId, UnitIdentity, UnitMovement, UnitPlacement, UnitProfile, UnitState,
-        WeaponClass,
-    };
-    use omdurman_types::{DervishTribe, Scenario, UnitKind};
+    use crate::{HexCoord, UnitIdentity};
+    use omdurman_types::DervishTribe;
 
     /// A symbolic elimination target spanning every §9.14 routing shape:
     /// Khalifa, Isa Zachneih, another Dervish tribal, a Dervish leader,
@@ -290,101 +286,5 @@ mod verification {
         if let Some(source) = source {
             assert!(source.points().value() >= 1);
         }
-    }
-
-    /// §9.14: `score_elimination` records exactly what it scores -- one new
-    /// ledger event carrying the routed source, an observation with the
-    /// same points and scorer, the Isa-Zachneih flag set if and only if
-    /// *she* was the unit eliminated -- and a 0-pt elimination (a fort)
-    /// still records the elimination itself while scoring nothing.
-    ///
-    /// Memory note: the symex is small (~63k steps at `unwind(4)`, the state
-    /// discarded rather than dropped), but reading the pushed `Observation`s
-    /// back out of the ledger drives the propositional reduction past ~10 GB
-    /// (the length checks alone verify in 5 s). If it OOMs locally, that is
-    /// a resource limit, not a proof failure.
-    /// Replacement for `BoardInfo::bank_of` in the `score_elimination`
-    /// harness: the harness's board is `BoardInfo::default()` (no terrain),
-    /// on which the real `bank_of` returns `None` for *every* hex (there is
-    /// no Nile row to compare against, so `min_nile_q?` bails). The stub is
-    /// therefore exact for every reachable input; the real method's BTreeMap
-    /// iteration otherwise dominates CBMC's memory budget.
-    fn stub_bank_of_none_on_empty_board(
-        _board: &crate::board::BoardInfo,
-        _hex: HexCoord,
-    ) -> Option<NileBank> {
-        None
-    }
-
-    // §9.14
-    #[kani::stub(BoardInfo::bank_of, stub_bank_of_none_on_empty_board)]
-    #[kani::proof]
-    #[kani::unwind(4)]
-    fn score_elimination_records_exactly_what_it_scores() {
-        let isa: bool = kani::any();
-        // Roster-free state: the property is about score_elimination's
-        // post-conditions, and GameState::new's full campaign roster symex
-        // dominates CBMC's memory on its own (see `GameState::kani_minimal`).
-        let mut state = GameState::kani_minimal();
-        let identity = if isa {
-            UnitIdentity::DervishTribal {
-                tribe: DervishTribe::IsaZachneih,
-            }
-        } else {
-            UnitIdentity::DervishFort
-        };
-        state.units.push(UnitPlacement {
-            id: UnitId::ALL[0],
-            position: HexCoord::new(0, 0),
-            profile: crate::UnitProfile {
-                kind: UnitKind::Infantry {
-                    fire: 3,
-                    melee: 6,
-                    movement: 9,
-                },
-                identity,
-                weapon: WeaponClass::Melee,
-                fire: None,
-                melee: None,
-                movement: crate::UnitMovement::Immobile,
-            },
-            state: UnitState::default(),
-        });
-        let events_before = state.victory.events.len();
-        let observations_before = state.observations.len();
-        score_elimination(&mut state, UnitId::ALL[0], ElimCause::Combat);
-        let scored = if isa { 1 } else { 0 };
-        assert!(state.victory.events.len() == events_before + scored);
-        // The Isa-Zachneih latch is exactly hers.
-        assert!(state.isa_zachneih_eliminated == isa);
-        // Exactly the new observations, in order: the score (carrying the
-        // same printed points and scorer) and then the elimination itself.
-        // Indexed rather than scanned: a filter over a symbolic-length slice
-        // of `Observation`s is what ran this harness out of memory.
-        let target = UnitId::ALL[0];
-        let new = &state.observations[observations_before..];
-        if isa {
-            let isa_source = VpSource::IsaZachneihEliminated;
-            assert!(new.len() == 2);
-            assert!(matches!(
-                new[0],
-                Observation::VictoryScored { source, points, for_player }
-                    if source == isa_source
-                        && points == isa_source.points()
-                        && for_player == isa_source.who_scores()
-            ));
-            assert!(matches!(
-                new[1],
-                Observation::UnitEliminated { id, vp_source: Some(source), .. }
-                    if id == target && source == isa_source
-            ));
-        } else {
-            assert!(new.len() == 1);
-            assert!(matches!(
-                new[0],
-                Observation::UnitEliminated { id, vp_source: None, .. } if id == target
-            ));
-        }
-        state.kani_discard();
     }
 }

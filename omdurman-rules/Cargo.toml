@@ -17,6 +17,12 @@ workspace = true
 # `--features kani` uniformly.
 kani = []
 
+# The expensive proof tier (src/effects/expensive.rs): one harness per effect
+# kind over a rich symbolic state. Sized for tens of GB per job; not part of
+# the everyday suite. `KANI_EXPENSIVE=1 ./run-kani.sh` turns it on. Pulls in
+# postcard for the wire-format proofs (the peers' encoding).
+kani-expensive = ["dep:postcard"]
+
 # Experimental quantifier-harness prototype (src/quantifier_experiment.rs).
 # Never part of the suite or CI; pair with cargo-kani's `-Z quantifiers`.
 kani-quantifiers = []
@@ -41,8 +47,12 @@ tracing = { workspace = true }
 # rules crate needs only `SeedableRng` + `RngExt` over the seeded `GameRng`.
 rand = { version = "0.10", default-features = false, features = ["std", "alloc"] }
 rand_chacha = { workspace = true }
+# Only for the `kani-expensive` wire-format proofs.
+postcard = { workspace = true, optional = true }
 
 [dev-dependencies]
+# The sampled run of the expensive wire-format harnesses.
+postcard = { workspace = true }
 traceability-macro = { path = "../traceability-macro" }
 # Shared traceability index + checks, also used by the `traceability-lsp` server
 # so `cargo test` and editor diagnostics can never disagree.

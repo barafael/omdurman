@@ -9,6 +9,9 @@ license.workspace = true
 # Empty twin of `omdurman-rules`' proof-build feature: lets `cargo kani` runs
 # that select both crates pass a single `--features kani`.
 kani = []
+# The expensive proof tier (`KANI_EXPENSIVE=1 ./run-kani.sh`): the sequencing
+# proofs in `net_seq`, whose symbolic B-tree operations take tens of minutes.
+kani-expensive = []
 
 [lints]
 workspace = true

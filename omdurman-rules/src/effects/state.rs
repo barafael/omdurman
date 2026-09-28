@@ -453,13 +453,13 @@ impl GameState {
 
 /// A minimal, roster-free [`GameState`] for Kani harnesses whose property does
 /// not depend on the scenario order of battle. `GameState::new` symexes the
-/// full campaign roster, which on its own dominates CBMC's memory (the
-/// `score_elimination_records_exactly_what_it_scores` harness OOMs on it);
-/// harnesses that only need "a state with empty ledgers" use this instead.
+/// full campaign roster, which on its own dominates CBMC's memory; harnesses
+/// that only need "a state with empty ledgers" use this instead.
 ///
-/// Deliberately `cfg(kani)`-gated and field-complete: adding a `GameState`
+/// Deliberately gated to proof builds (and the sampled run of the expensive
+/// harnesses under `cargo test`) and field-complete: adding a `GameState`
 /// field breaks the proof build here loudly instead of drifting silently.
-#[cfg(kani)]
+#[cfg(any(test, kani))]
 impl GameState {
     pub(crate) fn kani_minimal() -> Self {
         GameState {

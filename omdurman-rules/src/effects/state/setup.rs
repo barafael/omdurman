@@ -191,14 +191,10 @@ impl GameState {
             (Scenario::FallOfKhartoum, Player::AngloEgyptian) => 19,
             // 48 player-deployed entry force + 1 scenario-fixed North Fort fort.
             (Scenario::FallOfKhartoum, Player::Dervish) => 49,
-            (Scenario::Historical, player) => crate::UnitId::ALL
-                .iter()
-                .filter(|id| {
-                    historical_counter_in_play(**id)
-                        && crate::unit_profiles::profile_for_unit(**id)
-                            .is_some_and(|p| p.identity.owner() == player)
-                })
-                .count(),
+            // Every counter in play (`historical_counter_in_play`), fixed
+            // here and pinned to the roster by a test.
+            (Scenario::Historical, Player::AngloEgyptian) => 52,
+            (Scenario::Historical, Player::Dervish) => 143,
             // §9.111: the whole Dervish initial force -- 1 Isa Zachneih, the
             // Khalifa, 3 guns, 14 Taiasha, 17 forts and 2 gunboats; the
             // Anglo-Egyptians start with nothing on the map (§9.113).

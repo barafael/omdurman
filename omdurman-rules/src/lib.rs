@@ -101,5 +101,8 @@ mod tests;
 #[cfg(kani)]
 mod verification;
 
+#[cfg(any(test, kani))]
+pub(crate) mod proof_palette;
+
 #[cfg(all(kani, feature = "kani-quantifiers"))]
 mod quantifier_experiment;

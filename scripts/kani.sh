@@ -16,11 +16,12 @@
 # would otherwise dominate CBMC's SAT instance. Extra args are forwarded, so
 # concrete-playback and friends still work.
 #
-# Kani's Linux build artifacts are kept in a separate CARGO_TARGET_DIR so they
-# never collide with the host's target/ directory.
+# Kani's build artifacts get their own CARGO_TARGET_DIR (KANI_TARGET_DIR) so
+# they never collide with the host build: target/kani on Linux/macOS -- on
+# disk, not a tmpfs /tmp, where the multi-GB build would sit in the RAM the
+# solver needs -- and /tmp/kani-target inside WSL.
 set -eu
 
-KANI_TARGET_DIR="${KANI_TARGET_DIR:-/tmp/kani-target}"
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 
 to_wsl_path() {
@@ -48,12 +49,18 @@ fi
 case "$(uname -s)" in
     MINGW* | MSYS* | CYGWIN* | Windows_NT)
         repo_wsl=$(to_wsl_path "$repo_root")
+        KANI_TARGET_DIR="${KANI_TARGET_DIR:-/tmp/kani-target}"
         exec wsl.exe -d Debian -- bash -lc \
             "cd '$repo_wsl' && CARGO_TARGET_DIR='$KANI_TARGET_DIR' cargo kani -Z stubbing --features kani $JOBS_ARGS $*"
         ;;
     *)
         cd "$repo_root"
+        KANI_TARGET_DIR="${KANI_TARGET_DIR:-$repo_root/target/kani}"
+        PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
+        # `cargo-kani` directly, not through the `cargo` proxy: rustup would
+        # install the repo's pinned toolchain (rust-toolchain.toml) first, and
+        # Kani never uses it -- it brings its own.
         # shellcheck disable=SC2086 # JOBS_ARGS is intentionally word-split
-        CARGO_TARGET_DIR="$KANI_TARGET_DIR" exec cargo kani -Z stubbing --features kani $JOBS_ARGS "$@"
+        CARGO_TARGET_DIR="$KANI_TARGET_DIR" exec cargo-kani -Z stubbing --features kani $JOBS_ARGS "$@"
         ;;
 esac

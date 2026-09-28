@@ -18,14 +18,12 @@ generated and the proof picks up the new variant automatically.
 
 The proofs live in `#[cfg(kani)] mod verification` blocks next to the code
 they constrain, plus the crate-level `omdurman-rules/src/verification.rs`.
-Today the suite runs 91 harnesses. The source has 91 `#[kani::proof]`
-attributes (22 in `omdurman-types`, 69 in `omdurman-rules`), but that raw
-count is off in two directions. One attribute is the `prove_value_enum!`
-template in `verification.rs`, which expands to five harnesses. Four more
-sit in `quantifier_experiment.rs`, gated behind the `kani-quantifiers`
-feature that the script never enables. Do not read the count as "all
-verified": `score_elimination_records_exactly_what_it_scores` is
-memory-bound (below), tracked in [open-issues.md](open-issues.md).
+Today the everyday suite runs 90 harnesses (23 in `omdurman-types`, 67 in
+`omdurman-rules`, counting the `prove_value_enum!` template in
+`verification.rs` as the five harnesses it expands to), all of which verify
+on a big machine. The four in `quantifier_experiment.rs` sit behind the
+`kani-quantifiers` feature that the script never enables, and the expensive
+tier (below) adds 51 more behind `kani-expensive`.
 
 ## Running it
 
@@ -42,8 +40,10 @@ The script bakes in the two non-negotiables:
 - `--features kani` — compiles the engine's `debug!` call sites out. Tracing
   format machinery otherwise dominates the SAT instance.
 
-`KANI_JOBS=N` verifies harnesses in parallel. Artifacts go to
-`/tmp/kani-target` (`KANI_TARGET_DIR`), never the host `target/`.
+`KANI_JOBS=N` verifies harnesses in parallel. Artifacts go to `target/kani`
+(`KANI_TARGET_DIR`; `/tmp/kani-target` inside WSL), apart from the host
+build. Not `/tmp` on Linux: where it is a tmpfs, the multi-GB proof build sits
+in the RAM the solver needs.
 
 CI does **not** run the suite: GitHub runners kept killing the job with
 shutdown signals (exit 143). The suite is gated to `workflow_dispatch`; the
@@ -95,10 +95,9 @@ resolves, so it stubs `resolve_melee_combat` with a no-op;
 stubs: the stub must be *extensionally exact for every input the harness can
 reach* (not merely convenient), the reason goes in the doc comment, and the
 property under proof must not mention the stubbed behaviour. Those three
-precedents live in `effects.rs`; in `effects/victory.rs`, the
-`score_elimination` harness stubs `BoardInfo::bank_of` with `None` precisely
-because its board is empty, on which the real method provably returns `None`
-everywhere.
+precedents live in `effects.rs`; in `effects/expensive.rs`, the harnesses
+stub `BoardInfo::bank_of` with `None` precisely because their board is
+empty, on which the real method provably returns `None` everywhere.
 
 **Keep proof states minimal.** `GameState::new(Scenario::Campaign)` symexes
 the entire campaign order of battle — a roster no victory-ledger property
@@ -168,11 +167,67 @@ the solver has to *carry*, never what it has to *prove*:
 What did *not* help: pre-reserving ledger capacity, `--arrays-uf-always`, and
 splitting a symbolic `bool` into two concrete runs.
 
-The remaining outlier is `score_elimination_records_exactly_what_it_scores`:
-its symex is small now (63k steps), but *reading an `Observation` back out of
-the ledger* makes the propositional reduction exceed ~10 GB (the length checks
-alone verify in 5 s). It needs a machine with more memory, or a cheaper way to
-state "the pushed observation is exactly this" than reading it back.
+**Enumerate a tiny domain instead of proving it.** Two harnesses never
+finished even on a 230 GB machine, and neither needed a model checker:
+`score_elimination_records_exactly_what_it_scores` had one symbolic `bool`
+(reading an `Observation` back out of the ledger is what exploded the
+propositional reduction; its length checks alone verified in 5 s), and
+`turn_labels_agree_with_the_rule_bearing_track` one symbolic `u8` (it formats
+the label text, and Kani symexes all of `fmt`). Running every value of a
+2- or 256-value domain in a `#[test]` proves the same property -- the same
+panics, overflow checks on in test builds, no UB without `unsafe` -- in
+milliseconds. Both are exhaustive tests now. Before writing a harness, count
+the domain: if a loop can walk it, a test is the proof.
+
+## The expensive tier
+
+`omdurman-rules/src/effects/expensive.rs` and the B-tree proofs in
+`omdurman-types/src/net_seq.rs` hold the proofs worth having but too big for
+the everyday suite. Each state harness takes longer than 20 minutes on a
+desktop; budget an hour or more and tens of GB per job.
+
+```sh
+KANI_EXPENSIVE=1 ./run-kani.sh                          # everyday suite + tier
+./scripts/kani.sh -p omdurman-rules --features kani-expensive --harness expensive::
+```
+
+What they prove, for every input they can build:
+
+- **Every effect kind** (one harness each): `apply_effect` never panics or
+  overflows; a rejected effect leaves the state untouched (every rule field
+  compared, the logs by length); an accepted one keeps the global invariants
+  (legal stacks, unique ids, no eliminated unit back, no tracker naming a
+  unit that left).
+- **Movement legality**: an accepted move ends on `to`, steps hex by
+  adjacent hex from where the unit stood, never passes a hex next to an
+  enemy projecting a zone of control, and spends within its allowance --
+  stated apart from the engine's planner.
+- **Effect pairs** (melee then phase change, fire then phase change, melee
+  declared then resolved, two moves): the invariants after every step.
+- **Wire format**: every effect kind round-trips through postcard; decoding
+  any 16 bytes never panics; an exhaustive `kind_of` match fails to compile
+  when a new `GameEffect` variant lacks a wire proof.
+- **Sequencing** (`net_seq`): identity dedup accepts each uid exactly once;
+  the reorder buffer hands out exactly the contiguous run from the
+  watermark, in order, the latest delivery winning.
+
+The state is three distinct real counters from the palette
+(`omdurman-rules/src/proof_palette.rs`, held to the roster by a unit test)
+on a 5x5 window of the engine's empty, rule-neutral board, in every
+scenario, phase, side and turn, with the per-kind extras (a declared melee,
+a mine, the chain, a passenger...). On the empty board the accepted halves
+of `ConstructZariba`, `ArtilleryBreachWall`, `Demolition` and
+`FriendliesTransport` are unreachable (they need printed sides, walls, forts
+or Nile hexes); their `cover!`s report it, and those kinds are proven for
+the rejection half only.
+
+**The same harnesses run under `cargo test`** as a randomized test: the
+Kani API is swapped for a seeded RNG, a failed `assume` rejects the sample,
+and half the samples are shaped like a client's inputs (the engine's own
+builders) so the accepted half gets exercised too. 20 000 samples per
+harness by default, `EXPENSIVE_SAMPLES=500000` for a deep run (35 s in
+release; nothing found). It is the everyday guard; the proofs are the
+exhaustive one.
 
 ## Checklist: adding a proof
 
