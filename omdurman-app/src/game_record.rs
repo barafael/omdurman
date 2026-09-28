@@ -503,16 +503,43 @@ pub fn list_saved_games() -> Vec<(String, String)> {
                 .then(|| Some((events.to_str()?.to_string(), name)))?
         })
         .collect();
-    // Names embed a sortable UTC timestamp, so a reverse lexical sort puts
-    // the newest game first.
-    games.sort_by(|a, b| b.1.cmp(&a.1));
+    // Names embed a sortable UTC timestamp, so a reverse sort on it puts the
+    // newest game first.
+    games.sort_by(|a, b| saved_game_timestamp(&b.1).cmp(saved_game_timestamp(&a.1)));
     games
+}
+
+/// The sortable UTC timestamp in a saved game's directory name: `game_<ts>`
+/// from the app, `game_bot_<ts>` from the bot CLI. Sorting on the whole name
+/// put every bot game ahead of every human one ('b' sorts after the digits).
+#[cfg(not(target_arch = "wasm32"))]
+fn saved_game_timestamp(name: &str) -> &str {
+    let rest = name.strip_prefix("game_").unwrap_or(name);
+    rest.strip_prefix("bot_").unwrap_or(rest)
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use bevy::ecs::system::RunSystemOnce;
+
+    #[test]
+    fn saved_games_sort_by_time_whoever_played() {
+        let mut names = [
+            "game_bot_2026-09-03T15-40-23-625Z",
+            "game_2026-09-28T00-33-56-017Z_c622",
+            "game_2026-09-01T10-00-00-000Z_abcd",
+        ];
+        names.sort_by(|a, b| saved_game_timestamp(b).cmp(saved_game_timestamp(a)));
+        assert_eq!(
+            names,
+            [
+                "game_2026-09-28T00-33-56-017Z_c622",
+                "game_bot_2026-09-03T15-40-23-625Z",
+                "game_2026-09-01T10-00-00-000Z_abcd",
+            ]
+        );
+    }
 
     fn event(n: u32) -> GameEvent {
         GameEvent::RemoveUnit {
