@@ -163,7 +163,7 @@ fn picker_click(
             {
                 return None; // another member's command
             }
-            picker_ctx.commands.entity(entity).insert(Selected);
+            picker_ctx.commands.entity(entity).try_insert(Selected);
             *picker_ctx.state = PickerState::Selected {
                 source: entity,
                 start_coord: coord,
@@ -560,7 +560,7 @@ fn select_single_unit(
     // engine caps cumulatively regardless, but the overlay should reflect the
     // truth.
     let remaining_mp = unit_remaining_mp(game_state, placed);
-    commands.entity(entity).insert(Selected);
+    commands.entity(entity).try_insert(Selected);
     *state = PickerState::Selected {
         source: entity,
         start_coord: coord,
@@ -641,7 +641,7 @@ fn handle_stack_double_click(
         })
         .collect();
     for &e in &sources {
-        commands.entity(e).insert(Selected);
+        commands.entity(e).try_insert(Selected);
     }
     *state = PickerState::SelectedStack(StackSelection {
         sources,
@@ -734,7 +734,7 @@ fn select_combat_tile(
         }
     }
     for &e in &sources {
-        commands.entity(e).insert(Selected);
+        commands.entity(e).try_insert(Selected);
     }
     *state = PickerState::SelectedTile(TileSelection {
         sources,
@@ -914,7 +914,7 @@ impl PlacingClick<'_, '_, '_> {
             );
             self.commands
                 .entity(optimistic)
-                .insert(PendingPlacement::default());
+                .try_insert(PendingPlacement::default());
 
             info!(
                 section_name = %unit.section_name,
@@ -1706,7 +1706,7 @@ pub(crate) fn select_stack_member(
             picker_ctx.commands.entity(entity).remove::<Selected>();
         }
     }
-    picker_ctx.commands.entity(member).insert(Selected);
+    picker_ctx.commands.entity(member).try_insert(Selected);
     picker_ctx.movement_path.legs.clear();
     picker_ctx.movement_path.cost_so_far = 0;
     *picker_ctx.state = PickerState::Selected {

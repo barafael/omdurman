@@ -513,7 +513,7 @@ pub fn reconcile_unit_sprites(
                     let mut rest: std::collections::VecDeque<Vec3> =
                         steps.into_iter().map(world).collect();
                     let to = rest.pop_front().unwrap_or_else(|| world(hex));
-                    commands.entity(entity).insert(MovementAnimation {
+                    commands.entity(entity).try_insert(MovementAnimation {
                         from: transform.translation,
                         to,
                         progress: 0.0,

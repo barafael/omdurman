@@ -445,7 +445,7 @@ pub(crate) fn apply_ephemeral(
                 key,
             } => {
                 if let Some(&(entity, _, _)) = by_id.get(&peer) {
-                    commands.entity(entity).insert((
+                    commands.entity(entity).try_insert((
                         PeerName(name),
                         PeerPlayerKey(key),
                         // Data-driven: the peer's self-chosen colour.
@@ -459,7 +459,7 @@ pub(crate) fn apply_ephemeral(
                 };
                 let pos = Vec2::new(cx, cy);
                 let prev = cursor.and_then(|c| c.current).unwrap_or(pos);
-                commands.entity(entity).insert(PeerCursor {
+                commands.entity(entity).try_insert(PeerCursor {
                     current: Some(pos),
                     previous: Some(prev),
                     last_update: time.elapsed_secs_f64(),
@@ -473,21 +473,21 @@ pub(crate) fn apply_ephemeral(
             }
             Ephemeral::FactionChoice(faction) => {
                 if let Some(&(entity, _, _)) = by_id.get(&peer) {
-                    commands.entity(entity).insert(LobbyPick(faction));
+                    commands.entity(entity).try_insert(LobbyPick(faction));
                 }
             }
             Ephemeral::CommandChoice(scope) => {
                 if let Some(&(entity, _, _)) = by_id.get(&peer) {
                     commands
                         .entity(entity)
-                        .insert(crate::peers::CommandPick(scope));
+                        .try_insert(crate::peers::CommandPick(scope));
                 }
             }
             Ephemeral::SetupReady(ready) => {
                 if let Some(&(entity, _, _)) = by_id.get(&peer) {
                     commands
                         .entity(entity)
-                        .insert(crate::peers::SetupReadyFlag(ready));
+                        .try_insert(crate::peers::SetupReadyFlag(ready));
                 }
             }
             Ephemeral::ScenarioChoice(scenario) => {
@@ -497,7 +497,7 @@ pub(crate) fn apply_ephemeral(
                 if let Some(&(entity, _, _)) = by_id.get(&peer) {
                     let mut entity_cmd = commands.entity(entity);
                     if spectating {
-                        entity_cmd.insert(Spectator);
+                        entity_cmd.try_insert(Spectator);
                         entity_cmd.remove::<LobbyPick>();
                     } else {
                         entity_cmd.remove::<Spectator>();

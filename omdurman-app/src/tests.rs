@@ -1542,20 +1542,15 @@ mod mode_transition_tests {
     }
 }
 
-/// Every system the game registers has a valid parameter set. Bevy reports a
-/// conflicting pair -- two `ResMut` of one resource (B0002), say one hidden
-/// inside a `SystemParam` -- only when a schedule is initialised, i.e. when
-/// the app first runs, so no other test sees it. Build the whole game
-/// headless (no window, no GPU) and initialise every schedule without
-/// running a frame.
-#[test]
-fn every_system_has_valid_parameters() {
+/// The whole game, headless: no window server (`primary_window` optional,
+/// no winit), no GPU, no global log subscriber (tests share a process).
+fn headless_game_app(window: bool) -> bevy::app::App {
     use bevy::prelude::*;
     let mut app = App::new();
     app.add_plugins(
         DefaultPlugins
             .set(WindowPlugin {
-                primary_window: None,
+                primary_window: window.then(Window::default),
                 exit_condition: bevy::window::ExitCondition::DontExit,
                 ..default()
             })
@@ -1567,9 +1562,23 @@ fn every_system_has_valid_parameters() {
                 .into(),
                 ..default()
             })
-            .disable::<bevy::winit::WinitPlugin>(),
+            .disable::<bevy::winit::WinitPlugin>()
+            .disable::<bevy::log::LogPlugin>(),
     );
-    crate::add_game(&mut app, "smoke-test".into());
+    crate::add_game(&mut app, "headless".into());
+    app
+}
+
+/// Every system the game registers has a valid parameter set. Bevy reports a
+/// conflicting pair -- two `ResMut` of one resource (B0002), say one hidden
+/// inside a `SystemParam` -- only when a schedule is initialised, i.e. when
+/// the app first runs, so no other test sees it. Build the whole game
+/// headless (no window, no GPU) and initialise every schedule without
+/// running a frame.
+#[test]
+fn every_system_has_valid_parameters() {
+    use bevy::prelude::*;
+    let mut app = headless_game_app(false);
     app.finish();
     app.cleanup();
     // (Initialising a schedule may itself touch `Schedules`, so take it out
@@ -1584,4 +1593,167 @@ fn every_system_has_valid_parameters() {
             .unwrap_or_else(|e| panic!("schedule {label:?}: {e}"));
     }
     world.insert_resource(schedules);
+}
+
+/// Play `scenario` headless, both factions held by the AI on an offline
+/// self-hosting instance, for up to `frames` frames of 250 ms: every system
+/// of every phase runs for real, so a system asking for a resource that
+/// does not exist yet, or a command on a vanished entity -- runtime panics
+/// in Bevy -- fails here. Returns the final engine state.
+fn ai_plays_headless(
+    scenario: omdurman_types::Scenario,
+    frames: usize,
+) -> omdurman_rules::effects::GameState {
+    use bevy::prelude::*;
+    let games = tempfile::tempdir().expect("temp dir");
+    let mut app = headless_game_app(true);
+    app.insert_resource(crate::net_plugin::OfflineMode(true))
+        .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+            std::time::Duration::from_millis(250),
+        ))
+        // No flavour-text model calls, and records into the temp dir.
+        .insert_resource(omdurman_net::llm::LlmConfig {
+            api_key: None,
+            ..Default::default()
+        })
+        .insert_resource(crate::game_record::GameRecorder::init_in(
+            games.path().to_str().expect("utf-8 temp path"),
+            7,
+        ))
+        .insert_resource(crate::GameRng::from_seed(7));
+    for _ in 0..10 {
+        app.update();
+    }
+    // Into the lobby, as the title screen's Lobby button does.
+    app.world_mut()
+        .resource_mut::<NextState<crate::AppState>>()
+        .set(crate::AppState::Lobby);
+    app.world_mut()
+        .resource_mut::<NextState<crate::AppMode>>()
+        .set(crate::AppMode::Lobby);
+    for _ in 0..10 {
+        app.update();
+    }
+    let seats = [
+        omdurman_types::Player::AngloEgyptian,
+        omdurman_types::Player::Dervish,
+    ]
+    .map(|faction| omdurman_net::Seat {
+        faction,
+        scope: None,
+        holder: omdurman_net::SeatHolder::Ai,
+    })
+    .to_vec();
+    app.world_mut()
+        .resource_mut::<crate::PendingEdits>()
+        .submit_game(omdurman_net::GameEvent::StartGame {
+            seats,
+            scenario,
+            optional_rules: Vec::new(),
+        });
+    let mut after_the_end = 0;
+    for _ in 0..frames {
+        app.update();
+        // Keep going a while after the end: the result, the Gazette and the
+        // end-of-game screens run then.
+        if app
+            .world()
+            .resource::<crate::GameStateResource>()
+            .0
+            .game_over
+        {
+            after_the_end += 1;
+            if after_the_end > 120 {
+                break;
+            }
+        }
+    }
+    let final_state = app.world().resource::<crate::GameStateResource>().0.clone();
+    // Then review the game on the timeline, as the saved-games list and the
+    // Gazette's "Review timeline" do: jump about, then play it back.
+    let record = app
+        .world()
+        .resource::<crate::game_record::GameRecorder>()
+        .record
+        .clone()
+        .expect("the game was recorded");
+    let len = record.events.len();
+    app.world_mut()
+        .resource_mut::<crate::timeline::SpectatorTimeline>()
+        .open(record, "headless".into());
+    app.world_mut()
+        .resource_mut::<NextState<crate::AppState>>()
+        .set(crate::AppState::Spectating);
+    for cursor in [len / 2, 0, 1, len / 3, len.saturating_sub(2), len / 5] {
+        let mut timeline = app
+            .world_mut()
+            .resource_mut::<crate::timeline::SpectatorTimeline>();
+        timeline.cursor = cursor;
+        timeline.dirty = true;
+        app.update();
+        app.update();
+    }
+    app.world_mut()
+        .resource_mut::<crate::timeline::SpectatorTimeline>()
+        .playing = true;
+    for _ in 0..60 {
+        app.update();
+    }
+    assert_eq!(
+        *app.world().resource::<State<crate::AppState>>().get(),
+        crate::AppState::Spectating
+    );
+    assert!(
+        !app.world()
+            .resource::<crate::timeline::SpectatorTimeline>()
+            .dirty,
+        "every scrub was rebuilt"
+    );
+    // ...and back to the menu.
+    app.world_mut()
+        .resource_mut::<NextState<crate::AppMode>>()
+        .set(crate::AppMode::Menu);
+    for _ in 0..5 {
+        app.update();
+    }
+    final_state
+}
+
+/// The Historical scenario, AI against AI, to the §9.24 result. About a
+/// minute in a debug build; run with `cargo test -p omdurman-app -- --ignored`.
+#[test]
+#[ignore = "long: a full Historical game headless"]
+fn ai_plays_historical_headless() {
+    let state = ai_plays_headless(omdurman_types::Scenario::Historical, 20000);
+    assert!(state.game_over, "the four turns are played out");
+    assert!(matches!(
+        state.game_result,
+        Some(omdurman_rules::GameResult::Historical { .. })
+    ));
+}
+
+/// The Campaign, AI against AI, through a dozen turns (night, desertion,
+/// reinforcements). A few minutes in a debug build; `--ignored` to run.
+#[test]
+#[ignore = "long: a Campaign game headless"]
+fn ai_plays_campaign_headless() {
+    let state = ai_plays_headless(omdurman_types::Scenario::Campaign, 40000);
+    assert!(
+        state.current_turn.value() >= 8,
+        "turn {:?}",
+        state.current_turn
+    );
+}
+
+/// FALL OF KHARTOUM, AI against AI, from set-up to the result, then the
+/// timeline review (about 20 s in a debug build).
+#[test]
+fn ai_plays_fall_of_khartoum_headless() {
+    let state = ai_plays_headless(omdurman_types::Scenario::FallOfKhartoum, 20000);
+    assert_eq!(state.scenario, omdurman_types::Scenario::FallOfKhartoum);
+    assert!(state.game_over, "the AI plays the siege to its end");
+    assert!(matches!(
+        state.game_result,
+        Some(omdurman_rules::GameResult::FoK(_))
+    ));
 }

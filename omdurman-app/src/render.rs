@@ -102,7 +102,7 @@ pub fn add_plane_picking(
     for entity in &planes {
         commands
             .entity(entity)
-            .insert(crate::picking::plane_pickable());
+            .try_insert(crate::picking::plane_pickable());
     }
 }
 

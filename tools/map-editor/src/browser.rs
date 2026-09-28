@@ -349,7 +349,7 @@ pub fn update_sprite_selection_marker(
     if let Some(ref sel) = browser.selected_sprite {
         for (entity, button) in &buttons {
             if button.section == sel.section && button.sprite == sel.sprite {
-                commands.entity(entity).insert(Outline {
+                commands.entity(entity).try_insert(Outline {
                     width: Val::Px(2.0),
                     offset: Val::Px(0.0),
                     color: Color::srgb_u8(230, 50, 50),
