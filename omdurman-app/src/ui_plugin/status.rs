@@ -29,7 +29,7 @@ pub(crate) fn update_status_text(
         _ if *mode.get() == crate::AppMode::Menu => Cow::Borrowed(""),
         AppState::Splash => Cow::Borrowed(""),
         AppState::Lobby => Cow::Owned(format!(
-            "Lobby -- choose your faction (share: ?room={})",
+            "Lobby -- choose your faction (share: #room={})",
             room.as_str()
         )),
         // In game, the phase banner provides full turn/phase/sequence info.

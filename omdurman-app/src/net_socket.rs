@@ -367,22 +367,11 @@ pub(crate) fn handle_reconnect(
     *room = RoomId::new(new_room.clone());
 
     #[cfg(target_arch = "wasm32")]
-    {
-        let Some(window) = web_sys::window() else {
-            return;
-        };
-        if let Ok(history) = window.history() {
-            let href = window.location().href().ok().unwrap_or_default();
-            if let Ok(url) = web_sys::Url::new(&href) {
-                url.search_params().set("room", &new_room);
-                let _ = history.replace_state_with_url(
-                    &wasm_bindgen::JsValue::NULL,
-                    "",
-                    Some(&url.href()),
-                );
-            }
-        }
-    }
+    omdurman_net::write_fragment(&omdurman_net::with_fragment_param(
+        &omdurman_net::read_fragment(),
+        "room",
+        Some(&new_room),
+    ));
 
     // -- open new socket --
     commands.insert_resource(omdurman_net::build_socket(&new_room));
