@@ -183,7 +183,7 @@ pub fn event_viewer_ui(
         let idx = state.selected.map(|i| i as i32).unwrap_or(-1);
         omdurman_net::broadcast_unreliable(
             &mut socket,
-            &net.peers,
+            net.peers(),
             &NetMsg::Ephemeral(Ephemeral::EventViewerSelect(idx)),
         );
     }

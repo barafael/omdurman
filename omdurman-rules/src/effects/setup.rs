@@ -241,10 +241,11 @@ pub fn apply_place_reinforcements(
 // ---------------------------------------------------------------------------
 
 /// The number of Dervish units that desert for a given die roll (§8.2): "equal
-/// to 1½ times the roll of one die", i.e. `floor(1.5 * roll)`.
-/// The manual does not specify rounding direction; floor is used here.
+/// to 1½ times the roll of one die", rounded up -- `ceil(1.5 * roll)`, so an
+/// odd roll r deserts (3r + 1) / 2 (a roll of 1 deserts 2, a 3 deserts 5).
+/// The manual does not say which way to round; up is the chosen reading.
 pub fn desertion_count(roll: DieRoll) -> usize {
-    (3 * roll.value() as usize) / 2
+    (3 * roll.value() as usize).div_ceil(2)
 }
 
 pub fn apply_dervish_desertion(

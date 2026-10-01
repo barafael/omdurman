@@ -97,7 +97,8 @@ which the manual text does not reproduce.
      - Target-hex terrain (§6.23): Huts −1, Building −3, fort −3 (§6.54).
      - Hexside the fire crosses into the target: Crest −1, City Wall −4.
      - Historical Zariba (§9.23): thorn hedge −2, trench −4 vs entrenched.
-     - Anglo-Egyptian direct fire +1 (§6.24).
+     - Anglo-Egyptian direct fire +1 (§6.24), Maxim second fire included;
+       not howitzer fire.
      - Brigade integrity +1 (§5.54, §6.24): all four battalions of one
        Anglo-Egyptian infantry brigade stacked together and all firing at the
        same hex.
@@ -106,12 +107,16 @@ which the manual text does not reproduce.
   5. **Roll d10** and cross-index the modified roll with the factor column of
      the Combat Results Table.
 - Combat results: `—` no effect. `D`: half the units in the target hex
-  (round up) are disrupted. `1`–`5`: that many units in the target hex are
-  eliminated; the survivors are not disrupted.
+  (round up) are disrupted, picked at random among the undisrupted ones.
+  `1`–`5`: that many units in the target hex are eliminated; the survivors
+  are not disrupted.
 - Disrupted units have no ZOC and may not move, fire or melee. They recover
   at the end of the owning player's turn.
 - Maxims fire twice: once in §6.41 and again in §6.42. A Maxim that skipped
   §6.41 still fires only once in §6.42 (§6.42).
+- The named gunboats' Maxims (the "6×2" on the counter, §2.32) are a second
+  weapon beside their artillery: they fire once in each subphase, at a target
+  of their own.
 - **Howitzers** (§6.64): only the five named British gunboats.
   - They fire their artillery factor as direct fire in §6.41, then again as
     howitzer fire in §6.42.
@@ -195,7 +200,7 @@ which the manual text does not reproduce.
   - Fall of Khartoum turn 1 is always a night turn (§9.341).
 - **Dervish desertion** (§8.2): once per Campaign, in the Dervish movement
   phase of the first night turn, roll d10.
-  - 1½ × the roll Dervish units desert (the engine rounds down); the Dervish
+  - 1½ × the roll Dervish units desert (the engine rounds up); the Dervish
     player chooses which.
   - The Khalifa, gunboats, artillery and forts may not desert.
   - No VP for deserters.
@@ -292,7 +297,9 @@ which the manual text does not reproduce.
     - An Anglo-Egyptian decisive victory if every Dervish unit (gunboats and
       forts included) is eliminated.
     - A Dervish decisive victory if every Anglo-Egyptian unit on the west
-      bank (gunboats excluded) is eliminated.
+      bank (gunboats excluded) is eliminated -- judged only once some fell
+      there, so an empty west bank the Anglo-Egyptians never reached is not
+      one. "Friendlies" count once carried to the west bank.
 - **Historical** (§9.24): each side's level comes from the number of enemy
   units it eliminated. The lower level is subtracted from the higher to give
   the net result.
@@ -311,7 +318,8 @@ which the manual text does not reproduce.
   - British: marginal if he survives turn 6, tactical if he survives turn 7,
     decisive if he survives turn 8.
   - The Dervish then drop one level for 16–23 own units lost, two for 24–31,
-    and three for 32+. "Friendlies" losses are Anglo-Egyptian losses, not
+    and three for 32+ -- from a Dervish result only (it can become a British
+    win); a British win is never enlarged. "Friendlies" losses are Anglo-Egyptian losses, not
     Dervish.
 
 ## Historical set-up (§9.21)

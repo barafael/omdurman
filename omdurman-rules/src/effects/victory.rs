@@ -62,6 +62,13 @@ fn take_off_the_board(
     let pos = state.units.iter().position(|u| u.id == unit_id)?;
     let unit = state.units[pos];
     score_elimination(state, unit_id, cause);
+    // §9.14: remember that the west bank had Anglo-Egyptian units to lose.
+    if unit.profile.identity.owner() == Player::AngloEgyptian
+        && !matches!(unit.profile.kind, UnitKind::Gunboat { .. })
+        && state.board.bank_of(unit.position) == Some(crate::board::NileBank::West)
+    {
+        state.ae_lost_on_west_bank = true;
+    }
     // Unit ids are unique in `state.units`, so removing the single match is
     // the same filter `retain` would do -- spelled with `position`+`remove`
     // because `Vec::retain`'s closure-driven symex is intractable under Kani

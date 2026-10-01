@@ -310,7 +310,9 @@ impl OfflineMode {
 /// path with no peers. No socket is spawned, so all `MatchboxSocket` queries
 /// simply no-op.
 fn setup_offline(mut net: ResMut<NetState>) {
-    net.my_id = Some(PeerId(uuid::Uuid::nil()));
+    // Through the setter, which keeps the sorted peer list -- the roster,
+    // the host election and event attribution -- in step.
+    net.set_my_id(Some(PeerId(uuid::Uuid::nil())));
     net.is_host = true;
     // Offline self-hosting counts as session evidence: solo play must be
     // able to sequence events (see `sequencing_allowed`).
@@ -339,7 +341,7 @@ pub(crate) fn broadcast_cursor(
     };
     omdurman_net::broadcast_unreliable(
         &mut socket,
-        &net.peers,
+        net.peers(),
         &NetMsg::Ephemeral(Ephemeral::CursorPos {
             pos: [hit.x, hit.z],
         }),
@@ -372,7 +374,7 @@ pub(crate) fn send_player_info_on_connect(
         spectator: local_spectator,
         setup_ready: local_setup_ready,
     } = me;
-    for &peer in &net.peers {
+    for &peer in net.peers() {
         if !notified.contains(&peer) {
             notified.push(peer);
             let (r, g, b) = local.color_u8();
@@ -433,7 +435,7 @@ pub(crate) fn apply_ephemeral(
                 | Ephemeral::SpectatorChoice(_)
         );
         if needs_entity && !by_id.contains_key(&peer) {
-            if net.peers.contains(&peer) {
+            if net.peers().contains(&peer) {
                 deferred.push((eph, peer));
             }
             continue;
@@ -529,13 +531,13 @@ pub(crate) fn flush_pending(
             broadcast = broadcast_count,
             targeted = targeted_count,
             is_host = net.is_host,
-            peers = net.peers.len(),
+            peers = net.peers().len(),
             "flushing pending outbound messages"
         );
     }
 
     let host = net.host_id();
-    let no_peers = net.peers.is_empty();
+    let no_peers = net.peers().is_empty();
 
     let staged: Vec<NetMsg> = std::mem::take(&mut pending.outgoing_broadcast);
     let mut to_broadcast: Vec<NetMsg> = Vec::new();
@@ -601,7 +603,7 @@ pub(crate) fn flush_pending(
     let targeted: Vec<(NetMsg, PeerId)> = std::mem::take(&mut pending.outgoing_targeted);
     let mut retained_targeted: Vec<(NetMsg, PeerId)> = Vec::new();
     for (msg, peer) in targeted {
-        if !net.peers.contains(&peer) {
+        if !net.peers().contains(&peer) {
             // The peer is gone (or never connected): a targeted send can
             // never succeed, so retaining it would retry forever. A peer that
             // reconnects gets a fresh `PlayerInfo` / history push on connect.
@@ -648,7 +650,7 @@ pub(crate) fn flush_pending(
         };
         let channel = socket.channel_mut(CH_RELIABLE);
         let mut all_ok = true;
-        for &peer in &net.peers {
+        for &peer in net.peers() {
             if let Err(e) = channel.try_send(encoded.clone(), peer) {
                 warn!(error = %e, "reliable broadcast send failed; will retry");
                 all_ok = false;
@@ -692,5 +694,21 @@ mod tests {
         assert_eq!(pending.outgoing_broadcast.len(), 1, "sent once, not resent");
         pending.retransmit_unconfirmed(SUBMIT_RETRANSMIT_SECS);
         assert_eq!(pending.outgoing_broadcast.len(), 2, "resent once overdue");
+    }
+
+    /// Offline self-hosting puts the local player in the sorted peer list:
+    /// the lobby roster, the host election and event attribution all read
+    /// it. Without that the offline lobby listed nobody and Start Battle
+    /// never enabled (found in a click-through play-test).
+    #[test]
+    fn offline_mode_lists_the_local_player() {
+        let mut app = App::new();
+        app.insert_resource(NetState::default())
+            .add_systems(Update, setup_offline);
+        app.update();
+        let net = app.world().resource::<NetState>();
+        let me = net.my_id().expect("offline mode assigns a local id");
+        assert_eq!(net.sorted_all(), &[me]);
+        assert_eq!(net.host_id(), Some(me));
     }
 }

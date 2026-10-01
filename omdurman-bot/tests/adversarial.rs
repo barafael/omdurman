@@ -71,8 +71,10 @@ fn direct_attack(firer: UnitId, target: HexCoord, modifiers: Vec<FireModifier>) 
             at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers,
+            gunboat_maxims: Vec::new(),
         },
         roll: DieRoll::Three,
+        disruption: omdurman_rules::DisruptionDraw::default(),
     }
 }
 
@@ -393,10 +395,11 @@ proptest! {
                         at_fort: false,
                         factor_row: FireFactorRow::Row01to05,
                         modifiers: vec![FireModifier::AngloEgyptianDirectFire],
+                        gunboat_maxims: Vec::new(),
                     };
                     let attempt = apply_effect(
                         &mut gs.clone(),
-                        &GameEffect::FireCombat { attack, roll: DieRoll::Three },
+                        &GameEffect::FireCombat { attack, roll: DieRoll::Three, disruption: omdurman_rules::DisruptionDraw::default() },
                     );
                     prop_assert!(
                         attempt.is_err(),
@@ -463,8 +466,10 @@ fn mutate(state: &GameState, rng: &mut BotRng) -> GameEffect {
                     at_fort: false,
                     factor_row: FireFactorRow::Row01to05,
                     modifiers,
+                    gunboat_maxims: Vec::new(),
                 },
                 roll: DieRoll::Three,
+                disruption: omdurman_rules::DisruptionDraw::default(),
             }
         }
         // Howitzer with two arbitrary rolls.
@@ -478,9 +483,11 @@ fn mutate(state: &GameState, rng: &mut BotRng) -> GameEffect {
                 at_fort: false,
                 factor_row: FireFactorRow::Row01to05,
                 modifiers: vec![],
+                gunboat_maxims: Vec::new(),
             },
             combat_results_table_roll: rng.roll_d10(),
             impact_roll: rng.roll_d10(),
+            disruption: omdurman_rules::DisruptionDraw::default(),
         },
         // Move an arbitrary unit (possibly the opponent's) to a nearby hex.
         3 => GameEffect::MoveUnit {
@@ -507,6 +514,7 @@ fn mutate(state: &GameState, rng: &mut BotRng) -> GameEffect {
             },
             attacker_roll: rng.roll_d10(),
             defender_roll: rng.roll_d10(),
+            disruption: omdurman_rules::DisruptionDraw::default(),
         },
     }
 }

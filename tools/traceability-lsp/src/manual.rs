@@ -45,12 +45,22 @@ fn section_title(line: &str) -> String {
         .to_string()
 }
 
+/// The pseudo-section key of a `### Key) Title` header, e.g.
+/// `### TurnTrack) Turn Record Track` -> `TurnTrack`, for the printed chart
+/// prose transcribed at the end of the manual (`crate::PSEUDO_SECTIONS`).
+fn pseudo_key(heading: &str) -> Option<String> {
+    let s = heading.trim().trim_start_matches('#').trim_start();
+    let (key, _) = s.split_once(')')?;
+    crate::is_pseudo_key(key).then(|| key.to_string())
+}
+
 /// Build the section index for a manual file.
 ///
 /// Recognises both `#`-header sections (`### 9.1) The Campaign Game`) and
 /// inline bold paragraph leads (`**9.111)** Dervish player sets up first...`),
-/// which the OCR manual uses for sub-sub-sections. Plain-numbered lines (e.g.
-/// table-of-contents entries) are not anchors.
+/// which the OCR manual uses for sub-sub-sections, plus the pseudo-section
+/// headers of the transcribed chart prose (`### TurnTrack) ...`).
+/// Plain-numbered lines (e.g. table-of-contents entries) are not anchors.
 pub fn index_manual(path: &Path) -> Vec<ManualSection> {
     let content = match fs::read_to_string(path) {
         Ok(c) => c,
@@ -65,6 +75,15 @@ pub fn index_manual(path: &Path) -> Vec<ManualSection> {
         let is_header = trimmed.starts_with('#') && trimmed.starts_with("##");
         if is_header && let Some(num) = section_number(trimmed) {
             anchors.push((i + 1, num, section_title(trimmed)));
+            continue;
+        }
+        if is_header && let Some(key) = pseudo_key(trimmed) {
+            let title = trimmed
+                .split_once(')')
+                .map_or("", |(_, t)| t)
+                .trim()
+                .to_string();
+            anchors.push((i + 1, key, title));
             continue;
         }
         if trimmed.starts_with("**")
@@ -117,6 +136,31 @@ mod tests {
         assert_eq!(nums, vec!["9", "9.1", "9.111", "9.112"]);
         assert_eq!(sections[2].start_line, 7);
         assert_eq!(sections[2].end_line, 8);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn parses_pseudo_section_headers() {
+        let dir = std::env::temp_dir().join("traceability-lsp-manual-pseudo-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("manual.md");
+        let body = concat!(
+            "## 11) Historical Notes\n",
+            "\n",
+            "## Reference: Charts and Tables\n",
+            "\n",
+            "### TurnTrack) Turn Record Track\n",
+            "\n",
+            "1. 1898 SEPT. 1 6:00 am\n",
+            "### Unknown) Not a pseudo-section\n",
+        );
+        std::fs::write(&path, body).unwrap();
+
+        let sections = index_manual(&path);
+        let nums: Vec<&str> = sections.iter().map(|s| s.num.as_str()).collect();
+        assert_eq!(nums, vec!["11", "TurnTrack"]);
+        assert_eq!(sections[1].title, "Turn Record Track");
+        assert_eq!(sections[1].start_line, 5);
         std::fs::remove_dir_all(&dir).ok();
     }
 }

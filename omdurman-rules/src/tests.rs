@@ -252,6 +252,7 @@ fn fire_modifiers_compose() {
             FireModifier::BrigadeIntegrity,
             FireModifier::Terrain(-2),
         ],
+        gunboat_maxims: Vec::new(),
     };
     assert_eq!(attack.net_modifier(), 0);
 }
@@ -669,6 +670,38 @@ fn fok_victory_level_worked_example() {
     assert_eq!(
         FoKVictoryLevel::resolve(Some(5), 8, 24),
         FoKVictoryLevel::BritishMarginal
+    );
+}
+
+/// The loss penalty is the Dervish player losing levels: it erodes (and can
+/// reverse) a Dervish win, but never enlarges a British one.
+#[rulebook("§9.35")]
+#[test]
+fn fok_loss_penalty_never_enlarges_a_british_win() {
+    // GORDON survives turn six (British marginal); 20 Dervish losses would be
+    // a one-level penalty, but there is no Dervish win left to lose.
+    assert_eq!(
+        FoKVictoryLevel::resolve(None, 6, 20),
+        FoKVictoryLevel::BritishMarginal
+    );
+    assert_eq!(
+        FoKVictoryLevel::resolve(None, 7, 32),
+        FoKVictoryLevel::BritishTactical
+    );
+    // Killed on turn 7 he survived turn six: also a British base, unshifted.
+    assert_eq!(
+        FoKVictoryLevel::resolve(Some(7), 8, 24),
+        FoKVictoryLevel::BritishMarginal
+    );
+    // A Dervish base still pays, across the line: marginal -1 -> British
+    // marginal, marginal -3 -> British decisive.
+    assert_eq!(
+        FoKVictoryLevel::resolve(Some(6), 8, 16),
+        FoKVictoryLevel::BritishMarginal
+    );
+    assert_eq!(
+        FoKVictoryLevel::resolve(Some(6), 8, 32),
+        FoKVictoryLevel::BritishDecisive
     );
 }
 

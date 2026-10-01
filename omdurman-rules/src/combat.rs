@@ -80,9 +80,64 @@ pub struct FireAttack {
     /// per-unit at resolution time).
     pub factor_row: FireFactorRow,
     pub modifiers: Vec<FireModifier>,
+    /// Named gunboats whose Maxim guns join this attack (§2.32, §6.42): a
+    /// second weapon on the counter, fired on the Maxims line, once in each
+    /// fire subphase, independently of the gunboat's artillery/howitzer
+    /// factor (which fires as one of `firers`). A gunboat may appear in both
+    /// lists -- its two weapons combined at one hex (§6.14).
+    #[serde(default)]
+    pub gunboat_maxims: Vec<UnitId>,
+}
+
+/// Which of a counter's weapons fires (§2.3). Every armed counter has its
+/// printed fire factor (`Main`); a new-type (named) gunboat also carries
+/// Maxim guns beside its artillery -- the "6×2" of "5·6×2·12/18" (§2.32).
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum FireMount {
+    /// The counter's printed fire factor: rifles, spears, a battery, a
+    /// Maxim battery, a gunboat's artillery (fired as howitzer fire in the
+    /// second subphase, §6.64).
+    Main,
+    /// A named gunboat's Maxim guns, fired on the Maxims line once in each
+    /// fire subphase (§6.42).
+    GunboatMaxims,
+}
+
+/// One weapon firing in an attack: a counter and which of its weapons
+/// (§6.14 combines any number of them at one hex).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct Shot {
+    pub unit: UnitId,
+    pub mount: FireMount,
 }
 
 impl FireAttack {
+    /// The weapons firing in this attack: each of `firers` with its main
+    /// weapon, then each gunboat in `gunboat_maxims` with its Maxims.
+    pub fn shots(&self) -> Vec<Shot> {
+        let main = self.firers.iter().map(|&unit| Shot {
+            unit,
+            mount: FireMount::Main,
+        });
+        let maxims = self.gunboat_maxims.iter().map(|&unit| Shot {
+            unit,
+            mount: FireMount::GunboatMaxims,
+        });
+        main.chain(maxims).collect()
+    }
+
+    /// Every unit firing in this attack, once each (a gunboat firing both
+    /// weapons is listed once).
+    pub fn all_firing_units(&self) -> Vec<UnitId> {
+        let mut units: Vec<UnitId> = Vec::new();
+        for shot in self.shots() {
+            if !units.contains(&shot.unit) {
+                units.push(shot.unit);
+            }
+        }
+        units
+    }
+
     /// Sum of all fire modifiers applied to this attack (rulebook §6.24).
     pub fn net_modifier(&self) -> i16 {
         // Saturating fold rather than `sum()`: the modifier list is unbounded
@@ -105,6 +160,37 @@ pub enum CombatResult {
     NoEffect,
     Disrupt,
     Eliminate(u8),
+}
+
+/// Which units a `D` result disrupts, drawn at random with the dice
+/// (§CombatResults: "D* = ½ (round up) of the units in the target hex are
+/// disrupted"; the rulebook does not say who picks them). The acting peer
+/// rolls it into the effect like any die, so every peer disrupts the same
+/// units on replay.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
+pub struct DisruptionDraw(pub u32);
+
+impl DisruptionDraw {
+    /// The (up to) `n` of `candidates` this draw picks, in pick order. The
+    /// draw is read as a mixed-radix number: each digit picks one of the
+    /// candidates still left, so every ordered pick is reachable.
+    pub fn pick(self, candidates: &[UnitId], n: usize) -> Vec<UnitId> {
+        let mut left = candidates.to_vec();
+        let mut rest = self.0;
+        let mut picked = Vec::with_capacity(n.min(left.len()));
+        while picked.len() < n && !left.is_empty() {
+            let len = left.len() as u32;
+            picked.push(left.remove((rest % len) as usize));
+            rest /= len;
+        }
+        picked
+    }
+
+    /// Two independent draws out of one: a melee's two simultaneous results
+    /// (§7.3) each pick their own victims, from the low and the high half.
+    pub fn split(self) -> (Self, Self) {
+        (Self(self.0 & 0xFFFF), Self(self.0 >> 16))
+    }
 }
 
 // ---------------------------------------------------------------------------

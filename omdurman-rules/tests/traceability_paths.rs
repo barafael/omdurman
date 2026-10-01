@@ -118,6 +118,15 @@ mod rules_root_paths {
         let _ = omdurman_rules::UnitIdentity::dervish_stacking_group;
         let _ = omdurman_rules::DervishLeader::setup_letter;
         let _ = omdurman_rules::DervishLeader::of_tribe;
+        // §CombatResults: the die-roll clamp and the random pick of a `D`.
+        let _ = omdurman_rules::DieRoll::apply_modifier;
+        let _ = omdurman_rules::DisruptionDraw::pick;
+        // §2.32: a named gunboat's Maxims -- a counter's weapons, and the
+        // weapons firing in an attack.
+        let _ = GunboatId::maxim_factor;
+        let _ = omdurman_rules::UnitPlacement::fire_factor;
+        let _ = omdurman_rules::UnitPlacement::weapon_line;
+        let _ = FireAttack::shots;
     }
 
     // Fields on UnitState (§5.21, §5.3, §6.53).
@@ -162,6 +171,10 @@ mod rules_effects_paths {
         let _ = omdurman_rules::effects::first_player;
         // Fire-attack construction: explicit-firer builder (§6.13, §6.15).
         let _ = omdurman_rules::effects::build_fire_attack_from;
+        // §2.32/§6.42: a named gunboat's Maxims firing on their own.
+        let _ = omdurman_rules::effects::build_gunboat_maxim_attack;
+        // §6.24: the engine-derived mandatory fire modifiers.
+        let _ = omdurman_rules::effects::mandatory_fire_modifiers;
         // §7.7: the engine-derived mandatory melee modifier lists.
         let _ = omdurman_rules::effects::mandatory_melee_modifiers;
         // Fall of Khartoum special rules (§9.343, §9.345, §9.346).
@@ -177,6 +190,7 @@ mod rules_effects_paths {
         let _ = GameState::in_deployment_zone;
         let _ = GameState::historical_set_up_area;
         let _ = GameState::can_fire_at;
+        let _ = GameState::can_fire_gunboat_maxims_at;
         let _ = GameState::can_melee;
         let _ = GameState::can_advance_after_combat;
         let _ = GameState::can_retreat_before_melee;

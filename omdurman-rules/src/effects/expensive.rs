@@ -143,6 +143,12 @@ fn any_roll() -> DieRoll {
     DieRoll::ALL[any_below(DieRoll::ALL.len())]
 }
 
+/// A disruption draw: 24 = 4! values reach every ordered pick of up to four
+/// candidates (`DisruptionDraw::pick` reads the draw as mixed radix).
+fn any_disruption() -> DisruptionDraw {
+    DisruptionDraw(any_below(24) as u32)
+}
+
 /// A hex of the 5x5 window around the origin.
 fn any_hex() -> HexCoord {
     HexCoord::new(any_in(-2, 2), any_in(-2, 2))
@@ -245,6 +251,8 @@ fn any_fire_attack() -> FireAttack {
         at_fort: any(),
         factor_row: FireFactorRow::ALL[any_below(FireFactorRow::ALL.len())],
         modifiers: any_fire_modifiers(),
+        // The palette's named gunboat may join with its Maxims (§2.32).
+        gunboat_maxims: any_ids(1),
     }
 }
 
@@ -410,6 +418,7 @@ fn with_pending_melee(state: &mut GameState) {
             },
             attacker_roll: any_roll(),
             defender_roll: any_roll(),
+            disruption: any_disruption(),
         });
     }
 }
@@ -746,6 +755,7 @@ fn fire_combat_is_safe() {
             plausible_fire(&state, FireKind::Direct)
         }),
         roll: any_roll(),
+        disruption: any_disruption(),
     };
     check(state, effect);
 }
@@ -774,6 +784,7 @@ fn howitzer_fire_is_safe() {
         }),
         combat_results_table_roll: any_roll(),
         impact_roll: any_roll(),
+        disruption: any_disruption(),
     };
     check(state, effect);
 }
@@ -798,6 +809,7 @@ fn declare_melee_is_safe() {
         attack,
         attacker_roll: any_roll(),
         defender_roll: any_roll(),
+        disruption: any_disruption(),
     };
     check(state, effect);
 }
@@ -1333,6 +1345,7 @@ fn declare_melee_then_advance_phase_keeps_the_invariants() {
         attack,
         attacker_roll: any_roll(),
         defender_roll: any_roll(),
+        disruption: any_disruption(),
     };
     check_pair(state, declare, GameEffect::AdvancePhase);
 }
@@ -1357,6 +1370,7 @@ fn fire_then_advance_phase_keeps_the_invariants() {
             plausible_fire(&state, FireKind::Direct)
         }),
         roll: any_roll(),
+        disruption: any_disruption(),
     };
     check_pair(state, fire, GameEffect::AdvancePhase);
 }
@@ -1380,6 +1394,7 @@ fn declare_melee_then_resolve_melee_keeps_the_invariants() {
         attack,
         attacker_roll: any_roll(),
         defender_roll: any_roll(),
+        disruption: any_disruption(),
     };
     check_pair(state, declare, GameEffect::ResolveMelee);
 }
@@ -1436,16 +1451,19 @@ fn any_effect(kind: usize) -> GameEffect {
         2 => GameEffect::FireCombat {
             attack: any_fire_attack(),
             roll: any_roll(),
+            disruption: any_disruption(),
         },
         3 => GameEffect::HowitzerFire {
             attack: any_fire_attack(),
             combat_results_table_roll: any_roll(),
             impact_roll: any_roll(),
+            disruption: any_disruption(),
         },
         4 => GameEffect::DeclareMelee {
             attack: any_melee_attack(),
             attacker_roll: any_roll(),
             defender_roll: any_roll(),
+            disruption: any_disruption(),
         },
         5 => GameEffect::ResolveMelee,
         6 => GameEffect::RetreatBeforeMelee {

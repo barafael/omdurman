@@ -954,6 +954,7 @@ fn fire_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>) 
                                 attack,
                                 combat_results_table_roll: rng.roll_d10(),
                                 impact_roll: rng.roll_d10(),
+                                disruption: rng.disruption_draw(),
                             });
                         }
                         _ => {
@@ -965,15 +966,49 @@ fn fire_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>) 
                             out.push(GameEffect::FireCombat {
                                 attack,
                                 roll: rng.roll_d10(),
+                                disruption: rng.disruption_draw(),
                             });
                             if let Some(aimed) = at_the_fort {
                                 out.push(GameEffect::FireCombat {
                                     attack: aimed,
                                     roll: rng.roll_d10(),
+                                    disruption: rng.disruption_draw(),
                                 });
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    // A named gunboat's Maxims (§2.32) are a weapon of their own: they fire
+    // in each subphase (direct, then Maxim second fire, §6.42) whatever the
+    // gunboat's artillery does.
+    let gunboats: Vec<UnitId> = state
+        .units
+        .iter()
+        .filter(|u| u.profile.identity.owner() == firer_player)
+        .filter(|u| !state.gunboat_maxims_fired_this_phase.contains(&u.id))
+        .map(|u| u.id)
+        .collect();
+    for gunboat in gunboats {
+        for &target in &target_hexes {
+            for &kind in kinds {
+                if state
+                    .can_fire_gunboat_maxims_at(gunboat, target, kind)
+                    .is_err()
+                {
+                    continue;
+                }
+                if let Some(attack) = omdurman_rules::effects::build_gunboat_maxim_attack(
+                    state, gunboat, target, kind,
+                ) {
+                    out.push(GameEffect::FireCombat {
+                        attack,
+                        roll: rng.roll_d10(),
+                        disruption: rng.disruption_draw(),
+                    });
                 }
             }
         }
@@ -1078,6 +1113,7 @@ fn melee_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>)
                 attack,
                 attacker_roll: rng.roll_d10(),
                 defender_roll: rng.roll_d10(),
+                disruption: rng.disruption_draw(),
             });
         }
     }

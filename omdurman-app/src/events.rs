@@ -81,7 +81,7 @@ fn log_observation(obs: &Observation) {
             band,
             ..
         } => info!(
-            firers = ?attack.firers,
+            firers = ?attack.all_firing_units(),
             target = ?attack.target_hex,
             kind = ?attack.kind,
             roll = ?roll,

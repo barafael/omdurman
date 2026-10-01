@@ -786,10 +786,15 @@ mod late_joiner_tests {
                 initial_state: InitialGameState { seed },
                 events,
             };
+            // A game abandoned right after it started records only its
+            // `StartGame` -- still a valid record.
             assert!(
                 rec.events.iter().any(|e| matches!(
                     e.payload,
-                    GameEvent::PlaceUnit { .. } | GameEvent::MoveUnit { .. } | GameEvent::Effect(_)
+                    GameEvent::StartGame { .. }
+                        | GameEvent::PlaceUnit { .. }
+                        | GameEvent::MoveUnit { .. }
+                        | GameEvent::Effect(_)
                 )) || rec.events.is_empty(),
                 "record {} has events but none of the expected variants",
                 path.display()

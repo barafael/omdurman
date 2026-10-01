@@ -21,17 +21,29 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
             cost,
             path,
         } => apply_move_unit(state, *unit_id, *to, *cost, path),
-        GameEffect::FireCombat { attack, roll } => apply_fire_combat(state, attack, *roll),
+        GameEffect::FireCombat {
+            attack,
+            roll,
+            disruption,
+        } => apply_fire_combat(state, attack, *roll, *disruption),
         GameEffect::HowitzerFire {
             attack,
             combat_results_table_roll,
             impact_roll,
-        } => apply_howitzer_fire(state, attack, *combat_results_table_roll, *impact_roll),
+            disruption,
+        } => apply_howitzer_fire(
+            state,
+            attack,
+            *combat_results_table_roll,
+            *impact_roll,
+            *disruption,
+        ),
         GameEffect::DeclareMelee {
             attack,
             attacker_roll,
             defender_roll,
-        } => apply_declare_melee(state, attack, *attacker_roll, *defender_roll),
+            disruption,
+        } => apply_declare_melee(state, attack, *attacker_roll, *defender_roll, *disruption),
         GameEffect::ResolveMelee => apply_resolve_melee(state),
         GameEffect::RetreatBeforeMelee { unit_id, to } => {
             apply_retreat_before_melee(state, *unit_id, *to)
@@ -272,6 +284,7 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
                 // Fire may fire again here.  The Maxim-only gate in
                 // `can_fire_at` prevents non-Maxim units from exploiting this.
                 state.units_fired_this_phase.clear();
+                state.gunboat_maxims_fired_this_phase.clear();
                 state.units_fired_at_this_phase.clear();
             }
         }
@@ -283,6 +296,7 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
                 state.phase = Phase::OffensiveFire(FireSubPhase::MaximSecondAndHowitzer);
                 // §6.42: same clear as the defensive path above.
                 state.units_fired_this_phase.clear();
+                state.gunboat_maxims_fired_this_phase.clear();
                 state.units_fired_at_this_phase.clear();
             } else {
                 state.phase = Phase::Melee;
@@ -432,6 +446,7 @@ fn end_zariba_construction(state: &mut GameState) {
 /// Clear per-phase / per-turn tracking (§5.13: MP never carry over).
 fn clear_per_turn_tracking(state: &mut GameState) {
     state.units_fired_this_phase.clear();
+    state.gunboat_maxims_fired_this_phase.clear();
     state.units_fired_at_this_phase.clear();
     state.mp_spent_this_turn.clear();
     // §5.24: the sticky upstream cap only lasts for the turn.
@@ -457,6 +472,7 @@ fn clear_per_turn_tracking(state: &mut GameState) {
 /// wholesale at phase end, but kept tidy mid-phase).
 fn prune_dead_trackers(state: &mut GameState) {
     if state.units_fired_this_phase.is_empty()
+        && state.gunboat_maxims_fired_this_phase.is_empty()
         && state.units_fired_at_this_phase.is_empty()
         && state.zoc_stopped_this_turn.is_empty()
         && state.mp_spent_this_turn.is_empty()
@@ -466,6 +482,9 @@ fn prune_dead_trackers(state: &mut GameState) {
     }
     state
         .units_fired_this_phase
+        .retain(|id| state.units.iter().any(|u| &u.id == id));
+    state
+        .gunboat_maxims_fired_this_phase
         .retain(|id| state.units.iter().any(|u| &u.id == id));
     state
         .units_fired_at_this_phase
@@ -565,16 +584,20 @@ pub fn finish_game(state: &mut GameState) {
             //   AE decisive if every Dervish unit (incl. gunboats and forts)
             //   has been eliminated.
             //   Dervish decisive if all Anglo-Egyptian *west-bank* units
-            //   (excl. gunboats) have been eliminated.
+            //   (excl. gunboats) have been eliminated -- judged only once
+            //   there were such units: some fell on the west bank and none
+            //   stand there now. "Friendlies" count once carried across
+            //   (§5.21); on the east bank they are not west-bank units.
             let no_dervish = !state
                 .units
                 .iter()
                 .any(|u| u.profile.identity.owner() == Player::Dervish);
-            let no_ae_west_bank = !state.units.iter().any(|u| {
-                u.profile.identity.owner() == Player::AngloEgyptian
-                    && !matches!(u.profile.kind, UnitKind::Gunboat { .. })
-                    && state.board.bank_of(u.position) == Some(crate::board::NileBank::West)
-            });
+            let no_ae_west_bank = state.ae_lost_on_west_bank
+                && !state.units.iter().any(|u| {
+                    u.profile.identity.owner() == Player::AngloEgyptian
+                        && !matches!(u.profile.kind, UnitKind::Gunboat { .. })
+                        && state.board.bank_of(u.position) == Some(crate::board::NileBank::West)
+                });
             let ae = state.victory.total_for(Player::AngloEgyptian);
             let d = state.victory.total_for(Player::Dervish);
             let superiority = ae.0 - d.0;

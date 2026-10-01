@@ -14,7 +14,7 @@
 
 use bevy::prelude::*;
 use bevy_egui::EguiContexts;
-use omdurman_rules::effects::{GameState, build_fire_attack_from};
+use omdurman_rules::effects::{GameState, build_fire_attack_from, build_gunboat_maxim_attack};
 use omdurman_rules::{FireAttack, FireKind, FireModifier, Phase, UnitId};
 use omdurman_types::HexCoord;
 
@@ -167,6 +167,36 @@ pub(crate) fn group_attacks_for(
     attacks
 }
 
+/// The fire kind a named gunboat's Maxims (§2.32) use in the current fire
+/// sub-phase: direct fire, then Maxim second fire (§6.42).
+pub(crate) fn gunboat_maxim_kind(gs: &GameState) -> Option<FireKind> {
+    match gs.phase {
+        Phase::OffensiveFire(sub) | Phase::DefensiveFire(sub) => Some(match sub {
+            omdurman_rules::FireSubPhase::DirectFire => FireKind::Direct,
+            omdurman_rules::FireSubPhase::MaximSecondAndHowitzer => FireKind::MaximSecondFire,
+        }),
+        _ => None,
+    }
+}
+
+/// The Maxims-only attack a named gunboat of the group could fire at
+/// `target` now (§2.32), one per gunboat whose Maxims may.
+pub(crate) fn gunboat_maxim_attacks_for(
+    gs: &GameState,
+    group: &FireGroupSelection,
+    target: HexCoord,
+) -> Vec<FireAttack> {
+    let Some(kind) = gunboat_maxim_kind(gs) else {
+        return Vec::new();
+    };
+    group
+        .units
+        .iter()
+        .filter(|&&id| gs.can_fire_gunboat_maxims_at(id, target, kind).is_ok())
+        .filter_map(|&id| build_gunboat_maxim_attack(gs, id, target, kind))
+        .collect()
+}
+
 /// Enemy-occupied hexes the selected unit may legally fire at right now, given
 /// the fire kind for the current sub-phase and line of sight. LOS is now
 /// checked inside `can_fire_at` (via `self.board`), so no separate filter is
@@ -181,7 +211,12 @@ fn valid_target_hexes(firer: UnitId, kind: FireKind, gs: &GameState) -> Vec<HexC
         .iter()
         .filter(|u| u.profile.identity.owner() == enemy)
         .map(|u| u.position)
-        .filter(|hex| gs.can_fire_at(firer, *hex, kind).is_ok())
+        .filter(|hex| {
+            gs.can_fire_at(firer, *hex, kind).is_ok()
+                // A named gunboat's Maxims reach their own targets (§2.32).
+                || gunboat_maxim_kind(gs)
+                    .is_some_and(|mk| gs.can_fire_gunboat_maxims_at(firer, *hex, mk).is_ok())
+        })
         .collect();
     targets.sort_by_key(|h| (h.q, h.r));
     targets.dedup();
@@ -503,7 +538,10 @@ pub fn fire_combat_preview_ui(
         }
         return;
     }
-    let attacks = group_attacks_for(&gs.0, &group, &kinds, target);
+    // The main weapons' attacks, then any named gunboat's Maxims (§2.32) --
+    // the first one is previewed, as a click would allocate it first.
+    let mut attacks = group_attacks_for(&gs.0, &group, &kinds, target);
+    attacks.extend(gunboat_maxim_attacks_for(&gs.0, &group, target));
     let Some(attack) = attacks.first() else {
         return;
     };
@@ -511,7 +549,10 @@ pub fn fire_combat_preview_ui(
     // attack's own firers below (kind may differ per attack, §6.42).
     let firer_hex = group.firer_hex;
     let kind = attack.kind;
-    let firer = attack.firers[0];
+    let Some(first_shot) = attack.shots().first().copied() else {
+        return;
+    };
+    let firer = first_shot.unit;
 
     let kind_str = match kind {
         FireKind::Direct => "Direct Fire",
@@ -526,13 +567,19 @@ pub fn fire_combat_preview_ui(
         .iter()
         .filter_map(|c| {
             let u = gs.0.find_unit(c.unit)?;
-            let printed = u.profile.fire.map(|f| f.value()).unwrap_or(0);
+            let printed = u.fire_factor(c.mount).map(|f| f.value()).unwrap_or(0);
+            let name = crate::combat_ui::shot_name(
+                omdurman_rules::Shot {
+                    unit: c.unit,
+                    mount: c.mount,
+                },
+                Some(&gs.0),
+            );
             Some(if c.factor == printed {
-                format!("{}: {}", u.profile.identity.short_label(), c.factor)
+                format!("{name}: {}", c.factor)
             } else {
                 format!(
-                    "{}: {} ({printed} at range {})",
-                    u.profile.identity.short_label(),
+                    "{name}: {} ({printed} at range {})",
                     c.factor,
                     c.distance.value()
                 )

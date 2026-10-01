@@ -173,11 +173,12 @@ mod tests {
     #[test]
     fn night_max_ranges_remaining() {
         assert_eq!(night_max_range(WeaponClass::Howitzer, true), 5);
-        // Dervish never fields howitzers (§6.64: only the five named British
-        // gunboats); the authored Dervish fallback row is the rifles pattern,
-        // so the derived night cap is 2. Unreachable in play either way.
-        assert_eq!(night_max_range(WeaponClass::Howitzer, false), 2);
-        assert_eq!(night_max_range(WeaponClass::Maxims, false), 2);
+        // The printed Dervish table has no Howitzer or Maxims line (§6.64:
+        // only the five named British gunboats fire howitzer); with nothing in
+        // range the derived cap is the floor of 1, and the table still rules
+        // every distance out (`dervish_table_has_no_maxims_or_howitzer_line`).
+        assert_eq!(night_max_range(WeaponClass::Howitzer, false), 1);
+        assert_eq!(night_max_range(WeaponClass::Maxims, false), 1);
         assert_eq!(night_max_range(WeaponClass::Melee, true), 1);
     }
 
@@ -206,15 +207,15 @@ mod tests {
         assert_eq!(max_day_range(WeaponClass::Rifles, true), 5);
         assert_eq!(max_day_range(WeaponClass::Rifles, false), 4);
         assert_eq!(max_day_range(WeaponClass::Maxims, true), 5);
-        // Authored Dervish fallback row (rifles pattern) — no Dervish unit
-        // fields Maxims, so this value is unreachable in play.
-        assert_eq!(max_day_range(WeaponClass::Maxims, false), 4);
+        // No Dervish Maxims line on the printed table: nothing is in range,
+        // so the loop keeps its floor of 1.
+        assert_eq!(max_day_range(WeaponClass::Maxims, false), 1);
         assert_eq!(max_day_range(WeaponClass::Artillery, true), 8);
         assert_eq!(max_day_range(WeaponClass::Artillery, false), 7);
         assert_eq!(max_day_range(WeaponClass::Howitzer, true), 10);
-        // Authored Dervish fallback row (rifles pattern); unreachable — only
-        // the named British gunboats fire howitzer (§6.64).
-        assert_eq!(max_day_range(WeaponClass::Howitzer, false), 4);
+        // No Dervish Howitzer line (only the named British gunboats fire
+        // howitzer, §6.64): the floor of 1.
+        assert_eq!(max_day_range(WeaponClass::Howitzer, false), 1);
     }
 
     #[rulebook("§6.22")]
@@ -348,31 +349,18 @@ mod tests {
 
     #[rulebook("§6.22")]
     #[test]
-    fn dervish_range_effects_maxims_and_howitzer() {
-        for d in 1u16..=5 {
-            let dist = HexDistance(d);
-            assert_eq!(
-                dervish_range_effects(WeaponClass::Maxims, dist),
-                dervish_range_effects(WeaponClass::Howitzer, dist),
-                "Maxims/Howitzer differ at distance {d}"
-            );
+    fn dervish_table_has_no_maxims_or_howitzer_line() {
+        // The printed Dervish Range Effects Table has Spears, Rifles and
+        // Artillery lines only: no Dervish unit carries a Maxim or a howitzer.
+        for weapon in [WeaponClass::Maxims, WeaponClass::Howitzer] {
+            for d in 1u16..=11 {
+                assert_eq!(
+                    dervish_range_effects(weapon, HexDistance(d)),
+                    RangeBand::OutOfRange,
+                    "Dervish {weapon:?} at distance {d}"
+                );
+            }
         }
-        assert_eq!(
-            dervish_range_effects(WeaponClass::Maxims, HexDistance::new(1)),
-            RangeBand::Normal
-        );
-        assert_eq!(
-            dervish_range_effects(WeaponClass::Maxims, HexDistance::new(2)),
-            RangeBand::Normal
-        );
-        assert_eq!(
-            dervish_range_effects(WeaponClass::Maxims, HexDistance::new(3)),
-            RangeBand::Halved
-        );
-        assert_eq!(
-            dervish_range_effects(WeaponClass::Maxims, HexDistance::new(5)),
-            RangeBand::OutOfRange
-        );
     }
 
     #[rulebook("§6.22")]
@@ -487,37 +475,6 @@ mod tests {
                 RangeBand::OutOfRange,
                 "Dervish Artillery at distance {d}"
             );
-        }
-    }
-
-    #[rulebook("§6.22")]
-    #[test]
-    fn range_effects_every_cell_dervish_maxims_howitzer() {
-        // Maxims/Howitzer share table: 1..=2: x1, 3..=4: x1/2, 5..=10: -
-        for weapon in [WeaponClass::Maxims, WeaponClass::Howitzer] {
-            assert_eq!(
-                dervish_range_effects(weapon, HexDistance::new(1)),
-                RangeBand::Normal
-            );
-            assert_eq!(
-                dervish_range_effects(weapon, HexDistance::new(2)),
-                RangeBand::Normal
-            );
-            assert_eq!(
-                dervish_range_effects(weapon, HexDistance::new(3)),
-                RangeBand::Halved
-            );
-            assert_eq!(
-                dervish_range_effects(weapon, HexDistance::new(4)),
-                RangeBand::Halved
-            );
-            for d in 5u16..=10 {
-                assert_eq!(
-                    dervish_range_effects(weapon, HexDistance(d)),
-                    RangeBand::OutOfRange,
-                    "Dervish {weapon:?} at distance {d}"
-                );
-            }
         }
     }
 

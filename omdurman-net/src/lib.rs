@@ -404,8 +404,13 @@ pub type ReorderBuffer = omdurman_types::net_seq::ReorderBuffer<SequencedDeliver
 
 #[derive(Resource, Default)]
 pub struct NetState {
-    pub peers: Vec<PeerId>,
-    pub my_id: Option<PeerId>,
+    /// The connected remote peers. Private: every change goes through
+    /// [`NetState::add_peer`] / [`NetState::remove_peer`], which keep
+    /// `sorted_all` in step (a stale `sorted_all` mis-elects the host and
+    /// once left the offline lobby without its own player).
+    peers: Vec<PeerId>,
+    /// The local peer's id; set through [`NetState::set_my_id`].
+    my_id: Option<PeerId>,
     pub is_host: bool,
     pub needs_snapshot: bool,
     pub snapshot_retry_timer: f64,
@@ -422,9 +427,10 @@ pub struct NetState {
     /// monotonic, so any `seq <= last_applied_seq` has already been applied.
     /// `None` until the first event is applied.
     pub last_applied_seq: Option<u32>,
-    /// All peers (including `my_id`) in canonical sorted order. Maintained by
-    /// `refresh_sorted`; used by `sender_idx` for O(log n) lookup and by the
-    /// host-election + turn-index logic. Empty until at least one peer is known.
+    /// All peers (including `my_id`) in canonical sorted order, rebuilt by
+    /// every setter of `peers` / `my_id`; used by `sender_idx` for O(log n)
+    /// lookup and by the host-election + turn-index logic. Empty until at
+    /// least one peer is known.
     sorted_all: Vec<PeerId>,
     /// Remaining seconds of the post-reconnect resync gate (see
     /// [`RESYNC_BOOTSTRAP_SECS`]): while positive, this peer must not
@@ -461,9 +467,44 @@ pub struct NetState {
 }
 
 impl NetState {
-    /// Rebuild `sorted_all` from the current `peers` + `my_id`. Call this after
-    /// any mutation of `peers` or after `my_id` is first set.
-    pub fn refresh_sorted(&mut self) {
+    /// The connected remote peers.
+    pub fn peers(&self) -> &[PeerId] {
+        &self.peers
+    }
+
+    /// The local peer's id, once known.
+    pub fn my_id(&self) -> Option<PeerId> {
+        self.my_id
+    }
+
+    /// Set the local peer's id. Returns whether it changed.
+    pub fn set_my_id(&mut self, id: Option<PeerId>) -> bool {
+        let changed = self.my_id != id;
+        self.my_id = id;
+        self.refresh_sorted();
+        changed
+    }
+
+    /// Record a connected peer. Returns whether it was new.
+    pub fn add_peer(&mut self, peer: PeerId) -> bool {
+        if self.peers.contains(&peer) {
+            return false;
+        }
+        self.peers.push(peer);
+        self.refresh_sorted();
+        true
+    }
+
+    /// Forget a disconnected peer. Returns whether it was known.
+    pub fn remove_peer(&mut self, peer: PeerId) -> bool {
+        let before = self.peers.len();
+        self.peers.retain(|&p| p != peer);
+        self.refresh_sorted();
+        self.peers.len() != before
+    }
+
+    /// Rebuild `sorted_all` from the current `peers` + `my_id`.
+    fn refresh_sorted(&mut self) {
         self.sorted_all.clear();
         self.sorted_all.extend(self.peers.iter().copied());
         if let Some(me) = self.my_id {

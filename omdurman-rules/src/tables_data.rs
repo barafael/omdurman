@@ -229,7 +229,10 @@ pub(crate) static AE_RANGE_EFFECTS: [[RangeBand; 10]; 5] = [
 ];
 
 /// The Dervish range-effects rows as authored, same layout as
-/// [`AE_RANGE_EFFECTS`]. Transcribed from `range_effects_table.ron`.
+/// [`AE_RANGE_EFFECTS`]. Transcribed from `range_effects_table.ron`. The
+/// printed table has only the Spears, Rifles and Artillery lines; the
+/// `Maxims` and `Howitzer` rows are `OutOfRange` throughout (the RON omits
+/// them).
 pub(crate) static DERVISH_RANGE_EFFECTS: [[RangeBand; 10]; 5] = [
     // Melee ("Spears" on the printed table): 1: x1, 2-10: -
     [
@@ -257,12 +260,12 @@ pub(crate) static DERVISH_RANGE_EFFECTS: [[RangeBand; 10]; 5] = [
         RangeBand::OutOfRange,
         RangeBand::OutOfRange,
     ],
-    // Maxims (omitted from the archived txt; rifles pattern per §6.22)
+    // Maxims: not on the printed table (no Dervish Maxims) -- never in range
     [
-        RangeBand::Normal,
-        RangeBand::Normal,
-        RangeBand::Halved,
-        RangeBand::Halved,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
         RangeBand::OutOfRange,
         RangeBand::OutOfRange,
         RangeBand::OutOfRange,
@@ -283,12 +286,12 @@ pub(crate) static DERVISH_RANGE_EFFECTS: [[RangeBand; 10]; 5] = [
         RangeBand::OutOfRange,
         RangeBand::OutOfRange,
     ],
-    // Howitzer (omitted from the archived txt; rifles pattern per §6.22)
+    // Howitzer: not on the printed table (no Dervish howitzers) -- never in range
     [
-        RangeBand::Normal,
-        RangeBand::Normal,
-        RangeBand::Halved,
-        RangeBand::Halved,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
+        RangeBand::OutOfRange,
         RangeBand::OutOfRange,
         RangeBand::OutOfRange,
         RangeBand::OutOfRange,
@@ -439,9 +442,9 @@ pub(crate) static LOS_CELLS: [[&[BlockingRule]; 3]; 3] = [
     ],
     // Firer = Hilltop
     [
-        // → Ground: Units(3), Huts(1,4), Crest(4), Hilltop
+        // → Ground: Units(4), Huts(1,4), Crest(4), Hilltop
         &[
-            BlockingRule(LosFeature::Units, &[LosCondition::CloserToFirer]),
+            BlockingRule(LosFeature::Units, &[LosCondition::CloserToTarget]),
             BlockingRule(
                 LosFeature::Huts,
                 &[LosCondition::MoreThanTwo, LosCondition::CloserToTarget],
@@ -559,7 +562,8 @@ mod ron_parity {
                     let want = authored
                         .map(|cells| cells[d - 1])
                         // A weapon line missing from the RON is out of range
-                        // at every distance (only AE Melee is omitted).
+                        // at every distance (AE Melee; Dervish Maxims and
+                        // Howitzer).
                         .unwrap_or(RangeBand::OutOfRange);
                     assert_eq!(
                         rows[weapon.index()][d - 1],

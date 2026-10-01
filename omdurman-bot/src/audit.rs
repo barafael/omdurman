@@ -820,7 +820,8 @@ pub fn audit_log(text: &str) -> AuditReport {
         });
     }
     for (seq, turn, roll, names) in &desertions {
-        let expected = (*roll as usize * 3) / 2; // floor(1.5 × roll)
+        // ceil(1.5 × roll), as the engine's `desertion_count` (§8.2).
+        let expected = (*roll as usize * 3).div_ceil(2);
         if names.len() != expected {
             report.findings.push(Finding {
                 severity: Severity::Error,

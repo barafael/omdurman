@@ -5,13 +5,14 @@ pub fn apply_fire_combat(
     state: &mut GameState,
     attack: &FireAttack,
     roll: DieRoll,
+    disruption: DisruptionDraw,
 ) -> Result<(), RuleError> {
     // §6.64: howitzer fire always rolls for scatter -- it travels as
     // `HowitzerFire`, never as a plain `FireCombat`.
     if attack.kind == FireKind::Howitzer {
         return Err(RuleError::FireKindMismatch);
     }
-    resolve_fire_attack(state, attack, attack.target_hex, roll)
+    resolve_fire_attack(state, attack, attack.target_hex, roll, disruption)
 }
 
 /// Validate and apply a howitzer fire attack (scatter path) (rulebook §6.64).
@@ -20,6 +21,7 @@ pub fn apply_howitzer_fire(
     attack: &FireAttack,
     combat_results_table_roll: DieRoll,
     impact_roll: DieRoll,
+    disruption: DisruptionDraw,
 ) -> Result<(), RuleError> {
     if attack.kind != FireKind::Howitzer {
         return Err(RuleError::FireKindMismatch);
@@ -73,6 +75,7 @@ pub fn apply_howitzer_fire(
         actual_target,
         &target_units,
         combat_results_table_roll,
+        disruption,
         Some((impact_roll, actual_target)),
     );
     Ok(())
@@ -117,16 +120,22 @@ pub(crate) fn range_table_player_for(scenario: Scenario, unit: &UnitPlacement) -
     }
 }
 
-/// The weapon line a unit fires on for an attack of `kind` (§6.64): named
-/// gunboats carry Artillery on their profile but fire howitzers in the
-/// Maxim/Howitzer subphase, so a `Howitzer`-kind attack always uses the
-/// howitzer line.
-pub(crate) fn effective_fire_weapon(unit: &UnitPlacement, kind: FireKind) -> WeaponClass {
-    if kind == FireKind::Howitzer {
-        WeaponClass::Howitzer
-    } else {
-        unit.profile.weapon
-    }
+/// Whether every weapon in `attack` fires on an artillery line -- the only
+/// fire that may engage a gunboat or a fort itself (§6.61, §6.62). The
+/// first that does not, if any.
+fn first_non_artillery_shot(state: &GameState, attack: &FireAttack) -> Option<UnitId> {
+    attack
+        .shots()
+        .into_iter()
+        .find(|shot| {
+            !state.find_unit(shot.unit).is_some_and(|u| {
+                matches!(
+                    u.weapon_line(shot.mount, attack.kind),
+                    WeaponClass::Artillery | WeaponClass::Howitzer
+                )
+            })
+        })
+        .map(|shot| shot.unit)
 }
 
 /// The distance to consult the range tables at, after the §8.1 night cap:
@@ -152,8 +161,11 @@ pub(crate) fn night_capped_distance(
 /// Maxim guns and gunboats are the §6.14 parenthetical exceptions to
 /// "may only be fired at once", so they are never added to the fired-at set.
 fn commit_fired_markers(state: &mut GameState, attack: &FireAttack, target_units: &[UnitId]) {
-    for &id in &attack.firers {
-        state.units_fired_this_phase.push(id);
+    for shot in attack.shots() {
+        match shot.mount {
+            FireMount::Main => state.units_fired_this_phase.push(shot.unit),
+            FireMount::GunboatMaxims => state.gunboat_maxims_fired_this_phase.push(shot.unit),
+        }
     }
     for &tid in target_units {
         let excepted = state
@@ -175,10 +187,19 @@ pub fn resolve_fire_attack(
     attack: &FireAttack,
     target_hex: HexCoord,
     roll: DieRoll,
+    disruption: DisruptionDraw,
 ) -> Result<(), RuleError> {
     validate_fire_resolution(state, attack)?;
     let target_units = fire_target_units(state, attack, target_hex);
-    commit_fire_attack(state, attack, target_hex, &target_units, roll, None);
+    commit_fire_attack(
+        state,
+        attack,
+        target_hex,
+        &target_units,
+        roll,
+        disruption,
+        None,
+    );
     Ok(())
 }
 
@@ -214,14 +235,7 @@ pub fn aim_at_fort(state: &GameState, attack: &FireAttack) -> Option<FireAttack>
         .player_units_in_hex(attack.target_hex, attack.firing_player.opponent())
         .iter()
         .any(|u| matches!(u.profile.kind, UnitKind::Fort { .. }));
-    let all_artillery = attack.firers.iter().all(|id| {
-        state.find_unit(*id).is_some_and(|u| {
-            matches!(
-                effective_fire_weapon(u, attack.kind),
-                WeaponClass::Artillery | WeaponClass::Howitzer
-            )
-        })
-    });
+    let all_artillery = first_non_artillery_shot(state, attack).is_none();
     (has_fort && all_artillery).then(|| FireAttack {
         at_fort: true,
         ..attack.clone()
@@ -262,20 +276,10 @@ fn validate_fire_resolution(state: &GameState, attack: &FireAttack) -> Result<()
     }
     // §6.61/§6.62 defence-in-depth (per firer, matching `can_fire_at`): every
     // firer must fire on an artillery line to engage a gunboat/fort.
-    if state.special_fire_target(&target_units).is_some() {
-        let all_artillery = attack
-            .firers
-            .iter()
-            .filter_map(|id| state.find_unit(*id))
-            .all(|u| {
-                matches!(
-                    effective_fire_weapon(u, attack.kind),
-                    WeaponClass::Artillery | WeaponClass::Howitzer
-                )
-            });
-        if !all_artillery {
-            return Err(RuleError::ArtilleryOnlyVsGunboatOrFort(attack.firers[0]));
-        }
+    if state.special_fire_target(&target_units).is_some()
+        && let Some(unit) = first_non_artillery_shot(state, attack)
+    {
+        return Err(RuleError::ArtilleryOnlyVsGunboatOrFort(unit));
     }
     Ok(())
 }
@@ -289,6 +293,7 @@ fn commit_fire_attack(
     target_hex: HexCoord,
     target_units: &[UnitId],
     roll: DieRoll,
+    disruption: DisruptionDraw,
     impact: Option<(DieRoll, HexCoord)>,
 ) {
     // §6.22: each firer contributes at its *own* distance, on its *own*
@@ -378,12 +383,12 @@ fn commit_fire_attack(
                 UnitKind::Gunboat { .. } => "6.61".to_string(),
                 _ => "6.62".to_string(),
             });
-            open_advance_window(state, target_hex, &attack.firers, paragraphs);
+            open_advance_window(state, target_hex, &attack.all_firing_units(), paragraphs);
         }
         let eliminations: Vec<UnitId> = diff_eliminated(state, pre_units);
         state.turn_events.push(TurnEventRecord::FireCombat {
             attacker: attack.firing_player,
-            firers: attack.firers.clone(),
+            firers: attack.all_firing_units(),
             target: target_hex,
             roll,
             modifiers: attack.modifiers.clone(),
@@ -412,7 +417,7 @@ fn commit_fire_attack(
     }
 
     let pre_units: Vec<UnitId> = target_units.to_vec();
-    apply_combat_results_table_result(state, result, target_units);
+    apply_combat_results_table_result(state, result, target_units, disruption);
     let eliminations: Vec<UnitId> = diff_eliminated(state, pre_units);
     state.observations.push(Observation::FireResolved {
         // Deliberate clone: observations are self-contained records for
@@ -441,7 +446,12 @@ fn commit_fire_attack(
         .iter()
         .any(|u| u.position == target_hex && u.profile.identity.owner() == opponent);
     if was_occupied && !hex_still_defended && matches!(state.phase, Phase::OffensiveFire(_)) {
-        open_advance_window(state, target_hex, &attack.firers, vec!["6.82".to_string()]);
+        open_advance_window(
+            state,
+            target_hex,
+            &attack.all_firing_units(),
+            vec!["6.82".to_string()],
+        );
     }
 }
 
@@ -535,6 +545,11 @@ pub fn target_hexside_fire_modifier(
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FirerContribution {
     pub unit: UnitId,
+    /// Which of the counter's weapons this is -- a named gunboat contributes
+    /// once per weapon (artillery/howitzer, and Maxims, §2.32).
+    pub mount: FireMount,
+    /// The Range Effects Table line that weapon fires on here.
+    pub weapon: WeaponClass,
     pub distance: HexDistance,
     pub band: crate::RangeBand,
     pub factor: u16,
@@ -547,11 +562,12 @@ pub struct FirerContribution {
 /// aimed hex (a §6.64 scatter moves where the result lands, not the band).
 pub fn firer_contributions(state: &GameState, attack: &FireAttack) -> Vec<FirerContribution> {
     attack
-        .firers
-        .iter()
-        .filter_map(|id| state.find_unit(*id))
-        .map(|u| {
-            let weapon = effective_fire_weapon(u, attack.kind);
+        .shots()
+        .into_iter()
+        .filter_map(|shot| state.find_unit(shot.unit).map(|u| (u, shot.mount)))
+        .map(|(u, mount)| {
+            let weapon = u.weapon_line(mount, attack.kind);
+            let fire = u.fire_factor(mount);
             let table_player = range_table_player_for(state.scenario, u);
             let distance = HexDistance(u.position.distance(attack.target_hex) as u16);
             // Beyond the night cap the band is OutOfRange (§8.1).
@@ -564,9 +580,11 @@ pub fn firer_contributions(state: &GameState, attack: &FireAttack) -> Vec<FirerC
             let band = range_band_for(state.scenario, table_player, weapon, banded_at);
             FirerContribution {
                 unit: u.id,
+                mount,
+                weapon,
                 distance,
                 band,
-                factor: u.profile.fire.map_or(0, |f| band.apply(f.value())),
+                factor: fire.map_or(0, |f| band.apply(f.value())),
             }
         })
         .collect()
@@ -690,13 +708,6 @@ pub fn build_fire_attack_from(
         }
     }
 
-    let factor_row = FireFactor::sum_to_row(
-        firers
-            .iter()
-            .filter_map(|id| gs.find_unit(*id))
-            .filter_map(|u| u.profile.fire.as_ref()),
-    );
-
     // §6.24/§5.54/§9.231/§9.232: the engine derives the mandatory modifier
     // set (and rejects any other list), so build the attack with the engine's
     // own helper -- single source of truth with resolution. The terrain
@@ -715,11 +726,83 @@ pub fn build_fire_attack_from(
         firers,
         target_hex: target,
         at_fort: empty_fort,
-        factor_row,
+        factor_row: FireFactorRow::Row01to05,
         modifiers: Vec::new(),
+        gunboat_maxims: Vec::new(),
     };
+    attack.factor_row = printed_factor_row(gs, &attack);
     attack.modifiers = mandatory_fire_modifiers(gs, &attack);
     Some(attack)
+}
+
+/// The Combat Results Table row of the printed factors an attack sums before
+/// range effects (§6.14): the printed factor of every weapon firing.
+fn printed_factor_row(gs: &GameState, attack: &FireAttack) -> FireFactorRow {
+    let factors: Vec<FireFactor> = attack
+        .shots()
+        .into_iter()
+        .filter_map(|shot| gs.find_unit(shot.unit)?.fire_factor(shot.mount))
+        .collect();
+    FireFactor::sum_to_row(factors.iter())
+}
+
+/// Add named gunboats' Maxim guns to `attack` (§2.32, §6.14), or build a
+/// Maxims-only attack from an empty one: each gunboat must satisfy
+/// [`GameState::can_fire_gunboat_maxims_at`] for the attack's target and
+/// kind, and belong to its firing player; the printed factor row and the
+/// mandatory modifiers are re-derived. `None` if a gunboat may not, or its
+/// Maxims are already in the attack.
+pub fn with_gunboat_maxims(
+    gs: &GameState,
+    attack: &FireAttack,
+    gunboats: &[UnitId],
+) -> Option<FireAttack> {
+    let mut maxims = attack.gunboat_maxims.clone();
+    for &id in gunboats {
+        let unit = gs.find_unit(id)?;
+        if maxims.contains(&id)
+            || unit.profile.identity.owner() != attack.firing_player
+            || gs
+                .can_fire_gunboat_maxims_at(id, attack.target_hex, attack.kind)
+                .is_err()
+        {
+            return None;
+        }
+        maxims.push(id);
+    }
+    maxims.sort_unstable();
+    let mut attack = FireAttack {
+        gunboat_maxims: maxims,
+        modifiers: Vec::new(),
+        ..attack.clone()
+    };
+    attack.factor_row = printed_factor_row(gs, &attack);
+    attack.modifiers = mandatory_fire_modifiers(gs, &attack);
+    Some(attack)
+}
+
+/// A named gunboat's Maxim guns firing alone at `target` (§2.32, §6.42):
+/// direct fire in the Direct Fire subphase, Maxim second fire in the second.
+/// `None` when they may not.
+pub fn build_gunboat_maxim_attack(
+    gs: &GameState,
+    gunboat: UnitId,
+    target: HexCoord,
+    kind: FireKind,
+) -> Option<FireAttack> {
+    let owner = gs.find_unit(gunboat)?.profile.identity.owner();
+    let empty = FireAttack {
+        firing_player: owner,
+        phase: gs.phase,
+        kind,
+        firers: Vec::new(),
+        target_hex: target,
+        at_fort: false,
+        factor_row: FireFactorRow::Row01to05,
+        modifiers: Vec::new(),
+        gunboat_maxims: Vec::new(),
+    };
+    with_gunboat_maxims(gs, &empty, &[gunboat])
 }
 
 /// Merge two pending attacks on the same target into one combined attack
@@ -738,23 +821,28 @@ pub fn combine_fire_attacks(
         || existing.at_fort != joining.at_fort
         || existing.firing_player != joining.firing_player
         || existing.firers.iter().any(|f| joining.firers.contains(f))
+        || existing
+            .gunboat_maxims
+            .iter()
+            .any(|g| joining.gunboat_maxims.contains(g))
     {
         return None;
     }
     let mut firers = [existing.firers.as_slice(), joining.firers.as_slice()].concat();
     firers.sort_unstable();
-    let factor_row = FireFactor::sum_to_row(
-        firers
-            .iter()
-            .filter_map(|id| gs.find_unit(*id))
-            .filter_map(|u| u.profile.fire.as_ref()),
-    );
+    let mut gunboat_maxims = [
+        existing.gunboat_maxims.as_slice(),
+        joining.gunboat_maxims.as_slice(),
+    ]
+    .concat();
+    gunboat_maxims.sort_unstable();
     let mut attack = FireAttack {
         firers,
-        factor_row,
+        gunboat_maxims,
         modifiers: Vec::new(),
         ..existing.clone()
     };
+    attack.factor_row = printed_factor_row(gs, &attack);
     attack.modifiers = mandatory_fire_modifiers(gs, &attack);
     Some(attack)
 }
@@ -769,10 +857,14 @@ pub fn combine_fire_attacks(
 pub fn mandatory_fire_modifiers(state: &GameState, attack: &FireAttack) -> Vec<FireModifier> {
     let mut modifiers = Vec::new();
     // §6.24: "+1 modifier to their die roll" for all Anglo-Egyptian *direct*
-    // fire attacks. Maxim second fire and howitzer fire get neither this nor
-    // brigade integrity.
-    if attack.kind == FireKind::Direct && attack.firing_player == Player::AngloEgyptian {
+    // fire attacks -- aimed fire at a hex the firer can see, which a Maxim's
+    // second fire (§6.42) is as much as its first. Howitzer fire is indirect
+    // (it ignores line of sight and scatters, §6.64) and gets no +1.
+    let direct = matches!(attack.kind, FireKind::Direct | FireKind::MaximSecondFire);
+    if direct && attack.firing_player == Player::AngloEgyptian {
         modifiers.push(FireModifier::AngloEgyptianDirectFire);
+    }
+    if attack.kind == FireKind::Direct && attack.firing_player == Player::AngloEgyptian {
         // §5.54/§6.24: brigade integrity (+1, cumulative) when all four
         // battalions of a brigade are stacked in the same hex and all fire
         // at this target hex. Other units may join the attack (§6.14) --
@@ -805,7 +897,7 @@ pub fn mandatory_fire_modifiers(state: &GameState, attack: &FireAttack) -> Vec<F
     // firer passes a thorn-hedge hexside); the trench protects the units
     // entrenched behind it, whichever way they are fired at.
     if attack.firing_player == Player::Dervish {
-        if attack.firers.iter().any(|id| {
+        if attack.all_firing_units().iter().any(|id| {
             state
                 .find_unit(*id)
                 .is_some_and(|u| fire_crosses_thorn_hedge(state, u.position, attack.target_hex))
@@ -849,12 +941,18 @@ fn fire_crosses_thorn_hedge(state: &GameState, from: HexCoord, to: HexCoord) -> 
 /// would double it) and an attack whose `firing_player` is not the player
 /// whose fire phase it is (§4, §6.41).
 pub fn validate_fire_attack(state: &GameState, attack: &FireAttack) -> Result<(), RuleError> {
-    if attack.firers.is_empty() {
+    if attack.firers.is_empty() && attack.gunboat_maxims.is_empty() {
         return Err(RuleError::NoFirers);
     }
     reject_duplicate_units(&attack.firers)?;
+    reject_duplicate_units(&attack.gunboat_maxims)?;
     for &id in &attack.firers {
         state.can_fire_at(id, attack.target_hex, attack.kind)?;
+    }
+    // A named gunboat's Maxims (§2.32): a weapon of their own, checked on
+    // the Maxims line and their own once-per-subphase tracker.
+    for &id in &attack.gunboat_maxims {
+        state.can_fire_gunboat_maxims_at(id, attack.target_hex, attack.kind)?;
     }
     // Every firer belongs to the phase player (checked above), so the
     // attack's `firing_player` -- which decides the targets, the table and
@@ -880,13 +978,15 @@ pub fn validate_fire_attack(state: &GameState, attack: &FireAttack) -> Result<()
     Ok(())
 }
 
-/// Apply a Combat Results Table result to a list of target units -- eliminate `n` and disrupt
-/// half (round up) of the remaining (rulebook §6.22, §7.7). Every elimination
-/// goes through [`eliminate_unit`] (VP, gunboat cascade, GORDON).
+/// Apply a Combat Results Table result to a list of target units -- eliminate `n`, or disrupt
+/// half (round up) of them, picked by `disruption` (rulebook §6.22, §7.7,
+/// §CombatResults). Every elimination goes through [`eliminate_unit`] (VP,
+/// gunboat cascade, GORDON).
 pub(crate) fn apply_combat_results_table_result(
     state: &mut GameState,
     result: CombatResult,
     target_ids: &[UnitId],
+    disruption: DisruptionDraw,
 ) {
     // §6.51/§9.346: an Anglo-Egyptian leader is never a combat casualty in
     // its own right -- it falls only when a Dervish unit enters its hex or
@@ -907,16 +1007,18 @@ pub(crate) fn apply_combat_results_table_result(
     match result {
         CombatResult::NoEffect => {}
         CombatResult::Disrupt => {
-            // Disrupt half (round up) of the target units ("D = 1/2 (round
-            // up) of units in the target hex disrupted"), undisrupted units
-            // first: re-disrupting a unit already face down would spend the
-            // result on nothing.
+            // §CombatResults: "D* = ½ (round up) of the units in the target
+            // hex are disrupted (inverted)". The rulebook does not say who
+            // picks them, so the pre-rolled draw picks at random -- among the
+            // undisrupted units: re-disrupting a unit already face down would
+            // spend the result on nothing.
             let n = target_ids.len().div_ceil(2);
-            let is_disrupted =
-                |id: &UnitId| state.find_unit(*id).is_some_and(|u| u.state.disrupted);
-            let (fresh, spent): (Vec<UnitId>, Vec<UnitId>) =
-                target_ids.iter().copied().partition(|id| !is_disrupted(id));
-            for id in fresh.into_iter().chain(spent).take(n) {
+            let fresh: Vec<UnitId> = target_ids
+                .iter()
+                .copied()
+                .filter(|id| state.find_unit(*id).is_some_and(|u| !u.state.disrupted))
+                .collect();
+            for id in disruption.pick(&fresh, n) {
                 if let Some(unit) = state.find_unit_mut(id) {
                     unit.state.disrupted = true;
                 }

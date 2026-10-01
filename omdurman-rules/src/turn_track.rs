@@ -336,7 +336,7 @@ mod tests {
         assert!(campaign_turn(GameTurnIndex::new(23)).is_none());
     }
 
-    #[rulebook("§8.2", "§9.12")]
+    #[rulebook("§8.2", "§9.12", "§TurnTrack")]
     #[test]
     fn desertion_on_first_night() {
         // Per the printed track (CampaignTiming.jpg), turn 8 is the last Sept-1
@@ -351,7 +351,55 @@ mod tests {
         assert_eq!(night.event, TurnEvent::DervishDesertion);
     }
 
-    #[rulebook("§9.12")]
+    /// The printed Turn Record Track, box by box in the arrows' order: the
+    /// day boxes' times, the four shaded NIGHT boxes (turns 9, 10, 19, 20),
+    /// and "Dervish Desertion Roll NIGHT" on the first of them (§8.2).
+    #[rulebook("§TurnTrack")]
+    #[test]
+    fn the_track_matches_the_printed_boxes() {
+        use GameTime::*;
+        let day = |time| Some((time, DayNight::Day));
+        let night = None;
+        let printed = [
+            day(SixAM),
+            day(EightAM),
+            day(TenAM),
+            day(Noon),
+            day(TwoPM),
+            day(FourPM),
+            day(SixPM),
+            day(EightPM),
+            night,
+            night,
+            day(SixAM),
+            day(EightAM),
+            day(TenAM),
+            day(Noon),
+            day(TwoPM),
+            day(FourPM),
+            day(SixPM),
+            day(EightPM),
+            night,
+            night,
+            day(SixAM),
+            day(EightAM),
+        ];
+        assert_eq!(CAMPAIGN_TURN_TRACK.len(), printed.len());
+        for (i, (entry, printed)) in CAMPAIGN_TURN_TRACK.iter().zip(printed).enumerate() {
+            let turn = i + 1;
+            assert_eq!(entry.turn as usize, turn);
+            match printed {
+                Some((time, dn)) => {
+                    assert_eq!((entry.time, entry.day_night), (time, dn), "turn {turn}");
+                }
+                None => assert_eq!(entry.day_night, DayNight::Night, "turn {turn}"),
+            }
+            let desertion = entry.event == TurnEvent::DervishDesertion;
+            assert_eq!(desertion, turn == 9, "turn {turn}");
+        }
+    }
+
+    #[rulebook("§9.12", "§TurnTrack")]
     #[test]
     fn campaign_track_label_and_day_night_agree() {
         // The rule-bearing CAMPAIGN_TURN_TRACK must agree with the printed

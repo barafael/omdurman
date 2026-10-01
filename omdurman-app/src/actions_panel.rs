@@ -228,7 +228,7 @@ pub fn draw_actions_section(
                 unit.profile.fire.map(|f| f.value()),
                 unit.profile.melee.map(|m| m.value()),
                 &movement_label(&unit.profile.movement, &state.0, unit_id),
-                &unit.profile.weapon.to_string(),
+                &weapon_label(unit),
             ),
         );
         // Setup pickup (§9.2/§9.3): a deployed counter goes back to the tray.
@@ -607,6 +607,19 @@ fn movement_label(
             g.downstream.value(),
         ),
         omdurman_rules::UnitMovement::Immobile => "immobile".into(),
+    }
+}
+
+/// The weapon a counter fires, plus a named gunboat's second weapon: its
+/// Maxims, the "6×2" printed after the artillery factor (§2.32).
+fn weapon_label(unit: &omdurman_rules::UnitPlacement) -> String {
+    let weapon = unit.profile.weapon.to_string();
+    match unit.profile.identity {
+        omdurman_rules::UnitIdentity::AngloEgyptianGunboat(gb) => match gb.maxim_factor() {
+            Some(maxims) => format!("{weapon} + Maxims {}\u{d7}2", maxims.value()),
+            None => weapon,
+        },
+        _ => weapon,
     }
 }
 

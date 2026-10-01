@@ -202,7 +202,7 @@ pub async fn playthrough(
             // The *acting* side, not the turn owner: in defensive fire the
             // non-moving player performs the action (§6.7), and the trace
             // labels it by who actually did it.
-            let actor = state.phase_player();
+            let actor = state.player_to_act().unwrap_or(state.phase_player());
             let action_text = describe_effect(&effect, &state);
             if apply_effect(&mut state, &effect).is_ok() {
                 events.push(GameEvent::Effect(effect));
@@ -298,7 +298,7 @@ pub async fn playthrough(
             // During Setup the candidates mix both sides' deployments, so a
             // commander pair scores each candidate by its owner's doctrine
             // (see `commanders::pick_setup`).
-            let chooser = state.phase_player();
+            let chooser = state.player_to_act().unwrap_or(state.phase_player());
             if state.phase == Phase::Setup && agents.any_commander() {
                 crate::commanders::pick_setup(&state, &candidates, &agents, &mut rng)
             } else if agents.is_aggressive(chooser) {
@@ -519,7 +519,7 @@ fn same_intent(a: &GameEffect, b: &GameEffect) -> bool {
         (
             FireCombat { attack: xa, .. } | HowitzerFire { attack: xa, .. },
             FireCombat { attack: xb, .. } | HowitzerFire { attack: xb, .. },
-        ) => xa.firers == xb.firers && xa.target_hex == xb.target_hex,
+        ) => xa.shots() == xb.shots() && xa.target_hex == xb.target_hex,
         (DeclareMelee { attack: xa, .. }, DeclareMelee { attack: xb, .. }) => {
             xa.attacker_hex == xb.attacker_hex && xa.defender_hex == xb.defender_hex
         }

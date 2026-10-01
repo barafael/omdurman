@@ -1152,7 +1152,7 @@ impl GameState {
     }
 
     /// How many Dervish units a desertion `roll` removes (§8.2): 1½ times
-    /// the roll, rounded down ([`desertion_count`](super::desertion_count)),
+    /// the roll, rounded up ([`desertion_count`](super::desertion_count)),
     /// but never more than the units eligible to desert -- a Dervish army
     /// already bled below that deserts everything it can.
     pub fn desertion_demand(&self, roll: DieRoll) -> usize {

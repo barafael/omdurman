@@ -156,6 +156,15 @@ impl Peers<'_, '_> {
         !self.presence.paused() && seats::may_act(&self.seats.0, self.key.0, active)
     }
 
+    /// Whether the local player may act in `gs` right now: for the side
+    /// whose move it is ([`GameState::player_to_act`]) -- the side deploying
+    /// during the sequential set-up (§9.111/§9.211/§9.321), which is not the
+    /// side that moves first; the non-moving side in defensive fire (§6.7);
+    /// nobody once the game is over.
+    pub fn may_act_now(&self, gs: &omdurman_rules::effects::GameState) -> bool {
+        gs.player_to_act().is_some_and(|p| self.may_act(p))
+    }
+
     /// Whether the local player's seat commands `player`'s faction (or the
     /// session is unbound), regardless of the pause. For labels ("(you)"),
     /// not for gating actions -- use [`may_act`](Self::may_act) for that.
@@ -233,8 +242,8 @@ pub(crate) fn sync_peer_entities(
     peers: Query<(Entity, &PeerKey)>,
 ) {
     let desired: HashSet<PeerId> = {
-        let mut s = net.peers.iter().copied().collect::<HashSet<_>>();
-        if let Some(my) = net.my_id {
+        let mut s = net.peers().iter().copied().collect::<HashSet<_>>();
+        if let Some(my) = net.my_id() {
             s.insert(my);
         }
         s
@@ -251,7 +260,7 @@ pub(crate) fn sync_peer_entities(
             .or_insert_with(|| commands.spawn((Peer, PeerKey(id))).id());
     }
 
-    local.0 = net.my_id.map(|my| by_key[&my]);
+    local.0 = net.my_id().map(|my| by_key[&my]);
 
     for (entity, key) in &peers {
         if !desired.contains(&key.0) {

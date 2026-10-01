@@ -124,17 +124,23 @@ pub fn handle_melee_combat(
         return;
     };
 
+    // Only a click on an enemy-held hex is an attempted melee; any other
+    // click -- the attacker's own hex (the second click of the double-click
+    // that selects the tile), an empty or friendly hex -- is a selection, not
+    // a declaration, and stays quiet.
+    let owner = gs.0.find_unit(attacker).map(|a| a.profile.identity.owner());
+    let enemy_there =
+        gs.0.units_in_hex(target)
+            .iter()
+            .any(|u| Some(u.profile.identity.owner()) != owner);
+    if !enemy_there {
+        return;
+    }
     // `can_melee` checks hexside blocking (§7.2) internally via `self.board`.
-    // A refused attack on an enemy-held hex says why; clicks elsewhere stay
-    // quiet (they are selections, not declarations).
+    // A refused attack on an enemy-held hex says why.
     if let Err(error) = gs.0.can_melee(attacker, target) {
         info!(target.q = target.q, target.r = target.r, %error, "melee refused");
-        let owner = gs.0.find_unit(attacker).map(|a| a.profile.identity.owner());
-        let enemy_there =
-            gs.0.units_in_hex(target)
-                .iter()
-                .any(|u| Some(u.profile.identity.owner()) != owner);
-        if enemy_there && let Some(dispatches) = submit.dispatches.as_deref_mut() {
+        if let Some(dispatches) = submit.dispatches.as_deref_mut() {
             dispatches.push("Field Telegraph", format!("Melee refused — {error}."));
         }
         return;
@@ -145,6 +151,7 @@ pub fn handle_melee_combat(
     };
     let attacker_roll = rng.roll_d10();
     let defender_roll = rng.roll_d10();
+    let disruption = rng.disruption_draw();
 
     info!(
         ?attacker,
@@ -164,6 +171,7 @@ pub fn handle_melee_combat(
             attack,
             attacker_roll,
             defender_roll,
+            disruption,
         }),
     );
 

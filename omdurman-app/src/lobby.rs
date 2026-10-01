@@ -170,7 +170,7 @@ fn build_roster(
     net.sorted_all()
         .iter()
         .map(|peer| {
-            if net.my_id == Some(*peer) {
+            if net.my_id() == Some(*peer) {
                 RosterEntry {
                     peer: *peer,
                     key: Some(local_key),
@@ -666,7 +666,7 @@ fn setup_tab(
 
         // -- Connected players + their picks ---------------------------
         for entry in roster {
-            let is_me = net.my_id == Some(entry.peer);
+            let is_me = net.my_id() == Some(entry.peer);
             ui.horizontal(|ui| {
                 // colour swatch
                 let (rect, _) =

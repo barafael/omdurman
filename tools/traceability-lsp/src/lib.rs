@@ -20,7 +20,7 @@ pub mod schema;
 pub mod tests;
 
 pub use index::{Requirement, TraceIndex};
-pub use schema::{ImplSite, Mapping, PSEUDO_SECTIONS, Traceability};
+pub use schema::{ImplSite, Mapping, PSEUDO_SECTIONS, Traceability, is_pseudo_key};
 
 use std::path::PathBuf;
 

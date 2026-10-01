@@ -583,16 +583,14 @@ pub(crate) fn handle_socket(
             Ok(peer_updates) => {
                 for (peer, peer_state) in peer_updates {
                     match peer_state {
-                        PeerState::Connected if !net.peers.contains(&peer) => {
-                            net.peers.push(peer);
+                        PeerState::Connected if !net.peers().contains(&peer) => {
+                            net.add_peer(peer);
                             newly_connected.push(peer);
                             peers_changed = true;
                             info!(%peer, "peer connected");
                         }
                         PeerState::Disconnected => {
-                            let before = net.peers.len();
-                            net.peers.retain(|&p| p != peer);
-                            peers_changed |= net.peers.len() != before;
+                            peers_changed |= net.remove_peer(peer);
                             info!(%peer, "peer disconnected");
                         }
                         _ => {}
@@ -609,10 +607,7 @@ pub(crate) fn handle_socket(
                 // (each peer computing a different `sorted_all` and so a
                 // different lowest id).
                 let socket_id = socket.id();
-                my_id_changed = socket_id.is_some_and(|id| Some(id) != net.my_id);
-                if my_id_changed {
-                    net.my_id = socket_id;
-                }
+                my_id_changed = socket_id.is_some() && net.set_my_id(socket_id);
                 true
             }
             Err(_) => false,
@@ -623,18 +618,17 @@ pub(crate) fn handle_socket(
     // -- election clocks (socket or not: offline mode needs them too) --
     net.resync_gate_secs = (net.resync_gate_secs - time.delta_secs()).max(0.0);
     if peers_changed || my_id_changed {
-        net.refresh_sorted();
         // Peer-set view changed: the host-election stabilization window
         // restarts (see `SEQ_STABILIZE_SECS`).
         net.election_stable_secs = 0.0;
     } else {
         net.election_stable_secs += time.delta_secs();
     }
-    if !net.peers.is_empty() {
+    if !net.peers().is_empty() {
         net.has_ever_peered = true;
     }
 
-    if let Some(my_id) = net.my_id
+    if let Some(my_id) = net.my_id()
         && (peers_changed || my_id_changed)
     {
         let new_host_is_me = net.sorted_all().first() == Some(&my_id);
@@ -739,7 +733,7 @@ pub(crate) fn handle_socket(
     // through the identical apply path as remote `Sequenced` events so every
     // peer -- host included -- observes the same ordered stream. `my_id` is the
     // canonical "sender" for these.
-    let my_id = net.my_id.unwrap_or(PeerId(uuid::Uuid::nil()));
+    let my_id = net.my_id().unwrap_or(PeerId(uuid::Uuid::nil()));
     let loopback: Vec<NetMsg> = std::mem::take(&mut ctx.incoming.loopback);
 
     let decoded = received

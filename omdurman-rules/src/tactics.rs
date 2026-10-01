@@ -424,6 +424,7 @@ fn fire_attack(
         at_fort: false,
         factor_row: FireFactorRow::Row01to05,
         modifiers,
+        gunboat_maxims: Vec::new(),
     }
 }
 
@@ -634,6 +635,7 @@ fn artillery_sinks_gunboat() -> TacticsScript {
                     vec![FireModifier::AngloEgyptianDirectFire],
                 ),
                 roll: DieRoll::Ten,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .legal(
@@ -648,6 +650,7 @@ fn artillery_sinks_gunboat() -> TacticsScript {
                     vec![FireModifier::AngloEgyptianDirectFire],
                 ),
                 roll: DieRoll::Ten,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .assert("the gunboat has been sunk", move |s| {
@@ -685,6 +688,7 @@ fn artillery_destroys_fort() -> TacticsScript {
                     )
                 },
                 roll: DieRoll::Ten,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .assert("the fort has been destroyed", move |s| {
@@ -737,6 +741,7 @@ fn maxim_second_fire() -> TacticsScript {
                     vec![FireModifier::AngloEgyptianDirectFire],
                 ),
                 roll: DieRoll::Two,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .assert("the Maxim is marked as fired", move |s| {
@@ -758,6 +763,7 @@ fn maxim_second_fire() -> TacticsScript {
                     vec![FireModifier::AngloEgyptianDirectFire],
                 ),
                 roll: DieRoll::Two,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .legal(
@@ -779,9 +785,11 @@ fn maxim_second_fire() -> TacticsScript {
                     FireKind::MaximSecondFire,
                     maxim,
                     HexCoord::new(30, 15),
-                    vec![],
+                    // §6.24: Maxim second fire is direct fire; the +1 applies.
+                    vec![FireModifier::AngloEgyptianDirectFire],
                 ),
                 roll: DieRoll::Two,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .illegal(
@@ -797,9 +805,10 @@ fn maxim_second_fire() -> TacticsScript {
                     FireKind::MaximSecondFire,
                     rifle,
                     HexCoord::new(30, 15),
-                    vec![],
+                    vec![FireModifier::AngloEgyptianDirectFire],
                 ),
                 roll: DieRoll::Two,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
 }
@@ -831,6 +840,7 @@ fn howitzer_on_target() -> TacticsScript {
                 ),
                 combat_results_table_roll: DieRoll::Ten,
                 impact_roll: DieRoll::Ten,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .assert(
@@ -864,6 +874,7 @@ fn howitzer_scatter_miss() -> TacticsScript {
                 ),
                 combat_results_table_roll: DieRoll::Ten,
                 impact_roll: DieRoll::Two,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .assert("the designated target hex was missed", move |s| {
@@ -896,6 +907,7 @@ fn no_howitzer_at_night() -> TacticsScript {
             ),
             combat_results_table_roll: DieRoll::Ten,
             impact_roll: DieRoll::Ten,
+            disruption: crate::DisruptionDraw::default(),
         },
     )
 }
@@ -921,6 +933,7 @@ fn retreat_before_melee() -> TacticsScript {
                 attack: attack.clone(),
                 attacker_roll: DieRoll::Ten,
                 defender_roll: DieRoll::One,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .legal(
@@ -955,6 +968,7 @@ fn retreat_before_melee() -> TacticsScript {
                 attack,
                 attacker_roll: DieRoll::Ten,
                 defender_roll: DieRoll::One,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
 }
@@ -979,6 +993,7 @@ fn infantry_cannot_retreat() -> TacticsScript {
                 ),
                 attacker_roll: DieRoll::Ten,
                 defender_roll: DieRoll::One,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .illegal(
@@ -1031,6 +1046,7 @@ fn melee_edges() -> TacticsScript {
                 ),
                 attacker_roll: DieRoll::Ten,
                 defender_roll: DieRoll::One,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .illegal(
@@ -1050,6 +1066,7 @@ fn melee_edges() -> TacticsScript {
                 ),
                 attacker_roll: DieRoll::Ten,
                 defender_roll: DieRoll::One,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .illegal(
@@ -1068,6 +1085,7 @@ fn melee_edges() -> TacticsScript {
                 ),
                 attacker_roll: DieRoll::Ten,
                 defender_roll: DieRoll::One,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .illegal(
@@ -1086,6 +1104,7 @@ fn melee_edges() -> TacticsScript {
                 ),
                 attacker_roll: DieRoll::Ten,
                 defender_roll: DieRoll::One,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
 }
@@ -1113,6 +1132,7 @@ fn artillery_may_not_melee() -> TacticsScript {
             ),
             attacker_roll: DieRoll::Ten,
             defender_roll: DieRoll::One,
+            disruption: crate::DisruptionDraw::default(),
         },
     )
 }
@@ -1142,6 +1162,7 @@ fn advance_after_combat() -> TacticsScript {
                 attack,
                 attacker_roll: DieRoll::Ten,
                 defender_roll: DieRoll::One,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .legal(
@@ -1228,6 +1249,7 @@ fn advance_requires_participation() -> TacticsScript {
                 attack,
                 attacker_roll: DieRoll::Ten,
                 defender_roll: DieRoll::One,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .legal(
@@ -1459,6 +1481,7 @@ fn wrong_owner_cannot_fire() -> TacticsScript {
                 vec![],
             ),
             roll: DieRoll::Ten,
+            disruption: crate::DisruptionDraw::default(),
         },
     )
 }
@@ -1487,6 +1510,7 @@ fn out_of_range() -> TacticsScript {
                 vec![FireModifier::AngloEgyptianDirectFire],
             ),
             roll: DieRoll::Ten,
+            disruption: crate::DisruptionDraw::default(),
         },
     )
 }

@@ -67,10 +67,15 @@ pub enum GameEffect {
     /// **Postconditions:**
     /// - Fire factors are summed, range-band-adjusted, terrain-modified, and
     ///   cross-referenced on the CRT with the die roll.
-    /// - Target units are disrupted/eliminated per CRT result.
+    /// - Target units are disrupted/eliminated per CRT result; a `D` result
+    ///   disrupts the undisrupted units `disruption` picks (§CombatResults).
     /// - Firers marked as fired; target hex marked as fired-at.
     /// - Victory points awarded for eliminations.
-    FireCombat { attack: FireAttack, roll: DieRoll },
+    FireCombat {
+        attack: FireAttack,
+        roll: DieRoll,
+        disruption: DisruptionDraw,
+    },
 
     /// Resolve a howitzer bombardment (two rolls: CRT + impact scatter)
     /// (rulebook §6.64).
@@ -90,6 +95,7 @@ pub enum GameEffect {
         attack: FireAttack,
         combat_results_table_roll: DieRoll,
         impact_roll: DieRoll,
+        disruption: DisruptionDraw,
     },
 
     // -- Melee combat ------------------------------------------------------
@@ -106,6 +112,8 @@ pub enum GameEffect {
         attack: MeleeAttack,
         attacker_roll: DieRoll,
         defender_roll: DieRoll,
+        /// Which units each side's `D` result disrupts (§CombatResults).
+        disruption: DisruptionDraw,
     },
 
     /// Resolve the currently-pending declared melee against whoever still
@@ -167,7 +175,7 @@ pub enum GameEffect {
 
     // -- Scenario-specific -------------------------------------------------
     /// Dervish desertion roll, once per campaign on the first night turn
-    /// (rulebook §8.2). The number of deserters is `floor(1.5 * roll)`; the
+    /// (rulebook §8.2). The number of deserters is `ceil(1.5 * roll)`; the
     /// Dervish player chooses which units desert, so the chosen IDs travel with
     /// the effect. The Khalifa, gunboats, artillery, and forts may not be
     /// chosen.

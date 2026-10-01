@@ -54,6 +54,34 @@ impl GameState {
         target_hex: HexCoord,
         kind: FireKind,
     ) -> Result<(), RuleError> {
+        self.can_fire_mount(firer, target_hex, kind, FireMount::Main)
+    }
+
+    /// Read-only check of whether the named gunboat `gunboat` may fire its
+    /// Maxim guns (§2.32: the "6×2" on the counter) at `target_hex` with an
+    /// attack of `kind`: direct fire in the Direct Fire subphase, Maxim
+    /// second fire in the Maxim Second Fire and Howitzer subphase (§6.42) --
+    /// once in each, whatever its artillery does. The same checks as
+    /// [`Self::can_fire_at`], on the Maxims line of the Range Effects Table.
+    pub fn can_fire_gunboat_maxims_at(
+        &self,
+        gunboat: UnitId,
+        target_hex: HexCoord,
+        kind: FireKind,
+    ) -> Result<(), RuleError> {
+        self.can_fire_mount(gunboat, target_hex, kind, FireMount::GunboatMaxims)
+    }
+
+    /// The shared body of [`Self::can_fire_at`] and
+    /// [`Self::can_fire_gunboat_maxims_at`]: `mount` is which of the unit's
+    /// weapons fires.
+    fn can_fire_mount(
+        &self,
+        firer: UnitId,
+        target_hex: HexCoord,
+        kind: FireKind,
+        mount: FireMount,
+    ) -> Result<(), RuleError> {
         let unit = self.unit_or_err(firer)?;
 
         if unit.profile.identity.owner() != self.fire_phase_player()? {
@@ -78,37 +106,26 @@ impl GameState {
             return Err(RuleError::WrongPhase);
         }
 
-        // §6.42: the Maxim Second Fire and Howitzer Subphase is restricted to
-        // Maxim guns and Howitzer-class units -- no other weapon may fire here
-        // even if the FireKind were miscategorised.  Named gunboats (§6.64)
-        // carry howitzers even though their profile weapon is Artillery.
-        let is_named_gunboat = matches!(
-            unit.profile.identity,
-            crate::UnitIdentity::AngloEgyptianGunboat(gb) if gb.has_howitzer()
-        );
-        if sub == FireSubPhase::MaximSecondAndHowitzer
-            && !matches!(
-                unit.profile.weapon,
-                WeaponClass::Maxims | WeaponClass::Howitzer
-            )
-            && !is_named_gunboat
-        {
+        // §6.41/§6.42/§6.64: the weapon must suit the fire. The second
+        // subphase belongs to the Maxims (Maxim batteries and named gunboats'
+        // Maxims) and the howitzers (named gunboats' artillery, which fires
+        // direct in the first subphase too).
+        let weapon = unit.weapon_line(mount, kind);
+        let howitzer = mount == FireMount::Main && unit.carries_howitzer();
+        let maxims = unit.weapon_line(mount, FireKind::Direct) == WeaponClass::Maxims;
+        if sub == FireSubPhase::MaximSecondAndHowitzer && !maxims && !howitzer {
             return Err(RuleError::WrongWeaponForSubphase(firer));
         }
-
-        // Weapon class must permit the chosen kind.  Named gunboats may fire
-        // howitzer despite carrying Artillery on their profile.
         match kind {
-            FireKind::Howitzer
-                if unit.profile.weapon != WeaponClass::Howitzer && !is_named_gunboat =>
-            {
+            FireKind::Howitzer if !howitzer => {
                 return Err(RuleError::OnlyHowitzerMayFireHowitzer(firer));
             }
-            FireKind::MaximSecondFire if unit.profile.weapon != WeaponClass::Maxims => {
+            FireKind::MaximSecondFire if !maxims => {
                 return Err(RuleError::OnlyMaximSecondFire(firer));
             }
             _ => {}
         }
+        let factor = unit.fire_factor(mount);
         // §6.64: no howitzer fire at night.
         if kind == FireKind::Howitzer && self.day_night == DayNight::Night {
             return Err(RuleError::NoHowitzerAtNight);
@@ -125,10 +142,10 @@ impl GameState {
         {
             return Err(RuleError::BusyWithEngineering(firer));
         }
-        if unit.profile.fire.is_none() {
+        if factor.is_none() {
             return Err(RuleError::NoFireFactor(firer));
         }
-        if self.units_fired_this_phase.contains(&firer) {
+        if self.has_fired(Shot { unit: firer, mount }) {
             return Err(RuleError::AlreadyFired(firer));
         }
 
@@ -147,10 +164,7 @@ impl GameState {
         });
         if only_artillery_targets
             && !target_units.is_empty()
-            && !matches!(
-                effective_fire_weapon(unit, kind),
-                WeaponClass::Artillery | WeaponClass::Howitzer
-            )
+            && !matches!(weapon, WeaponClass::Artillery | WeaponClass::Howitzer)
         {
             return Err(RuleError::ArtilleryOnlyVsGunboatOrFort(firer));
         }
@@ -165,7 +179,8 @@ impl GameState {
         let range = HexDistance(unit.position.distance(target_hex) as u16);
         // Named gunboats (§6.64) carry Artillery on their profile but fire
         // howitzers in the second subphase; the howitzer CRT line applies.
-        let effective_weapon = effective_fire_weapon(unit, kind);
+        // Their Maxims fire on the Maxims line.
+        let effective_weapon = weapon;
         // §6.52/§9.343: the table this unit fires on (per firer, shared with
         // `resolve_fire_attack` so validation and resolution agree on range).
         let table_player = range_table_player_for(self.scenario, unit);
@@ -460,6 +475,16 @@ impl GameState {
             return Ok((fire_factor, range, hex));
         }
         Err(refusal)
+    }
+
+    /// Whether `shot`'s weapon has fired this fire subphase (§6.14: each
+    /// weapon fires once a subphase; a named gunboat's Maxims and its
+    /// artillery are tracked apart, §6.42).
+    pub fn has_fired(&self, shot: Shot) -> bool {
+        match shot.mount {
+            FireMount::Main => self.units_fired_this_phase.contains(&shot.unit),
+            FireMount::GunboatMaxims => self.gunboat_maxims_fired_this_phase.contains(&shot.unit),
+        }
     }
 
     /// If `target_ids` contains a gunboat or fort, return it, its kind, and

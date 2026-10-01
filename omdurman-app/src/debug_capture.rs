@@ -142,7 +142,7 @@ fn write_hex_probe(
             "T turn={:?} phase={:?} active={:?}\n",
             gs.current_turn,
             gs.phase,
-            gs.phase_player()
+            gs.player_to_act().unwrap_or(gs.phase_player())
         );
         for u in &gs.units {
             state.push_str(&format!(

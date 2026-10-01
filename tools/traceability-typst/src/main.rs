@@ -153,7 +153,9 @@ fn parse_heading(line: &str) -> Option<(String, String)> {
         let after = line[level..].trim();
         if let Some(pos) = after.find(')') {
             let num_part = &after[..pos];
-            if is_section_number(num_part) {
+            // Numbered sections, and the pseudo-sections whose printed chart
+            // prose is transcribed at the end of the manual (`### TurnTrack)`).
+            if is_section_number(num_part) || traceability_lsp::is_pseudo_key(num_part) {
                 let inline = after[pos + 1..].trim().to_string();
                 return Some((num_part.to_string(), inline));
             }
@@ -582,7 +584,7 @@ fn see_also_links(
 // Chapter grouping helpers
 // ---------------------------------------------------------------------------
 
-const PSEUDO_SECTIONS: &[&str] = &["§Credits", "§Reference", "§CRT"];
+use traceability_lsp::PSEUDO_SECTIONS;
 
 fn chapter_key(section: &str) -> String {
     if PSEUDO_SECTIONS.contains(&section) {
@@ -617,6 +619,9 @@ fn chapter_title(key: &str) -> String {
         "§Credits" => "Credits".into(),
         "§Reference" => "Reference -- Charts and Tables".into(),
         "§CRT" => "Combat Results Table (shared reference)".into(),
+        "§CombatResults" => "Explanation of Combat Results (rulebook back cover)".into(),
+        "§Disrupted" => "Disrupted Units (rulebook back cover)".into(),
+        "§TurnTrack" => "Turn Record Track (mapsheet)".into(),
         _ => key.to_string(),
     }
 }

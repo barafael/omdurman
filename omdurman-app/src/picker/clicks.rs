@@ -99,7 +99,7 @@ fn picker_click(
     // during set-up is not gated. With no game state (editor) there is no gate.
     // (The click router already drops clicks outside the seat's phase unless
     // a counter is in hand; this stays as the picker's own backstop.)
-    let may_move = game_state.is_none_or(|gs| peers.may_act(gs.0.phase_player()));
+    let may_move = game_state.is_none_or(|gs| peers.may_act_now(&gs.0));
 
     // In bound multiplayer a player may only pick up their own faction's units;
     // an unbound session / single-seat (no faction bindings) may move
@@ -268,8 +268,7 @@ fn picker_click(
         ActiveSelection::Placing { .. }
             if pressed
                 && game_state.is_some_and(|gs| {
-                    !matches!(gs.0.phase, omdurman_rules::Phase::Setup)
-                        && !peers.may_act(gs.0.phase_player())
+                    !matches!(gs.0.phase, omdurman_rules::Phase::Setup) && !peers.may_act_now(&gs.0)
                 }) =>
         {
             return Some(if peers.paused() {
@@ -1517,7 +1516,7 @@ pub(crate) fn confirm_movement_path(
     // Must be the owning player's turn.
     if game_state
         .as_deref()
-        .is_some_and(|gs| !peers.may_act(gs.0.phase_player()))
+        .is_some_and(|gs| !peers.may_act_now(&gs.0))
     {
         return;
     }
@@ -1589,7 +1588,7 @@ pub(crate) fn undo_movement_leg(
     // Only the owning player may act.
     if game_state
         .as_deref()
-        .is_some_and(|gs| !peers.may_act(gs.0.phase_player()))
+        .is_some_and(|gs| !peers.may_act_now(&gs.0))
     {
         return;
     }
@@ -1743,7 +1742,8 @@ pub(crate) fn delete_selected_unit(
     if !matches!(gs.0.phase, omdurman_rules::Phase::Setup) {
         return;
     }
-    if !peers.may_act(gs.0.phase_player()) {
+    // The side deploying now (set-up is sequential, §9.111/§9.211/§9.321).
+    if !peers.may_act_now(&gs.0) {
         return;
     }
     let Ok((_, placed)) = picker_ctx.placed_units.get(*source) else {

@@ -2,9 +2,28 @@
 
 use serde::Deserialize;
 
-/// Section numbers that are not real rulebook sections (chart references,
+/// Section keys that are not numbered rulebook sections (printed charts,
 /// credits) and so are exempt from the "must exist in the OCR manual" check.
-pub const PSEUDO_SECTIONS: &[&str] = &["§Credits", "§Reference", "§CRT"];
+/// Those whose printed text is transcribed in the manual under a
+/// `### Key) Title` heading (`§CombatResults`, `§Disrupted`, `§TurnTrack`)
+/// are indexed like numbered sections and their clause is checked verbatim;
+/// the others (`§CRT` is the table's cells) describe their chart instead.
+pub const PSEUDO_SECTIONS: &[&str] = &[
+    "§Credits",
+    "§Reference",
+    "§CRT",
+    "§CombatResults",
+    "§Disrupted",
+    "§TurnTrack",
+];
+
+/// Whether `key` (without the `§`) names a pseudo-section, i.e. may anchor a
+/// `### Key) Title` heading in the manual.
+pub fn is_pseudo_key(key: &str) -> bool {
+    PSEUDO_SECTIONS
+        .iter()
+        .any(|s| s.strip_prefix('§') == Some(key))
+}
 
 /// The `[[mapping]]` entries of the matrix.
 #[derive(Deserialize, Clone, Debug)]

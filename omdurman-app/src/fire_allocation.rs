@@ -8,7 +8,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_net::GameEvent;
 use omdurman_rules::effects::GameEffect;
-use omdurman_rules::{FireAttack, FireKind, Phase};
+use omdurman_rules::{FireAttack, FireKind, Phase, UnitId};
 
 /// Tracks fire allocations before batch resolution (§6.41).
 /// Resets each fire sub-phase (see [`reset_fire_allocation_on_phase_change`]).
@@ -85,7 +85,25 @@ pub fn handle_fire_allocation_click(
         return;
     }
 
-    let attacks = group_attacks_for(&gs.0, &group, &kinds, target);
+    let mut attacks = group_attacks_for(&gs.0, &group, &kinds, target);
+    // A named gunboat's Maxims (§2.32) are a second weapon: a click
+    // allocates the gunboat's artillery first, and its Maxims when the
+    // artillery is already allocated or cannot fire at this hex.
+    let primary_offered = |id: UnitId, attacks: &[FireAttack]| {
+        attacks.iter().any(|a| a.firers.contains(&id))
+            && !allocation.attacks.iter().any(|a| a.firers.contains(&id))
+    };
+    for maxims in crate::fire::gunboat_maxim_attacks_for(&gs.0, &group, target) {
+        let gunboat = maxims.gunboat_maxims[0];
+        let allocated = allocation
+            .attacks
+            .iter()
+            .any(|a| a.gunboat_maxims.contains(&gunboat));
+        if !allocated && !primary_offered(gunboat, &attacks) {
+            attacks.retain(|a| !a.firers.contains(&gunboat));
+            attacks.push(maxims);
+        }
+    }
     if attacks.is_empty() {
         // A release on a friendly or empty hex (e.g. the selecting click
         // itself) is not an attempted shot: stay quiet.
@@ -116,11 +134,12 @@ pub fn handle_fire_allocation_click(
     for attack in &attacks {
         // §6.13/§6.14: a unit fires once per phase -- refuse a group any of
         // whose units is already allocated.
-        if allocation
-            .attacks
-            .iter()
-            .any(|a| a.firers.iter().any(|f| attack.firers.contains(f)))
-        {
+        if allocation.attacks.iter().any(|a| {
+            a.firers.iter().any(|f| attack.firers.contains(f))
+                || a.gunboat_maxims
+                    .iter()
+                    .any(|g| attack.gunboat_maxims.contains(g))
+        }) {
             dispatches.push(
                 "Fire Allocation",
                 "These units have already allocated their fire.",
@@ -149,6 +168,8 @@ pub fn handle_fire_allocation_click(
     allocation.panel_open = true;
 
     let kind_str = match attacks[0].kind {
+        FireKind::Direct if attacks[0].firers.is_empty() => "Gunboat Maxim fire",
+        FireKind::MaximSecondFire if attacks[0].firers.is_empty() => "Gunboat Maxim second fire",
         FireKind::Direct => "Direct fire",
         FireKind::MaximSecondFire => "Maxim second fire",
         FireKind::Howitzer => "Howitzer",
@@ -346,18 +367,22 @@ fn draw_allocation_row(
         FireKind::MaximSecondFire => "Maxim 2nd",
         FireKind::Howitzer => "Howitzer",
     };
+    // Each weapon with its printed factor; a named gunboat's Maxims (§2.32)
+    // are a weapon of their own.
     let names: Vec<String> = attack
-        .firers
-        .iter()
-        .filter_map(|id| gs.find_unit(*id))
-        .map(|u| {
-            let factor = u.profile.fire.map(|f| f.value()).unwrap_or(0);
-            format!("{} ({})", u.profile.identity.short_label(), factor)
+        .shots()
+        .into_iter()
+        .filter_map(|shot| {
+            let factor = gs.find_unit(shot.unit)?.fire_factor(shot.mount)?.value();
+            Some(format!(
+                "{} ({factor})",
+                crate::combat_ui::shot_name(shot, Some(gs))
+            ))
         })
         .collect();
     // Every firer's own range: a merged attack can mix range 1 and 3.
     let ranges: Vec<u32> = attack
-        .firers
+        .all_firing_units()
         .iter()
         .filter_map(|id| gs.find_unit(*id))
         .map(|u| u.position.distance(attack.target_hex))
@@ -484,9 +509,14 @@ pub fn execute_fire_allocations(
     for attack in &attacks {
         // Firers that vanished since allocation (eliminated mid-phase) are
         // skipped; the engine re-validates every attack on the echo anyway.
-        if gs.0.find_unit(attack.firers[0]).is_none() {
+        if attack
+            .all_firing_units()
+            .first()
+            .is_none_or(|id| gs.0.find_unit(*id).is_none())
+        {
             continue;
         }
+        let disruption = rng.disruption_draw();
 
         let mut d10 = || rng.roll_d10();
 
@@ -506,6 +536,7 @@ pub fn execute_fire_allocations(
                     attack: attack.clone(),
                     combat_results_table_roll,
                     impact_roll,
+                    disruption,
                 }),
             ));
         } else {
@@ -521,6 +552,7 @@ pub fn execute_fire_allocations(
                 GameEvent::Effect(GameEffect::FireCombat {
                     attack: attack.clone(),
                     roll,
+                    disruption,
                 }),
             ));
         }
@@ -555,7 +587,11 @@ pub fn fire_allocation_arrows(
         return;
     }
     for attack in &allocation.attacks {
-        let Some(unit) = attack.firers.first().and_then(|id| gs.0.find_unit(*id)) else {
+        let Some(unit) = attack
+            .all_firing_units()
+            .first()
+            .and_then(|id| gs.0.find_unit(*id))
+        else {
             continue;
         };
         // The shared arrow mesh (tail at the firer, head at the target) --

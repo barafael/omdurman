@@ -565,18 +565,14 @@ mod tests {
         let path = real_path();
         let original = std::fs::read_to_string(&path).unwrap();
         let doc = load(&path).unwrap();
-        assert_eq!(doc.dervish.len(), 5);
+        // The printed Dervish table has Spears, Rifles and Artillery only.
+        assert_eq!(doc.dervish.len(), 3);
         assert_eq!(doc.anglo.len(), 4);
-        // The two inline comments sit on specific weapon rows.
+        // The inline comment sits on its weapon row.
         assert!(
             doc.comments
                 .get("Dervish/Melee")
                 .is_some_and(|c| c.contains("Spears"))
-        );
-        assert!(
-            doc.comments
-                .get("Dervish/Maxims")
-                .is_some_and(|c| c.contains("archived txt"))
         );
         assert_eq!(doc.to_ron_string(), original);
     }

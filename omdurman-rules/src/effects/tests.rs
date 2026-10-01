@@ -354,6 +354,7 @@ mod tests {
             at_fort: false,
             factor_row: FireFactorRow::Row06to10,
             modifiers: vec![FireModifier::AngloEgyptianDirectFire],
+            gunboat_maxims: Vec::new(),
         };
 
         let result = apply_effect(
@@ -361,6 +362,7 @@ mod tests {
             &GameEffect::FireCombat {
                 attack,
                 roll: DieRoll::Eight,
+                disruption: crate::DisruptionDraw::default(),
             },
         );
         assert!(result.is_ok());
@@ -389,6 +391,7 @@ mod tests {
             at_fort: false,
             factor_row: FireFactorRow::Row06to10,
             modifiers: vec![],
+            gunboat_maxims: Vec::new(),
         };
 
         // Omitted -> rejected.
@@ -397,6 +400,7 @@ mod tests {
             &GameEffect::FireCombat {
                 attack: base.clone(),
                 roll: DieRoll::Five,
+                disruption: crate::DisruptionDraw::default(),
             },
         );
         assert!(
@@ -415,6 +419,7 @@ mod tests {
             &GameEffect::FireCombat {
                 attack: dup,
                 roll: DieRoll::Five,
+                disruption: crate::DisruptionDraw::default(),
             },
         );
         assert!(matches!(
@@ -434,6 +439,7 @@ mod tests {
             &GameEffect::FireCombat {
                 attack: smuggled,
                 roll: DieRoll::Five,
+                disruption: crate::DisruptionDraw::default(),
             },
         );
         assert!(matches!(
@@ -451,6 +457,7 @@ mod tests {
             &GameEffect::FireCombat {
                 attack: ok_attack,
                 roll: DieRoll::Five,
+                disruption: crate::DisruptionDraw::default(),
             },
         );
         assert!(result.is_ok());
@@ -515,6 +522,7 @@ mod tests {
             at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![],
+            gunboat_maxims: Vec::new(),
         };
         attack.modifiers = mandatory_fire_modifiers(&state, &attack);
         assert_eq!(attack.modifiers, vec![FireModifier::ZaribaThornHedge]);
@@ -523,7 +531,8 @@ mod tests {
                 &mut state,
                 &GameEffect::FireCombat {
                     attack,
-                    roll: DieRoll::Five
+                    roll: DieRoll::Five,
+                    disruption: crate::DisruptionDraw::default(),
                 }
             )
             .is_ok()
@@ -544,12 +553,14 @@ mod tests {
                 FireModifier::AngloEgyptianDirectFire,
                 FireModifier::ZaribaThornHedge,
             ],
+            gunboat_maxims: Vec::new(),
         };
         let result = apply_effect(
             &mut state,
             &GameEffect::FireCombat {
                 attack: smuggled.clone(),
                 roll: DieRoll::Five,
+                disruption: crate::DisruptionDraw::default(),
             },
         );
         assert!(
@@ -562,7 +573,8 @@ mod tests {
                 &mut state,
                 &GameEffect::FireCombat {
                     attack: smuggled,
-                    roll: DieRoll::Five
+                    roll: DieRoll::Five,
+                    disruption: crate::DisruptionDraw::default(),
                 }
             )
             .is_ok()
@@ -600,6 +612,7 @@ mod tests {
                     attack: bad,
                     attacker_roll: DieRoll::Five,
                     defender_roll: DieRoll::Five,
+                    disruption: crate::DisruptionDraw::default(),
                 }
             ),
             Err(RuleError::MeleeModifierMismatch { .. })
@@ -617,6 +630,7 @@ mod tests {
                     attack: bad,
                     attacker_roll: DieRoll::Five,
                     defender_roll: DieRoll::Five,
+                    disruption: crate::DisruptionDraw::default(),
                 }
             ),
             Err(RuleError::MeleeModifierMismatch { .. })
@@ -634,6 +648,7 @@ mod tests {
                     attack: good,
                     attacker_roll: DieRoll::Four,
                     defender_roll: DieRoll::Five,
+                    disruption: crate::DisruptionDraw::default(),
                 }
             )
             .is_ok()
@@ -704,6 +719,7 @@ mod tests {
             at_fort: false,
             factor_row: FireFactorRow::Row41Plus,
             modifiers: vec![],
+            gunboat_maxims: Vec::new(),
         };
         assert_eq!(
             mandatory_fire_modifiers(&state, &attack(firers.clone())),
@@ -777,12 +793,14 @@ mod tests {
             at_fort: false,
             factor_row: FireFactorRow::Row16to20,
             modifiers: vec![FireModifier::AngloEgyptianDirectFire],
+            gunboat_maxims: Vec::new(),
         };
         let result = apply_effect(
             &mut state,
             &GameEffect::FireCombat {
                 attack: attack.clone(),
                 roll: DieRoll::Five,
+                disruption: crate::DisruptionDraw::default(),
             },
         );
         assert!(
@@ -804,7 +822,8 @@ mod tests {
                 &mut state,
                 &GameEffect::FireCombat {
                     attack,
-                    roll: DieRoll::Five
+                    roll: DieRoll::Five,
+                    disruption: crate::DisruptionDraw::default(),
                 }
             )
             .is_ok()
@@ -857,12 +876,14 @@ mod tests {
             at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![],
+            gunboat_maxims: Vec::new(),
         };
         let result = apply_effect(
             &mut state,
             &GameEffect::FireCombat {
                 attack,
                 roll: DieRoll::Five,
+                disruption: crate::DisruptionDraw::default(),
             },
         );
         assert!(
@@ -890,12 +911,14 @@ mod tests {
             at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![FireModifier::AngloEgyptianDirectFire],
+            gunboat_maxims: Vec::new(),
         };
         let result = apply_effect(
             &mut state,
             &GameEffect::FireCombat {
                 attack,
                 roll: DieRoll::Five,
+                disruption: crate::DisruptionDraw::default(),
             },
         );
         assert!(
@@ -932,12 +955,14 @@ mod tests {
             at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![FireModifier::AngloEgyptianDirectFire],
+            gunboat_maxims: Vec::new(),
         };
         let result = apply_effect(
             &mut state,
             &GameEffect::FireCombat {
                 attack,
                 roll: DieRoll::Five,
+                disruption: crate::DisruptionDraw::default(),
             },
         );
         assert!(
@@ -994,12 +1019,14 @@ mod tests {
             at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![],
+            gunboat_maxims: Vec::new(),
         };
         let result = apply_effect(
             &mut state,
             &GameEffect::FireCombat {
                 attack,
                 roll: DieRoll::Five,
+                disruption: crate::DisruptionDraw::default(),
             },
         );
         assert!(result.is_ok());
@@ -1036,6 +1063,7 @@ mod tests {
             at_fort: false,
             factor_row: FireFactorRow::Row06to10,
             modifiers: vec![],
+            gunboat_maxims: Vec::new(),
         };
 
         let result = apply_effect(
@@ -1043,6 +1071,7 @@ mod tests {
             &GameEffect::FireCombat {
                 attack,
                 roll: DieRoll::Five,
+                disruption: crate::DisruptionDraw::default(),
             },
         );
         assert!(result.is_err());
@@ -1665,6 +1694,7 @@ mod tests {
                 },
                 attacker_roll: DieRoll::Five,
                 defender_roll: DieRoll::Five,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();
@@ -1752,6 +1782,7 @@ mod tests {
                 },
                 attacker_roll: DieRoll::Five,
                 defender_roll: DieRoll::Five,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();
@@ -1833,6 +1864,7 @@ mod tests {
                 },
                 attacker_roll: DieRoll::Five,
                 defender_roll: DieRoll::Five,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();
@@ -1872,6 +1904,7 @@ mod tests {
                 attack,
                 attacker_roll: DieRoll::Ten,
                 defender_roll: DieRoll::One,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();
@@ -2043,6 +2076,7 @@ mod tests {
                     attack: attack.clone(),
                     attacker_roll: roll,
                     defender_roll: DieRoll::One,
+                    disruption: crate::DisruptionDraw::default(),
                 },
             )
             .unwrap();
@@ -2131,12 +2165,14 @@ mod tests {
             at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![],
+            gunboat_maxims: Vec::new(),
         };
         apply_effect(
             &mut state,
             &GameEffect::FireCombat {
                 attack,
-                roll: DieRoll::Ten, // Row01to05 @ 10 -> Eliminate(2): hex vacated
+                roll: DieRoll::Ten, // Row01to05 @ 10 -> Eliminate(2): hex vacated,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();
@@ -2230,6 +2266,7 @@ mod tests {
                 },
                 attacker_roll: DieRoll::Five,
                 defender_roll: DieRoll::Five,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();
@@ -2300,6 +2337,7 @@ mod tests {
                 },
                 attacker_roll: DieRoll::Ten,
                 defender_roll: DieRoll::Ten,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();
@@ -2413,6 +2451,7 @@ mod tests {
             at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![],
+            gunboat_maxims: Vec::new(),
         };
 
         let result = apply_effect(
@@ -2420,6 +2459,7 @@ mod tests {
             &GameEffect::FireCombat {
                 attack,
                 roll: DieRoll::Five,
+                disruption: crate::DisruptionDraw::default(),
             },
         );
         assert!(matches!(result, Err(RuleError::Disrupted(_))));
@@ -2456,6 +2496,7 @@ mod tests {
                 attack,
                 attacker_roll: DieRoll::Five,
                 defender_roll: DieRoll::Four,
+                disruption: crate::DisruptionDraw::default(),
             },
         );
         assert!(result.is_ok());
@@ -3553,6 +3594,7 @@ mod tests {
             at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![],
+            gunboat_maxims: Vec::new(),
         };
         attack.modifiers = mandatory_fire_modifiers(&state, &attack);
         let result = apply_effect(
@@ -3560,6 +3602,7 @@ mod tests {
             &GameEffect::FireCombat {
                 attack,
                 roll: DieRoll::Eight,
+                disruption: crate::DisruptionDraw::default(),
             },
         );
         assert!(result.is_ok());
@@ -3755,6 +3798,7 @@ mod tests {
                 attack,
                 attacker_roll: DieRoll::Seven,
                 defender_roll: DieRoll::One,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();
@@ -4178,6 +4222,7 @@ mod tests {
             } else {
                 vec![]
             },
+            gunboat_maxims: Vec::new(),
         }
     }
 
@@ -4226,11 +4271,14 @@ mod tests {
 
     #[rulebook("§8.2")]
     #[test]
-    fn desertion_count_is_floor_one_and_a_half() {
-        // §8.2: deserters = floor(1.5 * roll).
-        assert_eq!(desertion_count(DieRoll::One), 1);
+    fn desertion_count_rounds_one_and_a_half_up() {
+        // §8.2: deserters = 1½ × roll, rounded up (the manual leaves the
+        // rounding open; up is the chosen reading).
+        assert_eq!(desertion_count(DieRoll::One), 2);
         assert_eq!(desertion_count(DieRoll::Two), 3);
+        assert_eq!(desertion_count(DieRoll::Three), 5);
         assert_eq!(desertion_count(DieRoll::Four), 6);
+        assert_eq!(desertion_count(DieRoll::Nine), 14);
         assert_eq!(desertion_count(DieRoll::Ten), 15);
     }
 
@@ -4262,6 +4310,7 @@ mod tests {
                 },
                 attacker_roll: DieRoll::Five,
                 defender_roll: DieRoll::Five,
+                disruption: crate::DisruptionDraw::default(),
             },
         );
         assert!(declared.is_ok());
@@ -5193,7 +5242,8 @@ mod tests {
                 &mut state,
                 &GameEffect::FireCombat {
                     attack,
-                    roll: DieRoll::Ten
+                    roll: DieRoll::Ten,
+                    disruption: crate::DisruptionDraw::default(),
                 }
             ),
             Err(RuleError::ArtilleryOnlyVsGunboatOrFort(_))
@@ -5220,7 +5270,15 @@ mod tests {
             FireFactorRow::from_total(total),
             roll.apply_modifier(attack.net_modifier()),
         );
-        apply_effect(&mut state, &GameEffect::FireCombat { attack, roll }).unwrap();
+        apply_effect(
+            &mut state,
+            &GameEffect::FireCombat {
+                attack,
+                roll,
+                disruption: crate::DisruptionDraw::default(),
+            },
+        )
+        .unwrap();
         (state.find_unit(gb).is_none(), crt)
     }
 
@@ -5262,7 +5320,15 @@ mod tests {
                 FireFactorRow::from_total(total),
                 roll.apply_modifier(attack.net_modifier()),
             );
-            apply_effect(&mut state, &GameEffect::FireCombat { attack, roll }).unwrap();
+            apply_effect(
+                &mut state,
+                &GameEffect::FireCombat {
+                    attack,
+                    roll,
+                    disruption: crate::DisruptionDraw::default(),
+                },
+            )
+            .unwrap();
             let destroyed = state.find_unit(fort).is_none();
             assert_eq!(
                 destroyed,
@@ -5284,7 +5350,8 @@ mod tests {
                 &mut state,
                 &GameEffect::FireCombat {
                     attack,
-                    roll: DieRoll::Ten
+                    roll: DieRoll::Ten,
+                    disruption: crate::DisruptionDraw::default(),
                 }
             ),
             Err(RuleError::ArtilleryOnlyVsGunboatOrFort(_))
@@ -5319,6 +5386,7 @@ mod tests {
             &GameEffect::FireCombat {
                 attack,
                 roll: DieRoll::Ten,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();
@@ -5336,7 +5404,8 @@ mod tests {
                 &mut state2,
                 &GameEffect::FireCombat {
                     attack: attack.clone(),
-                    roll: DieRoll::Ten
+                    roll: DieRoll::Ten,
+                    disruption: crate::DisruptionDraw::default(),
                 }
             ),
             Err(RuleError::FortStandsEmpty(_))
@@ -5347,6 +5416,7 @@ mod tests {
             &GameEffect::FireCombat {
                 attack: aimed,
                 roll: DieRoll::Ten,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();
@@ -5373,6 +5443,7 @@ mod tests {
             &GameEffect::FireCombat {
                 attack,
                 roll: DieRoll::Ten,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();
@@ -5846,6 +5917,7 @@ mod tests {
                 attack,
                 attacker_roll: DieRoll::Ten,
                 defender_roll: DieRoll::One,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();
@@ -5999,6 +6071,7 @@ mod tests {
             at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![],
+            gunboat_maxims: Vec::new(),
         };
         attack.modifiers = mandatory_fire_modifiers(&state, &attack);
         assert!(
@@ -6269,6 +6342,87 @@ mod tests {
             crate::CampaignVictoryLevel::from_superiority(state.victory.superiority()),
             crate::CampaignVictoryLevel::Tactical(Player::Dervish)
         );
+    }
+
+    /// §9.14: "A decisive victory may be awarded the Dervish player if he
+    /// eliminates all Anglo-Egyptian units on the west bank (excluding
+    /// gunboats)" -- judged only once there were west-bank units to
+    /// eliminate. An empty west bank the Anglo-Egyptians never reached is no
+    /// Dervish triumph.
+    #[rulebook("§9.14")]
+    #[test]
+    fn the_west_bank_decisive_needs_units_that_entered_it() {
+        // Nile at q=0 of row 0: west bank q<0, east bank q>0.
+        let mut board = BoardInfo::default();
+        board.terrain.insert(
+            HexCoord::new(0, 0),
+            Terrain::Nile {
+                direction: HexDirection::East,
+            },
+        );
+        board
+            .terrain
+            .insert(HexCoord::new(-1, 0), Terrain::default());
+        board
+            .terrain
+            .insert(HexCoord::new(-2, 0), Terrain::default());
+        board
+            .terrain
+            .insert(HexCoord::new(1, 0), Terrain::default());
+        let west = HexCoord::new(-1, 0);
+        let fresh = || {
+            let mut state = GameState::new(Scenario::Campaign);
+            *board_mut(&mut state) = board.clone();
+            // A Dervish survivor, so the Anglo-Egyptian alternative stays out.
+            make_dervish_tribal(&mut state, HexCoord::new(-2, 0));
+            state
+        };
+        let dervish_decisive = |state: &GameState| {
+            state.game_result
+                == Some(crate::GameResult::Campaign(CampaignVictoryLevel::Decisive(
+                    Player::Dervish,
+                )))
+        };
+
+        // No Anglo-Egyptian unit ever on the west bank: not judged.
+        let mut state = fresh();
+        finish_game(&mut state);
+        assert!(
+            !dervish_decisive(&state),
+            "nothing entered, nothing to eliminate"
+        );
+
+        // One entered and fell there: every west-bank unit is gone.
+        let mut state = fresh();
+        let battalion = make_ae_infantry(&mut state, west);
+        eliminate_unit(&mut state, battalion, ElimCause::Combat);
+        assert!(state.ae_lost_on_west_bank);
+        finish_game(&mut state);
+        assert!(dervish_decisive(&state));
+
+        // A survivor on the west bank denies it.
+        let mut state = fresh();
+        let battalion = make_ae_infantry(&mut state, west);
+        make_ae_infantry(&mut state, west);
+        eliminate_unit(&mut state, battalion, ElimCause::Combat);
+        finish_game(&mut state);
+        assert!(!dervish_decisive(&state), "a west-bank unit still stands");
+
+        // East-bank units are not west-bank units: they do not deny it.
+        let mut state = fresh();
+        let battalion = make_ae_infantry(&mut state, west);
+        make_ae_infantry(&mut state, HexCoord::new(1, 0));
+        eliminate_unit(&mut state, battalion, ElimCause::Combat);
+        finish_game(&mut state);
+        assert!(dervish_decisive(&state), "the east bank does not count");
+
+        // An east-bank loss alone does not open the judgement.
+        let mut state = fresh();
+        let east = make_ae_infantry(&mut state, HexCoord::new(1, 0));
+        eliminate_unit(&mut state, east, ElimCause::Combat);
+        assert!(!state.ae_lost_on_west_bank);
+        finish_game(&mut state);
+        assert!(!dervish_decisive(&state));
     }
 
     // ----- Fall of Khartoum special rules (§9.3) ---------------------------
@@ -7284,6 +7438,149 @@ mod tests {
         )
     }
 
+    /// §2.32: a named gunboat's counter prints "5·6×2·12/18" -- artillery &
+    /// howitzer 5, Maxims 6 that "fire twice per turn". The Maxims are a
+    /// second weapon: in the Direct Fire subphase the artillery and the
+    /// Maxims fire at different hexes; in the second subphase (§6.42) the
+    /// Maxims fire again while the artillery fires as howitzer (§6.64). Each
+    /// weapon fires once per subphase.
+    #[rulebook("§2.32", "§6.42")]
+    #[test]
+    fn a_named_gunboat_fires_its_maxims_twice_beside_its_artillery() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::AngloEgyptian;
+        let at = HexCoord::new(0, 0);
+        let gb = make_named_gunboat(&mut state, at);
+        let near = HexCoord::new(2, 0);
+        let other = HexCoord::new(0, 2);
+        let far = HexCoord::new(5, 0);
+        for hex in [near, other, far] {
+            make_dervish_tribal(&mut state, hex);
+        }
+        let fire = |state: &mut GameState, attack: FireAttack| {
+            apply_effect(
+                state,
+                &GameEffect::FireCombat {
+                    attack,
+                    roll: DieRoll::One,
+                    disruption: DisruptionDraw::default(),
+                },
+            )
+        };
+
+        // Direct Fire subphase: the artillery at one hex, the Maxims at another.
+        let artillery = build_fire_attack_from(&state, at, &[gb], near, FireKind::Direct).unwrap();
+        fire(&mut state, artillery).unwrap();
+        let maxims = build_gunboat_maxim_attack(&state, gb, other, FireKind::Direct).unwrap();
+        let shares = firer_contributions(&state, &maxims);
+        assert_eq!(shares.len(), 1);
+        assert_eq!(shares[0].weapon, WeaponClass::Maxims);
+        assert_eq!(shares[0].factor, 6, "Maxims 6, normal at range 2");
+        fire(&mut state, maxims).unwrap();
+        // Once per subphase.
+        assert!(matches!(
+            state.can_fire_gunboat_maxims_at(gb, far, FireKind::Direct),
+            Err(RuleError::AlreadyFired(_))
+        ));
+
+        // The second subphase: the Maxims fire again, the artillery as howitzer.
+        apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap();
+        assert_eq!(
+            state.phase,
+            Phase::OffensiveFire(FireSubPhase::MaximSecondAndHowitzer)
+        );
+        let second =
+            build_gunboat_maxim_attack(&state, gb, near, FireKind::MaximSecondFire).unwrap();
+        fire(&mut state, second).unwrap();
+        let howitzer = build_fire_attack_from(&state, at, &[gb], far, FireKind::Howitzer).unwrap();
+        apply_effect(
+            &mut state,
+            &GameEffect::HowitzerFire {
+                attack: howitzer,
+                combat_results_table_roll: DieRoll::One,
+                impact_roll: DieRoll::Ten,
+                disruption: DisruptionDraw::default(),
+            },
+        )
+        .unwrap();
+        assert!(matches!(
+            state.can_fire_gunboat_maxims_at(gb, other, FireKind::MaximSecondFire),
+            Err(RuleError::AlreadyFired(_))
+        ));
+    }
+
+    /// §2.32: only the named gunboats carry Maxims; and Maxims are no
+    /// artillery, so they may not fire at a gunboat (§6.61).
+    #[rulebook("§2.32", "§6.61")]
+    #[test]
+    fn only_named_gunboats_have_maxims_and_they_cannot_sink_gunboats() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::AngloEgyptian;
+        let old = make_old_gunboat(&mut state, HexCoord::new(0, 0));
+        let named = make_named_gunboat(&mut state, HexCoord::new(0, 1));
+        let tribe = HexCoord::new(2, 0);
+        make_dervish_tribal(&mut state, tribe);
+        assert!(matches!(
+            state.can_fire_gunboat_maxims_at(old, tribe, FireKind::Direct),
+            Err(RuleError::NoFireFactor(_))
+        ));
+        assert!(
+            state
+                .can_fire_gunboat_maxims_at(named, tribe, FireKind::Direct)
+                .is_ok()
+        );
+        let boat = HexCoord::new(1, 2);
+        make_dervish_gunboat(&mut state, boat);
+        assert!(matches!(
+            state.can_fire_gunboat_maxims_at(named, boat, FireKind::Direct),
+            Err(RuleError::ArtilleryOnlyVsGunboatOrFort(_))
+        ));
+        // The gunboat's artillery may.
+        assert!(state.can_fire_at(named, boat, FireKind::Direct).is_ok());
+    }
+
+    /// §6.24: "All Anglo-Egyptian direct fire attacks receive a +1 modifier"
+    /// -- a Maxim's second fire (§6.42) is aimed fire at a hex it sees, as
+    /// much direct fire as its first; howitzer fire is not (it ignores line
+    /// of sight and scatters, §6.64).
+    #[rulebook("§6.24")]
+    #[test]
+    fn maxim_second_fire_gets_the_direct_fire_bonus_howitzer_fire_does_not() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::MaximSecondAndHowitzer);
+        state.active_player = Player::AngloEgyptian;
+        let maxim = make_maxim(&mut state, HexCoord::new(0, 1));
+        let gb = make_named_gunboat(&mut state, HexCoord::new(0, 0));
+        let near = HexCoord::new(2, 0);
+        let far = HexCoord::new(5, 0);
+        make_dervish_tribal(&mut state, near);
+        make_dervish_tribal(&mut state, far);
+        let second = build_fire_attack_from(
+            &state,
+            HexCoord::new(0, 1),
+            &[maxim],
+            near,
+            FireKind::MaximSecondFire,
+        )
+        .unwrap();
+        assert_eq!(
+            second.modifiers,
+            vec![FireModifier::AngloEgyptianDirectFire]
+        );
+        let boat_maxims =
+            build_gunboat_maxim_attack(&state, gb, near, FireKind::MaximSecondFire).unwrap();
+        assert_eq!(
+            boat_maxims.modifiers,
+            vec![FireModifier::AngloEgyptianDirectFire]
+        );
+        let howitzer =
+            build_fire_attack_from(&state, HexCoord::new(0, 0), &[gb], far, FireKind::Howitzer)
+                .unwrap();
+        assert!(howitzer.modifiers.is_empty());
+    }
+
     // §6.64
     #[rulebook("§6.64")]
     #[test]
@@ -7477,12 +7774,14 @@ mod tests {
             at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![FireModifier::AngloEgyptianDirectFire],
+            gunboat_maxims: Vec::new(),
         };
         apply_effect(
             &mut state,
             &GameEffect::FireCombat {
                 attack: attack.clone(),
-                roll: DieRoll::Ten, // Eliminate(2): target gone
+                roll: DieRoll::Ten, // Eliminate(2): target gone,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();
@@ -7502,6 +7801,7 @@ mod tests {
             at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![FireModifier::AngloEgyptianDirectFire],
+            gunboat_maxims: Vec::new(),
         };
         // The hex's previous occupant was fired at; a new occupant arriving
         // later in the same phase may be fired at (the rule is per-unit).
@@ -7510,7 +7810,8 @@ mod tests {
             &mut state,
             &GameEffect::FireCombat {
                 attack: attack2,
-                roll: DieRoll::One, // NoEffect -- but still "fired at"
+                roll: DieRoll::One, // NoEffect -- but still "fired at",
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();
@@ -7524,13 +7825,15 @@ mod tests {
             at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![FireModifier::AngloEgyptianDirectFire],
+            gunboat_maxims: Vec::new(),
         };
         assert!(matches!(
             apply_effect(
                 &mut state,
                 &GameEffect::FireCombat {
                     attack: attack3,
-                    roll: DieRoll::Ten
+                    roll: DieRoll::Ten,
+                    disruption: crate::DisruptionDraw::default(),
                 }
             ),
             Err(RuleError::AlreadyFiredAt(_))
@@ -7540,7 +7843,7 @@ mod tests {
     // §6.22 printed CRT key: "# = That many units in the target hex are
     // eliminated" -- a numbered result removes units and disrupts nobody;
     // only `D` disrupts. (The engine used to also disrupt half the survivors.)
-    #[rulebook("§6.22")]
+    #[rulebook("§6.22", "§CombatResults")]
     #[test]
     fn numbered_result_eliminates_without_disrupting_survivors() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -7548,7 +7851,12 @@ mod tests {
         let ids: Vec<UnitId> = (0..3)
             .map(|_| make_dervish_tribal(&mut state, hex))
             .collect();
-        apply_combat_results_table_result(&mut state, CombatResult::Eliminate(1), &ids);
+        apply_combat_results_table_result(
+            &mut state,
+            CombatResult::Eliminate(1),
+            &ids,
+            DisruptionDraw::default(),
+        );
         let survivors: Vec<&UnitPlacement> =
             state.units.iter().filter(|u| u.position == hex).collect();
         assert_eq!(survivors.len(), 2);
@@ -7602,6 +7910,7 @@ mod tests {
             &GameEffect::FireCombat {
                 attack: combined,
                 roll: DieRoll::One,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();
@@ -8401,7 +8710,7 @@ mod tests {
         assert!(!zoc.contains(&target), "ZOC should not cross khor hexside");
     }
 
-    #[rulebook("§5.41")]
+    #[rulebook("§5.41", "§Disrupted")]
     #[test]
     fn zoc_hexes_empty_for_disrupted_unit() {
         let mut state = GameState::new(Scenario::Campaign);
@@ -8787,6 +9096,7 @@ mod tests {
                 },
                 attacker_roll: DieRoll::Five,
                 defender_roll: DieRoll::Three,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();
@@ -8886,6 +9196,7 @@ mod tests {
                 },
                 attacker_roll: DieRoll::Five,
                 defender_roll: DieRoll::Three,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();
@@ -8923,6 +9234,7 @@ mod tests {
             at_fort: false,
             factor_row: FireFactorRow::Row01to05,
             modifiers: vec![FireModifier::AngloEgyptianDirectFire],
+            gunboat_maxims: Vec::new(),
         };
 
         // First attack lands and marks the target as fired at.
@@ -8931,6 +9243,7 @@ mod tests {
             &GameEffect::FireCombat {
                 attack: attack_by(first),
                 roll: DieRoll::One,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();
@@ -8943,6 +9256,7 @@ mod tests {
                 &GameEffect::FireCombat {
                     attack: attack_by(second),
                     roll: DieRoll::One,
+                    disruption: crate::DisruptionDraw::default(),
                 },
             ),
             Err(RuleError::AlreadyFiredAt(_))
@@ -8967,8 +9281,10 @@ mod tests {
                     at_fort: false,
                     factor_row: FireFactorRow::Row01to05,
                     modifiers: vec![FireModifier::AngloEgyptianDirectFire],
+                    gunboat_maxims: Vec::new(),
                 },
                 roll: DieRoll::One,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();
@@ -9108,6 +9424,7 @@ mod tests {
             GameEffect::FireCombat {
                 attack: direct_attack(Player::AngloEgyptian, vec![id], far),
                 roll: DieRoll::Ten,
+                disruption: crate::DisruptionDraw::default(),
             },
         );
         assert!(matches!(err, RuleError::CoordinateOutOfBounds(_)));
@@ -9166,7 +9483,15 @@ mod tests {
             let arty = make_ae_artillery(&mut state, HexCoord::new(0, 0));
             let gb = make_dervish_gunboat(&mut state, HexCoord::new(1, 0));
             let attack = direct_attack(Player::AngloEgyptian, vec![arty], HexCoord::new(1, 0));
-            apply_effect(&mut state, &GameEffect::FireCombat { attack, roll }).unwrap();
+            apply_effect(
+                &mut state,
+                &GameEffect::FireCombat {
+                    attack,
+                    roll,
+                    disruption: crate::DisruptionDraw::default(),
+                },
+            )
+            .unwrap();
             if state.find_unit(gb).is_none() {
                 sunk_once = true;
                 assert!(
@@ -9200,7 +9525,15 @@ mod tests {
                 HexCoord::new(1, 0),
             );
             attack.at_fort = true;
-            apply_effect(&mut state, &GameEffect::FireCombat { attack, roll }).unwrap();
+            apply_effect(
+                &mut state,
+                &GameEffect::FireCombat {
+                    attack,
+                    roll,
+                    disruption: crate::DisruptionDraw::default(),
+                },
+            )
+            .unwrap();
             if state.find_unit(fort).is_none() {
                 destroyed_once = true;
                 assert!(state.find_unit(occupant).is_none());
@@ -9601,6 +9934,7 @@ mod tests {
             &GameEffect::FireCombat {
                 attack,
                 roll: DieRoll::Ten,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();
@@ -9632,6 +9966,7 @@ mod tests {
                 attack,
                 attacker_roll: DieRoll::Ten,
                 defender_roll: DieRoll::One,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();
@@ -9681,6 +10016,7 @@ mod tests {
                 attack,
                 attacker_roll: DieRoll::One,
                 defender_roll: DieRoll::Ten,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();
@@ -9729,19 +10065,70 @@ mod tests {
         );
     }
 
-    // CRT key: "D = 1/2 (round up) of units in the target hex disrupted".
-    // With one of two units already disrupted, the D falls on the fresh one
-    // (it used to land on the disrupted unit and change nothing).
-    #[rulebook("§6.22")]
+    /// §CombatResults: "D* = ½ (round up) of the units in the target hex are
+    /// disrupted (inverted)" -- which ones, the rulebook does not say, so the
+    /// effect's pre-rolled draw picks them at random: two of three here, and
+    /// over the draws every unit is sometimes picked and sometimes spared.
+    /// With one of two units already disrupted, the D falls on the fresh one
+    /// whatever the draw (re-disrupting would change nothing).
+    #[rulebook("§6.22", "§CombatResults")]
     #[test]
-    fn a_disrupt_result_falls_on_undisrupted_units_first() {
-        let mut state = playing(Scenario::Campaign);
-        let hex = HexCoord::new(1, 0);
-        let shaken = make_ae_infantry(&mut state, hex);
-        let fresh = make_ae_infantry(&mut state, hex);
-        state.find_unit_mut(shaken).unwrap().state.disrupted = true;
-        apply_combat_results_table_result(&mut state, CombatResult::Disrupt, &[shaken, fresh]);
-        assert!(state.find_unit(fresh).unwrap().state.disrupted);
+    fn a_disrupt_result_disrupts_half_rounded_up_picked_at_random() {
+        let three = || {
+            let mut state = playing(Scenario::Campaign);
+            let hex = HexCoord::new(1, 0);
+            let ids: Vec<UnitId> = (0..3).map(|_| make_ae_infantry(&mut state, hex)).collect();
+            (state, ids)
+        };
+        let mut ever_picked = [false; 3];
+        let mut ever_spared = [false; 3];
+        for draw in 0..6 {
+            let (mut state, ids) = three();
+            let disruption = DisruptionDraw(draw);
+            apply_combat_results_table_result(&mut state, CombatResult::Disrupt, &ids, disruption);
+            let hit: Vec<bool> = ids
+                .iter()
+                .map(|id| state.find_unit(*id).unwrap().state.disrupted)
+                .collect();
+            assert_eq!(hit.iter().filter(|h| **h).count(), 2, "draw {draw}");
+            for (i, h) in hit.iter().enumerate() {
+                ever_picked[i] |= *h;
+                ever_spared[i] |= !*h;
+            }
+            // The same draw picks the same units: every peer agrees.
+            let (mut again, ids_again) = three();
+            apply_combat_results_table_result(
+                &mut again,
+                CombatResult::Disrupt,
+                &ids_again,
+                disruption,
+            );
+            let hit_again: Vec<bool> = ids_again
+                .iter()
+                .map(|id| again.find_unit(*id).unwrap().state.disrupted)
+                .collect();
+            assert_eq!(hit, hit_again);
+        }
+        assert_eq!(ever_picked, [true; 3]);
+        assert_eq!(ever_spared, [true; 3]);
+
+        for draw in 0..4 {
+            let mut state = playing(Scenario::Campaign);
+            let hex = HexCoord::new(1, 0);
+            let shaken = make_ae_infantry(&mut state, hex);
+            let fresh = make_ae_infantry(&mut state, hex);
+            state.find_unit_mut(shaken).unwrap().state.disrupted = true;
+            apply_combat_results_table_result(
+                &mut state,
+                CombatResult::Disrupt,
+                &[shaken, fresh],
+                DisruptionDraw(draw),
+            );
+            assert!(
+                state.find_unit(fresh).unwrap().state.disrupted,
+                "draw {draw}"
+            );
+        }
     }
 
     // §6.51: a lone GORDON has "a movement factor only", so he makes no
@@ -9764,6 +10151,7 @@ mod tests {
                 attack,
                 attacker_roll: DieRoll::One,
                 defender_roll: DieRoll::Ten,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();
@@ -9796,6 +10184,7 @@ mod tests {
                 attack,
                 attacker_roll: DieRoll::One,
                 defender_roll: DieRoll::Ten,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();
@@ -9864,6 +10253,7 @@ mod tests {
                 attack,
                 combat_results_table_roll: DieRoll::Ten,
                 impact_roll: DieRoll::Two,
+                disruption: crate::DisruptionDraw::default(),
             },
         );
         assert!(matches!(err, RuleError::NoHowitzerAtNight));
@@ -9896,6 +10286,7 @@ mod tests {
                 attack,
                 combat_results_table_roll: DieRoll::Ten,
                 impact_roll,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();
@@ -9943,6 +10334,7 @@ mod tests {
                 attack,
                 attacker_roll: DieRoll::Ten,
                 defender_roll: DieRoll::One,
+                disruption: crate::DisruptionDraw::default(),
             },
         );
         assert!(matches!(err, RuleError::TargetNotAdjacent { .. }));
@@ -9963,6 +10355,7 @@ mod tests {
                 attack: doubled,
                 attacker_roll: DieRoll::Ten,
                 defender_roll: DieRoll::One,
+                disruption: crate::DisruptionDraw::default(),
             },
         );
         assert!(matches!(err, RuleError::DuplicateUnit(_)));
@@ -9975,6 +10368,7 @@ mod tests {
                 attack: partial,
                 attacker_roll: DieRoll::Ten,
                 defender_roll: DieRoll::One,
+                disruption: crate::DisruptionDraw::default(),
             },
         );
         assert!(matches!(err, RuleError::MeleeDefendersMismatch(_)));
@@ -9997,6 +10391,7 @@ mod tests {
                     HexCoord::new(1, 0),
                 ),
                 roll: DieRoll::Ten,
+                disruption: crate::DisruptionDraw::default(),
             },
         );
         assert!(matches!(err, RuleError::DuplicateUnit(_)));
@@ -10008,6 +10403,7 @@ mod tests {
             GameEffect::FireCombat {
                 attack: foreign,
                 roll: DieRoll::Ten,
+                disruption: crate::DisruptionDraw::default(),
             },
         );
         assert!(matches!(err, RuleError::FiringPlayerMismatch));
@@ -10019,6 +10415,7 @@ mod tests {
             GameEffect::FireCombat {
                 attack: howitzer,
                 roll: DieRoll::Ten,
+                disruption: crate::DisruptionDraw::default(),
             },
         );
         assert!(matches!(err, RuleError::FireKindMismatch));
@@ -10231,10 +10628,62 @@ mod tests {
         ));
     }
 
+    /// The back-cover note on disrupted units, clause by clause: "Have no
+    /// ZOC; may not move; may not fire offensively or defensively; may not
+    /// melee; are turned face up at the end of the owning player's turn."
+    #[rulebook("§Disrupted")]
+    #[test]
+    fn a_disrupted_unit_has_no_zoc_and_may_not_move_fire_or_melee() {
+        let mut state = playing(Scenario::Campaign);
+        state.active_player = Player::AngloEgyptian;
+        let at = HexCoord::new(0, 0);
+        let enemy_hex = HexCoord::new(1, 0);
+        let ae = make_ae_infantry(&mut state, at);
+        make_dervish_tribal(&mut state, enemy_hex);
+        state.find_unit_mut(ae).unwrap().state.disrupted = true;
+        // Have no ZOC.
+        let infantry = UnitKind::Infantry {
+            fire: 0,
+            melee: 0,
+            movement: 0,
+        };
+        let zoc = state.zoc_hexes(state.find_unit(ae).unwrap(), Player::Dervish, infantry);
+        assert!(zoc.is_empty());
+        // May not move.
+        state.phase = Phase::Movement;
+        assert!(matches!(
+            state.can_move_unit(ae, MovementPoints::new(1)),
+            Err(RuleError::Disrupted(_))
+        ));
+        // May not fire offensively ...
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        assert!(matches!(
+            state.can_fire_at(ae, enemy_hex, FireKind::Direct),
+            Err(RuleError::Disrupted(_))
+        ));
+        // ... or defensively.
+        state.active_player = Player::Dervish;
+        state.phase = Phase::DefensiveFire(FireSubPhase::DirectFire);
+        assert!(matches!(
+            state.can_fire_at(ae, enemy_hex, FireKind::Direct),
+            Err(RuleError::Disrupted(_))
+        ));
+        // May not melee.
+        state.active_player = Player::AngloEgyptian;
+        state.phase = Phase::Melee;
+        assert!(matches!(
+            state.can_melee(ae, enemy_hex),
+            Err(RuleError::Disrupted(_))
+        ));
+        // Turned face up at the end of the owning player's turn.
+        end_player_turn(&mut state);
+        assert!(!state.find_unit(ae).unwrap().state.disrupted);
+    }
+
     // CRT key: disrupted units "are turned face up at the end of the owning
     // player's turn" -- not the opponent's -- and a disrupted unit may not
     // melee meanwhile.
-    #[rulebook("§5.13")]
+    #[rulebook("§5.13", "§Disrupted")]
     #[test]
     fn disrupted_units_recover_at_the_end_of_their_owners_turn() {
         let mut state = playing(Scenario::Campaign);
@@ -10318,6 +10767,7 @@ mod tests {
             attack: build_melee_attack(state, from, to).expect("a legal melee"),
             attacker_roll: DieRoll::One,
             defender_roll: DieRoll::One,
+            disruption: crate::DisruptionDraw::default(),
         }
     }
 
@@ -10412,6 +10862,7 @@ mod tests {
                 attacker_roll: DieRoll::One,
                 // The Dervish roll 10 (+2): Eliminate(2) or more on their row.
                 defender_roll: DieRoll::Ten,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();
@@ -10454,6 +10905,7 @@ mod tests {
                 attack,
                 attacker_roll: DieRoll::Ten,
                 defender_roll: DieRoll::One,
+                disruption: crate::DisruptionDraw::default(),
             },
         )
         .unwrap();

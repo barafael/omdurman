@@ -559,12 +559,7 @@ fn kitchener_score(effect: &GameEffect, state: &GameState, player: Player) -> i3
         // breach walls, sink gunboats, or destroy forts (§6.61-§6.63), and in
         // FoK every Dervish shell against a wall is a corridor to GORDON.
         FireCombat { attack, .. } | HowitzerFire { attack, .. } => {
-            let factor: i32 = attack
-                .firers
-                .iter()
-                .filter_map(|id| state.find_unit(*id))
-                .map(|u| u.profile.fire.map(|f| f.value()).unwrap_or(0) as i32)
-                .sum();
+            let factor = printed_factor(state, attack);
             let targets = state.units_in_hex(attack.target_hex);
             let enemy = player.opponent();
             let has_artillery = targets.iter().any(|u| {
@@ -852,12 +847,7 @@ fn khalifa_score(effect: &GameEffect, state: &GameState, player: Player) -> i32 
         // Soften the garrison stacks the melee wave is about to hit; the
         // garrison holding the breach corridor is the priority target.
         FireCombat { attack, .. } | HowitzerFire { attack, .. } => {
-            let factor: i32 = attack
-                .firers
-                .iter()
-                .filter_map(|id| state.find_unit(*id))
-                .map(|u| u.profile.fire.map(|f| f.value()).unwrap_or(0) as i32)
-                .sum();
+            let factor = printed_factor(state, attack);
             let targets = state.units_in_hex(attack.target_hex);
             let enemy = player.opponent();
             let has_gunboat = targets
@@ -1057,4 +1047,15 @@ fn step_toward(from: HexCoord, target: HexCoord, standoff: u32) -> HexCoord {
         }
     }
     best
+}
+
+/// The printed fire factor of every weapon in `attack` (§6.14): a named
+/// gunboat's Maxims (§2.32) count as well as its artillery.
+fn printed_factor(state: &GameState, attack: &omdurman_rules::FireAttack) -> i32 {
+    attack
+        .shots()
+        .into_iter()
+        .filter_map(|shot| state.find_unit(shot.unit)?.fire_factor(shot.mount))
+        .map(|f| f.value() as i32)
+        .sum()
 }

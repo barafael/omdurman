@@ -78,7 +78,7 @@ Certain charts and tables are needed to play the game. The Terrain Effects Chart
 
 **Sample Dervish Units** (printed on counters): combat unit (Combat / Melee / Movement values, plus Tribe identifier); Leader (e.g. OSMAN DIGNA); Camel unit (e.g. Danagla, 4-6-12); Fort.
 
-**Sample Anglo-Egyptian Units** (printed on counters): Cavalry (e.g. 21 Lancers); Artillery (e.g. 32 Battery); Old Gunboat (e.g. LORD KITCHENER, 0-0-15); New Gunboat — named (e.g. Sultan, with artillery and howitzer factor, plus movement downstream / movement upstream values); Maxim Guns (fire twice per turn); Infantry (Fire Combat Factor / Melee / Movement, plus Battalion ID and Brigade ID — e.g. "2B" = 2nd British Brigade, "3E" = 3rd Egyptian Brigade).
+**Sample Anglo-Egyptian Units** (printed on counters): Cavalry (21 Lancers, 8·5·15 — "Fire Combat Factor"); Artillery (32 Battery, 10·1·7 — "Melee"); an unheaded leader counter (LORD KITCHENER — Sirdar —, 0·0·15 — "Movement"); Old Gunboat (GUNBOAT, 4·10/16 — "Artillery Factor"); New Gunboat (named) (Sultan, 5·6×2·12/18 — "Artillery & Howitzer Factor", "Maxim Guns (fire twice per turn)", "movement Upstream", "Movement downstream"); Maxim Guns (Maxim Batt., 6·1·12 — "Maxim Guns (fire twice per turn)"); Infantry (9·5·8 — "Battalion I.D.", "Brigade I.D. (4th Egyptian)").
 
 ### 2.4) Game Parts Inventory
 
@@ -565,14 +565,53 @@ Copyright 1982 © Phoenix Enterprises, Ltd.
 
 ## Reference: Charts and Tables
 
-*The Combat Results Table, Range Effects Tables, Line of Sight Table, Howitzer Fire Scattergram, Terrain Effects Chart, Turn Record Track, and Campaign Game Order of Appearance card are printed on the mapsheet and/or the back of the rulebook in the physical game. They are present in the source PDF as scanned tabular images and are not transcribed here — refer to the original mapsheet and rulebook back cover for table values.*
+*The Combat Results Table, Range Effects Tables, Line of Sight Table, Howitzer Fire Scattergram, Terrain Effects Chart and Campaign Game Order of Appearance card are printed on the mapsheet and/or the back of the rulebook in the physical game. Their cells are transcribed as data under `Boardgame - Remember_Gordon/tables/` (not here); refer to the original mapsheet and rulebook back cover for table values. The printed prose that goes with them — the back cover's notes beside the Combat Results Table, and the Turn Record Track — is transcribed verbatim below.*
 
-**Key constants referenced in the rules above (for quick lookup):**
+### CombatResults) Explanation of Combat Results
 
-- Combat Results notation: `D` = ½ (round up) of units in the target hex disrupted; `1`/`2`/`3`/`4`/`5` = that many units in the target hex eliminated; `—` = no effect.
-- Disrupted units: no ZOC; may not move; may not fire offensively or defensively; may not melee; are turned face up at the end of the owning player's turn.
-- Melee modifiers: Dervish +2; Anglo-Egyptian +1.
-- Direct fire modifiers (Anglo-Egyptian): +1 all direct fire attacks; +1 brigade integrity (cumulative).
-- Modified die rolls of less than 1 are treated as 1, more than 10 treated as 10.
-- Artillery requirements: 3+ to sink a gunboat; 2+ to destroy a fort; 2+ to breach a wall hexside.
-- Howitzer fire: range 4–10 hexes; target hex hit on impact roll 7–10; otherwise scatters per Howitzer Fire Scattergram.
+*Back cover of the rulebook, beside and beneath the Combat Results Table.*
+
+EXPLANATION OF COMBAT RESULTS:
+
+- — = miss, no effect
+- D* = ½ (round up) of the units in the target hex are disrupted (inverted).
+- # = That many units in the target hex are eliminated, i.e. removed from play.
+
++1: All Anglo-Egyptian Direct Fire Attacks
+
++1: Anglo-Egyptian Brigade Integrity
+
+Modified Die rolls of less than 1 are treated as 1, more than 10 treated as 10.
+
+### Disrupted) Disrupted Units
+
+*Back cover of the rulebook: the note the asterisk on "D" above refers to.*
+
+*DISRUPTED UNITS: Have no ZOC; may not move; may not fire offensively or defensively; may not melee; are turned face up at the end of the owning player's turn.
+
+### TurnTrack) Turn Record Track
+
+*Printed on the mapsheet as three rows of boxes joined by arrows (left to right, back right to left, then left to right again). The boxes carry no turn numbers; they are numbered here in the arrows' order. The four NIGHT boxes are shaded.*
+
+1. 1898 SEPT. 1 6:00 am
+2. 8:00
+3. 10:00
+4. 12:00
+5. 2:00 pm
+6. 4:00
+7. 6:00
+8. 8:00
+9. Dervish Desertion Roll NIGHT
+10. SEPT. 2 NIGHT
+11. 6:00 am
+12. 8:00
+13. 10:00
+14. 12:00
+15. 2:00 pm
+16. 4:00
+17. 6:00
+18. 8:00
+19. NIGHT
+20. SEPT. 3 NIGHT
+21. 6:00 am
+22. 8:00

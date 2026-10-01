@@ -10,7 +10,7 @@
 use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
-use crate::DieRoll;
+use crate::{DieRoll, DisruptionDraw};
 
 /// Deterministic PRNG resource shared by every peer.
 #[derive(Clone)]
@@ -27,6 +27,12 @@ impl GameRng {
     /// one place.
     pub fn roll_d10(&mut self) -> DieRoll {
         DieRoll::try_from((self.random_u32() % 10 + 1) as u16).unwrap()
+    }
+
+    /// Draw which units a `D` result disrupts (§CombatResults), rolled into
+    /// the fire or melee effect with its dice.
+    pub fn disruption_draw(&mut self) -> DisruptionDraw {
+        DisruptionDraw(self.random_u32())
     }
 
     /// Draw one raw `u32` from the shared stream. This is the primitive every

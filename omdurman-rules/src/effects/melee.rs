@@ -68,6 +68,7 @@ pub(crate) fn resolve_melee_combat(
     attack: &MeleeAttack,
     attacker_roll: DieRoll,
     defender_roll: DieRoll,
+    disruption: DisruptionDraw,
 ) {
     if attack.defenders.is_empty() {
         // §7.5: every defender withdrew before the blow fell -- nothing to
@@ -170,9 +171,10 @@ pub(crate) fn resolve_melee_combat(
     let pre_attackers: Vec<UnitId> = att_casualties.clone();
     let pre_defenders: Vec<UnitId> = attack.defenders.clone();
 
-    // Simultaneous application.
-    apply_combat_results_table_result(state, att_result, &def_units);
-    apply_combat_results_table_result(state, def_result, &att_casualties);
+    // Simultaneous application; each side's `D` picks its own victims.
+    let (defender_victims, attacker_victims) = disruption.split();
+    apply_combat_results_table_result(state, att_result, &def_units, defender_victims);
+    apply_combat_results_table_result(state, def_result, &att_casualties, attacker_victims);
 
     // §7.6: if the melee eliminated *all* defenders, the Dervish MUST advance
     // into the vacated hex (up to the stacking limit of 4 units of the same
@@ -334,6 +336,7 @@ pub fn apply_declare_melee(
     attack: &MeleeAttack,
     attacker_roll: DieRoll,
     defender_roll: DieRoll,
+    disruption: DisruptionDraw,
 ) -> Result<(), RuleError> {
     if state.pending_melee.is_some() {
         return Err(RuleError::MeleeAlreadyPending);
@@ -348,6 +351,7 @@ pub fn apply_declare_melee(
         attack: attack.clone(),
         attacker_roll,
         defender_roll,
+        disruption,
     });
     Ok(())
 }
@@ -369,6 +373,7 @@ pub fn apply_resolve_melee(state: &mut GameState) -> Result<(), RuleError> {
     }
     let attacker_roll = pending.attacker_roll;
     let defender_roll = pending.defender_roll;
+    let disruption = pending.disruption;
     let mut attack = pending.attack.clone();
     // Re-derive defenders from current occupants of the target hex: a unit
     // that retreated during the window is no longer there and is not hit.
@@ -383,7 +388,7 @@ pub fn apply_resolve_melee(state: &mut GameState) -> Result<(), RuleError> {
     });
     // Resolution committed: close the §7.5 reaction window.
     state.pending_melee = None;
-    resolve_melee_combat(state, &attack, attacker_roll, defender_roll);
+    resolve_melee_combat(state, &attack, attacker_roll, defender_roll, disruption);
     Ok(())
 }
 

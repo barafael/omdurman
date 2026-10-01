@@ -118,13 +118,8 @@ pub fn bot_player_act(
         return;
     }
 
-    // The acting side: the active player, except defensive fire where the
-    // non-moving player fires (§6.7) -- and the Dervish player's roll for a
-    // mine a British gunboat struck (§10.12).
-    let chooser = if state.pending_mine.is_some() {
-        Player::Dervish
-    } else {
-        state.phase_player()
+    let Some(chooser) = ai_chooser(state) else {
+        return;
     };
     if !ai.contains(&chooser) {
         return;
@@ -133,6 +128,19 @@ pub fn bot_player_act(
     let effect = next_ai_action(state, chooser, &ai, &mut driver.rng);
     driver.cooldown = ACT_COOLDOWN_SECS;
     driver.in_flight = Some(pending.submit_game(GameEvent::Effect(effect)));
+}
+
+/// The side whose decision the AI would make now: the Dervish player's roll
+/// for a mine a British gunboat struck (§10.12); during set-up the side
+/// deploying -- set-up is sequential and in the Campaign the Dervish deploy
+/// first though the Anglo-Egyptians move first (§9.111/§9.113); otherwise
+/// the phase player (defensive fire belongs to the non-moving side, §6.7).
+fn ai_chooser(state: &GameState) -> Option<Player> {
+    if state.pending_mine.is_some() {
+        Some(Player::Dervish)
+    } else {
+        state.player_to_act()
+    }
 }
 
 /// One AI decision for `chooser` in `state`, engine-validated. Setup is
@@ -196,6 +204,21 @@ pub fn commander_name_for(player: Player) -> &'static str {
 mod tests {
     use super::*;
     use omdurman_bot::agent::{AgentStrategy, Agents};
+
+    /// Set-up is sequential and its order is not the turn order: in the
+    /// Campaign the Dervish deploy first (§9.111) though the Anglo-Egyptians
+    /// move first (§9.113). An AI Dervish facing a human Anglo-Egyptian used
+    /// to wait on the active (first-moving) player and never deployed --
+    /// found in a click-through play-test.
+    #[test]
+    fn the_ai_deploys_when_its_side_is_setting_up() {
+        let mut state = GameState::new(omdurman_types::Scenario::Campaign);
+        state.phase = Phase::Setup;
+        state.active_player = Player::AngloEgyptian;
+        assert_eq!(ai_chooser(&state), Some(Player::Dervish));
+        state.setup_ready_dervish = true;
+        assert_eq!(ai_chooser(&state), Some(Player::AngloEgyptian));
+    }
 
     /// The [`Agents`] pair describing an AI configuration — what the headless
     /// tuning preset (`play <scenario> <seed> commanders`) runs, so tuning

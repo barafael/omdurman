@@ -83,7 +83,7 @@ fn any_roll() -> DieRoll {
 /// the 1..=10 clamp makes it total, which also makes the
 /// `unwrap_or(DieRoll::Ten)` fallback unreachable.
 // §6.24
-#[traceability_macro::rulebook("§6.24")]
+#[traceability_macro::rulebook("§6.24", "§CombatResults")]
 #[kani::proof]
 fn die_roll_apply_modifier_is_total() {
     let roll = any_roll();
@@ -498,7 +498,7 @@ fn range_band_multiplier_arithmetic_is_exact() {
 /// `fire.rs`) without depending on table cell values. `div_ceil` is the
 /// overflow-safe spelling of `(n+1)/2` that the CRT path already uses.
 // §CRT
-#[traceability_macro::rulebook("§6.16", "§CRT")]
+#[traceability_macro::rulebook("§6.16", "§CRT", "§CombatResults")]
 #[kani::proof]
 fn disrupt_half_is_rounded_up() {
     let n: usize = kani::any();

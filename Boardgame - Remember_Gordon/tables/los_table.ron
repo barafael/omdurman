@@ -54,7 +54,7 @@
             (Hilltop, []),
         ],
         (Hilltop, Ground): [
-            (Units, [CloserToFirer]),
+            (Units, [CloserToTarget]),
             (Huts, [MoreThanTwo, CloserToTarget]),
             (Crest, [CloserToTarget]),
             (Hilltop, []),

@@ -54,9 +54,10 @@ pub(crate) fn game_control_section(
         omdurman_types::DayNight::Night => "Night",
     };
 
-    // The player who may act *now*: the turn owner, except during Defensive
-    // Fire where control passes to the non-moving side (§6.4/§6.7).
-    let acting = state.0.phase_player();
+    // The player who may act *now*: the side deploying during set-up, the
+    // turn owner, except during Defensive Fire where control passes to the
+    // non-moving side (§6.4/§6.7).
+    let acting = state.0.player_to_act().unwrap_or(state.0.phase_player());
     let acting_str = crate::ui::faction_abbrev(acting);
     let my_turn = peers.may_act(acting);
     let in_setup = matches!(state.0.phase, omdurman_rules::Phase::Setup);

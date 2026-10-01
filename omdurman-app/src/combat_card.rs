@@ -313,7 +313,12 @@ fn build_fire_card(
     } = resolution;
     let attacker = CombatSide {
         player: attack.firing_player,
-        units_label: list_units(&attack.firers, gs),
+        units_label: attack
+            .shots()
+            .into_iter()
+            .map(|shot| crate::combat_ui::shot_name(shot, gs))
+            .collect::<Vec<_>>()
+            .join(", "),
         factor: effective_factor,
         factor_row_label: factor_row.label().to_string(),
         roll,

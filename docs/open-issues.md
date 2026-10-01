@@ -40,8 +40,9 @@ item when it is fixed.
   hex". [The hut/building clause wins.]
 - **§6.14 "fired at once".** [Maxims and gunboats may be fired at more than
   once a phase.] The exception may only mean they *fire* twice.
-- **§6.24 Maxim second fire.** [No +1 accuracy bonus for Maxim second fire or
-  howitzer fire; +1 for batteries breaching walls or firing at the chain.]
+- **§6.24 Maxim second fire.** [The +1 accuracy bonus applies to Maxim fire,
+  first and second, and to batteries breaching walls or firing at the chain;
+  not to howitzer fire, which ignores line of sight and scatters.]
 - **§7.5 advance after a retreat.** [A hex emptied by a retreat before melee
   opens an advance window for the attackers.] §7.6 grants the advance only
   when a melee *eliminates* the defenders.
@@ -54,7 +55,24 @@ item when it is fixed.
   on the map, Tuti and Hogali included]. "One Egyptian battalion artillery
   unit": [any Anglo-Egyptian battery]. Which side of the Khartoum rampart is
   "inside" for LOS note b: [the side nearer the Palace].
-- **§2.32 named gunboats' Maxims.** [Not modelled as a Maxim second fire.]
+- **§2.32 named gunboats' Maxims.** The counter prints "5·6×2·12/18". [The
+  Maxims (6, "fire twice per turn") are a second weapon, fired once in each
+  fire subphase at a target of their own, independently of the artillery and
+  howitzer factor (5).]
+- **§6.3 footnote pairs.** Box entries such as "Units (3,6)" carry two
+  footnotes. [They combine with "and": the entry blocks only when both hold.]
+- **§8.2 desertion rounding.** "1½ times the roll of one die". [Rounded up: a
+  roll of 1 deserts 2 units, a 3 deserts 5.]
+- **§9.14 west-bank decisive victory.** "Eliminates all Anglo-Egyptian units
+  on the west bank (excluding gunboats)". [Judged only once there were such
+  units: at least one fell on the west bank and none stands there now.
+  "Friendlies" count once carried across; on the east bank they do not.]
+- **§9.35 loss penalty.** "The Dervish player then loses one victory level".
+  [Applies only to a Dervish result (GORDON killed by turn six), which it can
+  turn into a British win; it never enlarges a British win.]
+- **Combat Results "D".** "½ (round up) of the units in the target hex are
+  disrupted" does not say who picks them. [At random among the undisrupted
+  units, by a draw rolled into the effect with its dice.]
 
 ## UI
 

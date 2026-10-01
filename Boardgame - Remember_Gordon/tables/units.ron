@@ -1871,7 +1871,7 @@
                 "BritishBoats_3_0",
                 AE(""),
                 NamedGunboat(
-                    artillery: 6,
+                    artillery: 5,
                     maxim: 6,
                     upstream: 12,
                     downstream: 18,
@@ -1894,7 +1894,7 @@
                 "BritishBoats_4_0",
                 AE(""),
                 NamedGunboat(
-                    artillery: 6,
+                    artillery: 5,
                     maxim: 6,
                     upstream: 12,
                     downstream: 18,
@@ -1917,7 +1917,7 @@
                 "BritishBoats_5_0",
                 AE(""),
                 NamedGunboat(
-                    artillery: 6,
+                    artillery: 5,
                     maxim: 6,
                     upstream: 12,
                     downstream: 18,
@@ -1940,7 +1940,7 @@
                 "BritishBoats_6_0",
                 AE(""),
                 NamedGunboat(
-                    artillery: 6,
+                    artillery: 5,
                     maxim: 6,
                     upstream: 12,
                     downstream: 18,
@@ -1963,7 +1963,7 @@
                 "BritishBoats_7_0",
                 AE(""),
                 NamedGunboat(
-                    artillery: 6,
+                    artillery: 5,
                     maxim: 6,
                     upstream: 12,
                     downstream: 18,

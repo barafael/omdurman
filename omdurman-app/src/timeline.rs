@@ -334,7 +334,7 @@ pub(crate) fn spectator_combat_markers(
             // One arrow per distinct firing hex: a stacked combined attack
             // (§6.14) draws a single arrow instead of N overlapping ones.
             let mut firer_hexes: Vec<HexCoord> = Vec::new();
-            for id in &attack.firers {
+            for id in &attack.all_firing_units() {
                 if let Some(unit) = gs.0.find_unit(*id)
                     && !firer_hexes.contains(&unit.position)
                 {

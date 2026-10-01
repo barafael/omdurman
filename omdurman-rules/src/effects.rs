@@ -25,10 +25,10 @@ use crate::range_effects::{ae_range_effects, dervish_range_effects};
 use crate::turn_summary::{TurnEventRecord, TurnSummary};
 use crate::turn_track::scenario_turn;
 use crate::{
-    CampaignVictoryLevel, CombatResult, DemolitionTarget, DieRoll, FireAttack, FireFactor,
-    FireKind, FireModifier, FireSubPhase, GameTurnIndex, HexCoord, HexDistance, MeleeAttack,
-    MeleeModifier, MovementAllowance, MovementPoints, Phase, UnitId, UnitPlacement, VictoryLedger,
-    VictoryPoints, VpEvent, VpSource, WeaponClass, ZocReason,
+    CampaignVictoryLevel, CombatResult, DemolitionTarget, DieRoll, DisruptionDraw, FireAttack,
+    FireFactor, FireKind, FireModifier, FireMount, FireSubPhase, GameTurnIndex, HexCoord,
+    HexDistance, MeleeAttack, MeleeModifier, MovementAllowance, MovementPoints, Phase, Shot,
+    UnitId, UnitPlacement, VictoryLedger, VictoryPoints, VpEvent, VpSource, WeaponClass, ZocReason,
 };
 use omdurman_types::{DayNight, DervishTribe, HexsideKind, HexsideRef, Player, Scenario, UnitKind};
 
@@ -365,6 +365,7 @@ mod verification {
         _attack: &MeleeAttack,
         _attacker_roll: DieRoll,
         _defender_roll: DieRoll,
+        _disruption: DisruptionDraw,
     ) {
     }
 
@@ -860,9 +861,9 @@ mod verification {
     // -- Desertion arithmetic (§8.2) ---------------------------------------
 
     /// §8.2: "the number of deserting Dervish units is equal to 1½ times the
-    /// roll of one die" -- floored, hence `(3r)/2` for every roll. Also
-    /// monotone (a higher roll never deserts fewer) and bounded 1..=15 (1½×1
-    /// = 1.5 floors to 1; 1½×10 = 15).
+    /// roll of one die" -- rounded up, hence `(3r + 1)/2` for every roll.
+    /// Also monotone (a higher roll never deserts fewer) and bounded 2..=15
+    /// (1½×1 = 1.5 rounds up to 2; 1½×10 = 15).
     // §8.2
     #[traceability_macro::rulebook("§8.2")]
     #[kani::proof]
@@ -873,14 +874,14 @@ mod verification {
         kani::assume(j < DieRoll::ALL.len());
         let a = desertion_count(DieRoll::ALL[i]);
         let b = desertion_count(DieRoll::ALL[j]);
-        // Exactly floored 1½ × roll.
-        assert!(a == (3 * DieRoll::ALL[i].value() as usize) / 2);
+        // Exactly 1½ × roll, rounded up.
+        assert!(a == (3 * DieRoll::ALL[i].value() as usize + 1) / 2);
         // Monotone in the roll.
         if i <= j {
             assert!(a <= b);
         }
-        // Bounded: at least one deserter, at most 1½ × 10.
-        assert!(a >= 1 && a <= 15);
+        // Bounded: at least two deserters, at most 1½ × 10.
+        assert!(a >= 2 && a <= 15);
     }
 
     // -- Zone of control predicates (§5.41) --------------------------------

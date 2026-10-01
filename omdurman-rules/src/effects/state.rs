@@ -43,6 +43,11 @@ pub struct GameState {
     /// at each phase change and turn end.
     #[serde(default)]
     pub units_fired_at_this_phase: Vec<UnitId>,
+    /// Named gunboats whose Maxim guns have fired this fire subphase (§6.42:
+    /// they fire once in each subphase, independently of the gunboat's
+    /// artillery, which `units_fired_this_phase` tracks). Cleared with it.
+    #[serde(default)]
+    pub gunboat_maxims_fired_this_phase: Vec<UnitId>,
     /// Movement points each unit has spent this turn (§5.11/§5.12). A unit may
     /// move hex by hex up to its (night-adjusted) allowance, so the cumulative
     /// spend -- not a binary "moved" flag -- is what caps further movement.
@@ -157,6 +162,13 @@ pub struct GameState {
     /// "Friendlies" transport (the unit may only load after Isa Zachneih dies).
     #[serde(default)]
     pub isa_zachneih_eliminated: bool,
+    /// Whether an Anglo-Egyptian unit other than a gunboat has been
+    /// eliminated on the west bank. The §9.14 Dervish alternative decisive
+    /// victory ("eliminates all Anglo-Egyptian units on the west bank") is
+    /// only judged once there were such units to eliminate: with none ever
+    /// lost there, an empty west bank means none entered, not that all fell.
+    #[serde(default)]
+    pub ae_lost_on_west_bank: bool,
     /// Pending Royal Engineers demolitions (§6.53): each entry is an engineer
     /// that began a demolition this turn and must be resolved at end of turn
     /// (still adjacent + undisrupted → target destroyed; otherwise cancelled).
@@ -188,6 +200,8 @@ pub struct PendingMelee {
     pub attack: MeleeAttack,
     pub attacker_roll: DieRoll,
     pub defender_roll: DieRoll,
+    /// Which units each side's `D` result disrupts (§CombatResults).
+    pub disruption: DisruptionDraw,
 }
 
 impl GameState {
@@ -215,6 +229,7 @@ impl GameState {
             victory: VictoryLedger::default(),
             next_alloc_index: 0,
             units_fired_this_phase: Vec::new(),
+            gunboat_maxims_fired_this_phase: Vec::new(),
             units_fired_at_this_phase: Vec::new(),
             mp_spent_this_turn: BTreeMap::new(),
             gunboats_upstream_this_turn: Vec::new(),
@@ -239,6 +254,7 @@ impl GameState {
             setup_ready_ae: false,
             setup_ready_dervish: false,
             isa_zachneih_eliminated: false,
+            ae_lost_on_west_bank: false,
             pending_demolitions: Vec::new(),
             observations: Vec::new(),
             turn_events: Vec::new(),
@@ -472,6 +488,7 @@ impl GameState {
             victory: VictoryLedger::default(),
             next_alloc_index: 0,
             units_fired_this_phase: Vec::new(),
+            gunboat_maxims_fired_this_phase: Vec::new(),
             units_fired_at_this_phase: Vec::new(),
             mp_spent_this_turn: BTreeMap::new(),
             gunboats_upstream_this_turn: Vec::new(),
@@ -496,6 +513,7 @@ impl GameState {
             setup_ready_ae: false,
             setup_ready_dervish: false,
             isa_zachneih_eliminated: false,
+            ae_lost_on_west_bank: false,
             pending_demolitions: Vec::new(),
             observations: Vec::new(),
             turn_events: Vec::new(),

@@ -140,7 +140,7 @@ pub fn unit_overview_ui(
                 // context and § deep-links into the Rulebook tab.
                 let mut clicked_section: Option<String> = None;
                 let mut commands_out = Vec::new();
-                let local_may_act = peers.may_act(state.0.phase_player());
+                let local_may_act = peers.may_act_now(&state.0);
                 crate::actions_panel::draw_actions_section(
                     ui,
                     state,

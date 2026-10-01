@@ -150,6 +150,18 @@ impl GunboatId {
     pub fn has_howitzer(self) -> bool {
         matches!(self, GunboatId::Named(_))
     }
+
+    /// The Maxim factor of a new-type (named) gunboat: the "6×2" its counter
+    /// prints after the artillery & howitzer factor ("5·6×2·12/18", §2.32 --
+    /// "Maxim Guns (fire twice per turn)"). A second weapon beside the
+    /// artillery, fired on the Maxims line of the Range Effects Table. Old
+    /// gunboats carry none.
+    pub fn maxim_factor(self) -> Option<FireFactor> {
+        match self {
+            GunboatId::Named(_) => Some(FireFactor::Six),
+            GunboatId::Old(_) | GunboatId::DervishGunboat(_) => None,
+        }
+    }
 }
 
 /// The five named gunboats with howitzer capability (rulebook §6.64, §2.32).
@@ -562,6 +574,39 @@ pub struct UnitPlacement {
     pub position: HexCoord,
     pub profile: UnitProfile,
     pub state: UnitState,
+}
+
+impl UnitPlacement {
+    /// The printed fire factor of one of this counter's weapons (§2.3,
+    /// §6.11); `None` when the counter has no such weapon.
+    pub fn fire_factor(&self, mount: crate::FireMount) -> Option<FireFactor> {
+        match mount {
+            crate::FireMount::Main => self.profile.fire,
+            crate::FireMount::GunboatMaxims => match self.profile.identity {
+                UnitIdentity::AngloEgyptianGunboat(gb) => gb.maxim_factor(),
+                _ => None,
+            },
+        }
+    }
+
+    /// Whether this counter's main weapon is a howitzer (§6.64): a named
+    /// gunboat's artillery, or a howitzer-armed counter.
+    pub fn carries_howitzer(&self) -> bool {
+        self.profile.weapon == WeaponClass::Howitzer
+            || matches!(self.profile.identity, UnitIdentity::AngloEgyptianGunboat(gb) if gb.has_howitzer())
+    }
+
+    /// The Range Effects Table line a weapon fires on in an attack of `kind`
+    /// (§2.31, §2.32): its printed weapon, except that a named gunboat's
+    /// artillery fires the Howitzer line as howitzer fire (§6.64) and its
+    /// Maxims the Maxims line.
+    pub fn weapon_line(&self, mount: crate::FireMount, kind: crate::FireKind) -> WeaponClass {
+        match mount {
+            crate::FireMount::GunboatMaxims => WeaponClass::Maxims,
+            crate::FireMount::Main if kind == crate::FireKind::Howitzer => WeaponClass::Howitzer,
+            crate::FireMount::Main => self.profile.weapon,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

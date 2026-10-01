@@ -268,7 +268,10 @@ struct CondCtx {
 }
 
 /// Evaluate whether a feature at this position blocks, given its conditions.
-/// Returns `true` if ALL conditions are satisfied (feature blocks).
+/// Returns `true` if ALL conditions are satisfied (feature blocks): a box
+/// entry carrying two footnotes, e.g. "Units (3,6)", blocks only when both
+/// hold. The printed table does not say how two footnotes combine; "and" is
+/// the chosen reading (§6.3).
 fn conditions_met(conditions: &[LosCondition], ctx: &CondCtx) -> bool {
     for &cond in conditions {
         let ok = match cond {
@@ -979,6 +982,44 @@ mod tests {
         ));
     }
 
+    // ── Hilltop→Ground: Units (4) -- only units nearer the target block ──
+
+    /// The printed Hilltop→Ground cell reads "Units (4)": a unit blocks only
+    /// "if closer to target unit, or half way between" -- looking down from
+    /// a hilltop, a unit at the firer's feet does not hide the plain beyond.
+    #[rulebook("§6.3")]
+    #[test]
+    fn has_los_hilltop_to_ground_units_block_only_nearer_the_target() {
+        let board = board_with_terrain(&[(0, 0, Terrain::ground(GroundKind::Hilltop))]);
+        let from = HexCoord::new(0, 0);
+        let to = HexCoord::new(4, 0);
+        let unit_at = |at: HexCoord| move |hex: HexCoord| (hex == at).then_some(LosLevel::Ground);
+        // Nearer the firer (step 1 of 4): does not block.
+        assert!(has_los_auto(
+            &board,
+            from,
+            to,
+            FireKind::Direct,
+            unit_at(HexCoord::new(1, 0))
+        ));
+        // Halfway (step 2 of 4): blocks.
+        assert!(!has_los_auto(
+            &board,
+            from,
+            to,
+            FireKind::Direct,
+            unit_at(HexCoord::new(2, 0))
+        ));
+        // Nearer the target (step 3 of 4): blocks.
+        assert!(!has_los_auto(
+            &board,
+            from,
+            to,
+            FireKind::Direct,
+            unit_at(HexCoord::new(3, 0))
+        ));
+    }
+
     // ── Hilltop→Hilltop: only units on a hilltop block ──
 
     #[rulebook("§6.3")]
@@ -1469,12 +1510,12 @@ mod tests {
                     (HilltopTerrain, vec![]),
                 ],
             ),
-            // Hilltop → Ground: Units(3), Huts(1,4), Crest(4), Hilltop
+            // Hilltop → Ground: Units(4), Huts(1,4), Crest(4), Hilltop
             (
                 LosLevel::Hilltop,
                 LosLevel::Ground,
                 vec![
-                    (Units, vec![CloserToFirer]),
+                    (Units, vec![CloserToTarget]),
                     (Huts, vec![MoreThanTwo, CloserToTarget]),
                     (Crest, vec![CloserToTarget]),
                     (HilltopTerrain, vec![]),

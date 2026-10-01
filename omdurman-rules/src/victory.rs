@@ -372,8 +372,17 @@ impl FoKVictoryLevel {
     /// ladder by the Dervish loss penalty (§9.35). Worked example from the
     /// rulebook: GORDON dies turn 5 (tactical) with 24 Dervish losses (−2
     /// levels) nets a British marginal.
+    ///
+    /// The penalty is the Dervish player *losing* levels, so it applies only to
+    /// a Dervish base (GORDON killed by turn six): it may carry a Dervish win
+    /// over into a British one, but it never enlarges a British win -- GORDON
+    /// surviving turn six with 20 Dervish losses is still a British marginal.
+    /// The manual does not say; this is the chosen reading.
     pub fn resolve(gordon_died_turn: Option<u8>, scenario_end_turn: u8, dervish_lost: i16) -> Self {
         let base = Self::base(gordon_died_turn, scenario_end_turn);
+        if (base as i16) > 0 {
+            return base;
+        }
         let base_idx = Self::LADDER
             .iter()
             .position(|l| *l == base)

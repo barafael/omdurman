@@ -118,9 +118,13 @@ pub fn check_matrix(root: &Path) -> MatrixReport {
             None => report.failures.push(format!(
                 "{head} has no clause -- quote the manual's rule its code enforces"
             )),
-            // Pseudo-sections (printed charts) have no manual paragraph to
-            // quote; their clause describes the chart.
-            Some(_) if PSEUDO_SECTIONS.contains(&m.section.as_str()) => {}
+            // Pseudo-sections without transcribed text (the CRT's cells)
+            // have no manual paragraph to quote; their clause describes the
+            // chart. Those with text (§TurnTrack, ...) are quoted like any
+            // other section.
+            Some(_)
+                if PSEUDO_SECTIONS.contains(&m.section.as_str())
+                    && !manual_text.contains_key(m.section.trim_start_matches('§')) => {}
             Some(clause) => {
                 let section = m.section.trim_start_matches('§');
                 let found = manual_text

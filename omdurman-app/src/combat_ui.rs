@@ -115,3 +115,16 @@ pub(crate) fn unit_name(
         })
         .unwrap_or_else(|| format!("unit {id:?}"))
 }
+
+/// A player-readable name for one weapon firing: the counter's name, and
+/// "<gunboat> Maxims" for a named gunboat's Maxim guns (§2.32).
+pub(crate) fn shot_name(
+    shot: omdurman_rules::Shot,
+    gs: Option<&omdurman_rules::effects::GameState>,
+) -> String {
+    let name = unit_name(shot.unit, gs);
+    match shot.mount {
+        omdurman_rules::FireMount::Main => name,
+        omdurman_rules::FireMount::GunboatMaxims => format!("{name} Maxims"),
+    }
+}

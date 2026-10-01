@@ -1,7 +1,7 @@
 //! Dervish desertion turn overlay + selection UI (rulebook §8.2).
 //!
 //! On the first night turn of the Campaign scenario the Dervish player must
-//! roll one die and remove `floor(1.5 × roll)` units. The Khalifa, gunboats,
+//! roll one die and remove 1½ × roll units, rounded up. The Khalifa, gunboats,
 //! artillery, and forts are exempt.
 
 use bevy::prelude::*;

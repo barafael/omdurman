@@ -63,6 +63,20 @@ fn names(ids: &[UnitId]) -> String {
         .join(", ")
 }
 
+/// The weapons firing in an attack, by name: a named gunboat's Maxims
+/// (§2.32) read "<gunboat> Maxims".
+fn shot_names(attack: &FireAttack) -> String {
+    attack
+        .shots()
+        .into_iter()
+        .map(|shot| match shot.mount {
+            omdurman_rules::FireMount::Main => unit_name(shot.unit),
+            omdurman_rules::FireMount::GunboatMaxims => format!("{} Maxims", unit_name(shot.unit)),
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// A "losses: a, b" suffix for combat resolutions; empty when none.
 fn losses_suffix(ids: &[UnitId]) -> String {
     if ids.is_empty() {
@@ -93,7 +107,7 @@ fn modifiers_suffix(modifiers: &[FireModifier]) -> String {
 fn describe_fire_attack(a: &FireAttack, verb: &str) -> String {
     format!(
         "{verb} {} at {}{}",
-        names(&a.firers),
+        shot_names(a),
         hex(a.target_hex),
         modifiers_suffix(&a.modifiers),
     )
@@ -183,7 +197,7 @@ pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
             )
         }
 
-        GameEffect::FireCombat { attack, roll } => {
+        GameEffect::FireCombat { attack, roll, .. } => {
             format!(
                 "{} [roll {}]",
                 describe_fire_attack(attack, "fire"),
@@ -194,6 +208,7 @@ pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
             attack,
             combat_results_table_roll,
             impact_roll,
+            ..
         } => {
             format!(
                 "{} [CRT roll {}, impact roll {}]",
@@ -206,6 +221,7 @@ pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
             attack,
             attacker_roll,
             defender_roll,
+            ..
         } => format!(
             "declare melee; {}",
             describe_melee(attack, *attacker_roll, *defender_roll)
@@ -456,7 +472,7 @@ pub fn describe_observation(obs: &Observation) -> String {
             format!(
                 "FireResolved at {}: {} roll {} ({:+}) = {} → {:?} [{}, {} eff factors{}]{} [§{}]",
                 hex(attack.target_hex),
-                names(&attack.firers),
+                shot_names(attack),
                 roll.value(),
                 total_modifier,
                 modified_roll.value(),

@@ -18,6 +18,12 @@ impl BotRng {
         self.0.roll_d10()
     }
 
+    /// Draw which units a `D` result disrupts, rolled into the fire or melee
+    /// effect with its dice.
+    pub fn disruption_draw(&mut self) -> omdurman_rules::DisruptionDraw {
+        self.0.disruption_draw()
+    }
+
     /// Pick a uniform-random element, or `None` if the slice is empty.
     pub fn choose<'a, T>(&mut self, slice: &'a [T]) -> Option<&'a T> {
         if slice.is_empty() {

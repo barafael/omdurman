@@ -128,7 +128,7 @@ pub(crate) fn seat_control(time: Res<Time>, mut traffic: SeatTraffic, mut books:
     let now = time.elapsed_secs_f64();
     let is_host = traffic.net.is_host;
     let me = books.local_key.0;
-    let my_id = traffic.net.my_id.unwrap_or(PeerId(uuid::Uuid::nil()));
+    let my_id = traffic.net.my_id().unwrap_or(PeerId(uuid::Uuid::nil()));
     if !is_host {
         // Votes live on the host; a demoted host drops its open votes
         // (clients expire their ballots at the deadline).
@@ -424,7 +424,7 @@ mod tests {
         app.add_plugins(MinimalPlugins);
         let mut net = NetState::default();
         net.is_host = true;
-        net.my_id = Some(PeerId(uuid::Uuid::from_u128(1)));
+        net.set_my_id(Some(PeerId(uuid::Uuid::from_u128(1))));
         let mut presence = seats::SeatPresence::default();
         let connected: HashSet<PlayerKey> = [HOST, NEWCOMER].into_iter().collect();
         presence.update(&table(), &connected, 0.0, false);
@@ -557,8 +557,7 @@ mod tests {
         {
             let mut net = app.world_mut().resource_mut::<NetState>();
             net.is_host = false;
-            net.peers = vec![PeerId(uuid::Uuid::from_u128(0))];
-            net.refresh_sorted();
+            net.add_peer(PeerId(uuid::Uuid::from_u128(0)));
         }
         app.world_mut()
             .resource_mut::<SeatClient>()

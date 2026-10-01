@@ -159,9 +159,11 @@ section = "§2.32"
 title = "Anglo-Egyptian weapon types"
 status = "implemented"
 clause = "Maxims fire on the \"Maxims\" line of the Anglo-Egyptian Range Effects Table, and artillery and old gunboats fire on the \"Artillery\" line. New type (named) gunboats may fire on the \"Howitzer\", \"Artillery\", and \"Maxims\" lines of the Range Effects Table."
-witness = "omdurman-rules::src::effects::tests::old_gunboat_rejected_from_howitzer_subphase"
-approximation = "Named gunboats fire only on the Artillery line (direct fire) and the Howitzer line; their Maxims-line fire is not modelled (open-issues, Rules questions: \"§2.32 named gunboats' Maxims\")."
-tests = ["omdurman-rules::src::effects::tests::old_gunboat_lacks_howitzer", "omdurman-rules::src::effects::tests::old_gunboat_rejected_from_howitzer_subphase"]
+witness = "omdurman-rules::src::effects::tests::a_named_gunboat_fires_its_maxims_twice_beside_its_artillery"
+approximation = "A named gunboat's Maxims (the \"6×2\" on its counter, 5·6×2·12/18) are a second weapon: they fire once in each fire subphase at a target of their own choosing (or combined with other fire at one hex), independently of the gunboat's artillery/howitzer factor. The rulebook does not say whether the two weapons may split their targets; they may."
+tests = [
+    "omdurman-rules::src::effects::tests::a_named_gunboat_fires_its_maxims_twice_beside_its_artillery",
+    "omdurman-rules::src::effects::tests::only_named_gunboats_have_maxims_and_they_cannot_sink_gunboats","omdurman-rules::src::effects::tests::old_gunboat_lacks_howitzer", "omdurman-rules::src::effects::tests::old_gunboat_rejected_from_howitzer_subphase"]
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
@@ -182,6 +184,30 @@ symbol = "GunboatId::Old"
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
 symbol = "GunboatId::DervishGunboat"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/unit.rs"
+symbol = "GunboatId::maxim_factor"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/state/fire.rs"
+symbol = "GameState::can_fire_gunboat_maxims_at"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/fire.rs"
+symbol = "build_gunboat_maxim_attack"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/unit.rs"
+symbol = "UnitPlacement::fire_factor"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/unit.rs"
+symbol = "UnitPlacement::weapon_line"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/combat.rs"
+symbol = "FireAttack::shots"
 
 [[mapping]]
 section = "§2.4"
@@ -1002,7 +1028,7 @@ tests = [
     "omdurman-rules::src::range_effects::ae_range_effects_howitzer_halved_4_to_10",
     "omdurman-rules::src::range_effects::dervish_range_effects_rifles",
     "omdurman-rules::src::range_effects::dervish_range_effects_artillery",
-    "omdurman-rules::src::range_effects::dervish_range_effects_maxims_and_howitzer",
+    "omdurman-rules::src::range_effects::dervish_table_has_no_maxims_or_howitzer_line",
     "omdurman-rules::src::range_effects::dervish_range_effects_melee",
     "omdurman-rules::src::range_effects::dervish_range_effects_distance_over_10",
     "omdurman-rules::src::effects::tests::fire_combat_eliminates_target",
@@ -1012,7 +1038,6 @@ tests = [
     "omdurman-rules::src::range_effects::range_effects_every_cell_ae_maxims",
     "omdurman-rules::src::range_effects::range_effects_every_cell_ae_rifles",
     "omdurman-rules::src::range_effects::range_effects_every_cell_dervish_artillery",
-    "omdurman-rules::src::range_effects::range_effects_every_cell_dervish_maxims_howitzer",
     "omdurman-rules::src::range_effects::range_effects_every_cell_dervish_rifles",
     "omdurman-rules::src::range_effects::range_effects_every_cell_dervish_spears",
     "omdurman-rules::src::effects::tests::can_fire_at_gates_phase_range_and_player",
@@ -1021,7 +1046,7 @@ tests = [
     "omdurman-rules::src::range_effects::ae_howitzer_has_minimum_range",
     "omdurman-rules::src::range_effects::dervish_range_effects_monotone_non_increasing",
     "omdurman-rules::src::range_effects::range_effects_first_range_max_effect_last_range_oor",
-    "omdurman-rules::src::effects::tests::a_disrupt_result_falls_on_undisrupted_units_first",
+    "omdurman-rules::src::effects::tests::a_disrupt_result_disrupts_half_rounded_up_picked_at_random",
 ]
 
 [[mapping.impl]]
@@ -1079,10 +1104,12 @@ title = "Anglo-Egyptian direct fire accuracy bonus and brigade integrity"
 status = "implemented"
 clause = "All Anglo-Egyptian direct fire attacks receive a +1 modifier to their die roll as an accuracy bonus."
 witness = "omdurman-rules::src::effects::tests::fire_modifiers_are_engine_derived_and_mismatches_rejected"
+approximation = "\"Direct fire\" is read as aimed fire at a hex the firer sees: a Maxim's second fire (§6.42) gets the +1 like its first; howitzer fire, which ignores line of sight and scatters (§6.64), does not."
 proofs = [
     "omdurman-rules::src::verification::die_roll_apply_modifier_is_total",
 ]
-tests = ["omdurman-rules::src::effects::tests::brigade_integrity_modifier_is_engine_derived",
+tests = [
+    "omdurman-rules::src::effects::tests::maxim_second_fire_gets_the_direct_fire_bonus_howitzer_fire_does_not","omdurman-rules::src::effects::tests::brigade_integrity_modifier_is_engine_derived",
     "omdurman-rules::src::effects::tests::fire_modifiers_are_engine_derived_and_mismatches_rejected",
 ]
 
@@ -1098,6 +1125,10 @@ symbol = "BrigadeIntegrity"
 [[mapping.impl]]
 file = "omdurman-rules/src/combat.rs"
 symbol = "FireModifier::die_modifier"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/fire.rs"
+symbol = "mandatory_fire_modifiers"
 
 [[mapping]]
 section = "§6"
@@ -1120,6 +1151,7 @@ title = "Line of Sight Table"
 status = "implemented"
 clause = "Locate the terrain type the firing unit is in and cross-index it with the terrain type the target unit is in. Terrain types in the intersecting box block line of sight, with exceptions as footnoted."
 witness = "omdurman-rules::src::los_table::los_blocking_rules_match_reference_table"
+note = "A box entry carrying two footnotes -- Units (3,6), Huts (1,4), Crest (2,3) -- blocks only when both footnotes hold (they compose with 'and'; the table does not say, this is the chosen reading). The Hilltop-fires-on-Ground Units entry is footnote 4 as printed (closer to the target), not 3."
 proofs = [
     "omdurman-types::src::lib::line_between_forms_a_connected_ray",
     "omdurman-types::src::lib::hexside_blocking_classifiers_are_exact",
@@ -1129,6 +1161,7 @@ proofs = [
 ]
 tests = [
     "omdurman-rules::src::los_table::los_ray_is_the_straight_line_on_the_campaign_board",
+    "omdurman-rules::src::los_table::has_los_hilltop_to_ground_units_block_only_nearer_the_target",
     "omdurman-rules::src::los_table::los_level_mapping",
     "omdurman-rules::src::los_table::blocking_rules_all_cells_covered",
     "omdurman-rules::src::los_table::has_los_empty_board_is_clear",
@@ -1252,6 +1285,7 @@ proofs = [
     "omdurman-types::src::lib::unit_kind_fire_and_movement_capability_law_is_exact",
 ]
 tests = [
+    "omdurman-rules::src::effects::tests::a_named_gunboat_fires_its_maxims_twice_beside_its_artillery",
     "omdurman-rules::src::effects::tests::fall_of_khartoum_has_no_maxim_howitzer_subphase",
     "omdurman-rules::src::howitzer_scatter::howitzer_on_target_7_to_10",
     "omdurman-rules::src::howitzer_scatter::howitzer_scatters_below_7",
@@ -1271,6 +1305,10 @@ file = "omdurman-types/src/lib.rs"
 symbol = "fires_twice"
 
 # §6.5 -- Special Unit Capabilities
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/state/fire.rs"
+symbol = "GameState::can_fire_gunboat_maxims_at"
 
 [[mapping]]
 section = "§6.5"
@@ -1419,6 +1457,7 @@ clause = "A result of 3 or more on the combat results table is required to sink 
 witness = "omdurman-rules::src::effects::tests::artillery_sinks_gunboat_only_on_three_plus"
 note = "The artillery-only gate is enforced in GameState::can_fire_at and re-checked in the resolve path (RuleError::ArtilleryOnlyVsGunboatOrFort); the printed sink threshold (CRT 3+) is derived centrally by GameState::special_fire_target and asserted against the engine's own banded result across the full die range. WeaponClass is the type-level 'artillery line' classification."
 tests = [
+    "omdurman-rules::src::effects::tests::only_named_gunboats_have_maxims_and_they_cannot_sink_gunboats",
     "omdurman-rules::src::effects::tests::a_gunboat_sunk_by_artillery_scores_victory_points","omdurman-rules::src::effects::tests::rifles_may_not_sink_a_gunboat", "omdurman-rules::src::effects::tests::artillery_sinks_gunboat_only_on_three_plus",
   ]
 
@@ -1879,6 +1918,7 @@ title = "Dervish Desertion Roll"
 status = "implemented"
 clause = "the number of deserting Dervish units is equal to 1½ times the roll of one die"
 witness = "omdurman-rules::src::effects::desertion_count_is_one_and_a_half_times_the_roll"
+approximation = "The manual does not say how to round 1½ times an odd roll; the count is rounded up (a roll of 1 deserts 2 units, a 3 deserts 5)."
 note = "The 'no victory points for deserting Dervishes' clause holds by construction: deserters are removed via units.retain without any VpEvent, and that absence is not separately testable."
 proofs = [
     "omdurman-rules::src::effects::desertion_count_is_one_and_a_half_times_the_roll",
@@ -1886,7 +1926,7 @@ proofs = [
 ]
 tests = [
     "omdurman-rules::src::effects::tests::desertion_rejects_a_unit_listed_twice",
-    "omdurman-rules::src::effects::tests::desertion_count_is_floor_one_and_a_half",
+    "omdurman-rules::src::effects::tests::desertion_count_rounds_one_and_a_half_up",
     "omdurman-rules::src::turn_track::desertion_on_first_night",
     "omdurman-rules::src::effects::tests::desertion_roll_required_before_first_night_movement_ends",
     "omdurman-rules::src::effects::tests::desertion_removes_chosen_count_and_respects_exemptions",
@@ -2071,6 +2111,7 @@ title = "Victory Conditions (Campaign)"
 status = "implemented"
 clause = "It is accordingly assigned 25 victory points which are awarded to the player who controls it at the conclusion of play. The Dervish player controls it at the start of play."
 witness = "omdurman-rules::src::effects::tests::campaign_end_scores_an_untaken_tomb_for_the_dervish"
+approximation = "The Dervish alternative decisive victory (all Anglo-Egyptian units on the west bank eliminated) is judged only once there were such units: at least one non-gunboat Anglo-Egyptian unit has fallen on the west bank and none stands there. 'Friendlies' count only once carried to the west bank."
 proofs = [
     "omdurman-rules::src::verification::campaign_victory_levels_match_manual_superiority_table",
     "omdurman-rules::src::verification::vp_source_points_and_scorer_match_the_printed_schedule",
@@ -2080,7 +2121,9 @@ tests = [
     "omdurman-rules::src::effects::tests::score_elimination_records_exactly_what_it_scores",
     "omdurman-rules::src::effects::tests::a_destroyed_fort_takes_one_occupant_with_it_and_scores_it",
     "omdurman-rules::src::effects::tests::a_mined_gunboat_scores_and_takes_its_friendlies_down",
-    "omdurman-rules::src::effects::tests::a_gunboat_sunk_by_artillery_scores_victory_points","omdurman-rules::src::effects::tests::friendlies_bank_scores_by_side", "omdurman-rules::src::effects::tests::mahdis_tomb_stays_dervish_without_a_leader", "omdurman-rules::src::effects::tests::mahdis_tomb_scores_for_anglo_egyptian_when_taken", "omdurman-rules::src::effects::tests::campaign_end_scores_an_untaken_tomb_for_the_dervish", "omdurman-rules::src::tests::vp_source_attributes"]
+    "omdurman-rules::src::effects::tests::a_gunboat_sunk_by_artillery_scores_victory_points","omdurman-rules::src::effects::tests::friendlies_bank_scores_by_side", "omdurman-rules::src::effects::tests::mahdis_tomb_stays_dervish_without_a_leader", "omdurman-rules::src::effects::tests::mahdis_tomb_scores_for_anglo_egyptian_when_taken", "omdurman-rules::src::effects::tests::campaign_end_scores_an_untaken_tomb_for_the_dervish", "omdurman-rules::src::tests::vp_source_attributes",
+    "omdurman-rules::src::effects::tests::the_west_bank_decisive_needs_units_that_entered_it",
+]
 
 [[mapping.impl]]
 file = "omdurman-rules/src/victory.rs"
@@ -2513,12 +2556,14 @@ title = "Victory Conditions (Bonus)"
 status = "implemented"
 clause = "The Dervish player then loses one victory level if he has lost 16–23 units, two victory levels if he has lost 24–31 units, and three victory levels if he has lost 32 units or more."
 witness = "omdurman-rules::src::verification::fok_victory_ladder_penalties_shift_monotonically"
+approximation = "The manual does not say whether the loss penalty applies when GORDON survives. It is the Dervish player losing levels, so it shifts only a Dervish result (possibly across into a British win) and never enlarges a British win."
 proofs = [
     "omdurman-rules::src::verification::fok_victory_ladder_penalties_shift_monotonically",
 ]
 tests = [
     "omdurman-rules::src::effects::tests::gordon_dying_in_melee_ends_fall_of_khartoum",
     "omdurman-rules::src::tests::fok_victory_level_worked_example",
+    "omdurman-rules::src::tests::fok_loss_penalty_never_enlarges_a_british_win",
     "omdurman-rules::src::tests::fok_victory_level_gordon_died_early",
     "omdurman-rules::src::tests::fok_victory_level_late_gordon_death",
     "omdurman-rules::src::tests::fok_victory_level_gordon_survived",
@@ -2770,6 +2815,78 @@ symbol = "combat_results_table"
 [[mapping.impl]]
 file = "omdurman-rules/src/combat.rs"
 symbol = "CombatResult"
+
+[[mapping]]
+section = "§CombatResults"
+title = "Explanation of Combat Results (rulebook back cover)"
+status = "implemented"
+clause = "D* = ½ (round up) of the units in the target hex are disrupted (inverted)."
+witness = "omdurman-rules::src::effects::tests::a_disrupt_result_disrupts_half_rounded_up_picked_at_random"
+approximation = "The rulebook does not say who picks the disrupted units. They are picked at random among the undisrupted units in the hex, by a draw the acting peer rolls into the fire or melee effect with its dice (DisruptionDraw), so every peer disrupts the same units."
+tests = [
+    "omdurman-rules::src::effects::tests::a_disrupt_result_disrupts_half_rounded_up_picked_at_random",
+    "omdurman-rules::src::effects::tests::numbered_result_eliminates_without_disrupting_survivors",
+]
+proofs = [
+    "omdurman-rules::src::verification::disrupt_half_is_rounded_up",
+    "omdurman-rules::src::verification::die_roll_apply_modifier_is_total",
+]
+
+[[mapping.impl]]
+file = "omdurman-rules/src/combat.rs"
+symbol = "DisruptionDraw::pick"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/scalars.rs"
+symbol = "DieRoll::apply_modifier"
+
+[[mapping]]
+section = "§Disrupted"
+title = "Disrupted Units (rulebook back cover)"
+status = "implemented"
+clause = "Have no ZOC; may not move; may not fire offensively or defensively; may not melee; are turned face up at the end of the owning player's turn."
+witness = "omdurman-rules::src::effects::tests::a_disrupted_unit_has_no_zoc_and_may_not_move_fire_or_melee"
+tests = [
+    "omdurman-rules::src::effects::tests::a_disrupted_unit_has_no_zoc_and_may_not_move_fire_or_melee",
+    "omdurman-rules::src::effects::tests::disrupted_units_recover_at_the_end_of_their_owners_turn",
+    "omdurman-rules::src::effects::tests::zoc_hexes_empty_for_disrupted_unit",
+]
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/state/stacking.rs"
+symbol = "unit_projects_zoc_rule"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/state/movement.rs"
+symbol = "GameState::can_move_unit"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/state/fire.rs"
+symbol = "GameState::can_fire_at"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/state/melee.rs"
+symbol = "GameState::can_melee"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/dispatch.rs"
+symbol = "end_player_turn"
+
+[[mapping]]
+section = "§TurnTrack"
+title = "Turn Record Track (mapsheet)"
+status = "implemented"
+clause = "Dervish Desertion Roll NIGHT"
+witness = "omdurman-rules::src::turn_track::the_track_matches_the_printed_boxes"
+tests = [
+    "omdurman-rules::src::turn_track::the_track_matches_the_printed_boxes",
+    "omdurman-rules::src::turn_track::desertion_on_first_night",
+    "omdurman-rules::src::turn_track::campaign_track_label_and_day_night_agree",
+]
+
+[[mapping.impl]]
+file = "omdurman-rules/src/turn_track.rs"
+symbol = "CAMPAIGN_TURN_TRACK"
 
 [[mapping]]
 section = "§Reference"

@@ -76,7 +76,7 @@ pub struct ClickCtx {
     /// (`NoGame` when there is none).
     pub phase: UiPhaseState,
     /// `Peers::may_act(phase_player)`: the seat whose phase this is.
-    pub may_act_phase_player: bool,
+    pub may_act_now: bool,
     /// `Peers::may_act(active.opponent())`: the melee defender's seat.
     pub may_act_defender: bool,
     /// `Peers::may_act(Dervish)`: river mines / chain are Dervish-only.
@@ -158,7 +158,7 @@ pub fn click_mode(ctx: &ClickCtx) -> ClickMode {
     {
         return ClickMode::Retreat;
     }
-    if !ctx.may_act_phase_player {
+    if !ctx.may_act_now {
         return ClickMode::None;
     }
     if phase == PhaseKind::Movement || !release {
@@ -271,7 +271,7 @@ impl ClickUiState<'_, '_> {
         ClickCtx {
             edge: ClickEdge::Press,
             phase,
-            may_act_phase_player: self.peers.may_act(gs.phase_player()),
+            may_act_now: self.peers.may_act_now(gs),
             may_act_defender: self.peers.may_act(gs.active_player.opponent()),
             may_act_dervish,
             placing,
@@ -421,7 +421,7 @@ mod tests {
         ClickCtx {
             edge,
             phase,
-            may_act_phase_player: true,
+            may_act_now: true,
             ..Default::default()
         }
     }
