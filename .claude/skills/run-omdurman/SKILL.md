@@ -78,6 +78,11 @@ signalling server.
 
 ## Gotchas
 
+- **The driver refuses input unless the game is the active window**
+  (exit 2, "refusing input: active window is ..."): on this desktop the
+  game opens on a monitor the user may be using -- xdotool input lands in
+  whatever window is on top. Ask the user to bring the game window to the
+  front (or to stop what they are doing) instead of working around it.
 - **Bevy is linked dynamically**: `target/debug/omdurman` alone fails with
   `libbevy_dylib-*.so: cannot open shared object file`. Always go through
   `cargo run` (the driver does).

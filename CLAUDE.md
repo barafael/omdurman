@@ -51,7 +51,12 @@ Run the mutation gate (the CI job runs it on the change's diff):
 
 ```shell
 cargo run -p traceability-lsp --bin mutation-gate -- --section §5.51
+git diff --no-ext-diff main > /tmp/change.diff   # a plain unified diff, as CI makes
+cargo run -p traceability-lsp --bin mutation-gate -- --in-diff /tmp/change.diff --jobs 2
 ```
+
+(`--no-ext-diff`: an external diff tool's output is no unified diff. The gate
+normalizes path prefixes itself, so `diff.mnemonicPrefix` is fine.)
 
 Run the Kani proof suite (see `docs/architecture.md` §9). Kani has no native Windows
 support, so on Windows this shells into WSL. The script bakes in `-Z stubbing` and

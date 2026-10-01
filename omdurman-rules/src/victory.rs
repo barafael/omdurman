@@ -380,7 +380,12 @@ impl FoKVictoryLevel {
     /// The manual does not say; this is the chosen reading.
     pub fn resolve(gordon_died_turn: Option<u8>, scenario_end_turn: u8, dervish_lost: i16) -> Self {
         let base = Self::base(gordon_died_turn, scenario_end_turn);
-        if (base as i16) > 0 {
+        if matches!(
+            base,
+            FoKVictoryLevel::BritishMarginal
+                | FoKVictoryLevel::BritishTactical
+                | FoKVictoryLevel::BritishDecisive
+        ) {
             return base;
         }
         let base_idx = Self::LADDER

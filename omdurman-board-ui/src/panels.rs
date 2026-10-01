@@ -45,21 +45,49 @@ pub struct EguiPointerOverUi(pub bool);
 /// could receive pointer input" (widgets, our panel blockers, tooltips),
 /// stable across single- and multi-pass modes.
 pub fn egui_wants_pointer_input(ctx: &egui::Context) -> bool {
-    ctx.egui_is_using_pointer()
-        || ctx.pointer_latest_pos().is_some_and(|pos| {
-            ctx.interactive_rects_last_pass()
-                .iter()
-                .any(|rect| rect.contains(pos))
-        })
+    ctx.egui_is_using_pointer() || pointer_over_egui_surface(ctx)
+}
+
+/// Whether the pointer is over one of the app's egui surfaces (widgets,
+/// panel blockers, tooltips) -- whatever egui is doing with a press or drag.
+pub fn pointer_over_egui_surface(ctx: &egui::Context) -> bool {
+    ctx.pointer_latest_pos().is_some_and(|pos| {
+        ctx.interactive_rects_last_pass()
+            .iter()
+            .any(|rect| rect.contains(pos))
+    })
+}
+
+/// Set while a counter dragged out of an egui panel is carried over the
+/// board (drag-and-drop placement). The drag started on an egui widget, so
+/// egui "uses" the pointer until the button comes up -- and the drop's
+/// release would never reach the board. While set, only the pointer being
+/// over an egui surface blocks the board.
+#[derive(Resource, Default)]
+pub struct CarryingDragToBoard(pub bool);
+
+/// Whether the board's pointer input is blocked by egui (see
+/// [`egui_wants_pointer_input`] and [`CarryingDragToBoard`]).
+pub fn board_pointer_blocked(ctx: &egui::Context, carrying_drag: bool) -> bool {
+    if carrying_drag {
+        pointer_over_egui_surface(ctx)
+    } else {
+        egui_wants_pointer_input(ctx)
+    }
 }
 
 /// Refresh [`EguiPointerOverUi`] for this frame. Runs in `First`, so the
 /// snapshot is stable for every `Update` consumer regardless of system order.
-pub fn sync_egui_pointer_over_ui(mut contexts: EguiContexts, mut over: ResMut<EguiPointerOverUi>) {
+pub fn sync_egui_pointer_over_ui(
+    mut contexts: EguiContexts,
+    mut over: ResMut<EguiPointerOverUi>,
+    carrying: Option<Res<CarryingDragToBoard>>,
+) {
+    let carrying = carrying.is_some_and(|c| c.0);
     over.0 = contexts
         .ctx_mut()
         .ok()
-        .map(|ctx| egui_wants_pointer_input(ctx))
+        .map(|ctx| board_pointer_blocked(ctx, carrying))
         .unwrap_or(false);
 }
 

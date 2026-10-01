@@ -773,7 +773,6 @@ pub fn with_gunboat_maxims(
     maxims.sort_unstable();
     let mut attack = FireAttack {
         gunboat_maxims: maxims,
-        modifiers: Vec::new(),
         ..attack.clone()
     };
     attack.factor_row = printed_factor_row(gs, &attack);
@@ -839,7 +838,6 @@ pub fn combine_fire_attacks(
     let mut attack = FireAttack {
         firers,
         gunboat_maxims,
-        modifiers: Vec::new(),
         ..existing.clone()
     };
     attack.factor_row = printed_factor_row(gs, &attack);
@@ -864,12 +862,14 @@ pub fn mandatory_fire_modifiers(state: &GameState, attack: &FireAttack) -> Vec<F
     if direct && attack.firing_player == Player::AngloEgyptian {
         modifiers.push(FireModifier::AngloEgyptianDirectFire);
     }
-    if attack.kind == FireKind::Direct && attack.firing_player == Player::AngloEgyptian {
+    {
         // §5.54/§6.24: brigade integrity (+1, cumulative) when all four
         // battalions of a brigade are stacked in the same hex and all fire
         // at this target hex. Other units may join the attack (§6.14) --
         // another brigade's stack, a Maxim -- without costing the stack its
-        // bonus; it applies once per attack.
+        // bonus; it applies once per attack. Only Anglo-Egyptian battalions
+        // make a brigade, and battalions only fire direct, so the firers
+        // alone decide it.
         let firers: Vec<&UnitPlacement> = attack
             .firers
             .iter()

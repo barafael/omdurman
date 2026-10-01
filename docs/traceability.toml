@@ -163,6 +163,7 @@ witness = "omdurman-rules::src::effects::tests::a_named_gunboat_fires_its_maxims
 approximation = "A named gunboat's Maxims (the \"6×2\" on its counter, 5·6×2·12/18) are a second weapon: they fire once in each fire subphase at a target of their own choosing (or combined with other fire at one hex), independently of the gunboat's artillery/howitzer factor. The rulebook does not say whether the two weapons may split their targets; they may."
 tests = [
     "omdurman-rules::src::effects::tests::a_named_gunboat_fires_its_maxims_twice_beside_its_artillery",
+    "omdurman-rules::src::effects::tests::gunboat_maxims_join_a_combined_attack",
     "omdurman-rules::src::effects::tests::only_named_gunboats_have_maxims_and_they_cannot_sink_gunboats","omdurman-rules::src::effects::tests::old_gunboat_lacks_howitzer", "omdurman-rules::src::effects::tests::old_gunboat_rejected_from_howitzer_subphase"]
 
 [[mapping.impl]]
@@ -2286,6 +2287,10 @@ symbol = "ZaribaThornHedge"
 file = "omdurman-rules/src/effects/state.rs"
 symbol = "has_zariba_thorn_hedge"
 
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/fire.rs"
+symbol = "mandatory_fire_modifiers"
+
 [[mapping]]
 section = "§9.232"
 title = "Trench hexsides"
@@ -2311,6 +2316,10 @@ symbol = "ZaribaTrench"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state.rs"
 symbol = "is_zariba_entrenched"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/fire.rs"
+symbol = "mandatory_fire_modifiers"
 
 [[mapping]]
 section = "§9.233"
@@ -2825,6 +2834,7 @@ witness = "omdurman-rules::src::effects::tests::a_disrupt_result_disrupts_half_r
 approximation = "The rulebook does not say who picks the disrupted units. They are picked at random among the undisrupted units in the hex, by a draw the acting peer rolls into the fire or melee effect with its dice (DisruptionDraw), so every peer disrupts the same units."
 tests = [
     "omdurman-rules::src::effects::tests::a_disrupt_result_disrupts_half_rounded_up_picked_at_random",
+    "omdurman-rules::src::effects::tests::a_disruption_draw_reaches_every_ordered_pick",
     "omdurman-rules::src::effects::tests::numbered_result_eliminates_without_disrupting_survivors",
 ]
 proofs = [

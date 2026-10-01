@@ -23,7 +23,8 @@ use crate::{AppState, HoveredHex, RoomId, camera::RtsCamera, settings};
 // paths keep working.
 
 pub use omdurman_board_ui::panels::{
-    EguiPointerOverUi, MapPointerInputSet, PanelUiSet, sync_egui_pointer_over_ui, ui_wants_pointer,
+    CarryingDragToBoard, EguiPointerOverUi, MapPointerInputSet, PanelUiSet,
+    sync_egui_pointer_over_ui, ui_wants_pointer,
 };
 // (Directly referenced only by the ui_gating tests in non-inline paths.)
 #[cfg_attr(not(test), allow(unused_imports))]
@@ -63,6 +64,7 @@ impl Plugin for UiPlugin {
             .insert_resource(event_viewer::EventViewerState::default())
             .insert_resource(FontsInstalled::default())
             .insert_resource(EguiPointerOverUi::default())
+            .init_resource::<CarryingDragToBoard>()
             .init_resource::<crate::hotkeys::EguiKeyboardFocus>()
             .init_resource::<VictoryModalState>()
             .init_resource::<crate::ScreenLayout>()
@@ -85,6 +87,9 @@ impl Plugin for UiPlugin {
             // After this frame's egui pass has filled the layout ledger and
             // before `First` resets it (see `status::inset_bottom_panes`).
             .add_systems(Last, status::inset_bottom_panes)
+            // After this frame's sidebar may have started (or ended) a
+            // drag-and-drop placement, before next frame's pointer gate.
+            .add_systems(Last, track_drag_carry)
             .add_systems(
                 Update,
                 (
@@ -161,5 +166,25 @@ impl Plugin for UiPlugin {
                         .run_if(in_state(AppState::Lobby)),
                 ),
             );
+    }
+}
+
+/// Keep [`CarryingDragToBoard`] in step with the picker: set while a counter
+/// dragged out of the sidebar is in hand, so its drop reaches the board.
+fn track_drag_carry(
+    picker: Option<Res<crate::picker::PickerState>>,
+    mut carrying: ResMut<CarryingDragToBoard>,
+) {
+    let now = picker.is_some_and(|p| {
+        matches!(
+            *p,
+            crate::picker::PickerState::Placing {
+                drag_drop: true,
+                ..
+            }
+        )
+    });
+    if carrying.0 != now {
+        carrying.0 = now;
     }
 }

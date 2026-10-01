@@ -7494,6 +7494,10 @@ mod tests {
             build_gunboat_maxim_attack(&state, gb, near, FireKind::MaximSecondFire).unwrap();
         fire(&mut state, second).unwrap();
         let howitzer = build_fire_attack_from(&state, at, &[gb], far, FireKind::Howitzer).unwrap();
+        // Its artillery fires the Howitzer line: 5 halved at range 5.
+        let shares = firer_contributions(&state, &howitzer);
+        assert_eq!(shares[0].weapon, WeaponClass::Howitzer);
+        assert_eq!(shares[0].factor, 2);
         apply_effect(
             &mut state,
             &GameEffect::HowitzerFire {
@@ -7508,6 +7512,42 @@ mod tests {
             state.can_fire_gunboat_maxims_at(gb, other, FireKind::MaximSecondFire),
             Err(RuleError::AlreadyFired(_))
         ));
+    }
+
+    /// §2.32/§6.14: a named gunboat's Maxims join other fire at one hex as a
+    /// weapon of their own -- the combined attack keeps every weapon from
+    /// both sides, and its printed factor row sums them (4 + 6).
+    #[rulebook("§2.32")]
+    #[test]
+    fn gunboat_maxims_join_a_combined_attack() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::AngloEgyptian;
+        let gb = make_named_gunboat(&mut state, HexCoord::new(0, 0));
+        let infantry = make_ae_infantry(&mut state, HexCoord::new(1, 0));
+        let target = HexCoord::new(2, 0);
+        make_dervish_tribal(&mut state, target);
+        let rifles = build_fire_attack_from(
+            &state,
+            HexCoord::new(1, 0),
+            &[infantry],
+            target,
+            FireKind::Direct,
+        )
+        .unwrap();
+        let maxims = build_gunboat_maxim_attack(&state, gb, target, FireKind::Direct).unwrap();
+        for (a, b) in [(&rifles, &maxims), (&maxims, &rifles)] {
+            let combined = combine_fire_attacks(&state, a, b).unwrap();
+            assert_eq!(combined.firers, vec![infantry]);
+            assert_eq!(combined.gunboat_maxims, vec![gb]);
+            assert_eq!(combined.factor_row, FireFactorRow::Row06to10);
+            assert_eq!(
+                combined.modifiers,
+                vec![FireModifier::AngloEgyptianDirectFire]
+            );
+        }
+        // The same gunboat's Maxims cannot join twice.
+        assert!(combine_fire_attacks(&state, &maxims, &maxims).is_none());
     }
 
     /// §2.32: only the named gunboats carry Maxims; and Maxims are no
@@ -7843,6 +7883,22 @@ mod tests {
     // §6.22 printed CRT key: "# = That many units in the target hex are
     // eliminated" -- a numbered result removes units and disrupts nobody;
     // only `D` disrupts. (The engine used to also disrupt half the survivors.)
+    /// The draw behind a random `D` is uniform over the orderings: read as a
+    /// mixed-radix number, the 24 draws 0..24 reach every one of the 24
+    /// ways to pick four units in turn -- and every ordered three of them.
+    #[rulebook("§CombatResults")]
+    #[test]
+    fn a_disruption_draw_reaches_every_ordered_pick() {
+        let units: Vec<UnitId> = (0..4).map(|i| UnitId::ALL[i]).collect();
+        for k in [3, 4] {
+            let picks: std::collections::BTreeSet<Vec<UnitId>> = (0..24)
+                .map(|draw| DisruptionDraw(draw).pick(&units, k))
+                .collect();
+            assert_eq!(picks.len(), 24, "{k} of 4");
+            assert!(picks.iter().all(|p| p.len() == k));
+        }
+    }
+
     #[rulebook("§6.22", "§CombatResults")]
     #[test]
     fn numbered_result_eliminates_without_disrupting_survivors() {

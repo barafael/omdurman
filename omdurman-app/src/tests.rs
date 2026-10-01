@@ -1193,6 +1193,73 @@ mod artifact_fixture_tests {
 mod ui_gating_tests {
     use bevy_egui::egui;
 
+    /// Drag-and-drop placement: a counter dragged out of a panel onto the
+    /// map. egui "uses" the pointer for the whole drag -- the press landed
+    /// on its widget -- so the plain gate stays shut over the map and the
+    /// drop's release never reached the board (found in a click-through
+    /// play-test: the hint said "drag", only click-then-hex worked). While
+    /// the drag is carried, only an egui surface under the pointer blocks.
+    #[test]
+    fn a_counter_dragged_out_of_a_panel_reaches_the_board() {
+        use omdurman_board_ui::panels::{board_pointer_blocked, register_panel_blocker};
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+        let counter = egui::pos2(40.0, 40.0);
+        let over_map = egui::pos2(600.0, 300.0);
+        let over_panel = egui::pos2(50.0, 300.0);
+        let pass = |ctx: &egui::Context, t: f64, events: Vec<egui::Event>| {
+            ctx.begin_pass(egui::RawInput {
+                screen_rect: Some(screen),
+                events,
+                time: Some(t),
+                ..Default::default()
+            });
+            let mut ui = egui::Ui::new(
+                ctx.clone(),
+                egui::Id::new("test_panel_ui"),
+                egui::UiBuilder::new()
+                    .layer_id(egui::LayerId::background())
+                    .max_rect(screen),
+            );
+            register_panel_blocker(&mut ui, "test_panel", screen);
+            egui::Panel::left("test_panel").show(&mut ui, |ui| {
+                // A sidebar counter: click to pick up, drag to carry.
+                ui.allocate_exact_size(egui::vec2(48.0, 48.0), egui::Sense::click_and_drag());
+            });
+            let mut out = ctx.end_pass();
+            out.textures_delta.clear();
+        };
+        let button = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        pass(&ctx, 0.0, vec![egui::Event::PointerMoved(counter)]);
+        pass(&ctx, 0.1, vec![button(counter, true)]);
+        for (i, x) in [100.0, 300.0, 600.0].into_iter().enumerate() {
+            let pos = egui::pos2(x, over_map.y);
+            pass(
+                &ctx,
+                0.2 + i as f64 * 0.1,
+                vec![egui::Event::PointerMoved(pos)],
+            );
+        }
+        // The button is still down over the map: egui is using the pointer.
+        assert!(crate::ui_plugin::egui_wants_pointer_input(&ctx));
+        assert!(
+            board_pointer_blocked(&ctx, false),
+            "the plain gate stays shut"
+        );
+        assert!(
+            !board_pointer_blocked(&ctx, true),
+            "a carried drag reaches the board"
+        );
+        // Carried back over the panel, the panel still blocks the board.
+        pass(&ctx, 0.6, vec![egui::Event::PointerMoved(over_panel)]);
+        assert!(board_pointer_blocked(&ctx, true));
+    }
+
     /// The panel-unification contract: a click-sensed full-rect blocker
     /// (`Ui::interact`, see `panels::register_panel_blocker`) makes
     /// `egui_wants_pointer_input` true over *blank* panel areas -- the one

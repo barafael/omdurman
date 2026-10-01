@@ -10,6 +10,16 @@ mkdir -p "$D"
 
 win() { xdotool search --name '^omdurman$' 2>/dev/null | head -1; }
 need_win() { W=$(win); [ -n "$W" ] || { echo "no omdurman window (run: launch)" >&2; exit 1; }; }
+# Input goes to whatever window is on top: never send any while another
+# window (the user's own work, a game...) is active.
+need_input() {
+  need_win
+  local active; active=$(xdotool getactivewindow 2>/dev/null)
+  if [ "$active" != "$W" ]; then
+    echo "refusing input: active window is '$(xdotool getwindowname "$active" 2>/dev/null)', not omdurman" >&2
+    exit 2
+  fi
+}
 # Window pixel of hex (q,r) from the probe (window pixels == xdotool pixels).
 hexpos() { awk -v q="$1" -v r="$2" '$1==q && $2==r {print $3, $4}' "$D/probe"; }
 
@@ -43,29 +53,29 @@ shot)
   ;;
 click)
   # click <x> <y> [button]  -- window pixels (full resolution).
-  need_win; xdotool mousemove --window "$W" "$1" "$2" sleep 0.15 click "${3:-1}"
+  need_input; xdotool mousemove --window "$W" "$1" "$2" sleep 0.15 click "${3:-1}"
   ;;
 hex)
   # hex <q> <r> [button]  -- click a hex centre (selects / targets / places).
-  need_win; read -r x y < <(hexpos "$1" "$2")
+  need_input; read -r x y < <(hexpos "$1" "$2")
   [ -n "${x:-}" ] || { echo "hex $1,$2 not on screen" >&2; exit 1; }
   xdotool mousemove --window "$W" "$x" "$y" sleep 0.15 click "${3:-1}"
   ;;
 dbl)
   # dbl <q> <r>  -- double-click: select the whole tile (combined fire/melee).
-  need_win; read -r x y < <(hexpos "$1" "$2")
+  need_input; read -r x y < <(hexpos "$1" "$2")
   [ -n "${x:-}" ] || { echo "hex $1,$2 not on screen" >&2; exit 1; }
   xdotool mousemove --window "$W" "$x" "$y" click --repeat 2 --delay 120 1
   ;;
 hover)
   # hover <q> <r>  -- move the pointer over a hex (tooltips, LOS overlay).
-  need_win; read -r x y < <(hexpos "$1" "$2")
+  need_input; read -r x y < <(hexpos "$1" "$2")
   [ -n "${x:-}" ] || { echo "hex $1,$2 not on screen" >&2; exit 1; }
   xdotool mousemove --window "$W" "$x" "$y"
   ;;
 zoom)
   # zoom <q> <r> <notches>  -- wheel-zoom the camera in (+) or out (-) at a hex.
-  need_win; read -r x y < <(hexpos "$1" "$2")
+  need_input; read -r x y < <(hexpos "$1" "$2")
   [ -n "${x:-}" ] || { echo "hex $1,$2 not on screen" >&2; exit 1; }
   n=$3; b=4; [ "$n" -lt 0 ] && { b=5; n=$((-n)); }
   xdotool mousemove --window "$W" "$x" "$y"
@@ -74,7 +84,7 @@ zoom)
   ;;
 key)
   # key <keysym>  -- e.g. e (End phase), Return (dismiss telegram), Escape.
-  need_win; xdotool key --window "$W" "$1"
+  need_input; xdotool key --window "$W" "$1"
   ;;
 state)
   # state  -- turn/phase line, then unit counts per side and disrupted.
@@ -97,7 +107,7 @@ wait)
 ff)
   # ff <turn> <Dervish|AngloEgyptian>  -- fast-forward: End phase (E) on that
   # side's phases, wait out the AI's, until <turn> <side> Movement.
-  need_win; target="turn=GameTurnIndex($1) phase=Movement active=$2"
+  need_input; target="turn=GameTurnIndex($1) phase=Movement active=$2"
   last=""; since=$(date +%s)
   while true; do
     s=$(head -1 "$D/probe.state")
@@ -105,6 +115,7 @@ ff)
     case "$s" in *"$target"*) exit 0;; esac
     if echo "$s" | grep -q "active=$2"; then
       [ $(( $(date +%s) - since )) -gt 25 ] && { echo "stuck: take a shot"; exit 1; }
+      [ "$(xdotool getactivewindow 2>/dev/null)" = "$W" ] || { echo "refusing input: game window no longer active" >&2; exit 2; }
       xdotool key --window "$W" Return; sleep 0.5; xdotool key --window "$W" e; sleep 4
     else
       [ $(( $(date +%s) - since )) -gt 900 ] && { echo "AI stuck"; exit 1; }

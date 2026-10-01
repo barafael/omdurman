@@ -128,6 +128,6 @@ pub fn reinforcement_hint(gs: &GameState, picker: &UnitPicker) -> Option<String>
         return None;
     }
     Some(format!(
-        "\u{2022} Reinforcements: {n} counter(s) may enter this turn (§9.112/§9.113) — drag them onto the green entrance hexes"
+        "\u{2022} Reinforcements: {n} counter(s) may enter this turn (§9.112/§9.113) — drag them onto the green entrance hexes (or click one, then a hex)"
     ))
 }

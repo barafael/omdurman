@@ -146,6 +146,37 @@ fn escape_regex(s: &str) -> String {
     out
 }
 
+/// Rewrite a unified diff's file headers to git's default `a/`/`b/` prefixes
+/// (the only ones cargo-mutants understands), whatever prefixes -- mnemonic
+/// (`c/`, `i/`, `w/`, `o/`), none -- it was written with.
+fn normalize_diff_prefixes(diff: &str) -> String {
+    let strip = |path: &str| -> String {
+        match path.split_once('/') {
+            Some((p, rest)) if p.len() == 1 => rest.to_string(),
+            _ => path.to_string(),
+        }
+    };
+    let mut out = String::with_capacity(diff.len());
+    for line in diff.lines() {
+        if let Some(path) = line.strip_prefix("--- ").filter(|p| *p != "/dev/null") {
+            out.push_str(&format!("--- a/{}", strip(path)));
+        } else if let Some(path) = line.strip_prefix("+++ ").filter(|p| *p != "/dev/null") {
+            out.push_str(&format!("+++ b/{}", strip(path)));
+        } else if let Some(rest) = line.strip_prefix("diff --git ") {
+            match rest.split_once(' ') {
+                Some((old, new)) => {
+                    out.push_str(&format!("diff --git a/{} b/{}", strip(old), strip(new)))
+                }
+                None => out.push_str(line),
+            }
+        } else {
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+    out
+}
+
 fn cargo_mutants(root: &Path) -> Command {
     let mut cmd = Command::new("cargo");
     cmd.current_dir(root).arg("mutants").args(["-p", PACKAGE]);
@@ -154,13 +185,33 @@ fn cargo_mutants(root: &Path) -> Command {
 
 fn main() -> ExitCode {
     let root = workspace_root();
-    let opts = match parse_args(&root) {
+    let mut opts = match parse_args(&root) {
         Ok(o) => o,
         Err(e) => {
             eprintln!("mutation-gate: {e}");
             return ExitCode::from(2);
         }
     };
+    // cargo-mutants reads only `a/`/`b/` path prefixes: a diff written under
+    // `diff.mnemonicPrefix` (`c/`, `w/`, `i/` ...) or `--no-prefix` matched no
+    // file and the gate silently found nothing. Hand it a normalized copy.
+    if let Some(diff) = &opts.in_diff {
+        let text = match std::fs::read_to_string(diff) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("mutation-gate: {}: {e}", diff.display());
+                return ExitCode::from(2);
+            }
+        };
+        let normalized = opts.output.join("in.diff");
+        let written = std::fs::create_dir_all(&opts.output)
+            .and_then(|()| std::fs::write(&normalized, normalize_diff_prefixes(&text)));
+        if let Err(e) = written {
+            eprintln!("mutation-gate: {}: {e}", normalized.display());
+            return ExitCode::from(2);
+        }
+        opts.in_diff = Some(normalized);
+    }
     let table = match read_traceability(&traceability_path()) {
         Ok(t) => t,
         Err(e) => {
@@ -411,5 +462,25 @@ fn main() -> ExitCode {
             println!("  {f}");
         }
         ExitCode::FAILURE
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_diff_prefixes;
+
+    #[test]
+    fn mnemonic_prefixes_become_a_and_b() {
+        let diff = "diff --git c/src/x.rs w/src/x.rs\n--- c/src/x.rs\n+++ w/src/x.rs\n@@ -1 +1 @@\n-old\n+new\n";
+        assert_eq!(
+            normalize_diff_prefixes(diff),
+            "diff --git a/src/x.rs b/src/x.rs\n--- a/src/x.rs\n+++ b/src/x.rs\n@@ -1 +1 @@\n-old\n+new\n"
+        );
+    }
+
+    #[test]
+    fn default_prefixes_and_dev_null_are_kept() {
+        let diff = "--- /dev/null\n+++ b/src/new.rs\n";
+        assert_eq!(normalize_diff_prefixes(diff), diff);
     }
 }
