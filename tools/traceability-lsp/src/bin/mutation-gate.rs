@@ -180,6 +180,11 @@ fn normalize_diff_prefixes(diff: &str) -> String {
 fn cargo_mutants(root: &Path) -> Command {
     let mut cmd = Command::new("cargo");
     cmd.current_dir(root).arg("mutants").args(["-p", PACKAGE]);
+    // Each scratch copy must build into its own target dir: an inherited
+    // CARGO_TARGET_DIR makes `--jobs` copies overwrite each other's test
+    // binaries, and a mutant is then judged by another copy's (unmutated)
+    // build -- a false "missed".
+    cmd.env_remove("CARGO_TARGET_DIR");
     cmd
 }
 
