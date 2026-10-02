@@ -1178,14 +1178,14 @@ impl SelectedClick<'_> {
         placed_units: &Query<(Entity, &PlacedUnit)>,
         source: Entity,
         game_state: Option<&crate::GameStateResource>,
-    ) -> Option<GameEvent> {
+    ) -> Result<Option<GameEvent>, String> {
         if self.movement_path.legs.is_empty() {
-            return None;
+            return Ok(None);
         }
         let Ok((_, placed)) = placed_units.get(source) else {
             *self.state = PickerState::Idle;
             self.movement_path.reset();
-            return None;
+            return Ok(None);
         };
 
         // The final destination is the last leg's `to`.
@@ -1200,7 +1200,7 @@ impl SelectedClick<'_> {
         // reject on echo (animate then snap back).
         if let (Some(uid), Some(gs)) = (placed.unit_id, game_state)
             && let Some(mover) = gs.0.find_unit(uid)
-            && gs.0.check_stacking(mover, final_dest).is_err()
+            && let Err(error) = gs.0.check_stacking(mover, final_dest)
         {
             warn!(
                 section_name = %placed.section_name,
@@ -1208,7 +1208,7 @@ impl SelectedClick<'_> {
                 final_dest.r = final_dest.r,
                 "commit rejected: final destination breaks the §5.51 stacking cap",
             );
-            return None;
+            return Err(format!("Cannot end a move on {final_dest}: {error}"));
         }
 
         // No local animation: the counter glides along this route once the
@@ -1225,7 +1225,7 @@ impl SelectedClick<'_> {
         self.movement_path.reset();
         *self.state = PickerState::Idle;
 
-        Some(GameEvent::MoveUnit {
+        Ok(Some(GameEvent::MoveUnit {
             sprite: omdurman_types::SpriteRef {
                 section_name: placed.section_name,
                 col: placed.col,
@@ -1235,7 +1235,7 @@ impl SelectedClick<'_> {
             to_r: final_dest.r,
             cost: MovementPoints::new(total_cost),
             path,
-        })
+        }))
     }
 }
 
@@ -1550,6 +1550,7 @@ pub(crate) fn confirm_movement_path(
     mut picker_ctx: PickerContext,
     game_state: Option<Res<crate::GameStateResource>>,
     peers: crate::peers::Peers,
+    mut dispatches: Option<ResMut<crate::dispatch::Dispatches>>,
 ) {
     if !commanded(&mut commands_in, PickerCommand::ConfirmMove) {
         return;
@@ -1578,12 +1579,20 @@ pub(crate) fn confirm_movement_path(
                 forced_stop: false,
                 movement_path: &mut picker_ctx.movement_path,
             };
-            if let Some(event) =
-                sel.commit_path(&picker_ctx.placed_units, source, game_state.as_deref())
-            {
-                picker_ctx
-                    .action_writer
-                    .write(events::LocalAction { event });
+            match sel.commit_path(&picker_ctx.placed_units, source, game_state.as_deref()) {
+                Ok(Some(event)) => {
+                    picker_ctx
+                        .action_writer
+                        .write(events::LocalAction { event });
+                }
+                Ok(None) => {}
+                // A refused commit keeps the path: say why, so the player
+                // can route on, undo a leg, or cancel.
+                Err(reason) => {
+                    if let Some(dispatches) = dispatches.as_deref_mut() {
+                        dispatches.push(crate::submit::REFUSED_HEADER, reason);
+                    }
+                }
             }
         }
         ActiveSelection::Stack(sel) => {
