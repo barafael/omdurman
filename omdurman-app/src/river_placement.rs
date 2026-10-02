@@ -17,7 +17,7 @@ use omdurman_net::GameEvent;
 /// Setup, only while a placement is armed, and only for a seat that
 /// `may_act(Dervish)`.) The engine decides which hexes are legal (§10.11,
 /// §10.21: Nile hexes south of the Khor Shambat's mouth, the chain a line of
-/// adjacent hexes); a refused mine posts its slip.
+/// adjacent hexes); a refused mine or chain hex posts its slip.
 pub(crate) fn handle_optional_rule_click(
     mut clicks: bevy::ecs::message::MessageReader<RiverPlacementClick>,
     game_state: Option<Res<GameStateResource>>,
@@ -42,7 +42,12 @@ pub(crate) fn handle_optional_rule_click(
     if placement.placing_chain {
         let mut hexes = placement.chain_hexes.clone();
         hexes.push(hex);
-        if gs.0.can_place_chain(&hexes).is_err() {
+        // A refused hex says why (not adjacent to the line, not Nile, north
+        // of the khor's mouth), like a refused mine.
+        if let Err(error) = gs.0.can_place_chain(&hexes) {
+            if let Some(dispatches) = submit.dispatches.as_deref_mut() {
+                dispatches.push(crate::submit::REFUSED_HEADER, error.to_string());
+            }
             return;
         }
         placement.chain_hexes = hexes;
