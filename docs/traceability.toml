@@ -140,6 +140,7 @@ clause = "Jehadia and Danagla units fire on the \"rifles\" line as does the Isa 
 witness = "omdurman-rules::src::unit_profiles::dervish_weapon_class_follows_the_rifles_line"
 tests = [
     "omdurman-rules::src::unit_profiles::dervish_weapon_class_follows_the_rifles_line",
+    "omdurman-rules::src::effects::tests::dervish_mounted_tribes_are_cavalry_and_camels",
 ]
 
 [[mapping.impl]]

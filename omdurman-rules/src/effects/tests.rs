@@ -11542,7 +11542,7 @@ mod tests {
     // camels and the Baggara horses -- mounted, so §7.5's retreat applies to
     // them and their attacks are not "infantry melee attacks". The tribe
     // (§5.52 stacking) is unchanged.
-    #[rulebook("§7.5")]
+    #[rulebook("§2.31", "§7.5")]
     #[test]
     fn dervish_mounted_tribes_are_cavalry_and_camels() {
         let kind_tribe = |id: UnitId| {
