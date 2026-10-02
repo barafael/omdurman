@@ -3,12 +3,19 @@
 # through the app's own hex probe. Run from the repo root:
 #   .claude/skills/run-omdurman/driver.sh <command> [args]
 # State lives in $OMDURMAN_PLAY (default /tmp/omdurman-play): app.log, the
-# probe files, and screenshots.
+# probe files, screenshots, and the instance's window id. Two instances run
+# side by side with distinct OMDURMAN_PLAY dirs and OMDURMAN_PLAYER_SLOTs,
+# online (OMDURMAN_ROOM=<room>) instead of offline.
 set -u
 D=${OMDURMAN_PLAY:-/tmp/omdurman-play}
 mkdir -p "$D"
 
-win() { xdotool search --name '^omdurman$' 2>/dev/null | head -1; }
+# This instance's window: the one `launch` recorded, while it still exists.
+win() {
+  local w; w=$(cat "$D/win" 2>/dev/null) || return 0
+  [ "$(xdotool getwindowname "$w" 2>/dev/null)" = omdurman ] && echo "$w"
+}
+all_wins() { xdotool search --name '^omdurman$' 2>/dev/null | sort; }
 need_win() { W=$(win); [ -n "$W" ] || { echo "no omdurman window (run: launch)" >&2; exit 1; }; }
 # Input goes to whatever window is on top: never send any while another
 # window (the user's own work, a game...) is active.
@@ -20,6 +27,56 @@ need_input() {
     exit 2
   fi
 }
+# Pointer: xdotool warps it where the compositor allows (KDE). COSMIC's (and
+# GNOME's) XWayland ignores warps, so fall back to ydotool (uinput, needs
+# ydotoold on $YDOTOOL_SOCKET): relative steps through pointer acceleration,
+# corrected in a closed loop against the X pointer position.
+export YDOTOOL_SOCKET=${YDOTOOL_SOCKET:-/run/user/$(id -u)/.ydotool_socket}
+mouse() { xdotool getmouselocation | sed 's/x:\([0-9-]*\) y:\([0-9-]*\).*/\1 \2/'; }
+# moveto <x> <y>  -- window pixels; exits 3 if the pointer cannot get there.
+moveto() {
+  local ox oy tx ty x y dx dy i
+  eval "$(xdotool getwindowgeometry --shell "$W" | grep -E '^[XY]=')"; ox=$X; oy=$Y
+  tx=$((ox + $1)); ty=$((oy + $2))
+  xdotool mousemove "$tx" "$ty"; sleep 0.05
+  read -r x y < <(mouse); [ "$x" = "$tx" ] && [ "$y" = "$ty" ] && return 0
+  [ -S "$YDOTOOL_SOCKET" ] || { echo "pointer warp ignored by the compositor; start ydotoold (see SKILL.md)" >&2; exit 3; }
+  for i in $(seq 1 80); do
+    read -r x y < <(mouse)
+    dx=$((tx - x)); dy=$((ty - y))
+    [ "$dx" = 0 ] && [ "$dy" = 0 ] && return 0
+    # A third of the error (acceleration amplifies a step ~2-3x), at least
+    # 1; then wait for the X pointer position to catch up -- it lags the
+    # uinput motion by a frame or more, and steering on a stale reading
+    # overshoots.
+    step() { local e=$1; [ "${1#-}" -gt 2 ] && e=$((e / 3)); echo "$e"; }
+    ydotool mousemove -x "$(step $dx)" -y "$(step $dy)" >/dev/null
+    local j nx ny
+    for j in 1 2 3 4 5 6 7 8 9 10; do
+      sleep 0.03; read -r nx ny < <(mouse)
+      [ "$nx $ny" != "$x $y" ] && break
+    done
+  done
+  # The X pointer position only updates over X windows: a native Wayland
+  # window (a terminal, a notification) covering the target freezes it.
+  echo "pointer stuck at $x,$y, wanted $tx,$ty: is a non-game window covering that part of the game?" >&2; exit 3
+}
+# click with button 1|2|3 (left|middle|right) at the current pointer.
+press() {
+  if [ -S "$YDOTOOL_SOCKET" ]; then
+    case ${1:-1} in 1) ydotool click 0xC0;; 2) ydotool click 0xC2;; 3) ydotool click 0xC1;; esac >/dev/null
+  else xdotool click "${1:-1}"; fi
+}
+# wheel <+n|-n>  -- n notches up (zoom in) or down.
+wheel() {
+  local n=$1 b=4 i; [ "$n" -lt 0 ] && { b=5; n=$((-n)); }
+  for i in $(seq 1 "$n"); do
+    if [ -S "$YDOTOOL_SOCKET" ]; then ydotool mousemove -w -x 0 -y $([ $b = 4 ] && echo 1 || echo -1) >/dev/null
+    else xdotool click $b; fi
+    sleep 0.25
+  done
+}
+
 # Window pixel of hex (q,r) from the probe (window pixels == xdotool pixels).
 hexpos() { awk -v q="$1" -v r="$2" '$1==q && $2==r {print $3, $4}' "$D/probe"; }
 
@@ -29,12 +86,23 @@ launch)
   # launch [Lobby|Menu]  -- offline self-host, XWayland, probe armed.
   mode=${1:-Lobby}
   [ -n "$(win)" ] && { echo "already running"; exit 0; }
-  rm -f "$D/probe" "$D/probe.state" "$D/probe.png"
-  env -u WAYLAND_DISPLAY OMDURMAN_OFFLINE=1 OMDURMAN_START_MODE="$mode" \
+  rm -f "$D/probe" "$D/probe.state" "$D/probe.png" "$D/win"
+  before=$(all_wins)
+  # Offline self-host, unless OMDURMAN_ROOM names an online room.
+  net=(OMDURMAN_OFFLINE=1); room=()
+  [ -n "${OMDURMAN_ROOM:-}" ] && { net=(); room=(-- "$OMDURMAN_ROOM"); }
+  env -u WAYLAND_DISPLAY "${net[@]}" OMDURMAN_START_MODE="$mode" \
     OMDURMAN_HEX_PROBE="$D/probe" OMDURMAN_PLAYER_SLOT=${OMDURMAN_PLAYER_SLOT:-7} \
-    RUST_LOG=${RUST_LOG:-warn,omdurman=info} \
-    setsid nohup cargo run -q -p omdurman-app >"$D/app.log" 2>&1 < /dev/null &
-  for _ in $(seq 1 240); do [ -n "$(win)" ] && break; sleep 1; done
+    RUST_LOG=${RUST_LOG:-warn,omdurman=info,rodio=off,cpal=off} \
+    setsid -w nohup cargo run -q -p omdurman-app "${room[@]}" >"$D/app.log" 2>&1 < /dev/null &
+  pid=$!
+  # A cold build takes many minutes: wait as long as cargo (then the game)
+  # is alive, not a fixed time.
+  until new=$(comm -13 <(echo "$before") <(all_wins) | head -1); [ -n "$new" ]; do
+    kill -0 "$pid" 2>/dev/null || { echo "cargo run exited; see $D/app.log" >&2; tail -5 "$D/app.log" >&2; exit 1; }
+    sleep 1
+  done
+  echo "$new" > "$D/win"
   need_win
   sleep 3
   echo "window $W: $(xdotool getwindowgeometry "$W" | grep Geometry)"
@@ -53,34 +121,48 @@ shot)
   ;;
 click)
   # click <x> <y> [button]  -- window pixels (full resolution).
-  need_input; xdotool mousemove --window "$W" "$1" "$2" sleep 0.15 click "${3:-1}"
+  need_input; moveto "$1" "$2"; sleep 0.15; press "${3:-1}"
   ;;
 hex)
   # hex <q> <r> [button]  -- click a hex centre (selects / targets / places).
   need_input; read -r x y < <(hexpos "$1" "$2")
   [ -n "${x:-}" ] || { echo "hex $1,$2 not on screen" >&2; exit 1; }
-  xdotool mousemove --window "$W" "$x" "$y" sleep 0.15 click "${3:-1}"
+  moveto "$x" "$y"; sleep 0.15; press "${3:-1}"
   ;;
 dbl)
   # dbl <q> <r>  -- double-click: select the whole tile (combined fire/melee).
   need_input; read -r x y < <(hexpos "$1" "$2")
   [ -n "${x:-}" ] || { echo "hex $1,$2 not on screen" >&2; exit 1; }
-  xdotool mousemove --window "$W" "$x" "$y" click --repeat 2 --delay 120 1
+  moveto "$x" "$y"; sleep 0.15; press 1; sleep 0.12; press 1
+  ;;
+drag)
+  # drag <x1> <y1> <q|x2> <r|y2> [px]  -- press at window pixel (x1,y1), move,
+  # release over hex (q,r), or over window pixel (x2,y2) with "px".
+  need_input
+  if [ "${5:-}" = px ]; then x=$3; y=$4; else read -r x y < <(hexpos "$3" "$4"); fi
+  [ -n "${x:-}" ] || { echo "hex $3,$4 not on screen" >&2; exit 1; }
+  moveto "$1" "$2"; sleep 0.15
+  if [ -S "$YDOTOOL_SOCKET" ]; then ydotool click 0x40 >/dev/null; else xdotool mousedown 1; fi
+  sleep 0.2; moveto $(( ($1 + x) / 2 )) $(( ($2 + y) / 2 )); sleep 0.1; moveto "$x" "$y"; sleep 0.2
+  if [ -S "$YDOTOOL_SOCKET" ]; then ydotool click 0x80 >/dev/null; else xdotool mouseup 1; fi
   ;;
 hover)
   # hover <q> <r>  -- move the pointer over a hex (tooltips, LOS overlay).
   need_input; read -r x y < <(hexpos "$1" "$2")
   [ -n "${x:-}" ] || { echo "hex $1,$2 not on screen" >&2; exit 1; }
-  xdotool mousemove --window "$W" "$x" "$y"
+  moveto "$x" "$y"
   ;;
 zoom)
   # zoom <q> <r> <notches>  -- wheel-zoom the camera in (+) or out (-) at a hex.
   need_input; read -r x y < <(hexpos "$1" "$2")
   [ -n "${x:-}" ] || { echo "hex $1,$2 not on screen" >&2; exit 1; }
-  n=$3; b=4; [ "$n" -lt 0 ] && { b=5; n=$((-n)); }
-  xdotool mousemove --window "$W" "$x" "$y"
-  for _ in $(seq 1 "$n"); do xdotool click $b; sleep 0.25; done
+  moveto "$x" "$y"; wheel "$3"
   sleep 1.5   # the probe refreshes twice a second
+  ;;
+scroll)
+  # scroll <x> <y> <notches>  -- mouse wheel at a window pixel (the sidebar,
+  # a panel): positive scrolls up, negative down.
+  need_input; moveto "$1" "$2"; wheel "$3"; sleep 0.5
   ;;
 key)
   # key <keysym>  -- e.g. e (End phase), Return (dismiss telegram), Escape.
@@ -128,7 +210,11 @@ log)
   sed 's/\x1b\[[0-9;]*m//g' "$D/app.log" | grep -E "${1:-.}"
   ;;
 stop)
-  pgrep -x omdurman | xargs -r kill; sleep 1; pgrep -x omdurman >/dev/null && echo "still running" || echo stopped
+  # This instance only: the process owning its window.
+  W=$(win); [ -n "$W" ] || { echo stopped; exit 0; }
+  pid=$(xdotool getwindowpid "$W" 2>/dev/null)
+  [ -n "$pid" ] && kill "$pid"; sleep 1
+  [ -n "$(win)" ] && echo "still running" || echo stopped
   ;;
 *)
   sed -n '2,8p' "$0"; grep -E '^  [a-z]+\)$' "$0" | tr -d ' )'
