@@ -105,7 +105,10 @@ pub fn draw_actions_section(
     // Opens/hides the allocation tray (the tray's own button resolves the
     // attacks). Only meaningful during a fire sub-phase (the firing-player
     // indicator above is exactly that gate).
-    if let Some(allocation) = fire_allocation {
+    // Once this sub-phase's fire is resolved the tray has nothing left to
+    // show (it stays closed until the sub-phase changes).
+    let fire_committed = fire_allocation.as_ref().is_some_and(|a| a.committed);
+    if let Some(allocation) = fire_allocation.filter(|a| !a.committed) {
         let open = allocation.panel_open;
         let pending = allocation.attacks.len();
         let (label, fill) = if open {
@@ -129,7 +132,14 @@ pub fn draw_actions_section(
         ui.add_space(4.0);
     }
 
-    let hints = collect_hints(&state.0, state.0.phase, picker, placed_units, fire_targets);
+    let hints = collect_hints(
+        &state.0,
+        state.0.phase,
+        picker,
+        placed_units,
+        fire_targets,
+        fire_committed,
+    );
     if hints.is_empty() {
         ui.colored_label(
             crate::ui::palette::RAIL_DIM,
@@ -137,7 +147,10 @@ pub fn draw_actions_section(
         );
     } else {
         for hint in hints {
-            ui.horizontal(|ui| {
+            // Wrapped: a long hint ("Allocate defensive fire — Maxim /
+            // Howitzer (12 target hex(es))") must not widen the rail past
+            // its visible width, which clipped every line below it.
+            ui.horizontal_wrapped(|ui| {
                 ui.label(
                     egui::RichText::new("• ")
                         .color(crate::ui::palette::RAIL_DIM)
@@ -362,13 +375,16 @@ pub fn draw_actions_section(
 /// context (counts, selected-unit relevance) as can be cheaply derived. The
 /// list is intentionally short -- it points the player at *categories* of
 /// action (move, fire, melee, end-phase) rather than enumerating every legal
-/// target hex (the on-map rings do that).
+/// target hex (the on-map rings do that). `fire_committed`: this fire
+/// sub-phase's allocations are already resolved (§6.41), so nothing more may
+/// be allocated until the next sub-phase.
 fn collect_hints(
     gs: &omdurman_rules::effects::GameState,
     phase: Phase,
     picker: &PickerState,
     placed_units: &bevy::ecs::system::Query<(bevy::prelude::Entity, &PlacedUnit)>,
     fire_targets: &mut crate::fire::FireTargetCache,
+    fire_committed: bool,
 ) -> Vec<ActionHint> {
     let mut out: Vec<ActionHint> = Vec::new();
     let selected = selected_unit_id(picker, placed_units);
@@ -435,19 +451,24 @@ fn collect_hints(
                 omdurman_rules::FireSubPhase::DirectFire => "Direct",
                 omdurman_rules::FireSubPhase::MaximSecondAndHowitzer => "Maxim / Howitzer",
             };
-            out.push(ActionHint {
-                label: format!("Allocate fire — {kind_word}"),
-                detail: fire_target_count(gs, picker, placed_units, fire_targets),
-                paragraph: match sub {
-                    omdurman_rules::FireSubPhase::DirectFire => "6.41".into(),
-                    omdurman_rules::FireSubPhase::MaximSecondAndHowitzer => "6.42".into(),
-                },
-            });
-            out.push(ActionHint {
-                label: "Review & resolve allocations".into(),
-                detail: Some("'Resolve' in the allocation tray".into()),
-                paragraph: "6.41".into(),
-            });
+            let paragraph = match sub {
+                omdurman_rules::FireSubPhase::DirectFire => "6.41",
+                omdurman_rules::FireSubPhase::MaximSecondAndHowitzer => "6.42",
+            };
+            if fire_committed {
+                out.push(fire_resolved_hint(kind_word, paragraph));
+            } else {
+                out.push(ActionHint {
+                    label: format!("Allocate fire — {kind_word}"),
+                    detail: fire_target_count(gs, picker, placed_units, fire_targets),
+                    paragraph: paragraph.into(),
+                });
+                out.push(ActionHint {
+                    label: "Review & resolve allocations".into(),
+                    detail: Some("'Resolve' in the allocation tray".into()),
+                    paragraph: "6.41".into(),
+                });
+            }
             out.push(ActionHint {
                 label: "Advance after fire".into(),
                 detail: Some("into vacated enemy hex (§6.82)".into()),
@@ -464,16 +485,20 @@ fn collect_hints(
                 omdurman_rules::FireSubPhase::DirectFire => "Direct",
                 omdurman_rules::FireSubPhase::MaximSecondAndHowitzer => "Maxim / Howitzer",
             };
-            out.push(ActionHint {
-                label: format!("Allocate defensive fire — {kind_word}"),
-                detail: fire_target_count(gs, picker, placed_units, fire_targets),
-                paragraph: "6.41".into(),
-            });
-            out.push(ActionHint {
-                label: "Review & resolve allocations".into(),
-                detail: Some("'Resolve' in the allocation tray".into()),
-                paragraph: "6.41".into(),
-            });
+            if fire_committed {
+                out.push(fire_resolved_hint(kind_word, "6.41"));
+            } else {
+                out.push(ActionHint {
+                    label: format!("Allocate defensive fire — {kind_word}"),
+                    detail: fire_target_count(gs, picker, placed_units, fire_targets),
+                    paragraph: "6.41".into(),
+                });
+                out.push(ActionHint {
+                    label: "Review & resolve allocations".into(),
+                    detail: Some("'Resolve' in the allocation tray".into()),
+                    paragraph: "6.41".into(),
+                });
+            }
             out.push(ActionHint {
                 label: "End phase".into(),
                 detail: None,
@@ -543,6 +568,22 @@ fn selected_movement_detail(
         omdurman_rules::UnitMovement::Immobile => Some("immobile".into()),
     }
 }
+
+/// The fire hint once this sub-phase's allocations are resolved: no more
+/// allocating (all fire of a sub-phase is allocated, then resolved, §6.41),
+/// only ending the phase.
+fn fire_resolved_hint(kind_word: &str, paragraph: &str) -> ActionHint {
+    ActionHint {
+        label: format!("Fire resolved — {kind_word}"),
+        detail: Some(FIRE_ALREADY_RESOLVED_HINT.into()),
+        paragraph: paragraph.into(),
+    }
+}
+
+/// What a player who tries to allocate after the resolution is told -- in
+/// the actions rail and as the refusal of such a click.
+pub(crate) const FIRE_ALREADY_RESOLVED_HINT: &str =
+    "this sub-phase's fire is already resolved -- End phase (E) to go on";
 
 /// Count enemy-occupied hexes the selected fire group may legally fire at.
 /// Used as the "(N targets)" hint next to the Fire action. Resolves the same
@@ -623,12 +664,14 @@ fn weapon_label(unit: &omdurman_rules::UnitPlacement) -> String {
     }
 }
 
-/// The selected unit's factor line, e.g. "Fire 3 · Melee — · Move 4 MP ·
-/// Rifle". A missing factor reads as an em dash rather than `None`.
+/// The selected unit's factor lines, e.g. "Fire 3 · Melee — · Move 4 MP",
+/// then the weapon ("Rifle") on a line of its own: a named gunboat's "Move
+/// 12 up / 18 down MP" plus "Artillery + Maxims 6×2" is wider than the rail.
+/// A missing factor reads as an em dash rather than `None`.
 fn unit_stats_line(fire: Option<u16>, melee: Option<u16>, movement: &str, weapon: &str) -> String {
     let factor = |v: Option<u16>| v.map_or_else(|| "\u{2014}".to_string(), |v| v.to_string());
     format!(
-        "Fire {} \u{b7} Melee {} \u{b7} Move {movement} \u{b7} {weapon}",
+        "Fire {} \u{b7} Melee {} \u{b7} Move {movement}\n{weapon}",
         factor(fire),
         factor(melee),
     )
@@ -695,10 +738,7 @@ mod tests {
     #[test]
     fn stats_line_has_no_debug_formatting() {
         let line = unit_stats_line(Some(3), None, "4 MP", "Rifle");
-        assert_eq!(
-            line,
-            "Fire 3 \u{b7} Melee \u{2014} \u{b7} Move 4 MP \u{b7} Rifle"
-        );
+        assert_eq!(line, "Fire 3 \u{b7} Melee \u{2014} \u{b7} Move 4 MP\nRifle");
         assert!(!line.contains("Some") && !line.contains("None") && !line.contains('"'));
     }
 }

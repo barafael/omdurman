@@ -85,8 +85,6 @@ pub struct ClickCtx {
     pub placing: bool,
     /// The optional-rule panel armed a mine or chain placement.
     pub river_placement_armed: bool,
-    /// The fire allocations were already committed this sub-phase.
-    pub fire_committed: bool,
     /// A declared melee awaits resolution (the §7.5 retreat window).
     pub pending_melee: bool,
     /// The selection holds a unit threatened by the pending infantry melee.
@@ -120,9 +118,10 @@ pub struct ClickCtx {
 /// 8. Combat phases, press: the picker (single select / double-click tile).
 /// 9. Combat phases, release — the combat target click:
 ///    * Offensive fire: advance after combat when a selected unit may enter
-///      the (vacated) hex, else fire allocation (unless committed).
-///    * Defensive fire: fire allocation (unless committed); §6.7 forbids
-///      advancing after defensive fire.
+///      the (vacated) hex, else fire allocation (refused, with the reason,
+///      once the sub-phase's fire is resolved).
+///    * Defensive fire: fire allocation (likewise); §6.7 forbids advancing
+///      after defensive fire.
 ///    * Melee: advance after combat into a vacated hex, else a melee
 ///      declaration when none is pending.
 ///
@@ -167,10 +166,10 @@ pub fn click_mode(ctx: &ClickCtx) -> ClickMode {
     match phase {
         PhaseKind::Movement => ClickMode::Picker,
         PhaseKind::OffensiveFire(_) if ctx.selection_can_advance_here => ClickMode::Advance,
-        PhaseKind::OffensiveFire(_) | PhaseKind::DefensiveFire(_) if !ctx.fire_committed => {
-            ClickMode::Fire
-        }
-        PhaseKind::OffensiveFire(_) | PhaseKind::DefensiveFire(_) => ClickMode::None,
+        // Committed (already resolved) allocations included: the fire
+        // handler refuses such a click and says why, instead of a silently
+        // dead board.
+        PhaseKind::OffensiveFire(_) | PhaseKind::DefensiveFire(_) => ClickMode::Fire,
         PhaseKind::Melee if ctx.selection_can_advance_here => ClickMode::Advance,
         PhaseKind::Melee if !ctx.pending_melee => ClickMode::Melee,
         PhaseKind::Melee => ClickMode::None,
@@ -230,7 +229,6 @@ pub struct ClickUiState<'w, 's> {
     picker: Res<'w, PickerState>,
     placed_units: Query<'w, 's, (Entity, &'static PlacedUnit)>,
     peers: crate::peers::Peers<'w, 's>,
-    fire: Option<Res<'w, crate::fire_allocation::FireAllocationState>>,
     river: Option<Res<'w, crate::ui_plugin::OptionalRulePlacement>>,
 }
 
@@ -241,13 +239,11 @@ impl ClickUiState<'_, '_> {
             .river
             .as_ref()
             .is_some_and(|r| r.placing_mine || r.placing_chain);
-        let fire_committed = self.fire.as_ref().is_some_and(|f| f.committed);
         let may_act_dervish = self.peers.may_act(Player::Dervish);
         let Some(gs) = self.game_state.as_deref() else {
             return ClickCtx {
                 placing,
                 river_placement_armed,
-                fire_committed,
                 may_act_dervish,
                 ..Default::default()
             };
@@ -276,7 +272,6 @@ impl ClickUiState<'_, '_> {
             may_act_dervish,
             placing,
             river_placement_armed,
-            fire_committed,
             pending_melee: gs.pending_melee.is_some(),
             selection_can_retreat: melee
                 && crate::retreat::selected_threatened_unit(&self.picker, &self.placed_units, gs)
@@ -459,15 +454,12 @@ mod tests {
                 click_mode(&my_turn(turn(phase), ClickEdge::Press)),
                 ClickMode::Picker
             );
+            // Also once the sub-phase's fire is resolved: the fire handler
+            // then refuses the click with its reason (not a dead board).
             assert_eq!(
                 click_mode(&my_turn(turn(phase), ClickEdge::Release)),
                 ClickMode::Fire
             );
-            let committed = ClickCtx {
-                fire_committed: true,
-                ..my_turn(turn(phase), ClickEdge::Release)
-            };
-            assert_eq!(click_mode(&committed), ClickMode::None);
         }
     }
 

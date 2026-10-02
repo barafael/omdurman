@@ -197,6 +197,50 @@ pub(crate) fn gunboat_maxim_attacks_for(
         .collect()
 }
 
+/// The attacks a click on `target` would allocate from this firing group,
+/// given the attacks already `allocated` this sub-phase: the main weapons'
+/// attacks ([`group_attacks_for`]), with a named gunboat's Maxims (§2.32)
+/// standing in for its artillery once that is allocated or cannot fire at
+/// this hex -- a click allocates the artillery first, the Maxims second.
+/// Shared by the click handler and the hover preview, so the preview always
+/// shows the shot the click would take.
+pub(crate) fn click_attacks(
+    gs: &GameState,
+    group: &FireGroupSelection,
+    kinds: &[(UnitId, FireKind)],
+    target: HexCoord,
+    allocated: &[FireAttack],
+) -> Vec<FireAttack> {
+    let mut attacks = group_attacks_for(gs, group, kinds, target);
+    let primary_offered = |id: UnitId, attacks: &[FireAttack]| {
+        attacks.iter().any(|a| a.firers.contains(&id))
+            && !allocated.iter().any(|a| a.firers.contains(&id))
+    };
+    for maxims in gunboat_maxim_attacks_for(gs, group, target) {
+        let gunboat = maxims.gunboat_maxims[0];
+        let maxims_allocated = allocated
+            .iter()
+            .any(|a| a.gunboat_maxims.contains(&gunboat));
+        if !maxims_allocated && !primary_offered(gunboat, &attacks) {
+            attacks.retain(|a| !a.firers.contains(&gunboat));
+            attacks.push(maxims);
+        }
+    }
+    attacks
+}
+
+/// Whether `attack` uses a weapon already allocated this sub-phase (§6.13/
+/// §6.14: a unit -- a gunboat's Maxims apart from its artillery -- fires
+/// once per sub-phase). Such an attack is refused on click.
+pub(crate) fn uses_allocated_weapon(attack: &FireAttack, allocated: &[FireAttack]) -> bool {
+    allocated.iter().any(|a| {
+        a.firers.iter().any(|f| attack.firers.contains(f))
+            || a.gunboat_maxims
+                .iter()
+                .any(|g| attack.gunboat_maxims.contains(g))
+    })
+}
+
 /// Enemy-occupied hexes the selected unit may legally fire at right now, given
 /// the fire kind for the current sub-phase and line of sight. LOS is now
 /// checked inside `can_fire_at` (via `self.board`), so no separate filter is
@@ -481,9 +525,16 @@ pub fn fire_combat_preview_ui(
     peers: Peers,
     mut layout: ResMut<crate::ScreenLayout>,
     mut cache: ResMut<FireTargetCache>,
+    allocation: Option<Res<crate::fire_allocation::FireAllocationState>>,
     mut sticky: Local<Option<HexCoord>>,
 ) {
     let Some(gs) = game_state else { return };
+    // Once this sub-phase's fire is resolved, nothing more can be allocated
+    // (§6.41): no shot to preview.
+    let allocated: &[FireAttack] = allocation.as_deref().map_or(&[], |a| &a.attacks);
+    if allocation.as_deref().is_some_and(|a| a.committed) {
+        return;
+    }
     // The preview follows the hovered hex, and stays up while the pointer is
     // on the card itself, so its § links can be followed.
     let Some(target) = sticky_preview_target(
@@ -538,11 +589,32 @@ pub fn fire_combat_preview_ui(
         }
         return;
     }
-    // The main weapons' attacks, then any named gunboat's Maxims (§2.32) --
-    // the first one is previewed, as a click would allocate it first.
-    let mut attacks = group_attacks_for(&gs.0, &group, &kinds, target);
-    attacks.extend(gunboat_maxim_attacks_for(&gs.0, &group, target));
+    // Exactly the shots a click would allocate (a named gunboat's artillery
+    // first, its Maxims once that is spent, §2.32), less any weapon already
+    // allocated this sub-phase -- the click would refuse those.
+    let planned = click_attacks(&gs.0, &group, &kinds, target, allocated);
+    let any_planned = !planned.is_empty();
+    let attacks: Vec<FireAttack> = planned
+        .into_iter()
+        .filter(|a| !uses_allocated_weapon(a, allocated))
+        .collect();
     let Some(attack) = attacks.first() else {
+        if any_planned && let Ok(ctx) = contexts.ctx_mut() {
+            crate::ui::stacked_card(
+                ctx,
+                &mut layout,
+                egui::Id::new("fire_preview_refused"),
+                crate::ui::frames::card(crate::ui::palette::CARD_FIRE),
+                |ui| {
+                    crate::rulebook::refs_label(
+                        ui,
+                        "These units have already allocated their fire this sub-phase (\u{a7}6.41).",
+                        crate::ui::palette::REFUSED,
+                        12.0,
+                    );
+                },
+            );
+        }
         return;
     };
     // The group's firer hex; the representative weapon comes from the first
@@ -904,3 +976,63 @@ pub fn howitzer_impact_markers(
 /// Marker component for a howitzer shell-burst ring.
 #[derive(Component)]
 pub struct HowitzerImpactMarker;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use omdurman_rules::{FireSubPhase, UnitPlacement, UnitState};
+    use omdurman_types::{Player, Scenario};
+
+    /// A board-less Direct Fire sub-phase with the named gunboat Naser at
+    /// (0,0) and a Taiasha stack three hexes off.
+    fn naser_in_direct_fire() -> (GameState, FireGroupSelection, HexCoord) {
+        let mut gs = GameState::new(Scenario::Campaign);
+        gs.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        gs.active_player = Player::AngloEgyptian;
+        let target = HexCoord::new(3, 0);
+        for (id, position) in [
+            (UnitId::BritishBoats_3_0, HexCoord::new(0, 0)),
+            (UnitId::Taiasha_0_0, target),
+        ] {
+            gs.units.push(UnitPlacement {
+                id,
+                position,
+                profile: omdurman_rules::unit_profiles::profile_for_unit(id).unwrap(),
+                state: UnitState::default(),
+            });
+        }
+        let group = FireGroupSelection {
+            firer_hex: HexCoord::new(0, 0),
+            units: vec![UnitId::BritishBoats_3_0],
+        };
+        (gs, group, target)
+    }
+
+    #[test]
+    fn a_click_takes_the_artillery_then_the_maxims_then_nothing_new() {
+        let (gs, group, target) = naser_in_direct_fire();
+        let kinds = fire_group_kinds(&gs, &group);
+        let naser = UnitId::BritishBoats_3_0;
+
+        // Nothing allocated: the artillery (the main weapon) first.
+        let first = click_attacks(&gs, &group, &kinds, target, &[]);
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].firers, vec![naser]);
+        assert!(!uses_allocated_weapon(&first[0], &[]));
+
+        // The artillery allocated: the Maxims stand in (§2.32) -- what the
+        // hover preview must show, not the spent artillery.
+        let second = click_attacks(&gs, &group, &kinds, target, &first);
+        assert_eq!(second.len(), 1);
+        assert!(second[0].firers.is_empty());
+        assert_eq!(second[0].gunboat_maxims, vec![naser]);
+        assert!(!uses_allocated_weapon(&second[0], &first));
+
+        // Both allocated: whatever a click would offer is already spent, so
+        // the preview has no shot to show (and the click is refused).
+        let both: Vec<FireAttack> = first.iter().chain(&second).cloned().collect();
+        let third = click_attacks(&gs, &group, &kinds, target, &both);
+        assert!(!third.is_empty());
+        assert!(third.iter().all(|a| uses_allocated_weapon(a, &both)));
+    }
+}

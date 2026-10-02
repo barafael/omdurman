@@ -489,10 +489,16 @@ fn render_body(ui: &mut egui::Ui, body: &str) -> Option<String> {
         // use [`Rulebook::render_refs`] for the titled-chip form.
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
+            // Markdown `**bold**` (the `**6.63)**` paragraph numbers, the
+            // "**Sample Dervish Units**" lead-ins) may span a § link.
+            let mut bold = false;
             for tok in split_refs(para) {
                 match tok {
                     RefTok::Text(t) => {
-                        ui.label(t);
+                        for (strong, run) in bold_runs(t, &mut bold) {
+                            let text = egui::RichText::new(run);
+                            ui.label(if strong { text.strong() } else { text });
+                        }
                     }
                     RefTok::Ref(number) => {
                         if ui.link(format!("§{number}")).clicked() {
@@ -504,6 +510,23 @@ fn render_body(ui: &mut egui::Ui, body: &str) -> Option<String> {
         });
     }
     clicked
+}
+
+/// Split a run of manual text at its markdown `**` delimiters into
+/// `(bold, text)` pieces, dropping the delimiters. `bold` is the state on
+/// entry -- a bold span may continue from an earlier run of the same
+/// paragraph (across a § link) -- and is left as the state on exit.
+fn bold_runs<'a>(text: &'a str, bold: &mut bool) -> Vec<(bool, &'a str)> {
+    let mut out = Vec::new();
+    for (i, piece) in text.split("**").enumerate() {
+        if i > 0 {
+            *bold = !*bold;
+        }
+        if !piece.is_empty() {
+            out.push((*bold, piece));
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -547,6 +570,25 @@ mod tests {
             secs.iter().any(|s| s.number.contains('.')),
             "subsections present"
         );
+    }
+
+    #[test]
+    fn bold_markers_become_bold_runs_not_asterisks() {
+        let mut bold = false;
+        assert_eq!(
+            bold_runs("**5.11)** The movement allowances", &mut bold),
+            vec![(true, "5.11)"), (false, " The movement allowances")]
+        );
+        assert!(!bold);
+        // A bold span left open runs on into the next run (past a § link).
+        let mut bold = false;
+        assert_eq!(bold_runs("**see ", &mut bold), vec![(true, "see ")]);
+        assert!(bold);
+        assert_eq!(
+            bold_runs(" below** then", &mut bold),
+            vec![(true, " below"), (false, " then")]
+        );
+        assert!(!bold);
     }
 
     #[test]

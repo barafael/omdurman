@@ -106,6 +106,15 @@ fn main() {
             .set(AssetPlugin {
                 meta_check: bevy::asset::AssetMetaCheck::Never,
                 ..default()
+            })
+            .set(bevy::log::LogPlugin {
+                // A broken audio device (an ALSA stream in POLLERR) makes
+                // rodio's stream callback log one error per poll -- thousands
+                // a second, gigabytes in minutes. Sound still plays when the
+                // device is fine; `RUST_LOG=rodio::stream=error` re-enables
+                // it (env directives are added on top of these defaults).
+                filter: format!("{}rodio::stream=off", bevy::log::DEFAULT_FILTER),
+                ..default()
             }),
     );
     add_game(&mut app, room);

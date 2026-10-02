@@ -1,6 +1,6 @@
 use crate::board_click::FireClick;
 use crate::dispatch::Dispatches;
-use crate::fire::{fire_group_kinds, fire_selection, group_attacks_for};
+use crate::fire::{fire_group_kinds, fire_selection};
 use crate::peers::Peers;
 use crate::picker::{PickerState, PlacedUnit};
 use crate::{GameRng, GameStateResource};
@@ -8,7 +8,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_net::GameEvent;
 use omdurman_rules::effects::GameEffect;
-use omdurman_rules::{FireAttack, FireKind, Phase, UnitId};
+use omdurman_rules::{FireAttack, FireKind, Phase};
 
 /// Tracks fire allocations before batch resolution (§6.41).
 /// Resets each fire sub-phase (see [`reset_fire_allocation_on_phase_change`]).
@@ -70,9 +70,6 @@ pub fn handle_fire_allocation_click(
     if !in_fire_phase(&gs) {
         return;
     }
-    if allocation.committed {
-        return;
-    }
     let firing_player = gs.0.phase_player();
     if !peers.may_act(firing_player) {
         return;
@@ -80,37 +77,34 @@ pub fn handle_fire_allocation_click(
     let Some(group) = fire_selection(&state, &placed_units, &gs.0) else {
         return;
     };
+    // A release on a friendly or empty hex (e.g. the selecting click itself)
+    // is not an attempted shot: stay quiet about it below.
+    let enemy_there =
+        gs.0.units.iter().any(|u| {
+            u.position == target && u.profile.identity.owner() == firing_player.opponent()
+        });
+    if allocation.committed {
+        // §6.41: a sub-phase's fire is allocated, then resolved -- after the
+        // resolution nothing more may be allocated. Say so rather than
+        // ignore the shot.
+        if enemy_there {
+            dispatches.push(
+                "Fire Allocation",
+                format!(
+                    "Fire refused — {}.",
+                    crate::actions_panel::FIRE_ALREADY_RESOLVED_HINT
+                ),
+            );
+        }
+        return;
+    }
     let kinds = fire_group_kinds(&gs.0, &group);
     if kinds.is_empty() {
         return;
     }
 
-    let mut attacks = group_attacks_for(&gs.0, &group, &kinds, target);
-    // A named gunboat's Maxims (§2.32) are a second weapon: a click
-    // allocates the gunboat's artillery first, and its Maxims when the
-    // artillery is already allocated or cannot fire at this hex.
-    let primary_offered = |id: UnitId, attacks: &[FireAttack]| {
-        attacks.iter().any(|a| a.firers.contains(&id))
-            && !allocation.attacks.iter().any(|a| a.firers.contains(&id))
-    };
-    for maxims in crate::fire::gunboat_maxim_attacks_for(&gs.0, &group, target) {
-        let gunboat = maxims.gunboat_maxims[0];
-        let allocated = allocation
-            .attacks
-            .iter()
-            .any(|a| a.gunboat_maxims.contains(&gunboat));
-        if !allocated && !primary_offered(gunboat, &attacks) {
-            attacks.retain(|a| !a.firers.contains(&gunboat));
-            attacks.push(maxims);
-        }
-    }
+    let attacks = crate::fire::click_attacks(&gs.0, &group, &kinds, target, &allocation.attacks);
     if attacks.is_empty() {
-        // A release on a friendly or empty hex (e.g. the selecting click
-        // itself) is not an attempted shot: stay quiet.
-        let firing_player = gs.0.phase_player();
-        let enemy_there = gs.0.units.iter().any(|u| {
-            u.position == target && u.profile.identity.owner() == firing_player.opponent()
-        });
         if !enemy_there {
             return;
         }
@@ -134,12 +128,7 @@ pub fn handle_fire_allocation_click(
     for attack in &attacks {
         // §6.13/§6.14: a unit fires once per phase -- refuse a group any of
         // whose units is already allocated.
-        if allocation.attacks.iter().any(|a| {
-            a.firers.iter().any(|f| attack.firers.contains(f))
-                || a.gunboat_maxims
-                    .iter()
-                    .any(|g| attack.gunboat_maxims.contains(g))
-        }) {
+        if crate::fire::uses_allocated_weapon(attack, &allocation.attacks) {
             dispatches.push(
                 "Fire Allocation",
                 "These units have already allocated their fire.",

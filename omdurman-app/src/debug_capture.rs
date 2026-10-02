@@ -71,8 +71,8 @@ fn capture_then_exit(
 /// Off-by-default hex probe for scripted play-testing: with
 /// `OMDURMAN_HEX_PROBE=<path>` set, the app rewrites `<path>` twice a second
 /// with one `q r x y` line per board hex -- the hex centre in window
-/// (logical) pixels under the current camera -- so an external driver
-/// (xdotool) can click a hex by coordinate. Creating `<path>.shot` requests a
+/// (physical) pixels under the current camera -- so an external driver
+/// (xdotool, ydotool) can click a hex by coordinate. Creating `<path>.shot` requests a
 /// window screenshot, written to `<path>.png` (the request file is removed).
 /// Inert when unset.
 pub struct HexProbePlugin;
@@ -105,6 +105,7 @@ fn write_hex_probe(
     mut last: Local<f64>,
     board: ProbeBoard,
     cams: Query<(&Camera, &GlobalTransform), With<crate::camera::RtsCamera>>,
+    window: Query<&Window, With<bevy::window::PrimaryWindow>>,
     game_state: Option<Res<crate::GameStateResource>>,
 ) {
     let now = time.elapsed_secs_f64();
@@ -123,13 +124,19 @@ fn write_hex_probe(
         return;
     };
     let origin = layout.adjusted_origin(&overlay.params);
+    // Physical pixels, as the screenshot and the input tools address them
+    // (viewport coordinates are logical: off by the DPI scale otherwise).
+    let scale = window.single().map_or(1.0, Window::scale_factor);
     let mut out = String::new();
     for coord in map.hexes.keys() {
         let world = omdurman_hexmap::hex_world_pos(*coord, origin, &overlay.params);
         if let Ok(screen) = camera.world_to_viewport(cam_tf, world) {
             out.push_str(&format!(
                 "{} {} {:.0} {:.0}\n",
-                coord.q, coord.r, screen.x, screen.y
+                coord.q,
+                coord.r,
+                screen.x * scale,
+                screen.y * scale
             ));
         }
     }

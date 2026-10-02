@@ -107,11 +107,31 @@ struct PickerRead<'a> {
     state: &'a PickerState,
 }
 
-/// Bundle of the `clicked_idx` + `drag_idx` out-parameters so
-/// [`render_faction_units`] stays under clippy's argument limit.
+/// Bundle of the `clicked_idx` + `drag_idx` + `drag_cancelled`
+/// out-parameters so [`render_faction_units`] stays under clippy's argument
+/// limit.
 struct DragState<'a> {
     clicked_idx: &'a mut Option<usize>,
     drag_idx: &'a mut Option<usize>,
+    /// A counter's drag ended over the UI (the sidebar, a card) instead of
+    /// the board: no drop happened.
+    drag_cancelled: &'a mut bool,
+}
+
+/// The picker state after a sidebar drag ends over the UI rather than the
+/// board: the board click router never sees that release, so a drag-held
+/// counter would otherwise stay "in hand" and the next click on it would
+/// toggle it off instead of picking it. Drop it: the following click picks
+/// the counter afresh. `None` leaves the state alone (no drag in hand).
+fn state_after_cancelled_drag(state: &PickerState) -> Option<PickerState> {
+    matches!(
+        state,
+        PickerState::Placing {
+            drag_drop: true,
+            ..
+        }
+    )
+    .then_some(PickerState::Idle)
 }
 
 /// Bundle of the optional annotations + the rulebook reference so
@@ -143,6 +163,7 @@ fn render_faction_units(
     let DragState {
         clicked_idx,
         drag_idx,
+        drag_cancelled,
     } = drag;
     let UnitAnnotations { rulebook } = ctx;
     let mut current_section = None::<SectionName>;
@@ -232,6 +253,9 @@ fn render_faction_units(
                     }
                     if response.drag_started() {
                         *drag_idx = Some(j);
+                    }
+                    if response.drag_stopped() && ui.ctx().is_pointer_over_egui() {
+                        *drag_cancelled = true;
                     }
 
                     // Hover tooltip: the counter's resolved profile, sourced
@@ -644,6 +668,7 @@ pub fn unit_picker_ui(
 
                     let mut clicked_idx: Option<usize> = None;
                     let mut drag_idx: Option<usize> = None;
+                    let mut drag_cancelled = false;
                     let sprite_size = 44.0;
                     let margin = 2.0;
                     let cell_size = sprite_size + margin * 2.0;
@@ -724,6 +749,7 @@ pub fn unit_picker_ui(
                                             DragState {
                                                 clicked_idx: &mut clicked_idx,
                                                 drag_idx: &mut drag_idx,
+                                                drag_cancelled: &mut drag_cancelled,
                                             },
                                             UnitAnnotations {
                                                 rulebook: &rulebook,
@@ -763,6 +789,11 @@ pub fn unit_picker_ui(
                                 };
                             }
                         }
+                    }
+                    if drag_cancelled
+                        && let Some(next) = state_after_cancelled_drag(&picker_ctx.state)
+                    {
+                        *picker_ctx.state = next;
                     }
                     if let Some(idx) = drag_idx {
                         crate::ui_trace::placement_pick(&pick_label(idx), "drag", &pick_stamp);
@@ -831,5 +862,28 @@ mod tests {
             bucket_section(order, "Hadendowa_0_0", 0, 0),
             Some(SectionName::Hadendowa)
         );
+    }
+
+    #[test]
+    fn a_drag_dropped_on_the_ui_leaves_nothing_in_hand() {
+        let dragged = PickerState::Placing {
+            unit_idx: 3,
+            preview_hex: None,
+            preview_valid: false,
+            drag_drop: true,
+        };
+        assert!(matches!(
+            state_after_cancelled_drag(&dragged),
+            Some(PickerState::Idle)
+        ));
+        // A click-picked counter (no drag) stays in hand.
+        let clicked = PickerState::Placing {
+            unit_idx: 3,
+            preview_hex: None,
+            preview_valid: false,
+            drag_drop: false,
+        };
+        assert!(state_after_cancelled_drag(&clicked).is_none());
+        assert!(state_after_cancelled_drag(&PickerState::Idle).is_none());
     }
 }
