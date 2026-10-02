@@ -1,3 +1,8 @@
+//! **Frozen baseline** of the Kitchener / Khalifa commanders (the October
+//! 2026 doctrine, before the arena-driven tuning in [`crate::commanders`]).
+//! Not used by the app; kept so [`crate::arena`] can measure the live
+//! commanders against a fixed opponent on the same seeds. Do not tune it.
+//!
 //! The two historical commanders: **Kitchener** (Anglo-Egyptian) and
 //! **Khalifa** (Dervish).
 //!
@@ -74,19 +79,6 @@ impl Commander {
         candidates: &[GameEffect],
         rng: &mut BotRng,
     ) -> GameEffect {
-        let planned;
-        let candidates = if matches!(
-            state.phase,
-            Phase::OffensiveFire(_) | Phase::DefensiveFire(_)
-        ) {
-            planned = crate::fire_plan::plan_fire(state, candidates);
-            if planned.is_empty() {
-                return GameEffect::AdvancePhase;
-            }
-            &planned[..]
-        } else {
-            candidates
-        };
         let mut best = i32::MIN;
         let mut best_idxs: Vec<usize> = Vec::new();
         for (i, effect) in candidates.iter().enumerate() {
@@ -166,18 +158,6 @@ pub fn pick_validated(
     candidates: &[GameEffect],
     _rng: &mut BotRng,
 ) -> GameEffect {
-    // Fire phases: merge the per-stack shots into planned combined attacks
-    // (§6.14) before ranking -- see `crate::fire_plan`.
-    let planned;
-    let candidates = if matches!(
-        state.phase,
-        Phase::OffensiveFire(_) | Phase::DefensiveFire(_)
-    ) {
-        planned = crate::fire_plan::plan_fire(state, candidates);
-        &planned[..]
-    } else {
-        candidates
-    };
     for candidate in rank(state, player, candidates) {
         let mut test = state.clone();
         if omdurman_rules::effects::apply_effect(&mut test, &candidate).is_ok() {
@@ -219,53 +199,6 @@ pub fn pick_setup_validated(
         }
     }
     GameEffect::AdvancePhase
-}
-
-/// The Khalifa's choice of deserters (§8.2: "of the Dervish player's
-/// choosing"; the Khalifa, artillery, gunboats and forts are exempt). The
-/// roll and the count stay as rolled; only *who* goes changes: a deserter
-/// scores the Anglo-Egyptians nothing (§8.2), so shed first the disrupted,
-/// then the units standing in the British fire lanes and not in contact --
-/// the ones Kitchener would otherwise have killed for a VP each -- and never
-/// a leader or the Tomb garrison while anyone else can go. Any other effect
-/// passes through unchanged.
-pub fn choose_deserters(state: &GameState, effect: GameEffect) -> GameEffect {
-    let GameEffect::DervishDesertion { roll, deserters } = effect else {
-        return effect;
-    };
-    let count = deserters.len();
-    let enemy = Player::AngloEgyptian;
-    let tomb = state.board.hex_of_location(Location::MahdisTomb);
-    let mut pool: Vec<(i64, UnitId)> = state
-        .units
-        .iter()
-        .filter(|u| {
-            u.profile.identity.owner() == Player::Dervish
-                && !u.profile.identity.is_desertion_exempt()
-        })
-        .map(|u| {
-            let in_contact = u.position.neighbors().iter().any(|&n| {
-                state
-                    .units_in_hex(n)
-                    .iter()
-                    .any(|e| e.profile.identity.owner() == enemy)
-            });
-            let lanes = crate::threat::fire_reaching(state, u.position, enemy) as i64;
-            let keep = matches!(u.profile.identity, UnitIdentity::DervishLeader(_))
-                || Some(u.position) == tomb;
-            let rank = i64::from(u.state.disrupted) * 1000 + lanes * 10
-                - i64::from(in_contact) * 500
-                - i64::from(keep) * 100_000
-                - i64::from(u.profile.melee.map(|m| m.value()).unwrap_or(0));
-            (rank, u.id)
-        })
-        .collect();
-    // Stable: equal ranks keep board order, so the pick is reproducible.
-    pool.sort_by_key(|(rank, _)| std::cmp::Reverse(*rank));
-    GameEffect::DervishDesertion {
-        roll,
-        deserters: pool.into_iter().take(count).map(|(_, id)| id).collect(),
-    }
 }
 
 /// Candidates ordered best-first by the commander's score. The sort is
@@ -631,36 +564,30 @@ fn kitchener_score(effect: &GameEffect, state: &GameState, player: Player) -> i3
         // breach walls, sink gunboats, or destroy forts (§6.61-§6.63), and in
         // FoK every Dervish shell against a wall is a corridor to GORDON.
         FireCombat { attack, .. } | HowitzerFire { attack, .. } => {
-            // Expected victory points destroyed (§6.22 CRT row, §6.23/§6.24/
-            // §5.54 modifiers, §6.61/§6.62 special targets), with a premium
-            // on the enemy guns that alone breach walls and sink gunboats.
+            let factor = printed_factor(state, attack);
             let targets = state.units_in_hex(attack.target_hex);
             let enemy = player.opponent();
             let has_artillery = targets.iter().any(|u| {
                 u.profile.identity.owner() == enemy
                     && u.profile.weapon == omdurman_rules::WeaponClass::Artillery
-                    && !matches!(u.profile.kind, omdurman_types::UnitKind::Fort { .. })
             });
+            let defender_count = targets.len() as i32;
             let near_palace = palace
                 .map(|p| p.distance(attack.target_hex) <= 3)
                 .unwrap_or(false);
-            let value = crate::fire_plan::fire_value(state, attack)
-                * if has_artillery { 1.6 } else { 1.0 }
-                * if near_palace { 1.3 } else { 1.0 };
-            if value < 0.02 {
-                return 0;
-            }
-            30 + (value * 15.0).min(80.0) as i32
+            25 + factor / 2
+                + i32::from(has_artillery) * 20
+                + defender_count * 3
+                + i32::from(near_palace) * 8
         }
         // Melee is the side's weakness (§7.7: +1 vs the Dervish +2): only
         // against a locally outnumbered, unsupported enemy.
         DeclareMelee { attack, .. } => {
-            // Expected VP traded (§7.3/§7.7): the side's +1 against the
-            // Dervish +2 makes most melees a loss -- take only the good ones.
-            let value = crate::fire_plan::melee_value(state, attack);
-            let support = adjacent_enemy_stacks(state, attack.defender_hex, player) - 1;
-            if value > 0.4 && support <= 2 {
-                40 + (value * 10.0).min(40.0) as i32
+            let attackers = attack.attackers.len() as i32;
+            let defenders = combat_count_in(state, attack.defender_hex, player.opponent());
+            let support = adjacent_enemy_stacks(state, attack.defender_hex, player) - 1; // the defender hex itself
+            if attackers * 3 >= defenders * 4 && support <= 1 {
+                40 + attackers * 4
             } else {
                 -40
             }
@@ -693,7 +620,7 @@ fn kitchener_score(effect: &GameEffect, state: &GameState, player: Player) -> i3
                 return 0;
             };
             let goal = kitchener_goal(state, unit.id, player);
-            let prog = path_progress(state, unit, *to, goal);
+            let prog = progress(state, *unit_id, *to, goal);
             // Hold rather than shuffle: a non-closing step is a wasted move
             // (§5.13 — MP don't carry over) and invites oscillation between
             // equal-scoring hexes.
@@ -705,45 +632,15 @@ fn kitchener_score(effect: &GameEffect, state: &GameState, player: Player) -> i3
                 UnitIdentity::AngloEgyptianLeader(_) | UnitIdentity::AngloEgyptianArtillery
             );
             let exposure = adjacent_enemy_fire(state, *to, player);
-            let mut penalty = if is_fragile {
+            let penalty = if is_fragile {
                 exposure / 3
             } else {
                 exposure / 6
             };
-            // Off the FoK walls: keep out of the Dervish fire lanes (§6.22:
-            // their rifles reach 4, the forts' and guns' artillery 7; ours
-            // reach 5 and 8) -- the side that outranges the enemy shoots
-            // without being shot. A Tomb dash pays the price (§9.14).
-            // (Historical: the army fights from the Zariba hedge, §9.231, against
-            // a Dervish fire too weak to kite from.)
-            if palace.is_none() && state.scenario != Scenario::Historical {
-                let there = crate::threat::fire_reaching(state, *to, player.opponent());
-                let here = crate::threat::fire_reaching(state, unit.position, player.opponent());
-                let weight = if tomb_objective(state, unit).is_some() {
-                    0.05
-                } else if matches!(unit.profile.identity, UnitIdentity::AngloEgyptianLeader(_)) {
-                    1.5
-                } else if is_fragile {
-                    0.6
-                } else {
-                    0.35
-                };
-                penalty += (weight * (there - 0.5 * here.min(there))) as i32;
-                // A leader dies with his stack (§6.51): keep him beyond
-                // the reach of the spears as well as the rifles.
-                if matches!(unit.profile.identity, UnitIdentity::AngloEgyptianLeader(_))
-                    && tomb_objective(state, unit).is_none()
-                {
-                    let spears = crate::threat::melee_reaching(state, *to, player.opponent());
-                    penalty += (spears / 4.0) as i32;
-                }
-            }
             // Cohesion: leaders must never be alone (§6.51); brigades like
-            // their battalions together (§5.54). A leader already alone may
-            // still walk to his troops.
+            // their battalions together (§5.54).
             let friends = combat_count_in(state, *to, player);
-            let leader_here = matches!(unit.profile.identity, UnitIdentity::AngloEgyptianLeader(_))
-                && combat_count_in(state, unit.position, player) > 0;
+            let leader_here = matches!(unit.profile.identity, UnitIdentity::AngloEgyptianLeader(_));
             let cohesion = if leader_here && friends == 0 {
                 -60
             } else if friends > 0 {
@@ -763,106 +660,16 @@ fn kitchener_score(effect: &GameEffect, state: &GameState, player: Player) -> i3
     }
 }
 
-/// The Campaign's last turn (§9.12: 22 turns); the Tomb is scored at its end.
-const CAMPAIGN_LAST_TURN: u8 = 22;
-
-/// Movement points a Tomb column covers per remaining turn, with margin for
-/// the night turns (§8.1 halves the Anglo-Egyptian movement) and blocking.
-const TOMB_DASH_MP_PER_TURN: i32 = 4;
-
-/// The Mahdi's Tomb, for the units that dash for it: on the Campaign map the
-/// British leaders and the regular infantry (a leader plus an undisrupted
-/// non-"Friendlies" combat unit on the hex at the end takes its 25 VP from
-/// the Dervish, §9.14 -- a 50-VP swing). A unit sets off only when the turns
-/// left just cover its path: a column that arrives early sits for turns
-/// under the guns of the city's forts (§6.54) and dies there.
-fn tomb_objective(state: &GameState, unit: &omdurman_rules::UnitPlacement) -> Option<HexCoord> {
-    if state.scenario != Scenario::Campaign {
-        return None;
-    }
-    let marches = match unit.profile.identity {
-        UnitIdentity::AngloEgyptianLeader(_) => true,
-        UnitIdentity::AngloEgyptianInfantry { .. } => !unit.profile.identity.is_friendlies(),
-        _ => false,
-    };
-    if !marches {
-        return None;
-    }
-    let tomb = state.board.hex_of_location(Location::MahdisTomb)?;
-    let turns_left = i32::from(CAMPAIGN_LAST_TURN.saturating_sub(state.current_turn.value())) + 1;
-    let due = |hex: HexCoord| {
-        // Due: the turns left just cover the path. Still feasible: even an
-        // unopposed march (~7 MP a turn) could make it -- otherwise call it
-        // off rather than lose the column on the last turn.
-        crate::threat::path_cost(state, hex, tomb).is_some_and(|cost| {
-            turns_left * TOMB_DASH_MP_PER_TURN <= cost + TOMB_DASH_MP_PER_TURN
-                && cost <= turns_left * 7
-        })
-    };
-    if !due(unit.position) {
-        return None;
-    }
-    // Without a leader who can still make it there is nothing to take; and
-    // a city still full of the field army is a massacre, not a dash.
-    let leader_due = state.units.iter().any(|u| {
-        matches!(u.profile.identity, UnitIdentity::AngloEgyptianLeader(_))
-            && crate::threat::path_cost(state, u.position, tomb)
-                .is_some_and(|cost| cost <= turns_left * TOMB_DASH_MP_PER_TURN + 4)
-    });
-    // The forts ring the city (§9.111) and fire every turn even alone
-    // (§6.54): measured in arena play, a dash past them cost the leaders
-    // and a score of battalions -- more than the Tomb's 50-VP swing. Go
-    // only once the guns have cleared the city.
-    let defenders = state
-        .units
-        .iter()
-        .filter(|u| u.profile.identity.owner() == Player::Dervish && u.position.distance(tomb) <= 7)
-        .count();
-    (leader_due && defenders <= 3).then_some(tomb)
-}
-
-/// Progress toward `goal` for a step to `to`: movement-point path cost to
-/// the Tomb (walls open only at gates and breaches, §5.23), hex distance
-/// for every other goal.
-fn path_progress(
-    state: &GameState,
-    unit: &omdurman_rules::UnitPlacement,
-    to: HexCoord,
-    goal: Option<HexCoord>,
-) -> i32 {
-    let Some(goal) = goal else { return 0 };
-    if tomb_objective(state, unit) == Some(goal)
-        && let (Some(here), Some(there)) = (
-            crate::threat::path_cost(state, unit.position, goal),
-            crate::threat::path_cost(state, to, goal),
-        )
-    {
-        // Normalised to roughly hexes (clear terrain costs 1).
-        return (here - there).signum() * ((here - there).abs() + 1) / 2;
-    }
-    unit.position.distance(goal) as i32 - to.distance(goal) as i32
-}
-
 /// Kitchener's goal for one unit: hold the threatened gate/breach corridors
-/// and the palace ring in Fall of Khartoum; on the campaign map, close on
-/// the field army at rifle range (forts last), leaders sheltering with the
-/// safest stack, the Tomb column dashing when it is due.
+/// and the palace ring in Fall of Khartoum; on the campaign map, form the
+/// line facing the enemy and keep the guns in supporting distance.
 fn kitchener_goal(state: &GameState, unit_id: UnitId, player: Player) -> Option<HexCoord> {
     let unit = state.find_unit(unit_id)?;
     let enemy = player.opponent();
-    if let Some(tomb) = tomb_objective(state, unit) {
-        return Some(tomb);
-    }
     match unit.profile.identity {
         // Leaders bodyguard toward the nearest friendly stack (§6.51).
         UnitIdentity::AngloEgyptianLeader(_) => {
-            if palace_hex(state).is_some() {
-                nearest_friendly_stack(state, unit.position, unit_id)
-            } else {
-                // Off the FoK walls a leader is 10 VP (§9.14) and dies with
-                // his stack (§6.51): shelter with the safest stack near by.
-                safest_friendly_stack(state, unit.position, player)
-            }
+            nearest_friendly_stack(state, unit.position, unit_id)
         }
         // Guns stand off one hex beyond melee reach, covering the approach.
         UnitIdentity::AngloEgyptianArtillery | UnitIdentity::AngloEgyptianMaxim => {
@@ -907,20 +714,8 @@ fn kitchener_goal(state: &GameState, unit_id: UnitId, player: Player) -> Option<
                 // Campaign: formed line at standoff distance from the enemy
                 // mass; the Tomb axis is handled by the LLM briefs — the
                 // heuristic holds the line and grinds.
-                // Forts never come to you (§6.54): close on the field army,
-                // and on the forts only once it is gone.
-                let field = state
-                    .units
-                    .iter()
-                    .filter(|u| {
-                        u.profile.identity.owner() == enemy
-                            && u.profile.identity != UnitIdentity::DervishFort
-                    })
-                    .map(|u| u.position)
-                    .min_by_key(|p| p.distance(unit.position));
-                field
-                    .or_else(|| nearest_enemy_unit(state, unit.position, enemy))
-                    .map(|e| step_toward(unit.position, e, 4))
+                let nearest_enemy = nearest_enemy_unit(state, unit.position, enemy);
+                nearest_enemy.map(|e| step_toward(unit.position, e, 3))
             }
         }
     }
@@ -1057,28 +852,32 @@ fn khalifa_score(effect: &GameEffect, state: &GameState, player: Player) -> i32 
         // Soften the garrison stacks the melee wave is about to hit; the
         // garrison holding the breach corridor is the priority target.
         FireCombat { attack, .. } | HowitzerFire { attack, .. } => {
-            // Expected victory points destroyed (see `fire_plan`), weighted
-            // toward the garrison of the assault axis.
+            let factor = printed_factor(state, attack);
+            let targets = state.units_in_hex(attack.target_hex);
+            let enemy = player.opponent();
+            let has_gunboat = targets
+                .iter()
+                .any(|u| matches!(u.profile.identity, UnitIdentity::AngloEgyptianGunboat(_)));
+            let has_artillery = targets.iter().any(|u| {
+                u.profile.identity.owner() == enemy
+                    && u.profile.weapon == omdurman_rules::WeaponClass::Artillery
+            });
             let on_axis = axis
                 .map(|a| a.distance(attack.target_hex) <= 2)
                 .unwrap_or(false);
-            let value =
-                crate::fire_plan::fire_value(state, attack) * if on_axis { 1.4 } else { 1.0 };
-            if value < 0.02 {
-                return 0;
-            }
-            25 + (value * 12.0).min(80.0) as i32
+            20 + factor / 2
+                + i32::from(has_gunboat) * 8
+                + i32::from(has_artillery) * 8
+                + i32::from(on_axis) * 10
         }
         // Melee is where the +2 lives (§7.7): attack with local mass, at the
         // hex that leads to the palace, under night cover when possible.
         DeclareMelee { attack, .. } => {
             let attackers = attack.attackers.len() as i32;
             let defenders = combat_count_in(state, attack.defender_hex, player.opponent());
-            // Expected VP traded (§7.3/§7.7, AE units are 3 VP to the
-            // Dervish 1): melee where the +2 pays, not into a losing trade.
-            let value = crate::fire_plan::melee_value(state, attack);
-            let racing = palace.is_some();
-            if value < if racing { -1.0 } else { 0.2 } {
+            if attackers < defenders || attackers < 2 {
+                // A lone attacker dies for nothing (§9.35: losses downgrade
+                // the victory level) — wait for the mass or fire instead.
                 return -40;
             }
             let softened = state
@@ -1096,8 +895,7 @@ fn khalifa_score(effect: &GameEffect, state: &GameState, player: Player) -> i32 
             let on_axis = assault_axis_wall(state)
                 .map(|a| a.distance(attack.defender_hex) <= 2)
                 .unwrap_or(false);
-            40 + (value * 6.0).clamp(-6.0, 30.0) as i32 + (attackers - defenders) * 2 + forward
-                - support * 6
+            40 + (attackers - defenders) * 4 + forward - support * 8
                 + i32::from(night) * 6
                 + i32::from(on_axis) * 6
                 + i32::from(softened) * 10
@@ -1125,18 +923,10 @@ fn khalifa_score(effect: &GameEffect, state: &GameState, player: Player) -> i32 
             // anyway; co-locate for the wave).
             let friends = combat_count_in(state, *to, player);
             let mass = friends.min(3) * 4;
-            // Exposure to defensive fire (§6.7). In Fall of Khartoum the
-            // clock (§9.35) outranks blood: a gentle penalty, halved at
-            // night. On the Omdurman maps the Maxims and gunboats own the
-            // open ground (§6.22, §6.42): stage outside their lanes and
-            // cross the killing ground only into contact, where the +2
-            // melee lives (§7.7) -- every unit lost is a VP for Kitchener.
-            let penalty = if palace.is_some() {
-                let exposure = adjacent_enemy_fire(state, *to, player);
-                if night { exposure / 15 } else { exposure / 8 }
-            } else {
-                lane_penalty(state, unit, *to, player)
-            };
+            // Exposure to defensive fire (§6.7) — real but the clock (§9.35)
+            // outranks blood, so the penalty is gentle and halved at night.
+            let exposure = adjacent_enemy_fire(state, *to, player);
+            let penalty = if night { exposure / 15 } else { exposure / 8 };
             // Artillery is the breach key: keep it out of melee reach.
             let is_guns = unit.profile.weapon == omdurman_rules::WeaponClass::Artillery;
             let gun_guard = if is_guns && adjacent_enemy_stacks(state, *to, player) > 0 {
@@ -1154,45 +944,6 @@ fn khalifa_score(effect: &GameEffect, state: &GameState, player: Player) -> i32 
         },
         _ => 0,
     }
-}
-
-/// The Dervish cost of ending a move on `to` under Anglo-Egyptian fire
-/// (see [`crate::threat`]): a bonus for a step into contact (the melee is
-/// the point), otherwise the fire that reaches the hex, lighter at night
-/// (§8.1 halves every range) and lighter for a unit already under fire
-/// where it stands.
-fn lane_penalty(
-    state: &GameState,
-    unit: &omdurman_rules::UnitPlacement,
-    to: HexCoord,
-    player: Player,
-) -> i32 {
-    let enemy = player.opponent();
-    let contact = to.neighbors().iter().any(|&n| {
-        state
-            .units_in_hex(n)
-            .iter()
-            .any(|u| u.profile.identity.owner() == enemy)
-            && !matches!(
-                state.hexside_effective(to, n),
-                Some(HexsideKind::Wall | HexsideKind::ZaribaThornHedge | HexsideKind::ZaribaTrench)
-            )
-    });
-    if contact {
-        return -6;
-    }
-    let there = crate::threat::fire_reaching(state, to, enemy);
-    let here = crate::threat::fire_reaching(state, unit.position, enemy);
-    // Historical: four turns against a Zariba that cannot be meleed across
-    // (§9.231) -- every unit kept out of the fire is a step down the
-    // Anglo-Egyptian §9.24 schedule.
-    let weight = match (state.scenario, is_night(state)) {
-        (Scenario::Historical, false) => 0.8,
-        (Scenario::Historical, true) => 0.3,
-        (_, false) => 0.25,
-        (_, true) => 0.08,
-    };
-    (weight * (there - 0.5 * here.min(there))) as i32
 }
 
 /// Khalifa's goal for one unit: the assault corridor (gate or breach) until
@@ -1233,22 +984,6 @@ fn khalifa_goal(state: &GameState, unit_id: UnitId, player: Player) -> Option<He
             return Some(c);
         }
         return axis;
-    }
-    // The Mahdi's Tomb is 25 VP to whoever holds it at the end (§9.14), and
-    // the Anglo-Egyptians take it only by standing on it: the Khalifa and
-    // his Taiasha bodyguard (the only tribe allowed in the walled city,
-    // §5.23) garrison it.
-    if state.scenario == Scenario::Campaign
-        && matches!(
-            unit.profile.identity,
-            UnitIdentity::DervishLeader(omdurman_rules::DervishLeader::KhalifaAbdullah)
-                | UnitIdentity::DervishTribal {
-                    tribe: omdurman_types::DervishTribe::Taiasha
-                }
-        )
-        && let Some(tomb) = state.board.hex_of_location(Location::MahdisTomb)
-    {
-        return Some(tomb);
     }
     match unit.profile.identity {
         // The Khalifa stays guarded (10 VP, §9.14): hover behind the line.
@@ -1300,53 +1035,6 @@ fn nearest_friendly_stack(state: &GameState, from: HexCoord, unit_id: UnitId) ->
         .min_by_key(|p| p.distance(from))
 }
 
-/// The friendly combat stack a leader should shelter with: within 8 hexes,
-/// the one least exposed to enemy fire (see [`crate::threat`]) and not in
-/// contact, nearer ones preferred.
-fn safest_friendly_stack(state: &GameState, from: HexCoord, player: Player) -> Option<HexCoord> {
-    let enemy = player.opponent();
-    let mut best: Option<(i32, HexCoord)> = None;
-    for u in &state.units {
-        if u.profile.identity.owner() != player
-            || matches!(
-                u.profile.identity,
-                UnitIdentity::AngloEgyptianLeader(_)
-                    | UnitIdentity::AngloEgyptianGunboat(_)
-                    | UnitIdentity::AngloEgyptianFort
-            )
-        {
-            continue;
-        }
-        let d = u.position.distance(from) as i32;
-        if d > 8 {
-            continue;
-        }
-        let contact = u.position.neighbors().iter().any(|&n| {
-            state
-                .units_in_hex(n)
-                .iter()
-                .any(|e| e.profile.identity.owner() == enemy)
-        });
-        let threat = crate::threat::fire_reaching(state, u.position, enemy) as i32;
-        let spears = crate::threat::melee_reaching(state, u.position, enemy) as i32;
-        let key = threat * 2 + spears + i32::from(contact) * 100 + d;
-        if best.is_none_or(|(k, _)| key < k) {
-            best = Some((key, u.position));
-        }
-    }
-    best.map(|(_, h)| h).or_else(|| {
-        state
-            .units
-            .iter()
-            .filter(|u| {
-                u.profile.identity.owner() == player
-                    && !matches!(u.profile.identity, UnitIdentity::AngloEgyptianLeader(_))
-            })
-            .map(|u| u.position)
-            .min_by_key(|p| p.distance(from))
-    })
-}
-
 /// A hex one step from `from` toward `target` at approximately `standoff`
 /// distance: straight toward the target while farther than `standoff`, the
 /// target's neighbourhood once within it (for guns: the fire position).
@@ -1364,4 +1052,15 @@ fn step_toward(from: HexCoord, target: HexCoord, standoff: u32) -> HexCoord {
         }
     }
     best
+}
+
+/// The printed fire factor of every weapon in `attack` (§6.14): a named
+/// gunboat's Maxims (§2.32) count as well as its artillery.
+fn printed_factor(state: &GameState, attack: &omdurman_rules::FireAttack) -> i32 {
+    attack
+        .shots()
+        .into_iter()
+        .filter_map(|shot| state.find_unit(shot.unit)?.fire_factor(shot.mount))
+        .map(|f| f.value() as i32)
+        .sum()
 }

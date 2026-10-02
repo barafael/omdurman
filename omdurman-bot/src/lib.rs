@@ -19,10 +19,13 @@
 pub mod actions;
 pub mod agent;
 pub mod aggressive;
+pub mod arena;
 pub mod audit;
+pub mod baseline;
 pub mod commanders;
 pub mod describe;
 pub mod doctrine;
+pub mod fire_plan;
 pub mod invariants;
 pub mod llm;
 pub mod log;
@@ -30,6 +33,7 @@ pub mod observer;
 pub mod oob;
 pub mod playthrough;
 pub mod rng;
+pub mod threat;
 
 pub use actions::legal_actions;
 pub use agent::{AgentStrategy, Agents};

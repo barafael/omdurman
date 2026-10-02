@@ -281,6 +281,46 @@ generator (`actions::legal_actions` / `legal_actions_deep_setup`) and
 `BotRng`. The headless `commanders` preset runs the identical code path, so
 tuning sessions and in-app games agree.
 
+**Fire planning — `src/fire_plan.rs`.** The enumerator offers one attack per
+firing stack and target, but a hex may be fired at only once per phase
+(§6.14). In every fire phase the commanders merge those per-stack shots into
+combined attacks (`combine_fire_attacks`): each weapon group (a stack's main
+weapons of one kind, a named gunboat's Maxims) goes to the target where it
+adds the most expected value — the CRT row, the mandatory and terrain/fort/
+hexside modifiers, gunboat 3+ / fort 2+ thresholds, the howitzer's 40% on
+target, all weighted by §9.14 unit values. Melee is scored the same way
+(`melee_value`: expected VP inflicted minus expected VP lost, both sides
+rolling at once, §7.3/§7.7). Planning never reads the dice already embedded
+in a candidate.
+
+**Fire lanes and paths — `src/threat.rs`.** `fire_reaching` sums the enemy
+fire that can reach a hex (§6.22 bands, §8.1 night ranges, terrain LOS),
+cached per enemy layout; `melee_reaching` the spears that can reach it next
+turn; `path_cost` is a Dijkstra movement-point field (walls open only at
+gates and breaches). Off the FoK walls the Khalifa stages out of the
+Maxims' lanes and crosses them only into contact; Kitchener kites at rifle
+range (his 5 hexes against their 4, artillery 8 against the forts' 7),
+closes on the field army before the forts, shelters leaders with the
+safest stack, and dashes for the Mahdi's Tomb only once the city is
+cleared. The Khalifa garrisons the Tomb with his Taiasha and chooses §8.2
+deserters from the disrupted and the units in the fire lanes
+(`commanders::choose_deserters`, also used by the app).
+
+**Measuring strength — `src/arena.rs`, `tests/arena.rs`.** `arena::play`
+plays a whole game through the app's decision path with either the live
+commanders (`Version::Current`) or the frozen pre-tuning ones
+(`src/baseline.rs`, `Version::Baseline`) on each side. The `#[ignore]`d
+harness plays every pairing on the same seeds and prints wins, the signed
+result (`ae_score`: Campaign VP superiority, Historical net level x10, FoK
+level), losses and turns:
+
+```sh
+cargo test --release -p omdurman-bot --test arena -- --ignored --nocapture
+ARENA_SEEDS=20 ARENA_SCENARIOS=fok,historical,campaign ARENA_VERBOSE=1 ...
+ARENA_TRACE=1 ARENA_GAME=campaign:1000:current:baseline \
+  cargo test --release -p omdurman-bot --test arena_trace -- --ignored --nocapture
+```
+
 ---
 
 ## 5. Game log — `src/log.rs` + `src/describe.rs`

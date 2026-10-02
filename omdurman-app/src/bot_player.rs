@@ -173,7 +173,8 @@ pub(crate) fn next_ai_action(
         .iter()
         .find(|e| matches!(e, GameEffect::DervishDesertion { .. }))
     {
-        return validated(state, effect.clone());
+        // Who deserts is the Khalifa's choice (§8.2); the roll stands.
+        return validated(state, commanders::choose_deserters(state, effect.clone()));
     }
 
     if state.phase == Phase::Setup {
