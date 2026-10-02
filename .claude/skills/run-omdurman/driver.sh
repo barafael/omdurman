@@ -22,6 +22,12 @@ need_win() { W=$(win); [ -n "$W" ] || { echo "no omdurman window (run: launch)" 
 need_input() {
   need_win
   local active; active=$(xdotool getactivewindow 2>/dev/null)
+  # Side-by-side instances: take the focus over from a sibling game window
+  # (never from anything else).
+  if [ "$active" != "$W" ] && [ "$(xdotool getwindowname "$active" 2>/dev/null)" = omdurman ]; then
+    xdotool windowactivate --sync "$W" 2>/dev/null; sleep 0.2
+    active=$(xdotool getactivewindow 2>/dev/null)
+  fi
   if [ "$active" != "$W" ]; then
     echo "refusing input: active window is '$(xdotool getwindowname "$active" 2>/dev/null)', not omdurman" >&2
     exit 2
@@ -38,8 +44,26 @@ moveto() {
   local ox oy tx ty x y dx dy i
   eval "$(xdotool getwindowgeometry --shell "$W" | grep -E '^[XY]=')"; ox=$X; oy=$Y
   tx=$((ox + $1)); ty=$((oy + $2))
-  xdotool mousemove "$tx" "$ty"; sleep 0.05
-  read -r x y < <(mouse); [ "$x" = "$tx" ] && [ "$y" = "$ty" ] && return 0
+  # KWin honours warps but reads them in its own (scaled) units: the pointer
+  # lands at request x scale. Warp, measure that scale (cached per state
+  # dir), and re-warp at target / scale; within a pixel is on target.
+  near() { local a=$(( $1 - $3 )) b=$(( $2 - $4 )); [ "${a#-}" -le 1 ] && [ "${b#-}" -le 1 ]; }
+  local sx sy
+  read -r sx sy 2>/dev/null < "$D/warp_scale" || { sx=1; sy=1; }
+  xdotool mousemove "$(awk -v t=$tx -v s=$sx 'BEGIN{printf "%d", t/s+0.5}')" \
+    "$(awk -v t=$ty -v s=$sy 'BEGIN{printf "%d", t/s+0.5}')"; sleep 0.05
+  read -r x y < <(mouse); near "$x" "$y" "$tx" "$ty" && return 0
+  if [ "$tx" -gt 100 ] && [ "$ty" -gt 100 ]; then
+    xdotool mousemove "$tx" "$ty"; sleep 0.05; read -r x y < <(mouse)
+    if [ "$x $y" != "$tx $ty" ] && [ "$x" -gt 0 ] && [ "$y" -gt 0 ]; then
+      sx=$(awk -v a=$x -v b=$tx 'BEGIN{print a/b}'); sy=$(awk -v a=$y -v b=$ty 'BEGIN{print a/b}')
+      echo "$sx $sy" > "$D/warp_scale"
+      xdotool mousemove "$(awk -v t=$tx -v s=$sx 'BEGIN{printf "%d", t/s+0.5}')" \
+        "$(awk -v t=$ty -v s=$sy 'BEGIN{printf "%d", t/s+0.5}')"; sleep 0.05
+      read -r x y < <(mouse)
+    fi
+    near "$x" "$y" "$tx" "$ty" && return 0
+  fi
   [ -S "$YDOTOOL_SOCKET" ] || { echo "pointer warp ignored by the compositor; start ydotoold (see SKILL.md)" >&2; exit 3; }
   for i in $(seq 1 80); do
     read -r x y < <(mouse)
@@ -159,6 +183,12 @@ zoom)
   moveto "$x" "$y"; wheel "$3"
   sleep 1.5   # the probe refreshes twice a second
   ;;
+pan)
+  # pan <Up|Down|Left|Right> [seconds]  -- hold an arrow key: the camera
+  # pans (0.4 s at the default zoom moves ~700 px).
+  need_input; xdotool keydown --window "$W" "$1"; sleep "${2:-0.2}"
+  xdotool keyup --window "$W" "$1"; sleep 1
+  ;;
 scroll)
   # scroll <x> <y> <notches>  -- mouse wheel at a window pixel (the sidebar,
   # a panel): positive scrolls up, negative down.
@@ -194,7 +224,7 @@ ff)
   while true; do
     s=$(head -1 "$D/probe.state")
     [ "$s" != "$last" ] && { echo "$(date +%T) $s"; last=$s; since=$(date +%s); }
-    case "$s" in *"$target"*) exit 0;; esac
+    case "$s" in *"$target"*) exit 0;; *game_over*) echo "game over"; exit 0;; esac
     if echo "$s" | grep -q "active=$2"; then
       [ $(( $(date +%s) - since )) -gt 25 ] && { echo "stuck: take a shot"; exit 1; }
       [ "$(xdotool getactivewindow 2>/dev/null)" = "$W" ] || { echo "refusing input: game window no longer active" >&2; exit 2; }

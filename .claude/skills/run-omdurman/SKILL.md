@@ -78,7 +78,9 @@ $D scroll 150 900 -15    # mouse wheel at a window pixel (the sidebar): - is dow
 $D units Dervish         # "owner q r disrupted id identity" per unit
 $D key e                 # End phase;  key Return dismisses the end-of-turn telegram
 $D ff 3 AngloEgyptian    # press E on your phases, wait out the AI, until turn 3 movement
+                         # (stops early on game over: the probe line gains `game_over result=...`)
 $D log 'fire resolved'   # every resolved attack: firers, roll, modifier, band, result
+$D pan Up 0.3           # hold an arrow key: pan the camera
 $D stop
 ```
 
