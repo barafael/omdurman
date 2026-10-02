@@ -13,8 +13,9 @@ mod stacking;
 
 pub use movement::{MAX_MOVE_PATH_LEN, MovePlan};
 pub use setup::{
-    FokCapGroup, HISTORICAL_KERRERI_UNITS, MAX_CHAIN_HEXES, MAX_MINES, entrance_area_for,
-    fok_cap_group, historical_counter_in_play, historical_in_play, in_campaign_initial_force,
+    FokCapGroup, HISTORICAL_KERRERI_UNITS, MAX_CHAIN_HEXES, MAX_MINES, campaign_counter_in_play,
+    entrance_area_for, fok_cap_group, historical_counter_in_play, historical_in_play,
+    in_campaign_initial_force,
 };
 pub(crate) use stacking::STACKING_LIMIT;
 pub use stacking::{stacking_rule, unit_projects_zoc_rule};

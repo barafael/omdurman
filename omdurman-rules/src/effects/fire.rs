@@ -417,7 +417,8 @@ fn commit_fire_attack(
     }
 
     let pre_units: Vec<UnitId> = target_units.to_vec();
-    apply_combat_results_table_result(state, result, target_units, disruption);
+    let target_units = leaders_last(state, target_units);
+    apply_combat_results_table_result(state, result, &target_units, disruption);
     let eliminations: Vec<UnitId> = diff_eliminated(state, pre_units);
     state.observations.push(Observation::FireResolved {
         // Deliberate clone: observations are self-contained records for
@@ -976,6 +977,25 @@ pub fn validate_fire_attack(state: &GameState, attack: &FireAttack) -> Result<()
         });
     }
     Ok(())
+}
+
+/// `ids` reordered so leaders come last, the rest keeping their order: the
+/// casualty order of an `Eliminate(n)` result (§CombatResults), which takes
+/// the first `n`. The manual does not say who falls; the rank and file go
+/// before their leader (a KHALIFA ABDULLAH stacked with his Taiasha is not
+/// the "1" of an `Eliminate(1)`). Deterministic: no die decides it.
+pub(crate) fn leaders_last(state: &GameState, ids: &[UnitId]) -> Vec<UnitId> {
+    let is_leader = |id: &UnitId| {
+        state.find_unit(*id).is_some_and(|u| {
+            matches!(
+                u.profile.kind,
+                UnitKind::DervishLeader { .. } | UnitKind::BritishLeader { .. }
+            )
+        })
+    };
+    let (leaders, rank_and_file): (Vec<UnitId>, Vec<UnitId>) =
+        ids.iter().partition(|id| is_leader(id));
+    rank_and_file.into_iter().chain(leaders).collect()
 }
 
 /// Apply a Combat Results Table result to a list of target units -- eliminate `n`, or disrupt

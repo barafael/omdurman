@@ -136,27 +136,30 @@ pub(crate) fn resolve_melee_combat(
                     .is_some_and(|u| matches!(u.profile.kind, UnitKind::Fort { .. }))
         })
         .collect();
+    // §CombatResults casualty order: the rank and file before their leaders.
+    let def_units = super::fire::leaders_last(state, &def_units);
     // §7.7: "Melee losses must be taken from meleeing units first!" -- an
     // elimination beyond the meleeing units falls on the other units of
     // their hexes (a battery or a disrupted battalion stacked with them).
+    // Within each of the two tiers, leaders last.
     let att_casualties: Vec<UnitId> = match def_result {
         CombatResult::Eliminate(_) => {
-            let mut order = att_units.clone();
+            let mut order = super::fire::leaders_last(state, &att_units);
             let hexes: Vec<HexCoord> = att_units
                 .iter()
                 .filter_map(|id| state.find_unit(*id).map(|u| u.position))
                 .collect();
-            order.extend(
-                state
-                    .units
-                    .iter()
-                    .filter(|u| {
-                        hexes.contains(&u.position)
-                            && u.profile.identity.owner() == attacker_player
-                            && !att_units.contains(&u.id)
-                    })
-                    .map(|u| u.id),
-            );
+            let hex_mates: Vec<UnitId> = state
+                .units
+                .iter()
+                .filter(|u| {
+                    hexes.contains(&u.position)
+                        && u.profile.identity.owner() == attacker_player
+                        && !att_units.contains(&u.id)
+                })
+                .map(|u| u.id)
+                .collect();
+            order.extend(super::fire::leaders_last(state, &hex_mates));
             order
         }
         _ => att_units.clone(),

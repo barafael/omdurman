@@ -745,6 +745,7 @@ title = "Stacking limit (4 units + leaders, gunboats isolated)"
 status = "implemented"
 clause = "No more than four units may occupy a hex, with the exception of leaders and gunboats."
 witness = "omdurman-rules::src::effects::stacking_rule_limit_is_four_counted_units"
+approximation = "Stacking is checked at the end of every move and reinforcement entry, not only at the end of the movement phase, so a hex may never hold more than four units even for a moment (two full stacks cannot swap units)."
 tests = [
     "omdurman-app::src::melee::one_click_advances_the_stack_up_to_the_stacking_limit",
     "omdurman-rules::src::effects::tests::stacking_over_limit_rejected",
@@ -1337,6 +1338,7 @@ tests = [
     "omdurman-rules::src::effects::tests::a_lone_gordon_makes_no_melee_roll",
     "omdurman-rules::src::effects::tests::melee_advance_overruns_a_lone_ae_leader",
     "omdurman-rules::src::effects::tests::entering_reinforcements_stop_in_zoc_and_overrun_lone_leaders",
+    "omdurman-rules::src::effects::tests::ae_leader_eliminated_with_last_combat_unit_in_melee",
 ]
 
 [[mapping.impl]]
@@ -1421,6 +1423,7 @@ witness = "omdurman-rules::src::effects::tests::the_units_inside_a_fort_are_fire
 note = "Implemented: forts may not be occupied or advanced into by the enemy, may not melee attack, exert a ZOC even when unoccupied, may fire their artillery factor unstacked. Fire at a fort hex is either aimed at the fort itself (FireAttack::at_fort; artillery only, §6.62) or at the units stacked inside it, by any weapon, with the fort's −3 (target_defence_modifier). Forts are destroyed by artillery (§6.62), an infantry melee attack (§7.6; cavalry, camels or leaders alone cannot take one) or the Royal Engineers (§6.53, taking one occupant with them)."
 tests = [
     "omdurman-rules::src::effects::tests::printed_fok_forts_are_british_forts",
+    "omdurman-rules::src::effects::tests::only_dervish_foot_destroys_a_fort_in_melee",
     "omdurman-rules::src::board_data::fok_forts_are_not_walled_in","omdurman-rules::src::effects::tests::retreat_before_melee_may_not_land_on_enemy_fort",
     "omdurman-rules::src::effects::tests::mandatory_advance_stops_at_an_enemy_fort",
     "omdurman-rules::src::effects::tests::the_units_inside_a_fort_are_fired_at_with_its_minus_three",
@@ -1758,10 +1761,13 @@ proofs = [
 tests = [
         "omdurman-rules::src::effects::tests::melee_lapses_when_every_defender_withdrew",
     "omdurman-rules::src::effects::tests::retreat_before_melee_only_cavalry_two_hexes",
+    "omdurman-rules::src::effects::tests::dervish_mounted_tribes_are_cavalry_and_camels",
+    "omdurman-rules::src::effects::tests::mounted_dervish_retreat_from_infantry_but_mounted_attacks_force_no_retreat",
     "omdurman-rules::src::effects::tests::retreat_opens_window_only_when_hex_empties",
     "omdurman-rules::src::effects::tests::rejected_resolve_melee_keeps_the_declaration",
     "omdurman-rules::src::effects::tests::a_retreat_needs_an_open_path_and_may_join_friends",
     "omdurman-rules::src::effects::tests::a_unit_melee_attacks_once_a_turn",
+    "omdurman-rules::src::effects::tests::a_retreated_unit_may_be_attacked_again_but_not_retreat_twice",
 ]
 
 [[mapping.impl]]
@@ -2052,6 +2058,7 @@ proofs = [
 ]
 tests = [
     "omdurman-rules::src::reinforcements::anglo_egyptian_schedule_has_four_waves",
+    "omdurman-rules::src::effects::tests::campaign_counters_in_play_exclude_only_gordon",
     "omdurman-rules::src::reinforcements::anglo_egyptian_leaders_available_each_wave",
     "omdurman-rules::src::reinforcements::anglo_egyptian_turn_four_is_all_remaining",
     "omdurman-rules::src::effects::tests::campaign_reinforcement_cap_and_double_entry",
@@ -2124,6 +2131,7 @@ tests = [
     "omdurman-rules::src::effects::tests::a_mined_gunboat_scores_and_takes_its_friendlies_down",
     "omdurman-rules::src::effects::tests::a_gunboat_sunk_by_artillery_scores_victory_points","omdurman-rules::src::effects::tests::friendlies_bank_scores_by_side", "omdurman-rules::src::effects::tests::mahdis_tomb_stays_dervish_without_a_leader", "omdurman-rules::src::effects::tests::mahdis_tomb_scores_for_anglo_egyptian_when_taken", "omdurman-rules::src::effects::tests::campaign_end_scores_an_untaken_tomb_for_the_dervish", "omdurman-rules::src::tests::vp_source_attributes",
     "omdurman-rules::src::effects::tests::the_west_bank_decisive_needs_units_that_entered_it",
+    "omdurman-rules::src::effects::tests::mahdis_tomb_needs_an_undisrupted_non_friendlies_unit",
 ]
 
 [[mapping.impl]]
@@ -2274,6 +2282,7 @@ witness = "omdurman-rules::src::effects::tests::zariba_fire_penalties_apply_to_d
 tests = [
     "omdurman-rules::src::effects::tests::zariba_fire_penalties_apply_to_dervish_fire_only",
     "omdurman-rules::src::effects::tests::the_hedge_penalises_fire_across_it_only",
+    "omdurman-rules::src::effects::tests::an_advance_may_cross_a_trench_but_not_a_thorn_hedge",
 ]
 [[mapping.impl]]
 file = "omdurman-rules/src/combat.rs"
@@ -2334,6 +2343,7 @@ tests = [
     "omdurman-rules::src::effects::tests::zariba_end_hexside_costs_extra_mp",
     "omdurman-rules::src::effects::tests::zariba_thorn_hedge_blocks_movement",
     "omdurman-app::src::picker::movement::trench_end_crossing_costs_two_extra_mp",
+    "omdurman-rules::src::effects::tests::an_advance_may_cross_a_trench_but_not_a_thorn_hedge",
   ]
 
 [[mapping.impl]]
@@ -2831,9 +2841,11 @@ title = "Explanation of Combat Results (rulebook back cover)"
 status = "implemented"
 clause = "D* = ½ (round up) of the units in the target hex are disrupted (inverted)."
 witness = "omdurman-rules::src::effects::tests::a_disrupt_result_disrupts_half_rounded_up_picked_at_random"
-approximation = "The rulebook does not say who picks the disrupted units. They are picked at random among the undisrupted units in the hex, by a draw the acting peer rolls into the fire or melee effect with its dice (DisruptionDraw), so every peer disrupts the same units."
+approximation = "The rulebook does not say who picks the disrupted units. They are picked at random among the undisrupted units in the hex, by a draw the acting peer rolls into the fire or melee effect with its dice (DisruptionDraw), so every peer disrupts the same units. Nor does it say who falls to a numbered (#) result: the rank and file go before their leaders, otherwise in the hex's order (in melee within §7.7's meleeing-units-first tiers), deterministically."
 tests = [
     "omdurman-rules::src::effects::tests::a_disrupt_result_disrupts_half_rounded_up_picked_at_random",
+    "omdurman-rules::src::effects::tests::fire_eliminates_the_rank_and_file_before_the_leader",
+    "omdurman-rules::src::effects::tests::melee_eliminates_the_rank_and_file_before_the_leader",
     "omdurman-rules::src::effects::tests::a_disruption_draw_reaches_every_ordered_pick",
     "omdurman-rules::src::effects::tests::numbered_result_eliminates_without_disrupting_survivors",
 ]

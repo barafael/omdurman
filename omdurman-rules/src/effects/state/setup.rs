@@ -42,6 +42,15 @@ pub fn historical_counter_in_play(id: UnitId) -> bool {
     crate::unit_profiles::profile_for_unit(id).is_some_and(|p| historical_in_play(&p.identity))
 }
 
+/// Whether counter `id` is in play in the Campaign game: every real counter
+/// except GORDON -- "The GORDON unit is not used in this scenario" (§9.113).
+/// The picker asks this so it never offers a counter the engine refuses.
+pub fn campaign_counter_in_play(id: UnitId) -> bool {
+    crate::unit_profiles::profile_for_unit(id).is_some_and(|p| {
+        p.identity != crate::UnitIdentity::AngloEgyptianLeader(crate::BritishLeader::Gordon)
+    })
+}
+
 /// The Historical scenario's Kerreri detachment (§9.211): the two Camel
 /// Corps counters, the two Egyptian Cavalry squadrons and the Horse
 /// Artillery. (The 21st Lancers share the cavalry identity but set up in the

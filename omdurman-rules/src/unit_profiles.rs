@@ -594,12 +594,29 @@ pub fn dervish_tribe(tribe: DervishTribe) -> Option<Classification> {
         }
         _ => WeaponClass::Melee,
     };
-    Some(Classification {
-        kind: UnitKind::Infantry {
+    // §2.3: "Camel unit (e.g. Danagla, 4-6-12)"; the Jaalin counters are
+    // camel riders too and the Baggara horsemen -- mounted units, which
+    // matters for the §7.5 retreat and the §6.54 fort assault. The tribe
+    // (stacking, §5.52) stays in the identity.
+    let kind = match tribe {
+        DervishTribe::Baggara => UnitKind::Cavalry {
             fire: 0,
             melee: 0,
             movement: 0,
         },
+        DervishTribe::Jaalin | DervishTribe::Danagla => UnitKind::Camel {
+            fire: 0,
+            melee: 0,
+            movement: 0,
+        },
+        _ => UnitKind::Infantry {
+            fire: 0,
+            melee: 0,
+            movement: 0,
+        },
+    };
+    Some(Classification {
+        kind,
         identity: UnitIdentity::DervishTribal { tribe },
         weapon,
     })

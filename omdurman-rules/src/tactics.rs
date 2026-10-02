@@ -976,12 +976,12 @@ fn retreat_before_melee() -> TacticsScript {
 /// §7.5: only cavalry and camel units may retreat before melee.
 fn infantry_cannot_retreat() -> TacticsScript {
     let mut state = campaign_state(Phase::Melee, Player::AngloEgyptian, DayNight::Day);
-    place(&mut state, UnitId::Baggara_0_1, HexCoord::new(31, 13));
-    let defender = UnitId::Baggara_0_1;
+    place(&mut state, UnitId::Taiasha_0_0, HexCoord::new(31, 13));
+    let defender = UnitId::Taiasha_0_0;
     let infantry = ae_infantry(&mut state, HexCoord::new(30, 13));
     TacticsScript::new("infantry_cannot_retreat", "§7.5", state)
         .legal(
-            "an infantry melee is declared against the Baggara",
+            "an infantry melee is declared against the Taiasha",
             GameEffect::DeclareMelee {
                 attack: melee_attack(
                     Player::AngloEgyptian,

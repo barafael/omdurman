@@ -8081,6 +8081,25 @@ mod tests {
         ));
     }
 
+    // §9.113: "The GORDON unit is not used in this scenario" -- the Campaign
+    // picker hides him; every other counter (Friendlies, gunboats, forts,
+    // Isa Zachneih) is in play.
+    #[rulebook("§9.113")]
+    #[test]
+    fn campaign_counters_in_play_exclude_only_gordon() {
+        use crate::effects::campaign_counter_in_play;
+        assert!(!campaign_counter_in_play(UnitId::BritishBoats_3_1));
+        for id in [
+            UnitId::BritishBoats_3_0,
+            UnitId::BritishArmy_0_0,
+            UnitId::Baggara_0_0,
+            UnitId::Hadendowa_0_0,
+            UnitId::HadendowaForts_0_0,
+        ] {
+            assert!(campaign_counter_in_play(id), "{id:?}");
+        }
+    }
+
     // §9.211/§9.212: the Historical scenario's not-in-play units may not be
     // deployed: GORDON and the "Friendlies" (AE), Isa Zachneih, gunboats and
     // forts (Dervish).
@@ -11433,5 +11452,455 @@ mod tests {
                 ));
             }
         }
+    }
+
+    // ----- Exotic corners (rules audit, October 2026) ------------------------
+
+    /// A canonical A-E cavalry counter (21 Lancers).
+    fn make_lancers(state: &mut GameState, hex: HexCoord) -> UnitId {
+        make_profiled_unit(
+            state,
+            hex,
+            crate::unit_profiles::profile_for_unit(UnitId::BritishArmy_0_0)
+                .expect("the 21 Lancers have a profile"),
+        )
+    }
+
+    /// Declare a melee by `attackers` on `target` with the engine-derived
+    /// modifiers and the given dice (resolution left to the caller).
+    fn declare_melee_on(
+        state: &mut GameState,
+        attackers: Vec<UnitId>,
+        target: HexCoord,
+        attacker_roll: DieRoll,
+        defender_roll: DieRoll,
+    ) -> Result<(), RuleError> {
+        let attacker_hex = state.find_unit(attackers[0]).expect("attacker").position;
+        let mut attack = build_melee_attack(state, attacker_hex, target).expect("a melee");
+        attack.attackers = attackers;
+        let (att, def) = mandatory_melee_modifiers(state, &attack);
+        attack.attacker_modifiers = att;
+        attack.defender_modifiers = def;
+        apply_effect(
+            state,
+            &GameEffect::DeclareMelee {
+                attack,
+                attacker_roll,
+                defender_roll,
+                disruption: crate::DisruptionDraw::default(),
+            },
+        )
+    }
+
+    // §7.5: "only one retreat per unit per turn is permitted. Thus, if their
+    // retreat places them adjacent to enemy units whose melee attacks have
+    // not yet been resolved, those enemy units may elect to attack the
+    // retreating unit(s)" -- and then it stands.
+    #[rulebook("§7.5")]
+    #[test]
+    fn a_retreated_unit_may_be_attacked_again_but_not_retreat_twice() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::Melee;
+        state.active_player = Player::Dervish;
+        let first_hex = HexCoord::new(2, 0);
+        let lancers = make_lancers(&mut state, first_hex);
+        let first = make_dervish_tribal(&mut state, HexCoord::new(1, 0));
+        let refuge = HexCoord::new(4, 0);
+        let second = make_dervish_tribal(&mut state, HexCoord::new(5, 0));
+
+        declare_melee_on(
+            &mut state,
+            vec![first],
+            first_hex,
+            DieRoll::One,
+            DieRoll::One,
+        )
+        .unwrap();
+        apply_effect(
+            &mut state,
+            &GameEffect::RetreatBeforeMelee {
+                unit_id: lancers,
+                to: refuge,
+            },
+        )
+        .unwrap();
+        apply_effect(&mut state, &GameEffect::ResolveMelee).unwrap();
+        assert_eq!(state.find_unit(lancers).map(|u| u.position), Some(refuge));
+
+        // The second attacker, unresolved and now adjacent, may attack ...
+        declare_melee_on(&mut state, vec![second], refuge, DieRoll::One, DieRoll::One).unwrap();
+        // ... and the lancers may not retreat a second time this turn.
+        assert!(
+            state
+                .can_retreat_before_melee(lancers, HexCoord::new(2, 0))
+                .is_err(),
+            "one retreat per unit per turn (§7.5)"
+        );
+    }
+
+    // §2.3 "Camel unit (e.g. Danagla, 4-6-12)": the Danagla and Jaalin ride
+    // camels and the Baggara horses -- mounted, so §7.5's retreat applies to
+    // them and their attacks are not "infantry melee attacks". The tribe
+    // (§5.52 stacking) is unchanged.
+    #[rulebook("§7.5")]
+    #[test]
+    fn dervish_mounted_tribes_are_cavalry_and_camels() {
+        let kind_tribe = |id: UnitId| {
+            let p = crate::unit_profiles::profile_for_unit(id).expect("a counter");
+            (p.kind, p.identity)
+        };
+        let (kind, identity) = kind_tribe(UnitId::Baggara_0_0);
+        assert!(matches!(kind, UnitKind::Cavalry { .. }), "{kind:?}");
+        assert_eq!(
+            identity,
+            UnitIdentity::DervishTribal {
+                tribe: DervishTribe::Baggara
+            }
+        );
+        let (kind, identity) = kind_tribe(UnitId::JaalinI_0_1);
+        assert!(matches!(kind, UnitKind::Camel { .. }), "{kind:?}");
+        assert_eq!(
+            identity,
+            UnitIdentity::DervishTribal {
+                tribe: DervishTribe::Jaalin
+            }
+        );
+        let (kind, identity) = kind_tribe(UnitId::Sherif_1_0);
+        assert!(matches!(kind, UnitKind::Camel { .. }), "{kind:?}");
+        assert_eq!(
+            identity,
+            UnitIdentity::DervishTribal {
+                tribe: DervishTribe::Danagla
+            }
+        );
+        let (kind, _) = kind_tribe(UnitId::Taiasha_0_0);
+        assert!(matches!(kind, UnitKind::Infantry { .. }), "{kind:?}");
+    }
+
+    // §7.5: "Cavalry and camel units may retreat two hexes from an infantry
+    // melee attack" -- a Dervish camel unit may, before A-E infantry; A-E
+    // cavalry may not, before a mounted (Baggara) attack.
+    #[rulebook("§7.5")]
+    #[test]
+    fn mounted_dervish_retreat_from_infantry_but_mounted_attacks_force_no_retreat() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::Melee;
+        state.active_player = Player::AngloEgyptian;
+        let camel_hex = HexCoord::new(2, 0);
+        let camel = make_profiled_unit(
+            &mut state,
+            camel_hex,
+            crate::unit_profiles::profile_for_unit(UnitId::JaalinI_0_1).expect("a Jaalin"),
+        );
+        let infantry = make_ae_infantry(&mut state, HexCoord::new(1, 0));
+        declare_melee_on(
+            &mut state,
+            vec![infantry],
+            camel_hex,
+            DieRoll::One,
+            DieRoll::One,
+        )
+        .unwrap();
+        let retreat = state.can_retreat_before_melee(camel, HexCoord::new(4, 0));
+        assert!(
+            retreat.is_ok(),
+            "a Jaalin camel unit retreats before an infantry melee (§7.5): {retreat:?}"
+        );
+
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::Melee;
+        state.active_player = Player::Dervish;
+        let lancers_hex = HexCoord::new(2, 0);
+        let lancers = make_lancers(&mut state, lancers_hex);
+        let baggara = make_profiled_unit(
+            &mut state,
+            HexCoord::new(1, 0),
+            crate::unit_profiles::profile_for_unit(UnitId::Baggara_0_0).expect("a Baggara"),
+        );
+        declare_melee_on(
+            &mut state,
+            vec![baggara],
+            lancers_hex,
+            DieRoll::One,
+            DieRoll::One,
+        )
+        .unwrap();
+        assert!(
+            matches!(
+                state.can_retreat_before_melee(lancers, HexCoord::new(4, 0)),
+                Err(RuleError::NoInfantryMeleeThreatens(id)) if id == lancers
+            ),
+            "a Baggara (cavalry) attack is no infantry melee attack (§7.5)"
+        );
+    }
+
+    // §6.54: a fort is destroyed only by an infantry melee attack -- mounted
+    // Baggara cannot take it, Taiasha foot can.
+    #[rulebook("§6.54")]
+    #[test]
+    fn only_dervish_foot_destroys_a_fort_in_melee() {
+        let assault = |attacker: UnitId| {
+            let mut state = playing(Scenario::FallOfKhartoum);
+            state.phase = Phase::Melee;
+            state.active_player = Player::Dervish;
+            let fort_hex = HexCoord::new(2, 0);
+            let fort = make_british_fort(&mut state, fort_hex);
+            let profile = crate::unit_profiles::profile_for_unit(attacker).expect("a counter");
+            let attackers: Vec<UnitId> = (0..4)
+                .map(|_| make_profiled_unit(&mut state, HexCoord::new(1, 0), profile))
+                .collect();
+            declare_melee_on(&mut state, attackers, fort_hex, DieRoll::Ten, DieRoll::One).unwrap();
+            apply_effect(&mut state, &GameEffect::ResolveMelee).unwrap();
+            state.find_unit(fort).is_some()
+        };
+        assert!(
+            assault(UnitId::Baggara_0_0),
+            "mounted Baggara may not destroy a fort"
+        );
+        assert!(
+            !assault(UnitId::Taiasha_0_0),
+            "an infantry assault destroys it"
+        );
+    }
+
+    /// KHALIFA ABDULLAH placed *before* a Taiasha on `hex` -- the placement
+    /// order that used to make him the first casualty.
+    fn khalifa_then_taiasha(state: &mut GameState, hex: HexCoord) -> (UnitId, UnitId) {
+        let khalifa = make_profiled_unit(
+            state,
+            hex,
+            crate::unit_profiles::profile_for_unit(UnitId::KhalifaAbdullah_0_0)
+                .expect("the Khalifa"),
+        );
+        let taiasha = make_profiled_unit(
+            state,
+            hex,
+            crate::unit_profiles::profile_for_unit(UnitId::Taiasha_0_0).expect("a Taiasha"),
+        );
+        (khalifa, taiasha)
+    }
+
+    // §CombatResults "# = That many units in the target hex are eliminated":
+    // the manual does not say which -- the rank and file fall before their
+    // leader, whatever the placement order (fire).
+    #[rulebook("§CombatResults")]
+    #[test]
+    fn fire_eliminates_the_rank_and_file_before_the_leader() {
+        let mut base = playing(Scenario::Campaign);
+        base.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        base.active_player = Player::AngloEgyptian;
+        let target = HexCoord::new(3, 0);
+        let (khalifa, taiasha) = khalifa_then_taiasha(&mut base, target);
+        let rifle = make_ae_infantry(&mut base, HexCoord::new(0, 0));
+        let attack = build_fire_attack_from(
+            &base,
+            HexCoord::new(0, 0),
+            &[rifle],
+            target,
+            FireKind::Direct,
+        )
+        .expect("a shot");
+        // Find a die that yields exactly one elimination.
+        let one_kill = (1..=10u16)
+            .map(|v| DieRoll::try_from(v).unwrap())
+            .find_map(|roll| {
+                let mut state = base.clone();
+                apply_effect(
+                    &mut state,
+                    &GameEffect::FireCombat {
+                        attack: attack.clone(),
+                        roll,
+                        disruption: crate::DisruptionDraw::default(),
+                    },
+                )
+                .ok()?;
+                (state.units.len() == base.units.len() - 1).then_some(state)
+            })
+            .expect("some roll eliminates exactly one unit");
+        assert!(
+            one_kill.find_unit(khalifa).is_some(),
+            "the Khalifa survives"
+        );
+        assert!(one_kill.find_unit(taiasha).is_none(), "his Taiasha falls");
+    }
+
+    // §CombatResults, melee (§7.7): the defenders' rank and file fall before
+    // their leader.
+    #[rulebook("§CombatResults")]
+    #[test]
+    fn melee_eliminates_the_rank_and_file_before_the_leader() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::Melee;
+        state.active_player = Player::AngloEgyptian;
+        let target = HexCoord::new(2, 0);
+        let (khalifa, taiasha) = khalifa_then_taiasha(&mut state, target);
+        let infantry = make_ae_infantry(&mut state, HexCoord::new(1, 0));
+        // A-E melee 5 +1 on row 1-5 with a 2: Eliminate(1) (§7.7); the
+        // defenders roll a 1.
+        let attacker_roll = (1..=10u16)
+            .map(|v| DieRoll::try_from(v).unwrap())
+            .find(|&roll| {
+                let modified = DieRoll::try_from((roll.value() + 1).min(10)).unwrap();
+                matches!(
+                    combat_results_table(
+                        crate::combat_results_table::FireFactorRow::from_total(5),
+                        modified
+                    ),
+                    CombatResult::Eliminate(1)
+                )
+            })
+            .expect("a die for Eliminate(1)");
+        declare_melee_on(
+            &mut state,
+            vec![infantry],
+            target,
+            attacker_roll,
+            DieRoll::One,
+        )
+        .unwrap();
+        apply_effect(&mut state, &GameEffect::ResolveMelee).unwrap();
+        assert!(state.find_unit(khalifa).is_some(), "the Khalifa survives");
+        assert!(state.find_unit(taiasha).is_none(), "his Taiasha falls");
+    }
+
+    // §6.51(b): an Anglo-Egyptian leader is eliminated "if all of the combat
+    // units a leader is stacked with are eliminated in fire combat or melee"
+    // -- the melee half (the fire half is pinned by
+    // `ae_leader_eliminated_with_last_combat_unit_in_fire_combat`).
+    #[rulebook("§6.51")]
+    #[test]
+    fn ae_leader_eliminated_with_last_combat_unit_in_melee() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::Melee;
+        state.active_player = Player::Dervish;
+        let hex = HexCoord::new(1, 0);
+        let leader = make_ae_leader(&mut state, hex);
+        let battalion = make_ae_infantry(&mut state, hex);
+        let attacker = make_dervish_tribal(&mut state, HexCoord::new(0, 0));
+        let mut killed = false;
+        for r in 1u16..=10 {
+            let mut s = state.clone();
+            let roll = DieRoll::try_from(r).unwrap();
+            declare_melee_on(&mut s, vec![attacker], hex, roll, DieRoll::One).unwrap();
+            apply_effect(&mut s, &GameEffect::ResolveMelee).unwrap();
+            if s.find_unit(battalion).is_none() {
+                killed = true;
+                assert!(
+                    s.find_unit(leader).is_none(),
+                    "roll {r}: the leader outlived his last battalion"
+                );
+            }
+        }
+        assert!(killed, "some roll must eliminate the battalion");
+    }
+
+    // §9.14: "it must be occupied by one British leader plus any one
+    // non-'Friendlies' Anglo-Egyptian combat unit (both undisrupted)".
+    #[rulebook("§9.14")]
+    #[test]
+    fn mahdis_tomb_needs_an_undisrupted_non_friendlies_unit() {
+        for (case, taken) in [
+            ("disrupted", false),
+            ("friendlies", false),
+            ("regular", true),
+        ] {
+            let mut state = GameState::new(Scenario::Campaign);
+            let tomb = HexCoord::new(5, 5);
+            board_mut(&mut state)
+                .locations
+                .insert(tomb, omdurman_types::Location::MahdisTomb);
+            make_ae_leader(&mut state, tomb);
+            let unit = make_ae_infantry(&mut state, tomb);
+            match case {
+                "disrupted" => state.find_unit_mut(unit).unwrap().state.disrupted = true,
+                "friendlies" => make_friendlies(&mut state, unit),
+                _ => {}
+            }
+            score_mahdis_tomb(&mut state);
+            let (ae, dervish) = if taken { (25, 0) } else { (0, 25) };
+            assert_eq!(
+                (
+                    state.victory.total_for(Player::AngloEgyptian),
+                    state.victory.total_for(Player::Dervish)
+                ),
+                (crate::VictoryPoints(ae), crate::VictoryPoints(dervish)),
+                "{case}"
+            );
+        }
+    }
+
+    /// A Historical Zariba side of `kind` between an Anglo-Egyptian brigade
+    /// inside and a lone Dervish unit outside: whether a battalion could
+    /// advance out after Anglo-Egyptian offensive fire eliminates the
+    /// Dervish unit, and whether it could have simply moved out.
+    fn advance_and_move_across(
+        kind: HexsideKind,
+    ) -> (Result<(), RuleError>, Result<(), RuleError>) {
+        let mut state = playing(Scenario::Historical);
+        let (inside, outside) = (HexCoord::new(0, 0), HexCoord::new(1, 0));
+        print_zariba(&mut state, inside, outside, kind);
+        state.active_player = Player::AngloEgyptian;
+        let firers: Vec<UnitId> = (0..4)
+            .map(|_| make_ae_infantry(&mut state, inside))
+            .collect();
+        let mut moved = state.clone();
+        let move_out = apply_effect(
+            &mut moved,
+            &GameEffect::MoveUnit {
+                unit_id: firers[0],
+                to: outside,
+                cost: MovementPoints::new(1),
+                path: vec![outside],
+            },
+        );
+        let target = make_dervish_tribal(&mut state, outside);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        let mut attack = direct_attack(Player::AngloEgyptian, firers.clone(), outside);
+        attack.modifiers = mandatory_fire_modifiers(&state, &attack);
+        apply_effect(
+            &mut state,
+            &GameEffect::FireCombat {
+                attack,
+                roll: DieRoll::Ten,
+                disruption: crate::DisruptionDraw::default(),
+            },
+        )
+        .unwrap();
+        assert!(
+            state.find_unit(target).is_none(),
+            "the fire must clear the hex"
+        );
+        let advance = apply_effect(
+            &mut state,
+            &GameEffect::AdvanceAfterCombat {
+                unit_id: firers[0],
+                to: outside,
+            },
+        );
+        (advance, move_out)
+    }
+
+    // §9.233: "Units may only enter and/or leave the Zariba via the two end
+    // hexsides ... (Exception: advance after combat across an entrenched
+    // hexside)" -- a trench closes the Zariba to movement but not to an
+    // advance after combat; a thorn hedge closes it to both (§9.231).
+    #[rulebook("§9.233", "§9.231")]
+    #[test]
+    fn an_advance_may_cross_a_trench_but_not_a_thorn_hedge() {
+        let (advance, move_out) = advance_and_move_across(HexsideKind::ZaribaTrench);
+        assert!(
+            advance.is_ok(),
+            "advance across a trench (§9.233 exception): {advance:?}"
+        );
+        assert!(
+            matches!(move_out, Err(RuleError::MoveBlockedByHexside(..))),
+            "no movement across a trench: {move_out:?}"
+        );
+        let (advance, move_out) = advance_and_move_across(HexsideKind::ZaribaThornHedge);
+        assert!(
+            matches!(advance, Err(RuleError::AdvanceBlockedByHexside(..))),
+            "no advance across a thorn hedge (§9.231): {advance:?}"
+        );
+        assert!(matches!(move_out, Err(RuleError::MoveBlockedByHexside(..))));
     }
 }
