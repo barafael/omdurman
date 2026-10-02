@@ -1533,6 +1533,66 @@ mod layout_tests {
             "stacked cards must accumulate downward, not overlap: a={rect_a:?} b={rect_b:?}"
         );
     }
+
+    /// Play-test repro: a melee target hex lying under the hover preview card
+    /// could not be clicked -- the card claimed the pointer. A hover-only
+    /// (passive) card must leave the board unblocked; an ordinary card with a
+    /// widget still blocks it.
+    #[test]
+    fn passive_preview_cards_do_not_block_the_board() {
+        let blocks = |passive: bool| {
+            let ctx = egui::Context::default();
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600.0, 900.0));
+            let card = |ctx: &egui::Context| {
+                let mut layout = crate::ScreenLayout::default();
+                let contents = |ui: &mut egui::Ui| {
+                    let _ = ui.button("§7.7 Melee");
+                    ui.min_rect()
+                };
+                if passive {
+                    crate::ui::passive_stacked_card(
+                        ctx,
+                        &mut layout,
+                        "preview",
+                        egui::Frame::default(),
+                        contents,
+                    )
+                } else {
+                    crate::ui::stacked_card(
+                        ctx,
+                        &mut layout,
+                        "preview",
+                        egui::Frame::default(),
+                        contents,
+                    )
+                }
+                .unwrap()
+            };
+            ctx.begin_pass(egui::RawInput {
+                screen_rect: Some(screen),
+                time: Some(0.0),
+                ..Default::default()
+            });
+            let rect = card(&ctx);
+            ctx.end_pass().textures_delta.clear();
+            // Second pass: the pointer rests in the middle of the card.
+            ctx.begin_pass(egui::RawInput {
+                screen_rect: Some(screen),
+                time: Some(0.1),
+                events: vec![egui::Event::PointerMoved(rect.center())],
+                ..Default::default()
+            });
+            card(&ctx);
+            let blocked = omdurman_board_ui::pointer_over_egui_surface(&ctx);
+            ctx.end_pass().textures_delta.clear();
+            blocked
+        };
+        assert!(
+            blocks(false),
+            "an interactive card blocks the board under it"
+        );
+        assert!(!blocks(true), "a hover preview card lets the click through");
+    }
 }
 
 /// C2: the Game view keeps no snapshot -- a round trip through the menu and

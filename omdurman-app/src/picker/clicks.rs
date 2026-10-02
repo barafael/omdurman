@@ -229,6 +229,7 @@ fn picker_click(
                     game_state,
                     restrict_to,
                     &scope_ok,
+                    &mut picker_ctx.movement_path,
                 );
             }
         }
@@ -574,7 +575,11 @@ fn select_single_unit(
 /// each carries its own remaining-movement budget (`unit_remaining_mp`), which
 /// is what makes slower units drop off along a shared path. Any stale
 /// single-unit `Selected` marker outside the new stack is cleared so it can't
-/// leak onto an unrelated counter.
+/// leak onto an unrelated counter, and a path plotted for the previous
+/// selection is discarded: the new stack starts a path of its own (a leftover
+/// leg would be submitted for the new stack's units and refused as a
+/// non-contiguous route, §5.11).
+#[allow(clippy::too_many_arguments)]
 fn handle_stack_double_click(
     state: &mut PickerState,
     commands: &mut Commands,
@@ -583,6 +588,7 @@ fn handle_stack_double_click(
     game_state: Option<&crate::GameStateResource>,
     restrict_to: Option<omdurman_types::Player>,
     scope_ok: &dyn Fn(&omdurman_rules::UnitIdentity) -> bool,
+    movement_path: &mut MovementPath,
 ) {
     // The whole-stack selection covers only the *normal* stack: disrupted
     // counters cannot receive orders (they stay individually clickable for
@@ -606,6 +612,7 @@ fn handle_stack_double_click(
     if sources.is_empty() {
         return;
     }
+    movement_path.reset();
     // Clear stale markers from whichever single selection the first click of
     // the pair left behind (if it isn't part of the stack).
     match &*state {
@@ -978,6 +985,28 @@ fn no_route_reason(goal: HexCoord, budget: i16) -> String {
     )
 }
 
+/// Why no route reaches `goal`: when the goal itself may not hold one of the
+/// `movers` (§5.51-§5.53 stacking: another tribe's stack, a leader outside
+/// his command, a full hex) the route finder never even tries it -- say so,
+/// rather than blaming terrain and zones of control.
+fn unroutable_reason(
+    gs: Option<&omdurman_rules::effects::GameState>,
+    movers: &[omdurman_rules::UnitId],
+    goal: HexCoord,
+    budget: i16,
+) -> String {
+    let stacking_refusal = gs.and_then(|gs| {
+        movers.iter().find_map(|&id| {
+            let mover = gs.find_unit(id)?;
+            gs.check_stacking(mover, goal).err()
+        })
+    });
+    match stacking_refusal {
+        Some(error) => format!("Cannot end a move on {goal}: {error}."),
+        None => no_route_reason(goal, budget),
+    }
+}
+
 struct SelectedClick<'a> {
     state: &'a mut PickerState,
     game_map: &'a GameMap,
@@ -1015,7 +1044,13 @@ impl SelectedClick<'_> {
             game_state,
         ) else {
             info!(?start, ?goal, budget, "no legal route to the clicked hex");
-            return Err(no_route_reason(goal, budget));
+            let movers: Vec<_> = placed.unit_id.into_iter().collect();
+            return Err(unroutable_reason(
+                game_state.map(|gs| &gs.0),
+                &movers,
+                goal,
+                budget,
+            ));
         };
         let mut from = start;
         for hex in route {
@@ -1250,7 +1285,16 @@ impl SelectedStackClick<'_, '_, '_> {
             game_state,
         ) else {
             info!(?start, ?goal, budget, "no legal route to the clicked hex");
-            return Err(no_route_reason(goal, budget));
+            let movers: Vec<_> = sources
+                .iter()
+                .filter_map(|&s| placed_units.get(s).ok().and_then(|(_, p)| p.unit_id))
+                .collect();
+            return Err(unroutable_reason(
+                game_state.map(|gs| &gs.0),
+                &movers,
+                goal,
+                budget,
+            ));
         };
         let mut from = start;
         for hex in route {
@@ -1816,5 +1860,98 @@ pub fn clear_paths_on_turn_change(
             movement_path.reset();
         }
         *last_active = Some(active);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bevy::ecs::system::RunSystemOnce;
+
+    fn baggara(world: &mut World, coord: HexCoord, col: u32) -> Entity {
+        world
+            .spawn(PlacedUnit {
+                coord,
+                section_name: SectionName::Baggara,
+                col,
+                row: 0,
+                is_boat: false,
+                unit_id: None,
+                disrupted: false,
+            })
+            .id()
+    }
+
+    /// Play-test repro: a leg plotted for one stack must not ride along when
+    /// another stack is double-clicked -- it used to, and the new stack's
+    /// commit was refused as a non-contiguous path (§5.11).
+    #[test]
+    fn a_new_stack_selection_discards_the_previous_path() {
+        let mut world = World::new();
+        let first = HexCoord::new(11, 21);
+        let second = HexCoord::new(12, 23);
+        baggara(&mut world, first, 0);
+        let other = baggara(&mut world, second, 1);
+        world.insert_resource(PickerState::default());
+        world.insert_resource(MovementPath {
+            legs: vec![(first, HexCoord::new(12, 21))],
+            cost_so_far: 3,
+        });
+        world
+            .run_system_once(
+                move |mut state: ResMut<PickerState>,
+                      mut commands: Commands,
+                      placed: Query<(Entity, &PlacedUnit)>,
+                      mut path: ResMut<MovementPath>| {
+                    handle_stack_double_click(
+                        &mut state,
+                        &mut commands,
+                        &placed,
+                        second,
+                        None,
+                        None,
+                        &|_| true,
+                        &mut path,
+                    );
+                },
+            )
+            .expect("the selection system runs");
+        assert!(world.resource::<MovementPath>().legs.is_empty());
+        assert!(matches!(
+            world.resource::<PickerState>(),
+            PickerState::SelectedStack(sel) if sel.sources == vec![other] && sel.start_coord == second
+        ));
+    }
+
+    /// Play-test repro: Ali Wad Helu ordered onto a Jaalin stack was refused
+    /// as "No route ... terrain costs, zones of control"; the real reason is
+    /// §5.53 stacking at the goal.
+    #[test]
+    fn an_illegal_goal_stack_is_reported_as_stacking_not_routing() {
+        use omdurman_rules::{UnitId, UnitPlacement, unit_profiles::profile_for_unit};
+        let mut gs = omdurman_rules::effects::GameState::new(Scenario::Campaign);
+        let goal = HexCoord::new(16, 30);
+        for (id, position) in [
+            (UnitId::AliWadHelu_0_0, HexCoord::new(15, 28)),
+            (UnitId::JaalinI_0_1, goal),
+        ] {
+            gs.units.push(UnitPlacement {
+                id,
+                position,
+                profile: profile_for_unit(id).expect("a counter"),
+                state: Default::default(),
+            });
+        }
+        let reason = unroutable_reason(Some(&gs), &[UnitId::AliWadHelu_0_0], goal, 14);
+        assert!(reason.contains("§5.53"), "{reason}");
+        assert!(!reason.starts_with("No route"), "{reason}");
+        // An empty goal keeps the routing explanation.
+        let reason = unroutable_reason(
+            Some(&gs),
+            &[UnitId::AliWadHelu_0_0],
+            HexCoord::new(9, 9),
+            14,
+        );
+        assert!(reason.starts_with("No route"), "{reason}");
     }
 }

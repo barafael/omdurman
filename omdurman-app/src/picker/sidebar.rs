@@ -478,6 +478,14 @@ pub fn unit_picker_ui(
                         .is_some_and(omdurman_rules::effects::historical_counter_in_play);
             }
         }
+        if matches!(state.0.scenario, Scenario::Campaign) {
+            // §9.113: "The GORDON unit is not used in this scenario."
+            for unit in picker_ctx.picker.available.iter_mut().filter(|u| u.visible) {
+                unit.visible =
+                    unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
+                        .is_some_and(omdurman_rules::effects::campaign_counter_in_play);
+            }
+        }
         if matches!(state.0.scenario, Scenario::FallOfKhartoum) {
             use omdurman_rules::effects::fok_cap_group;
             // §9.321/§9.322: the FoK order of battle is exactly the set of

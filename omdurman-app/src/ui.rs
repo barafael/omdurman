@@ -503,13 +503,46 @@ pub fn stacked_card<R>(
     frame: egui::Frame,
     contents: impl FnOnce(&mut egui::Ui) -> R,
 ) -> Option<R> {
+    stacked_card_impl(ctx, layout, id, frame, true, contents)
+}
+
+/// A [`stacked_card`] for hover-only information (fire / melee previews):
+/// pointer-transparent, so it never blocks the board. Such a card follows the
+/// hovered hex, and the hex can lie *under* it -- an interactive card there
+/// would swallow the very click (declare the melee, allocate the fire) the
+/// preview describes. Its widgets are inert (drawn at full opacity).
+pub fn passive_stacked_card<R>(
+    ctx: &egui::Context,
+    layout: &mut crate::ScreenLayout,
+    id: impl Into<egui::Id>,
+    frame: egui::Frame,
+    contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> Option<R> {
+    stacked_card_impl(ctx, layout, id, frame, false, contents)
+}
+
+fn stacked_card_impl<R>(
+    ctx: &egui::Context,
+    layout: &mut crate::ScreenLayout,
+    id: impl Into<egui::Id>,
+    frame: egui::Frame,
+    interactive: bool,
+    contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> Option<R> {
     let y = layout.center_stack_y;
     let mut inner = None;
     let mut height = 0.0;
     egui::Area::new(id.into())
         .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, y))
         .order(egui::Order::Foreground)
+        .interactable(interactive)
         .show(ctx, |ui| {
+            if !interactive {
+                // Disabled widgets sense nothing (so egui reports no
+                // interactive rect here); keep them at full opacity.
+                ui.style_mut().visuals.disabled_alpha = 1.0;
+                ui.disable();
+            }
             let response = frame.show(ui, |ui| {
                 inner = Some(contents(ui));
             });

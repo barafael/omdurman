@@ -454,7 +454,7 @@ pub fn melee_combat_preview_ui(
 
     let Ok(ctx) = contexts.ctx_mut() else { return };
     use bevy_egui::egui;
-    crate::ui::stacked_card(
+    crate::ui::passive_stacked_card(
         ctx,
         &mut layout,
         egui::Id::new("melee_preview"),

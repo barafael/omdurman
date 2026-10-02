@@ -137,51 +137,46 @@ pub(crate) fn desertion_panel_ui(
             });
             ui.add_space(4.0);
 
-            let remaining = desertion.count.saturating_sub(desertion.selected.len());
-            if remaining > 0 {
-                ui.label(
-                    egui::RichText::new(format!(
-                        "Select {} more Dervish unit{} to desert.",
-                        remaining,
-                        if remaining == 1 { "" } else { "s" }
-                    ))
-                    .color(crate::ui::palette::INK_WARN)
-                    .size(12.0),
-                );
-                ui.add_space(4.0);
-
-                // Show eligible Dervish units
-                ui.collapsing("Available units", |ui| {
-                    for (_entity, placed) in placed_units.iter() {
-                        let Some(unit_id) = placed.unit_id else {
+            // The eligible units first, and always: the status line below
+            // changes length (and wraps) as units are picked, so above the
+            // list it shifted every row under the pointer mid-selection. The
+            // list stays open when the count is reached, so a pick can still
+            // be taken back.
+            ui.collapsing("Available units", |ui| {
+                for (_entity, placed) in placed_units.iter() {
+                    let Some(unit_id) = placed.unit_id else {
+                        continue;
+                    };
+                    if let Some(unit) = gs.0.find_unit(unit_id) {
+                        if unit.profile.identity.owner() != Player::Dervish {
                             continue;
-                        };
-                        if let Some(unit) = gs.0.find_unit(unit_id) {
-                            if unit.profile.identity.owner() != Player::Dervish {
-                                continue;
-                            }
-                            if unit.profile.identity.is_desertion_exempt() {
-                                continue;
-                            }
-                            let is_selected = desertion.selected.contains(&unit.id);
-                            let label = unit.profile.identity.short_label();
-                            if ui.selectable_label(is_selected, label).clicked() {
-                                if is_selected {
-                                    desertion.selected.retain(|id| id != &unit.id);
-                                } else if desertion.selected.len() < desertion.count {
-                                    desertion.selected.push(unit.id);
-                                }
+                        }
+                        if unit.profile.identity.is_desertion_exempt() {
+                            continue;
+                        }
+                        let is_selected = desertion.selected.contains(&unit.id);
+                        let label = unit.profile.identity.short_label();
+                        if ui.selectable_label(is_selected, label).clicked() {
+                            if is_selected {
+                                desertion.selected.retain(|id| id != &unit.id);
+                            } else if desertion.selected.len() < desertion.count {
+                                desertion.selected.push(unit.id);
                             }
                         }
                     }
-                });
-            } else {
-                ui.label(
-                    egui::RichText::new("All units selected.")
-                        .color(crate::ui::palette::INK_DONE)
-                        .size(12.0),
-                );
-            }
+                }
+            });
+            ui.add_space(4.0);
+            let (status, done) = desertion_status(desertion.count, desertion.selected.len());
+            ui.label(
+                egui::RichText::new(status)
+                    .color(if done {
+                        crate::ui::palette::INK_DONE
+                    } else {
+                        crate::ui::palette::INK_WARN
+                    })
+                    .size(12.0),
+            );
 
             ui.add_space(8.0);
 
@@ -213,4 +208,42 @@ pub(crate) fn desertion_panel_ui(
             }
         },
     );
+}
+
+/// The panel's status line for `selected` of `count` deserters, and whether
+/// the selection is complete (§8.2).
+fn desertion_status(count: usize, selected: usize) -> (String, bool) {
+    let remaining = count.saturating_sub(selected);
+    if remaining == 0 {
+        ("All units selected.".to_string(), true)
+    } else {
+        (
+            format!(
+                "Select {remaining} more Dervish unit{} to desert.",
+                if remaining == 1 { "" } else { "s" }
+            ),
+            false,
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::desertion_status;
+
+    #[test]
+    fn the_status_counts_down_to_complete() {
+        assert_eq!(
+            desertion_status(12, 0),
+            ("Select 12 more Dervish units to desert.".to_string(), false)
+        );
+        assert_eq!(
+            desertion_status(12, 11),
+            ("Select 1 more Dervish unit to desert.".to_string(), false)
+        );
+        assert_eq!(
+            desertion_status(12, 12),
+            ("All units selected.".to_string(), true)
+        );
+    }
 }

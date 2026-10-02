@@ -572,7 +572,7 @@ pub fn fire_combat_preview_ui(
             && let Err(reason) = gs.0.can_fire_at(firer, target, kind)
             && let Ok(ctx) = contexts.ctx_mut()
         {
-            crate::ui::stacked_card(
+            crate::ui::passive_stacked_card(
                 ctx,
                 &mut layout,
                 egui::Id::new("fire_preview_refused"),
@@ -600,7 +600,7 @@ pub fn fire_combat_preview_ui(
         .collect();
     let Some(attack) = attacks.first() else {
         if any_planned && let Ok(ctx) = contexts.ctx_mut() {
-            crate::ui::stacked_card(
+            crate::ui::passive_stacked_card(
                 ctx,
                 &mut layout,
                 egui::Id::new("fire_preview_refused"),
@@ -712,7 +712,7 @@ pub fn fire_combat_preview_ui(
 
     let Ok(ctx) = contexts.ctx_mut() else { return };
     use bevy_egui::egui;
-    crate::ui::stacked_card(
+    crate::ui::passive_stacked_card(
         ctx,
         &mut layout,
         egui::Id::new("fire_preview"),

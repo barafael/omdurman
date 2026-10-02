@@ -169,27 +169,56 @@ pub fn los_blocked_labels(
     // Dim the origin ring label differently: the origin isn't "blocked", it
     // is the viewing point.
     let origin = layout.adjusted_origin(&overlay.params);
+    let screen = |hex: HexCoord| {
+        let pos = hex_world_pos(hex, origin, &overlay.params);
+        camera
+            .world_to_viewport(camera_transform, Vec3::new(pos.x, 2.2, pos.z))
+            .ok()
+    };
+    // The on-screen hex size (centre to neighbouring centre) sets the label
+    // size; zoomed far out the tags no longer fit their hexes and the board
+    // turns into a wall of them, so they go (the ring tint stays).
+    let Some(&(probe, _)) = analysis.blocked.first() else {
+        return;
+    };
+    let hex_px = match (screen(probe), screen(HexCoord::new(probe.q + 1, probe.r))) {
+        (Some(a), Some(b)) => a.distance(b),
+        _ => return,
+    };
+    let Some(size) = los_label_size(hex_px) else {
+        return;
+    };
     for (hex, reason) in &analysis.blocked {
-        let pos = hex_world_pos(*hex, origin, &overlay.params);
-        let world_pos_3d = Vec3::new(pos.x, 2.2, pos.z);
-        let Ok(screen_pos) = camera.world_to_viewport(camera_transform, world_pos_3d) else {
+        let Some(screen_pos) = screen(*hex) else {
             continue;
         };
         egui::Area::new(egui::Id::new(("los_blocked_label", hex)))
-            .fixed_pos(egui::pos2(screen_pos.x - 8.0, screen_pos.y + 14.0))
+            .fixed_pos(egui::pos2(screen_pos.x, screen_pos.y + hex_px * 0.18))
+            .pivot(egui::Align2::CENTER_TOP)
             .order(egui::Order::Foreground)
             .interactable(false)
             .show(ctx, |ui| {
                 crate::ui::frames::tag(crate::ui::palette::REFUSAL_TAG_BG, 5).show(ui, |ui| {
-                    ui.label(
-                        egui::RichText::new(reason)
-                            .color(crate::ui::palette::ALERT)
-                            .size(11.0)
-                            .strong(),
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(reason)
+                                .color(crate::ui::palette::ALERT)
+                                .size(size)
+                                .strong(),
+                        )
+                        .extend(),
                     );
                 });
             });
     }
+}
+
+/// The font size for the LOS reason tags at `hex_px` screen pixels between
+/// neighbouring hex centres, or `None` when a tag ("hilltop", ~7 characters
+/// plus padding) would no longer fit inside its hex.
+fn los_label_size(hex_px: f32) -> Option<f32> {
+    let size = ((0.9 * hex_px - 10.0) / 3.9).min(11.0);
+    (size >= 7.0).then_some(size)
 }
 
 /// The LOS partition from `from`: which hexes in range are clear vs blocked
@@ -273,4 +302,24 @@ fn los_from(gs: &omdurman_rules::effects::GameState, from: HexCoord) -> LosParti
         }
     }
     LosPartition { clear, blocked }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::los_label_size;
+
+    /// Play-test repro: zoomed out, "hilltop" tags overflowed and wrapped
+    /// ("hillt/op") across the board. Tags shrink with the hexes and vanish
+    /// once they no longer fit.
+    #[test]
+    fn los_tags_scale_with_the_hexes_and_hide_when_too_small() {
+        assert_eq!(
+            los_label_size(120.0),
+            Some(11.0),
+            "capped at the normal size"
+        );
+        let mid = los_label_size(50.0).expect("a 50 px hex still carries a tag");
+        assert!((7.0..11.0).contains(&mid), "{mid}");
+        assert_eq!(los_label_size(30.0), None, "too small to carry a tag");
+    }
 }

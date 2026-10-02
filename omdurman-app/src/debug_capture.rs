@@ -141,15 +141,21 @@ fn write_hex_probe(
         }
     }
     let _ = std::fs::write(&path.0, out);
-    // The rules state beside it: `<path>.state` has the turn/phase and one
+    // The rules state beside it: `<path>.state` has the turn/phase (plus
+    // `game_over result=...` once the game has ended) and one
     // `U owner q r disrupted id kind` line per unit.
     if let Some(gs) = game_state {
         let gs = &gs.0;
         let mut state = format!(
-            "T turn={:?} phase={:?} active={:?}\n",
+            "T turn={:?} phase={:?} active={:?}{}\n",
             gs.current_turn,
             gs.phase,
-            gs.player_to_act().unwrap_or(gs.phase_player())
+            gs.player_to_act().unwrap_or(gs.phase_player()),
+            if gs.game_over {
+                format!(" game_over result={:?}", gs.game_result)
+            } else {
+                String::new()
+            }
         );
         for u in &gs.units {
             state.push_str(&format!(
