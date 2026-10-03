@@ -274,12 +274,12 @@ GORDON (close under night cover, mass by tribe, breach, storm), in the
 Campaign waves, ZOC screens and a guarded Khalifa. During Setup,
 `commanders::pick_setup` scores each deployment by its owner's doctrine.
 
-**In-app AI.** `omdurman-app/src/bot_player.rs` drives AI seats with the
-same `Commander::pick` API (`Commander::for_player`: Kitchener for the
+**In-app AI.** `omdurman-app/src/bot_player.rs` drives AI seats with
+`commanders::pick_validated` (`Commander::for_player`: Kitchener for the
 Anglo-Egyptian, Khalifa for the Dervish), over the bot's own candidate
-generator (`actions::legal_actions` / `legal_actions_deep_setup`) and
-`BotRng`. The headless `commanders` preset runs the identical code path, so
-tuning sessions and in-app games agree.
+generator (`actions::legal_actions` / `legal_actions_deep_setup`), `BotRng`
+and a per-game `MoveMemory`. The arena and the headless `commanders` preset
+run the identical code path, so tuning sessions and in-app games agree.
 
 **Fire planning — `src/fire_plan.rs`.** The enumerator offers one attack per
 firing stack and target, but a hex may be fired at only once per phase
@@ -295,38 +295,58 @@ in a candidate.
 
 **Fire lanes and paths — `src/threat.rs`.** `fire_reaching` sums the enemy
 fire that can reach a hex (§6.22 bands, §8.1 night ranges, terrain LOS),
-cached per enemy layout; `melee_reaching` the spears that can reach it next
-turn; `path_cost` is a Dijkstra movement-point field (walls open only at
-gates and breaches). Off the FoK walls the Khalifa stages out of the
-Maxims' lanes and crosses them only into contact; Kitchener kites at rifle
-range (his 5 hexes against their 4, artillery 8 against the forts' 7),
-closes on the field army before the forts, shelters leaders with the
-safest stack, and dashes for the Mahdi's Tomb only once the city is
-cleared. The Khalifa garrisons the Tomb with his Taiasha and chooses §8.2
-deserters from the disrupted and the units in the fire lanes
-(`commanders::choose_deserters`, also used by the app).
+cached per enemy layout; `artillery_reaching` the same from the guns alone
+(all that can sink a gunboat, §6.61); `melee_reaching` the spears that can
+reach a hex next turn; `best_shot_from` the best shot a unit would have
+from a hex (both weapons of a named gunboat). `path_cost` is a Dijkstra
+movement-point field (walls open only at gates and breaches, the Zariba
+only at its ends); `river_cost` / `river_field` the way by water for a
+gunboat (river steps plus range from the bank). All caches are keyed by
+everything they depend on (the enemy layout, the breach set, the built
+Zariba sides), so a field from one game never answers for another on the
+same thread.
 
-**No shuffling — `src/move_memory.rs`.** The commanders move one hex per
-decision and re-score the board after each step; the scores are not
-consistent from step to step (a step into a fire lane pays for its
-progress, the step back pays for the lane it leaves), so a unit used to
-walk A→B→A→B until its MP ran out. Every driver (the app's `BotDriver`,
-the arena, the playthrough) keeps a `MoveMemory` of the hexes each unit
-has occupied this movement phase; when a unit's best-ranked step would go
-back onto one of them, the unit halts for the rest of the phase
-(`commanders::pick_validated`). Halting -- not merely skipping that step --
-matters: a unit barred from its old hex took its next-best step instead,
-often deeper into the lane it was leaving (measured in the arena).
-`tests/no_oscillation.rs` plays every scenario and asserts no such step
-(the frozen baseline takes ~150 a turn).
+**Movement — position values and plans (`commanders.rs`,
+`src/move_memory.rs`).** Each commander values a hex for a unit as a
+function of that hex alone: progress to the unit's goal (by road for land
+units, by river for gunboats), the fire it would stand in, the shot it
+would have from there (Kitchener), the company it would keep, a leader's
+safety. Once per movement phase each unit plans: the hex worth most to it
+among those it can reach with its remaining movement points (the engine's
+step costs, enemy hexes closed, the first enemy ZOC ends the way), and
+the cheapest way there; if nothing it can reach beats where it stands, it
+holds. The driver walks the plans one step at a time, the biggest gains
+first; an arrival re-plans the plans it affects (nearby ends; every plan in
+Fall of Khartoum, where a few units share a few gates), and a refused step
+re-plans that unit (then it holds). A shortest way never re-enters a hex,
+so a unit cannot go back and forth; the memory of the hexes stood on is
+the guard behind it, and `tests/no_oscillation.rs` asserts that no unit
+ever steps back onto one.
 
-Removing the shuffle also exposed what it hid: the Campaign Tomb dash
-(`tomb_objective`) used to be cancelled out by the shuffling; with clean
-moves a stay-relative scoring of non-closing steps (tried and dropped)
-let the column actually march and die to the forts. Keep that in mind
-when tuning the dash.
+Why this replaced the step-by-step scores: a unit had no "stay" option --
+a step that did not close on the goal still out-scored ending the phase
+(which ends it for every unit), and the goal and fire terms were measured
+from wherever the unit stood -- so units wandered A→B→A until their MP ran
+out. That wandering was not what made the October commanders strong where
+they were. The arena traced the real causes, each fixed at the root:
 
-**Measuring strength — `src/arena.rs`, `tests/arena.rs`.** `arena::play`
+- **Historical:** the A-E kills came from the gunboats, especially their
+  Maxims. With straight-line goals a boat at a river bend saw no progress
+  and held; the wandering boats drifted down to the Dervish masses by
+  chance. Boats now route by river, hunt the enemy nearest the bank, fear
+  only artillery, and value their Maxim shots. The land army inside the
+  Zariba could not see the way out (the hedge closes all but the two
+  ends): goals by road fix that.
+- **Campaign:** units walked into the fort belt once the field army was
+  gone (forts score nothing, §9.14, and only guns can hurt them, §6.62);
+  the field army now excludes forts and the walled-city garrison, and with
+  it gone the line keeps out of the guns' reach. The rifle line stands one
+  hex beyond the Dervish rifles (5), the batteries at 6, the Maxims at 5.
+- **Greedy one-step ascent stuck at local optima** (a boat with some shot
+  would not cross a hex worth less to reach a better one): the per-phase
+  plan over the whole reach fixes that.
+
+**Measuring strength — `src/arena.rs`, `tests/arena.rs`.****Measuring strength — `src/arena.rs`, `tests/arena.rs`.** `arena::play`
 plays a whole game through the app's decision path with either the live
 commanders (`Version::Current`) or the frozen pre-tuning ones
 (`src/baseline.rs`, `Version::Baseline`) on each side. The `#[ignore]`d

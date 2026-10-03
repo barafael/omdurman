@@ -23,7 +23,7 @@ use omdurman_types::{DayNight, HexCoord, Player, UnitKind};
 
 struct Cache {
     key: u64,
-    hexes: HashMap<HexCoord, f32>,
+    hexes: HashMap<(HexCoord, bool), f32>,
 }
 
 thread_local! {
@@ -35,7 +35,7 @@ fn key(state: &GameState, shooter: Player) -> u64 {
     (state.scenario as u8).hash(&mut h);
     (state.day_night == DayNight::Night).hash(&mut h);
     shooter.hash(&mut h);
-    state.breaches.len().hash(&mut h);
+    state.breaches.hash(&mut h);
     for u in &state.units {
         if u.profile.identity.owner() == shooter && u.profile.fire.is_some() {
             u.id.hash(&mut h);
@@ -59,25 +59,35 @@ fn band_multiplier(band: RangeBand) -> f32 {
 /// Effective fire factors of `shooter`'s undisrupted units that can reach
 /// `hex` with direct fire (a foot unit standing there as the target).
 pub fn fire_reaching(state: &GameState, hex: HexCoord, shooter: Player) -> f32 {
+    reaching(state, hex, shooter, false)
+}
+
+/// [`fire_reaching`] from `shooter`'s guns alone (artillery, forts,
+/// gunboats): the only fire that can sink a gunboat (§6.61).
+pub fn artillery_reaching(state: &GameState, hex: HexCoord, shooter: Player) -> f32 {
+    reaching(state, hex, shooter, true)
+}
+
+fn reaching(state: &GameState, hex: HexCoord, shooter: Player, guns_only: bool) -> f32 {
     let k = key(state, shooter);
     if let Some(v) = CACHE.with(|c| {
         c.borrow()
             .as_ref()
             .filter(|c| c.key == k)
-            .and_then(|c| c.hexes.get(&hex).copied())
+            .and_then(|c| c.hexes.get(&(hex, guns_only)).copied())
     }) {
         return v;
     }
-    let v = compute(state, hex, shooter);
+    let v = compute(state, hex, shooter, guns_only);
     CACHE.with(|c| {
         let mut c = c.borrow_mut();
         match c.as_mut() {
             Some(cache) if cache.key == k => {
-                cache.hexes.insert(hex, v);
+                cache.hexes.insert((hex, guns_only), v);
             }
             _ => {
                 let mut hexes = HashMap::new();
-                hexes.insert(hex, v);
+                hexes.insert((hex, guns_only), v);
                 *c = Some(Cache { key: k, hexes });
             }
         }
@@ -85,7 +95,7 @@ pub fn fire_reaching(state: &GameState, hex: HexCoord, shooter: Player) -> f32 {
     v
 }
 
-fn compute(state: &GameState, hex: HexCoord, shooter: Player) -> f32 {
+fn compute(state: &GameState, hex: HexCoord, shooter: Player, guns_only: bool) -> f32 {
     let night = state.day_night == DayNight::Night;
     let target_level = los_level_for_unit(
         UnitKind::Infantry {
@@ -102,6 +112,9 @@ fn compute(state: &GameState, hex: HexCoord, shooter: Player) -> f32 {
             continue;
         }
         let Some(fire) = u.profile.fire else { continue };
+        if guns_only && u.profile.weapon != omdurman_rules::WeaponClass::Artillery {
+            continue;
+        }
         let d = u.position.distance(hex);
         if d == 0 || d > 12 {
             continue;
@@ -140,6 +153,114 @@ fn compute(state: &GameState, hex: HexCoord, shooter: Player) -> f32 {
     total
 }
 
+struct ShotCache {
+    key: u64,
+    shots: HashMap<(HexCoord, u8, u16, u8), f32>,
+}
+
+thread_local! {
+    static SHOTS: RefCell<Option<ShotCache>> = const { RefCell::new(None) };
+}
+
+/// The best shot `unit` would have from `at` in the coming fire phase: the
+/// largest effective fire factor (§6.22 range band, §8.1 at night, §6.3
+/// line of sight over the terrain) it could put on any one enemy-held hex.
+/// 0 when no enemy is in range and sight. Cached per enemy layout, so a
+/// whole movement phase of candidate hexes costs one pass per hex and
+/// weapon.
+pub fn best_shot_from(
+    state: &GameState,
+    unit: &omdurman_rules::UnitPlacement,
+    at: HexCoord,
+) -> f32 {
+    let Some(fire) = unit.profile.fire else {
+        return 0.0;
+    };
+    let owner = unit.profile.identity.owner();
+    let target_side = owner.opponent();
+    let k = key(state, target_side) ^ terrain_key(state);
+    let level_kind = los_level_for_unit(unit.profile.kind, at, &state.board) as u8;
+    let entry = (at, unit.profile.weapon as u8, fire.value(), level_kind);
+    if let Some(v) = SHOTS.with(|c| {
+        c.borrow()
+            .as_ref()
+            .filter(|c| c.key == k)
+            .and_then(|c| c.shots.get(&entry).copied())
+    }) {
+        return v;
+    }
+    let night = state.day_night == DayNight::Night;
+    let firer_level = los_level_for_unit(unit.profile.kind, at, &state.board);
+    // A named gunboat's Maxims are a second weapon (§2.32), firing twice
+    // (§6.42).
+    let maxims = match unit.profile.identity {
+        omdurman_rules::UnitIdentity::AngloEgyptianGunboat(g) => g.maxim_factor(),
+        _ => None,
+    };
+    let band_value = |weapon, factor: f32, distance| {
+        let band = if night {
+            night_range_effects(weapon, distance, owner == Player::AngloEgyptian)
+        } else {
+            range_band_for(state.scenario, owner, weapon, distance)
+        };
+        band_multiplier(band) * factor
+    };
+    let mut best = 0.0f32;
+    let mut seen: Vec<HexCoord> = Vec::new();
+    for t in &state.units {
+        if t.profile.identity.owner() != target_side || seen.contains(&t.position) {
+            continue;
+        }
+        seen.push(t.position);
+        let d = t.position.distance(at);
+        if d == 0 || d > 12 {
+            continue;
+        }
+        let distance = HexDistance::new(d as u16);
+        let mut shot = band_value(unit.profile.weapon, fire.value() as f32, distance);
+        if let Some(m) = maxims {
+            shot = shot.max(
+                1.6 * band_value(
+                    omdurman_rules::WeaponClass::Maxims,
+                    m.value() as f32,
+                    distance,
+                ),
+            );
+        }
+        if shot <= best {
+            continue;
+        }
+        let target_level = los_level_for_unit(t.profile.kind, t.position, &state.board);
+        if !has_los(
+            &state.board,
+            at,
+            t.position,
+            FireKind::Direct,
+            firer_level,
+            target_level,
+            |_| None,
+            |a, b| state.wall_is_breached(a, b),
+        ) {
+            continue;
+        }
+        best = shot;
+    }
+    SHOTS.with(|c| {
+        let mut c = c.borrow_mut();
+        match c.as_mut() {
+            Some(cache) if cache.key == k => {
+                cache.shots.insert(entry, best);
+            }
+            _ => {
+                let mut shots = HashMap::new();
+                shots.insert(entry, best);
+                *c = Some(ShotCache { key: k, shots });
+            }
+        }
+    });
+    best
+}
+
 /// Melee factors of `attacker`'s undisrupted mobile units that could reach
 /// a hex next to `hex` this coming turn (movement allowance in hexes, §5.11
 /// clear-terrain cost; §8.1 halves it at night for the Anglo-Egyptians
@@ -165,8 +286,21 @@ pub fn melee_reaching(state: &GameState, hex: HexCoord, attacker: Player) -> f32
 }
 
 struct PathCache {
-    key: (HexCoord, usize, u8),
+    key: (HexCoord, u64),
     cost: HashMap<HexCoord, i32>,
+}
+
+/// What the movement-point fields depend on besides the goal: the board
+/// (by scenario) and the hexsides the game has changed -- breached walls
+/// (§6.63) and the Zariba sides built in the Campaign (§5.3). Hashing the
+/// sets themselves, not their sizes, keeps a field from one game (or one
+/// breach) from ever answering for another on the same thread.
+fn terrain_key(state: &GameState) -> u64 {
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    (state.scenario as u8).hash(&mut h);
+    state.breaches.hash(&mut h);
+    state.zariba_hexsides.hash(&mut h);
+    h.finish()
 }
 
 thread_local! {
@@ -178,7 +312,7 @@ thread_local! {
 /// and the closed Zariba impassable), ignoring units and roads. `None` when
 /// `goal` cannot be reached. A Dijkstra field per goal, cached.
 pub fn path_cost(state: &GameState, from: HexCoord, goal: HexCoord) -> Option<i32> {
-    let key = (goal, state.breaches.len(), state.scenario as u8);
+    let key = (goal, terrain_key(state));
     if let Some(v) = PATHS.with(|p| {
         p.borrow()
             .iter()
@@ -191,10 +325,84 @@ pub fn path_cost(state: &GameState, from: HexCoord, goal: HexCoord) -> Option<i3
     let v = field.get(&from).copied();
     PATHS.with(|p| {
         let mut p = p.borrow_mut();
-        if p.len() >= 8 {
+        // A field per goal: the commanders route every unit to its goal
+        // (a handful of enemy stacks and objectives per phase).
+        if p.len() >= 32 {
             p.remove(0);
         }
         p.push(PathCache { key, cost: field });
+    });
+    v
+}
+
+thread_local! {
+    static RIVER: RefCell<Vec<PathCache>> = const { RefCell::new(Vec::new()) };
+}
+
+/// A gunboat's way to `target` by river, in quarter hexes: the hexes it
+/// must steam along the Nile (§5.22, §5.24) to a river hex, plus four
+/// times that hex's straight distance to the target (the range it would
+/// fire at, §6.22). Steaming is cheap against range, so every step down
+/// the river toward the hex nearest the target counts -- hex distance alone
+/// sees no progress where the river bends away from the target, and a boat
+/// would never round the bend. `None` off the river.
+pub fn river_cost(state: &GameState, at: HexCoord, target: HexCoord) -> Option<i32> {
+    river_field(state, at, target, 4)
+}
+
+/// [`river_cost`] with the range from the bank weighted `range_weight`
+/// river hexes per hex (a heavier weight prefers a target near the river
+/// however far downstream).
+pub fn river_field(
+    state: &GameState,
+    at: HexCoord,
+    target: HexCoord,
+    range_weight: i32,
+) -> Option<i32> {
+    let key = (target, terrain_key(state) ^ range_weight as u64);
+    if let Some(v) = RIVER.with(|p| {
+        p.borrow()
+            .iter()
+            .find(|c| c.key == key)
+            .map(|c| c.cost.get(&at).copied())
+    }) {
+        return v;
+    }
+    use std::cmp::Reverse;
+    use std::collections::BinaryHeap;
+    let mut cost: HashMap<HexCoord, i32> = HashMap::new();
+    let mut heap = BinaryHeap::new();
+    for &hex in state.board.terrain.keys() {
+        if state.board.is_nile(hex) {
+            let c = range_weight * hex.distance(target) as i32;
+            cost.insert(hex, c);
+            heap.push(Reverse((c, hex.q, hex.r)));
+        }
+    }
+    while let Some(Reverse((c, q, r))) = heap.pop() {
+        let hex = HexCoord::new(q, r);
+        if cost.get(&hex).is_some_and(|&best| c > best) {
+            continue;
+        }
+        for n in hex.neighbors() {
+            if !state.board.is_nile(n) {
+                continue;
+            }
+            let nc = c + 1;
+            if cost.get(&n).is_none_or(|&best| nc < best) {
+                cost.insert(n, nc);
+                heap.push(Reverse((nc, n.q, n.r)));
+            }
+        }
+    }
+    let v = cost.get(&at).copied();
+    RIVER.with(|p| {
+        let mut p = p.borrow_mut();
+        // One field per enemy stack a boat weighs as its quarry.
+        if p.len() >= 96 {
+            p.remove(0);
+        }
+        p.push(PathCache { key, cost });
     });
     v
 }

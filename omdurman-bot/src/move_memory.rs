@@ -1,20 +1,11 @@
-//! Per-phase movement memory: a unit whose best move would take it back onto
-//! a hex it has already stood on in the current movement phase halts there
-//! for the rest of the phase.
+//! Per-phase movement memory: each unit's plan for the phase, and the hexes
+//! it has stood on.
 //!
-//! The commanders pick one one-hex `MoveUnit` step at a time and re-score
-//! the board after every step. Their scores are not consistent from one
-//! step to the next (a step into a fire lane pays for its progress; the
-//! step back out pays for the lane it leaves), so a greedy unit could walk
-//! A→B→A→B… until its movement allowance (§5.13: MP don't carry over) was
-//! spent. The engine state records how far a unit has moved, not where it
-//! has been, so the driver keeps that here: one [`MoveMemory`] per game,
-//! fed every effect it picks, and consulted before every pick.
-//!
-//! Halting, rather than merely forbidding the step back, matters: a unit
-//! barred from its old hex would take its next-best step instead -- often
-//! deeper into the fire lane it was trying to leave. Once its own best
-//! option is to undo a step, the unit has nothing better to do this phase.
+//! A commander plans a unit's move once per movement phase: the best hex it
+//! can reach (`commanders`, "position values"), and the way there. The
+//! driver then walks the plan one step at a time -- a shortest way never
+//! re-enters a hex, so a unit cannot go back and forth. The hexes stood on
+//! are the guard behind it: no move back onto one of them is ever taken.
 //!
 //! Determinism: the memory is derived only from the driver's own picks, so a
 //! seeded run reproduces it exactly. A driver that loses it mid-phase (a host
@@ -33,9 +24,20 @@ pub struct MoveMemory {
     /// The phase the memory is about; another one clears it.
     phase: Option<(GameTurnIndex, Phase, Player)>,
     visited: BTreeMap<UnitId, BTreeSet<HexCoord>>,
-    /// Units done moving this phase.
-    halted: BTreeSet<UnitId>,
+    /// Each unit's planned way this phase (the hexes still to enter) and
+    /// what reaching its end gains it; an empty way means it holds.
+    plans: BTreeMap<UnitId, (Vec<HexCoord>, i32)>,
+    /// How often a unit's plan was refused this phase (see
+    /// [`MoveMemory::abandon_plan`]).
+    refusals: BTreeMap<UnitId, u8>,
 }
+
+/// Plans a unit may have refused in one phase before it holds.
+const MAX_REPLANS: u8 = 3;
+
+/// How near an arrival a plan's end must lie to be made again (see
+/// [`MoveMemory::record`]).
+const REPLAN_RADIUS: u32 = 3;
 
 impl MoveMemory {
     pub fn new() -> Self {
@@ -48,7 +50,8 @@ impl MoveMemory {
         if self.phase != Some(now) {
             self.phase = Some(now);
             self.visited.clear();
-            self.halted.clear();
+            self.plans.clear();
+            self.refusals.clear();
         }
     }
 
@@ -72,39 +75,31 @@ impl MoveMemory {
             .any(|h| seen.contains(h))
     }
 
-    /// Whether the driver may take `effect`, considering the candidates
-    /// best-first: a move of a halted unit is refused, and a unit whose best
-    /// move would revisit a hex halts. Everything but `MoveUnit` passes.
-    pub fn screen(&mut self, state: &GameState, effect: &GameEffect) -> bool {
-        let GameEffect::MoveUnit { unit_id, .. } = effect else {
-            return true;
-        };
-        self.sync(state);
-        if self.halted.contains(unit_id) {
-            return false;
-        }
-        if self.revisits(state, effect) {
-            self.halted.insert(*unit_id);
-            return false;
-        }
-        true
-    }
-
-    /// The candidates without the moves of the units halted this phase.
-    pub fn without_halted(
+    /// `unit`'s plan for this phase -- the hexes still to enter and the
+    /// gain at the end -- made by `make` the first time it is asked for.
+    pub fn plan_for(
         &mut self,
         state: &GameState,
-        candidates: &[GameEffect],
-    ) -> Vec<GameEffect> {
+        unit: UnitId,
+        make: impl FnOnce() -> (Vec<HexCoord>, i32),
+    ) -> (Option<HexCoord>, i32) {
         self.sync(state);
-        candidates
-            .iter()
-            .filter(|e| match e {
-                GameEffect::MoveUnit { unit_id, .. } => !self.halted.contains(unit_id),
-                _ => true,
-            })
-            .cloned()
-            .collect()
+        let (way, gain) = self.plans.entry(unit).or_insert_with(make);
+        (way.first().copied(), *gain)
+    }
+
+    /// `unit`'s planned step was refused (friends filled the hex it was
+    /// making for, or a rule the plan could not foresee): plan again from
+    /// the board as it now stands -- up to a few times, then hold.
+    pub fn abandon_plan(&mut self, state: &GameState, unit: UnitId) {
+        self.sync(state);
+        let refused = self.refusals.entry(unit).or_insert(0);
+        *refused += 1;
+        if *refused >= MAX_REPLANS {
+            self.plans.insert(unit, (Vec::new(), 0));
+        } else {
+            self.plans.remove(&unit);
+        }
     }
 
     /// Note the effect the driver submitted (call with the state it was
@@ -123,6 +118,37 @@ impl MoveMemory {
         }
         seen.extend(path.iter().copied());
         seen.insert(*to);
+        // Walk the plan: a step along it consumes it; any other move (a
+        // driver without plans) voids it.
+        let mut arrived = false;
+        if let Some((way, _)) = self.plans.get_mut(unit_id) {
+            let steps = path.len().max(1);
+            if way.len() >= steps && way[steps - 1] == *to {
+                way.drain(..steps);
+                arrived = way.is_empty();
+            } else {
+                self.plans.remove(unit_id);
+            }
+        }
+        // An arrival changes the board the other plans were made on: the
+        // company a hex keeps, the room left in a stack, which gate still
+        // wants a plug. Plans that end (or units that hold) near the
+        // arrival are made again; in Fall of Khartoum, where a handful of
+        // units share a few gates, all of them.
+        if arrived {
+            let everyone = state.scenario == omdurman_types::Scenario::FallOfKhartoum;
+            let near = |hex: HexCoord| hex.distance(*to) <= REPLAN_RADIUS;
+            self.plans.retain(|other, (way, _)| {
+                if other == unit_id {
+                    return true;
+                }
+                let end = way
+                    .last()
+                    .copied()
+                    .or_else(|| state.find_unit(*other).map(|u| u.position));
+                !(everyone || end.is_some_and(near))
+            });
+        }
     }
 }
 

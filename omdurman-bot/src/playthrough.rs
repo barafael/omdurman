@@ -305,15 +305,16 @@ pub async fn playthrough(
             } else if agents.is_aggressive(chooser) {
                 crate::aggressive::pick(&state, chooser, &candidates, &mut rng)
             } else if let Some(commander) = agents.commander(chooser) {
-                // A unit whose best step is back onto ground it covered
-                // this phase halts (`crate::move_memory`); pick again.
-                let pick = loop {
-                    let open = move_memory.without_halted(&state, &candidates);
-                    let pick = commander.pick(&state, chooser, &open, &mut rng);
-                    if move_memory.screen(&state, &pick) {
-                        break pick;
-                    }
-                };
+                // The commander's plan for each unit (`crate::move_memory`),
+                // as the app and the arena drive it.
+                let _ = commander;
+                let pick = crate::commanders::pick_validated(
+                    &state,
+                    chooser,
+                    &candidates,
+                    &mut rng,
+                    &mut move_memory,
+                );
                 move_memory.record(&state, &pick);
                 pick
             } else if agents.is_llm(chooser) {

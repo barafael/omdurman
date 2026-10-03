@@ -81,6 +81,7 @@ struct Summary {
     mean_turns: f64,
     unfinished: usize,
     tombs: usize,
+    revisits: usize,
 }
 
 fn summarize(rs: &[&ArenaResult]) -> Summary {
@@ -105,6 +106,7 @@ fn summarize(rs: &[&ArenaResult]) -> Summary {
         mean_turns: rs.iter().map(|r| r.turns as f64).sum::<f64>() / n,
         unfinished: rs.iter().filter(|r| !r.game_over).count(),
         tombs: rs.iter().filter(|r| r.tomb_taken).count(),
+        revisits: rs.iter().map(|r| r.revisits).sum(),
     }
 }
 
@@ -130,7 +132,7 @@ fn commanders_vs_baseline() {
             started.elapsed().as_secs_f64()
         );
         println!(
-            "{:<9} {:<9} {:>5} {:>6} {:>6} {:>5} {:>8} {:>8} {:>8} {:>6} {:>5} {:>5}",
+            "{:<9} {:<9} {:>5} {:>6} {:>6} {:>5} {:>8} {:>8} {:>8} {:>6} {:>5} {:>5} {:>8}",
             "AE",
             "Dervish",
             "games",
@@ -142,7 +144,8 @@ fn commanders_vs_baseline() {
             "D lost",
             "turns",
             "unfin",
-            "tomb"
+            "tomb",
+            "revisits"
         );
         for &(a, d) in &pairings {
             let rs: Vec<&ArenaResult> = results
@@ -151,7 +154,7 @@ fn commanders_vs_baseline() {
                 .collect();
             let s = summarize(&rs);
             println!(
-                "{:<9} {:<9} {:>5} {:>6} {:>6} {:>5} {:>+8.2} {:>8.1} {:>8.1} {:>6.1} {:>5} {:>5}",
+                "{:<9} {:<9} {:>5} {:>6} {:>6} {:>5} {:>+8.2} {:>8.1} {:>8.1} {:>6.1} {:>5} {:>5} {:>8}",
                 a.name(),
                 d.name(),
                 s.games,
@@ -163,7 +166,8 @@ fn commanders_vs_baseline() {
                 s.mean_d_lost,
                 s.mean_turns,
                 s.unfinished,
-                s.tombs
+                s.tombs,
+                s.revisits
             );
         }
     }
