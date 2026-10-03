@@ -548,14 +548,16 @@ pub(crate) struct DeploymentZoneRing;
 /// faction's zone (or, in an unbound session, the active player's). Cleared
 /// automatically once play leaves Setup. Rebuilt only when the phase/faction key
 /// changes, to avoid per-frame entity churn (cf. `movement_overlay_mesh`).
+#[allow(clippy::too_many_arguments)]
 pub fn deployment_zone_overlay_mesh(
     mut commands: Commands,
     hex: crate::HexRender,
     game_state: Option<Res<crate::GameStateResource>>,
     peers: crate::peers::Peers,
     existing: Query<Entity, With<DeploymentZoneRing>>,
-    mut last_key: Local<Option<(omdurman_types::Player, usize)>>,
+    mut last_key: Local<Option<(omdurman_types::Player, usize, Option<bool>)>>,
     (generation, mut seen_generation): (Res<OverlayGeneration>, Local<u32>),
+    (picker_state, tray): (Res<PickerState>, Res<UnitPicker>),
 ) {
     if generation.invalidates(&mut seen_generation) {
         *last_key = None;
@@ -568,7 +570,11 @@ pub fn deployment_zone_overlay_mesh(
     let in_setup = game_state
         .as_deref()
         .is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup));
-    let Some(gs) = game_state.as_deref().filter(|_| in_setup) else {
+    // A spectator deploys nothing: no zone to outline.
+    let Some(gs) = game_state
+        .as_deref()
+        .filter(|_| in_setup && !peers.is_spectator())
+    else {
         // Not in setup: clear any leftover rings and reset the cache.
         if last_key.is_some() {
             let existing: Vec<Entity> = existing.iter().collect();
@@ -586,6 +592,16 @@ pub fn deployment_zone_overlay_mesh(
     // of the key.
     let depends_on_units = gs.0.scenario == omdurman_types::Scenario::Historical
         && who == omdurman_types::Player::Dervish;
+    // With a counter in hand, only the ground it may stand on: Nile hexes
+    // for a gunboat, dry land for everyone else (§5.22).
+    let hand_is_boat = match &*picker_state {
+        PickerState::Placing { unit_idx, .. } => tray.available.get(*unit_idx).and_then(|u| {
+            omdurman_rules::unit_id_for_section_pos(u.section_name, u.col as u8, u.row as u8)
+                .and_then(omdurman_rules::unit_profiles::profile_for_unit)
+                .map(|p| p.kind.is_boat())
+        }),
+        _ => None,
+    };
     let key = (
         who,
         if depends_on_units {
@@ -593,6 +609,7 @@ pub fn deployment_zone_overlay_mesh(
         } else {
             0
         },
+        hand_is_boat,
     );
     if *last_key == Some(key) {
         return; // unchanged -- leave the rings in place
@@ -610,8 +627,16 @@ pub fn deployment_zone_overlay_mesh(
     // sees the full set: Nile hexes for the gunboats, and the garrison /
     // landmark / wall-adjacent hexes for the land units.
     for coord in gs.0.board.terrain.keys() {
-        let valid = gs.0.in_deployment_zone(who, *coord, true)
-            || gs.0.in_deployment_zone(who, *coord, false);
+        let valid = match hand_is_boat {
+            Some(is_boat) => {
+                gs.0.in_deployment_zone(who, *coord, is_boat)
+                    && gs.0.on_deployable_terrain(*coord, is_boat)
+            }
+            None => {
+                gs.0.in_deployment_zone(who, *coord, true)
+                    || gs.0.in_deployment_zone(who, *coord, false)
+            }
+        };
         if valid {
             let pos = hex_world_pos(*coord, origin, &overlay.params);
             // Saturated green: the pale ring read as part of the printed

@@ -337,6 +337,7 @@ pub(crate) struct FireTargetCache {
     fire: Option<(FireCacheKey, Vec<HexCoord>)>,
     walls: Option<((UnitId, u64), Vec<WallTarget>)>,
     side: Option<(u64, usize)>,
+    side_walls: Option<(u64, bool)>,
 }
 
 impl FireTargetCache {
@@ -380,6 +381,30 @@ impl FireTargetCache {
             self.side = Some((key, targets.len()));
         }
         self.side.expect("just cached").1
+    }
+
+    /// Whether a battery of the side firing now that has not fired may fire
+    /// at a standing wall this sub-phase (§6.63) -- so a phase with no enemy
+    /// in range still has work for it. Recomputed only when the state stamp
+    /// changed.
+    pub(crate) fn side_can_breach(&mut self, gs: &GameState) -> bool {
+        let key = fire_target_stamp(gs);
+        if !matches!(self.side_walls, Some((k, _)) if k == key) {
+            let firer = gs.phase_player();
+            let any = gs
+                .units
+                .iter()
+                .filter(|u| u.profile.identity.owner() == firer)
+                .filter(|u| matches!(u.profile.weapon, omdurman_rules::WeaponClass::Artillery))
+                .any(|u| {
+                    gs.board.hexsides.iter().any(|(edge, kind)| {
+                        *kind == omdurman_types::HexsideKind::Wall
+                            && gs.can_fire_at_wall(u.id, *edge).is_ok()
+                    })
+                });
+            self.side_walls = Some((key, any));
+        }
+        self.side_walls.expect("just cached").1
     }
 
     /// Wall hexsides battery `uid` may fire at (§6.63), nearest first,
@@ -622,18 +647,27 @@ pub fn fire_combat_preview_ui(
         .collect();
     let Some(attack) = attacks.first() else {
         if any_planned && let Ok(ctx) = contexts.ctx_mut() {
+            // Their fire is staged against this very hex (the usual case
+            // right after the click): a confirmation, not a refusal.
+            let staged_here = allocated.iter().any(|a| a.target_hex == target);
+            let (text, color) = if staged_here {
+                (
+                    "Fire staged against this hex \u{2014} resolve it in the tray.",
+                    crate::ui::palette::TEXT_MUTED,
+                )
+            } else {
+                (
+                    "These units have already allocated their fire this sub-phase (\u{a7}6.41).",
+                    crate::ui::palette::REFUSED,
+                )
+            };
             crate::ui::passive_stacked_card(
                 ctx,
                 &mut layout,
                 egui::Id::new("fire_preview_refused"),
                 crate::ui::frames::card(crate::ui::palette::CARD_FIRE),
                 |ui| {
-                    crate::rulebook::refs_label(
-                        ui,
-                        "These units have already allocated their fire this sub-phase (\u{a7}6.41).",
-                        crate::ui::palette::REFUSED,
-                        12.0,
-                    );
+                    crate::rulebook::refs_label(ui, text, color, 12.0);
                 },
             );
         }

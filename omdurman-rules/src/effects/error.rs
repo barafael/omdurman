@@ -273,7 +273,9 @@ pub enum RuleError {
     ReinforcementCapExceeded { turn: u8, cap: usize },
 
     #[error(
-        "hex {0} is outside the annotated entrance area for this reinforcement (§9.112/§9.113)"
+        "{0} is not where this unit enters: gunboats at the north edge of the Nile, the \
+         Friendlies at the Abu Alim hut, other Anglo-Egyptians at the Entrance Area, the \
+         Dervish on the west edge -- the green hexes (§9.112/§9.113)"
     )]
     OutsideEntranceArea(HexCoord),
 

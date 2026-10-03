@@ -129,7 +129,13 @@ fn end_phase_button(
             let reason = reason.to_string();
             ui.add_enabled(false, egui::Button::new("End Phase"))
                 .on_disabled_hover_text(&reason);
-            ui.colored_label(crate::ui::palette::CAUTION, &reason);
+            // What is still to do, as a task rather than a bare refusal.
+            crate::rulebook::refs_label(
+                ui,
+                &format!("Before ending the phase: {reason}."),
+                crate::ui::palette::CAUTION,
+                13.0,
+            );
             return;
         }
     };
@@ -382,11 +388,13 @@ fn setup_control_section(
 ) {
     use omdurman_types::Player;
 
-    ui.label(
-        egui::RichText::new("Deployment -- place your forces, then Ready.")
-            .size(12.0)
-            .color(crate::ui::palette::TEXT),
-    );
+    if !peers.is_spectator() {
+        ui.label(
+            egui::RichText::new("Deployment -- place your forces, then Ready.")
+                .size(12.0)
+                .color(crate::ui::palette::TEXT),
+        );
+    }
 
     // The local member's §1.1 command scope, when one was assigned.
     if let Some(scope) = peers.local_scope() {

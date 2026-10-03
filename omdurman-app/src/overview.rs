@@ -137,7 +137,7 @@ pub fn unit_overview_ui(
                                     &mut fire_targets,
                                     allocation.as_deref_mut(),
                                     local_may_act,
-                                    tray_open,
+                                    (tray_open, peers.is_spectator()),
                                     &mut commands_out,
                                 );
                                 for cmd in commands_out {
