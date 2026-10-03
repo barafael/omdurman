@@ -97,6 +97,7 @@ pub fn bot_player_act(
     mut pending: ResMut<PendingEdits>,
     offline: Option<Res<net_plugin::OfflineMode>>,
     telegrams: Option<Res<crate::telegram::TelegramLog>>,
+    mut activity: ResMut<crate::activity::Activity>,
 ) {
     let ai = crate::seats::ai_factions(&seats.seats.0);
     // Paused waiting for an absent seat holder: the AI waits too.
@@ -111,6 +112,12 @@ pub fn bot_player_act(
     // Only the host (or an offline self-hosted instance) drives the AI.
     if !(net.is_host || offline.is_some_and(|o| o.0)) {
         return;
+    }
+    // The AI is to move: its paced actions (cooldown, the echo of the last
+    // one) need consecutive frames, not the idle wake-up interval.
+    let state = &game_state.0;
+    if !state.game_over && ai_chooser(state).is_some_and(|side| ai.contains(&side)) {
+        activity.keep_running();
     }
     // One action in flight at a time (see `BotDriver::in_flight`).
     if let Some(uid) = driver.in_flight {

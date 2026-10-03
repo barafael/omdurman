@@ -67,23 +67,34 @@ fn entrance_hexes(gs: &GameState) -> Vec<HexCoord> {
 }
 
 /// Highlight the annotated entrance hexes (green) while the local player's
-/// side may bring reinforcements in (§9.112/§9.113).
+/// side may bring reinforcements in (§9.112/§9.113). The rings are rebuilt
+/// only when the highlighted set changes (or the overlays were cleared).
 pub fn reinforce_entry_overlay_mesh(
     mut commands: Commands,
     hex: crate::HexRender,
     game_state: Res<GameStateResource>,
     peers: Peers,
     existing: Query<Entity, With<ReinforceEntryRing>>,
+    mut last: Local<Option<Vec<HexCoord>>>,
+    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
-    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    if generation.invalidates(&mut seen_generation) {
+        *last = None;
+    }
     let gs = game_state;
-    if !entry_window_open(&gs.0) || !peers.may_act(gs.0.phase_player()) {
+    let targets = if entry_window_open(&gs.0) && peers.may_act(gs.0.phase_player()) {
+        entrance_hexes(&gs.0)
+    } else {
+        Vec::new()
+    };
+    if last.as_ref() == Some(&targets) {
         return;
     }
-
-    for target in entrance_hexes(&gs.0) {
+    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    for &target in &targets {
         rings.ring(ReinforceEntryRing, target, 1.4, 1.0, &hex.assets.green);
     }
+    *last = Some(targets);
 }
 
 /// How many of the active side's unplaced counters may still enter this turn

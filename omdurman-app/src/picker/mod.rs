@@ -123,7 +123,9 @@ impl Plugin for GamePlugin {
                         // (ZOC + LOS overlays are scheduled in main.rs for
                         // both the live game and the spectator view.)
                         animate_unit_movement,
-                        layout_stacked_units.after(animate_unit_movement),
+                        layout_stacked_units
+                            .after(animate_unit_movement)
+                            .run_if(in_state(crate::AppMode::Game)),
                         // Right-click → Cancel comes from the click router
                         // (ordered before this); the handler itself is not
                         // pointer-gated, so the actions-panel Cancel button

@@ -87,10 +87,16 @@ impl SpectatorTimeline {
 const PLAY_STEP_SECS: f32 = 0.6;
 
 /// Auto-advance the cursor while playing; stops at the end.
-pub fn advance_timeline_playback(time: Res<Time>, mut timeline: ResMut<SpectatorTimeline>) {
+pub fn advance_timeline_playback(
+    time: Res<Time>,
+    mut timeline: ResMut<SpectatorTimeline>,
+    mut activity: ResMut<crate::activity::Activity>,
+) {
     if !timeline.playing || timeline.record.is_none() {
         return;
     }
+    // Playback steps on the clock: keep the frames coming while it plays.
+    activity.keep_running();
     let last = timeline.len().saturating_sub(1);
     if timeline.cursor >= last {
         timeline.playing = false;
@@ -414,12 +420,19 @@ pub(crate) fn animate_spectator_combat_markers(
     timeline: Res<SpectatorTimeline>,
     mut commands: Commands,
     mut markers: Query<(Entity, &mut Transform, &mut SpectatorCombatMarker)>,
+    mut activity: ResMut<crate::activity::Activity>,
 ) {
     for (entity, mut transform, mut marker) in markers.iter_mut() {
+        let parked = marker.ttl * 0.5;
+        if !timeline.playing && marker.age >= parked {
+            // Held mid-animation while parked on the event: nothing moves.
+            continue;
+        }
+        activity.keep_running();
         marker.age += time.delta_secs();
         if !timeline.playing {
             // Hold mid-animation while parked on the event.
-            marker.age = marker.age.min(marker.ttl * 0.5);
+            marker.age = marker.age.min(parked);
         }
         let p = (marker.age / marker.ttl).clamp(0.0, 1.0);
         // Fast pop-in (~90ms), hold, then shrink away over the last 35%.

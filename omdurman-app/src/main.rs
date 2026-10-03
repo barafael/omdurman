@@ -1,6 +1,7 @@
 //! Remember Gordon! Battle of Omdurman.
 
 mod actions_panel;
+mod activity;
 mod board_click;
 mod board_state;
 mod bot_player;
@@ -126,6 +127,8 @@ fn main() {
 /// the same app (see `tests::every_system_has_valid_parameters`).
 fn add_game(app: &mut App, room: String) {
     app.add_plugins(EguiPlugin::default())
+        // Reactive frame pacing: no busy loop while nothing happens.
+        .add_plugins(activity::ActivityPlugin)
         .add_plugins(camera::CameraPlugin)
         .add_plugins(omdurman_hexmap::HexMapPlugin)
         .add_plugins(board_state::BoardStatePlugin)
@@ -293,7 +296,10 @@ fn spawn_lights(mut commands: Commands) {
     commands.spawn((
         DirectionalLight {
             illuminance: 15000.0,
-            shadow_maps_enabled: true,
+            // The board and the counters are unlit, so no shadow ever shows;
+            // cascaded shadow maps would re-render every mesh each frame for
+            // nothing.
+            shadow_maps_enabled: false,
             ..default()
         },
         Transform::from_xyz(50.0, 100.0, 50.0).looking_at(Vec3::ZERO, Vec3::Y),

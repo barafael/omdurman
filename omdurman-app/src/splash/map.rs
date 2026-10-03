@@ -245,6 +245,7 @@ pub(super) fn animate_splash_maps(
     app_state: Res<State<crate::AppState>>,
     mode: Res<State<crate::AppMode>>,
     mut maps: ResMut<SplashMaps>,
+    mut activity: ResMut<crate::activity::Activity>,
 ) {
     let pan_speed = match (app_state.get(), mode.get()) {
         (crate::AppState::Splash, _) | (_, crate::AppMode::Menu) => MAP_PAN_SPEED,
@@ -252,6 +253,10 @@ pub(super) fn animate_splash_maps(
         _ => return,
     };
     maps.advance(time.delta_secs().min(MAP_MAX_STEP_SECS), pan_speed);
+    // The pan is a continuous animation (the lobby's backdrop too).
+    if maps.is_animating() {
+        activity.keep_running();
+    }
 }
 
 pub(super) fn load_splash_maps(mut commands: Commands, asset_server: Res<AssetServer>) {

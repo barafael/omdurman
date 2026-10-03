@@ -104,10 +104,37 @@ pub(crate) fn mine_chain_overlay_mesh(
     game_state: Res<GameStateResource>,
     peers: crate::peers::Peers,
     existing: Query<Entity, With<MineChainMarker>>,
+    mut last: Local<Option<MineChainKey>>,
+    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
-    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    // Rebuilt only when what is shown changes (or the overlays were
+    // cleared), not every frame.
+    if generation.invalidates(&mut seen_generation) {
+        *last = None;
+    }
     let gs = game_state;
-    if !peers.may_act(omdurman_types::Player::Dervish) {
+    let shown = peers.may_act(omdurman_types::Player::Dervish);
+    let key = MineChainKey {
+        mines: if shown {
+            gs.0.mines.iter().map(|m| m.hex).collect()
+        } else {
+            Vec::new()
+        },
+        chain: if shown {
+            gs.0.chain
+                .as_ref()
+                .map(|c| c.hexes.clone())
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        },
+    };
+    if last.as_ref() == Some(&key) {
+        return;
+    }
+    *last = Some(key);
+    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    if !shown {
         return;
     }
     if gs.0.mines.is_empty() && gs.0.chain.is_none() {
@@ -151,6 +178,14 @@ pub(crate) fn mine_chain_overlay_mesh(
             Visibility::Visible,
         ));
     }
+}
+
+/// What [`mine_chain_overlay_mesh`] last drew: the mine hexes and the chain
+/// line shown to this seat (empty when hidden from it).
+#[derive(PartialEq, Eq, Debug)]
+pub(crate) struct MineChainKey {
+    mines: Vec<omdurman_types::HexCoord>,
+    chain: Vec<omdurman_types::HexCoord>,
 }
 
 /// Marker component for mine/chain board markers.

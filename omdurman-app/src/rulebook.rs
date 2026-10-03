@@ -39,6 +39,10 @@ pub struct Rulebook {
     pub scroll_to: Option<String>,
     /// The section currently spotlighted, with seconds of highlight left.
     pub flash: Option<(String, f32)>,
+    /// Which sections match the search, for the needle they were computed
+    /// for: lowercasing every section body twice a frame for an unchanged
+    /// search is the tab's main per-frame cost.
+    matches: Option<(String, Vec<bool>)>,
 }
 
 /// The manual's sections, parsed once. Shared by the Rulebook tab and every
@@ -135,6 +139,7 @@ impl Default for Rulebook {
             search: String::new(),
             scroll_to: None,
             flash: None,
+            matches: None,
         }
     }
 }
@@ -233,6 +238,29 @@ pub fn request_section(rulebook: &mut Rulebook, number: &str) {
 }
 
 impl Rulebook {
+    /// Per section, whether it matches the (lowercased) search `needle` by
+    /// number, title or body -- every section for an empty search. Cached
+    /// until the needle changes.
+    fn search_matches(&mut self, needle: &str) -> Vec<bool> {
+        if let Some((cached, matches)) = &self.matches
+            && cached == needle
+        {
+            return matches.clone();
+        }
+        let matches: Vec<bool> = self
+            .sections
+            .iter()
+            .map(|sec| {
+                needle.is_empty()
+                    || sec.number.contains(needle)
+                    || sec.title.to_lowercase().contains(needle)
+                    || sec.body.to_lowercase().contains(needle)
+            })
+            .collect();
+        self.matches = Some((needle.to_string(), matches.clone()));
+        matches
+    }
+
     /// Look up a section's short title by its `§` number (e.g. `"5.26"` ->
     /// `"Units stop on entering enemy ZOC"`). Returns `None` when the section
     /// isn't in the parsed manual -- callers should fall back to a bare `§N`.
@@ -373,10 +401,11 @@ pub fn draw_rulebook(ui: &mut egui::Ui, rulebook: &mut Rulebook, dt: f32) -> Opt
             );
             ui.separator();
             let needle = rulebook.search.to_lowercase();
+            let shown = rulebook.search_matches(&needle);
             egui::ScrollArea::vertical()
                 .id_salt("rulebook_toc")
                 .show(ui, |ui| {
-                    for sec in &rulebook.sections {
+                    for (sec, &matches) in rulebook.sections.iter().zip(&shown) {
                         // Numbered paragraphs join the index only in a search
                         // (it would otherwise list every rule).
                         if sec.paragraph && needle.is_empty() {
@@ -384,11 +413,7 @@ pub fn draw_rulebook(ui: &mut egui::Ui, rulebook: &mut Rulebook, dt: f32) -> Opt
                         }
                         // When searching, only show sections that match by
                         // number, title, or body.
-                        if !needle.is_empty()
-                            && !sec.number.contains(&needle)
-                            && !sec.title.to_lowercase().contains(&needle)
-                            && !sec.body.to_lowercase().contains(&needle)
-                        {
+                        if !matches {
                             continue;
                         }
                         let indent = match sec.depth {
@@ -408,17 +433,14 @@ pub fn draw_rulebook(ui: &mut egui::Ui, rulebook: &mut Rulebook, dt: f32) -> Opt
     let scroll_to = rulebook.scroll_to.take();
     let flash = rulebook.flash.clone();
     let needle = rulebook.search.to_lowercase();
+    let shown = rulebook.search_matches(&needle);
 
     egui::ScrollArea::vertical()
         .id_salt("rulebook_body")
         .auto_shrink(false)
         .show(ui, |ui| {
-            for sec in &rulebook.sections {
-                if !needle.is_empty()
-                    && !sec.number.contains(&needle)
-                    && !sec.title.to_lowercase().contains(&needle)
-                    && !sec.body.to_lowercase().contains(&needle)
-                {
+            for (sec, &matches) in rulebook.sections.iter().zip(&shown) {
+                if !matches {
                     continue;
                 }
 

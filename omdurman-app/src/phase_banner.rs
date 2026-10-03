@@ -18,7 +18,7 @@ use crate::ui_phase_state::{FireSubKind, PhaseKind, UiPhaseState};
 // Animation resource — tracks transitions so we can animate them
 // ---------------------------------------------------------------------------
 
-#[derive(Resource)]
+#[derive(Resource, PartialEq)]
 pub struct PhaseBannerAnimation {
     /// The phase state from the previous frame.
     pub prev: Option<UiPhaseState>,
@@ -55,10 +55,11 @@ pub fn update_phase_banner_animation(
     time: Res<Time>,
     game_state: Option<Res<GameStateResource>>,
     mut anim: ResMut<PhaseBannerAnimation>,
+    mut activity: ResMut<crate::activity::Activity>,
 ) {
     let Some(gs) = game_state else {
         // No game active — reset.
-        *anim = PhaseBannerAnimation::default();
+        anim.set_if_neq(PhaseBannerAnimation::default());
         return;
     };
 
@@ -68,6 +69,10 @@ pub fn update_phase_banner_animation(
     if anim.prev != Some(current) {
         anim.phase_enter_time = time.elapsed_secs_f64();
         anim.prev = Some(current);
+    }
+    // The slide-in needs consecutive frames.
+    if time.elapsed_secs_f64() - anim.phase_enter_time < BANNER_ANIM_SECS {
+        activity.keep_running();
     }
 }
 

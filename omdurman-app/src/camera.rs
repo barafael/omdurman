@@ -9,7 +9,8 @@ use bevy::{prelude::*, render::view::ColorGrading};
 use omdurman_board_ui::night::{BoardDayNight, night_shading};
 
 pub use omdurman_board_ui::camera::{
-    CameraDragState, CameraFit, CameraSettings, CameraViewInsets, RtsCamera, RtsCameraState,
+    CameraDragState, CameraFit, CameraSettings, CameraSettling, CameraViewInsets, RtsCamera,
+    RtsCameraState,
 };
 
 pub struct CameraPlugin;
@@ -19,6 +20,9 @@ impl Plugin for CameraPlugin {
         app.insert_resource(CameraSettings::default())
             .insert_resource(CameraDragState::default())
             .init_resource::<CameraFit>()
+            // "Still moving" flag: keeps frames coming while the view eases
+            // (see `activity`).
+            .init_resource::<CameraSettling>()
             .init_resource::<CameraViewInsets>()
             .init_resource::<BoardDayNight>()
             .add_systems(Startup, spawn_camera)
@@ -73,7 +77,11 @@ fn sync_board_day_night(
     game_state: Option<Res<crate::GameStateResource>>,
     mut day_night: ResMut<BoardDayNight>,
 ) {
-    day_night.0 = game_state.as_deref().map(|gs| gs.0.day_night);
+    // Written only when it changes: the night shading keys on it.
+    let now = game_state.as_deref().map(|gs| gs.0.day_night);
+    if day_night.0 != now {
+        day_night.0 = now;
+    }
 }
 
 /// Hand the chrome bands this frame's egui pass reserved (left rail panels,

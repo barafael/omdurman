@@ -31,7 +31,10 @@ pub fn unit_overview_ui(
     mut pending: Option<ResMut<crate::PendingEdits>>,
     mut local_setup_ready: Option<ResMut<crate::peers::LocalSetupReady>>,
     mut layout: ResMut<crate::ScreenLayout>,
-    mut victory: ResMut<crate::ui_plugin::VictoryModalState>,
+    (mut victory, mut unit_list): (
+        ResMut<crate::ui_plugin::VictoryModalState>,
+        Local<Option<UnitListCache>>,
+    ),
     mut picker_commands: bevy::ecs::message::MessageWriter<crate::hotkeys::PickerCommand>,
 ) {
     let PickerReadState {
@@ -45,6 +48,27 @@ pub fn unit_overview_ui(
     if !mode.is_play() {
         return;
     }
+    // The grouped unit list is rebuilt only when the engine state moved or
+    // counters came or went -- not every frame (a sort plus a name lookup
+    // per counter).
+    let counters = placed_units.iter().count();
+    let stale = unit_list.as_ref().is_none_or(|cache| {
+        cache.counters != counters || game_state.as_ref().is_some_and(|gs| gs.is_changed())
+    });
+    if stale {
+        let mut units: Vec<_> = placed_units.iter().map(|(_, p)| p).collect();
+        units.sort_by_key(|u| (u.section_name.display_name(), u.col, u.row));
+        let mut groups: std::collections::BTreeMap<String, (usize, usize)> =
+            std::collections::BTreeMap::new();
+        for placed in &units {
+            let label = placed_unit_identity(placed, game_state.as_deref());
+            let entry = groups.entry(label).or_default();
+            entry.0 += 1;
+            entry.1 += usize::from(placed.disrupted);
+        }
+        *unit_list = Some(UnitListCache { counters, groups });
+    }
+    let unit_list = unit_list.as_ref().expect("filled above");
 
     crate::layout::left_rail_panel(
         ctx,
@@ -168,10 +192,7 @@ pub fn unit_overview_ui(
             // -- Unit list --
             crate::ui::section_header(ui, "Unit list");
 
-            let mut units: Vec<_> = placed_units.iter().map(|(_, p)| p).collect();
-            units.sort_by_key(|u| (u.section_name.display_name(), u.col, u.row));
-
-            if units.is_empty() {
+            if unit_list.counters == 0 {
                 ui.colored_label(crate::ui::palette::TEXT_DIM, "no placed units");
                 return;
             }
@@ -185,16 +206,9 @@ pub fn unit_overview_ui(
                     // what you scan for here (the map shows positions). Grouped
                     // by label, not by run: one counter-sheet section can mix
                     // tribes (Ali Wad Helu's Kehena and Degheim), which used to
-                    // split into a line per counter.
-                    let mut groups: std::collections::BTreeMap<String, (usize, usize)> =
-                        std::collections::BTreeMap::new();
-                    for placed in &units {
-                        let label = placed_unit_identity(placed, game_state.as_deref());
-                        let entry = groups.entry(label).or_default();
-                        entry.0 += 1;
-                        entry.1 += usize::from(placed.disrupted);
-                    }
-                    for (label, (count, disrupted)) in &groups {
+                    // split into a line per counter. (Cached: see
+                    // `UnitListCache`.)
+                    for (label, (count, disrupted)) in &unit_list.groups {
                         ui.label(
                             egui::RichText::new(format!("{label} ({count}x)"))
                                 .size(13.0)
@@ -214,6 +228,16 @@ pub fn unit_overview_ui(
                 .rect
         },
     );
+}
+
+/// The unit list's lines ("Mulazmin" -> 32 counters, 3 disrupted), cached
+/// across frames by [`unit_overview_ui`].
+#[derive(Default)]
+pub struct UnitListCache {
+    /// How many counters the list was built from.
+    counters: usize,
+    /// Label -> (counters, disrupted).
+    groups: std::collections::BTreeMap<String, (usize, usize)>,
 }
 
 fn placed_unit_identity(placed: &PlacedUnit, game_state: Option<&GameStateResource>) -> String {

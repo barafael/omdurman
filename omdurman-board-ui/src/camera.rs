@@ -88,6 +88,13 @@ impl CameraFit {
     }
 }
 
+/// Whether the camera still needs frames: easing toward its target, being
+/// dragged or keyed, or framing the board. Published by [`camera_control`]
+/// (when the binary inserts it) so a reactive app keeps redrawing while the
+/// view moves and can sleep once it has settled.
+#[derive(Resource, Default, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CameraSettling(pub bool);
+
 #[derive(Resource)]
 pub struct CameraSettings {
     pub pan_speed: f32,
@@ -331,17 +338,56 @@ fn clamp_focus_to_board(state: &mut RtsCameraState, dims: &MapDims) {
     state.focus.z = state.focus.z.clamp(-half.y, half.y);
 }
 
+/// Ease one smoothed value toward its target, snapping once within `eps`.
+/// Returns whether it is still on the way.
+fn ease<T>(smooth: &mut T, target: T, t: f32, eps: f32, gap: impl Fn(T, T) -> f32) -> bool
+where
+    T: Copy + PartialEq + std::ops::Add<Output = T> + std::ops::Sub<Output = T>,
+    T: std::ops::Mul<f32, Output = T>,
+{
+    if *smooth == target {
+        return false;
+    }
+    if gap(*smooth, target) <= eps {
+        *smooth = target;
+        return false;
+    }
+    *smooth = *smooth + (target - *smooth) * t;
+    true
+}
+
+/// Ease the smoothed view toward the target view and place the camera. The
+/// smoothed values snap onto their targets once close, and the `Transform` is
+/// written only when it actually changes -- a resting camera costs nothing
+/// downstream (no re-extraction, no changed transform). Returns whether the
+/// view is still easing.
 fn apply_camera_transform(
     state: &mut RtsCameraState,
     settings: &CameraSettings,
-    transform: &mut Transform,
+    transform: &mut Mut<Transform>,
     dt: f32,
-) {
+) -> bool {
     let t = (settings.smoothing * dt).min(1.0);
-    state.smooth_focus = state.smooth_focus.lerp(state.focus, t);
-    state.smooth_distance = state.smooth_distance.lerp(state.distance, t);
-    state.smooth_yaw = state.smooth_yaw.lerp(state.yaw, t);
-    state.smooth_pitch = state.smooth_pitch.lerp(state.pitch, t);
+    let target_focus = state.focus;
+    let mut easing = ease(&mut state.smooth_focus, target_focus, t, 0.01, |a, b| {
+        a.distance(b)
+    });
+    let target_distance = state.distance;
+    easing |= ease(
+        &mut state.smooth_distance,
+        target_distance,
+        t,
+        0.01,
+        |a, b| (a - b).abs(),
+    );
+    let target_yaw = state.yaw;
+    easing |= ease(&mut state.smooth_yaw, target_yaw, t, 1e-5, |a, b| {
+        (a - b).abs()
+    });
+    let target_pitch = state.pitch;
+    easing |= ease(&mut state.smooth_pitch, target_pitch, t, 1e-5, |a, b| {
+        (a - b).abs()
+    });
 
     let hdist = state.smooth_distance * state.smooth_pitch.cos();
     let vert = state.smooth_distance * state.smooth_pitch.sin();
@@ -351,7 +397,8 @@ fn apply_camera_transform(
         hdist * state.smooth_yaw.cos(),
     );
     let eye = state.smooth_focus + offset;
-    *transform = Transform::from_translation(eye).looking_at(state.smooth_focus, Vec3::Y);
+    transform.set_if_neq(Transform::from_translation(eye).looking_at(state.smooth_focus, Vec3::Y));
+    easing
 }
 
 /// Bundles the four input sources (keyboard, mouse buttons, scroll wheel,
@@ -372,6 +419,8 @@ pub struct CameraFraming<'w> {
     pub dims: Option<Res<'w, MapDims>>,
     pub insets: Option<Res<'w, CameraViewInsets>>,
     pub fit: ResMut<'w, CameraFit>,
+    /// Published "still moving" flag, if the binary wants it.
+    pub settling: Option<ResMut<'w, CameraSettling>>,
 }
 
 pub fn camera_control(
@@ -453,5 +502,21 @@ pub fn camera_control(
         }
         clamp_focus_to_board(&mut state, dims);
     }
-    apply_camera_transform(&mut state, &settings, &mut transform, dt);
+    let easing = apply_camera_transform(&mut state, &settings, &mut transform, dt);
+    if let Some(settling) = framing.settling.as_mut() {
+        let held = drag_state.active
+            || [
+                KeyCode::ArrowUp,
+                KeyCode::ArrowDown,
+                KeyCode::ArrowLeft,
+                KeyCode::ArrowRight,
+                KeyCode::PageUp,
+                KeyCode::PageDown,
+            ]
+            .iter()
+            .any(|k| keys.pressed(*k));
+        settling.set_if_neq(CameraSettling(
+            easing || held || framing.fit.pending_frames > 0,
+        ));
+    }
 }

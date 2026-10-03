@@ -1,8 +1,9 @@
 //! Zone-of-control overlay: yellow hex rings on every hex that lies in an
 //! enemy ZOC from the local player's perspective (§5.41, §5.44).
 //!
-//! Toggled at runtime via [`ZocOverlay`]; the overlay system runs every frame
-//! while the toggle is on, rebuilding the ring set from the live game state.
+//! Toggled at runtime via [`ZocOverlay`]; while the toggle is on, the overlay
+//! system recomputes the zones only when the game state or the viewpoint
+//! changes, and rebuilds the rings only when the zones do.
 
 use std::collections::HashSet;
 
@@ -28,8 +29,9 @@ pub struct ZocOverlay {
 // -- Overlay system ----------------------------------------------------------
 
 #[allow(clippy::too_many_arguments)]
-/// Spawn yellow hex rings on every hex in enemy ZOC. Runs every frame while
-/// the toggle is on, despawning and rebuilding from scratch.
+/// Spawn yellow hex rings on every hex in enemy ZOC. While the toggle is on
+/// the zones are recomputed when the game state or the viewpoint (spectating,
+/// local faction) changes, and the rings rebuilt only when the zones do.
 ///
 /// In the spectator/replay view there is no local player, so the overlay
 /// shows *both* sides' zones: yellow rings for ZOC projected by the Dervish,
@@ -44,6 +46,7 @@ pub fn zoc_overlay_mesh(
     existing: Query<Entity, With<ZocRing>>,
     mut last_zoc: Local<Option<HashSet<HexCoord>>>,
     (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
+    mut last_view: Local<Option<(bool, Option<Player>)>>,
 ) {
     if generation.invalidates(&mut seen_generation) {
         *last_zoc = None;
@@ -72,6 +75,13 @@ pub fn zoc_overlay_mesh(
     // live game -> the enemy of the local player (yellow, as before);
     // spectator -> both sides (Dervish yellow, Anglo-Egyptian blue).
     let spectating = **app_state == crate::AppState::Spectating;
+    // Nothing that shapes the zones moved: keep the rings without even
+    // recomputing them.
+    let view = (spectating, peers.local());
+    if last_zoc.is_some() && *last_view == Some(view) && !gs.is_changed() {
+        return;
+    }
+    *last_view = Some(view);
     let projecting: Vec<(Player, Handle<StandardMaterial>)> = if spectating {
         vec![
             (Player::Dervish, assets.yellow.clone()),

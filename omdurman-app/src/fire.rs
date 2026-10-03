@@ -949,10 +949,18 @@ pub fn howitzer_impact_markers(
     hex: crate::HexRender,
     game_state: Res<GameStateResource>,
     existing: Query<Entity, With<HowitzerImpactMarker>>,
+    mut last: Local<Option<Vec<omdurman_types::HexCoord>>>,
+    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
-    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    // Rebuilt only when the impacts change (the engine state moved) or the
+    // overlays were cleared -- not every frame.
+    if generation.invalidates(&mut seen_generation) {
+        *last = None;
+    }
+    if last.is_some() && !game_state.is_changed() {
+        return;
+    }
     let gs = game_state;
-
     let impacts: Vec<omdurman_types::HexCoord> = gs
         .0
         .turn_events
@@ -962,7 +970,11 @@ pub fn howitzer_impact_markers(
             _ => None,
         })
         .collect();
-    for impact in impacts {
+    if last.as_ref() == Some(&impacts) {
+        return;
+    }
+    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    for &impact in &impacts {
         rings.ring(
             HowitzerImpactMarker,
             impact,
@@ -971,6 +983,7 @@ pub fn howitzer_impact_markers(
             &hex.assets.fire_arrow,
         );
     }
+    *last = Some(impacts);
 }
 
 /// Marker component for a howitzer shell-burst ring.

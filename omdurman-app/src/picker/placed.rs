@@ -213,13 +213,17 @@ pub fn spawn_placed_unit(
 /// y (so the quads never sit in the same plane). When the hovered hex holds more
 /// than one counter, that hex's units fan out to ~2x the spread so all of them
 /// are readable. Transforms are eased toward the target each frame, giving the
-/// expand/collapse a smooth animation. Units currently sliding between hexes
+/// expand/collapse a smooth animation; a counter within [`SETTLE_EPSILON`] of
+/// its slot snaps there and is left alone (no `Transform` write, so no
+/// re-extraction), and while any counter is still easing the frame is marked
+/// busy ([`crate::activity::Activity`]). Units currently sliding between hexes
 /// (`MovementAnimation`) are left to `animate_unit_movement`.
 pub fn layout_stacked_units(
     time: Res<Time>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     hovered: Res<crate::HoveredHex>,
+    mut activity: ResMut<crate::activity::Activity>,
     mut units: Query<(Entity, &PlacedUnit, &mut Transform), Without<MovementAnimation>>,
 ) {
     use std::collections::HashMap;
@@ -286,9 +290,24 @@ pub fn layout_stacked_units(
             UNIT_HEIGHT + global_idx as f32 * y_step,
             center.z + off.z,
         );
-        transform.translation = transform.translation.lerp(target, lerp);
+        // Read through the `Mut` without touching it: only a counter that
+        // actually moves gets a changed `Transform`.
+        let current = transform.translation;
+        if current == target {
+            continue;
+        }
+        if current.distance(target) <= SETTLE_EPSILON {
+            transform.translation = target;
+        } else {
+            transform.translation = current.lerp(target, lerp);
+            activity.keep_running();
+        }
     }
 }
+
+/// How close (world units) an easing counter must come to its stack slot
+/// before it snaps there and stops being updated.
+pub const SETTLE_EPSILON: f32 = 1e-3;
 
 // -- Animation: lerp unit movement ----------------------------------------------
 
@@ -296,8 +315,10 @@ pub fn animate_unit_movement(
     time: Res<Time>,
     mut query: Query<(Entity, &mut Transform, &mut MovementAnimation)>,
     mut commands: Commands,
+    mut activity: ResMut<crate::activity::Activity>,
 ) {
     for (entity, mut transform, mut anim) in query.iter_mut() {
+        activity.keep_running();
         anim.progress += time.delta_secs() / MOVE_ANIM_SECS;
         if anim.progress >= 1.0 {
             transform.translation = anim.to;
@@ -382,6 +403,7 @@ pub struct SpriteReconcileCtx<'w> {
     mode: Res<'w, State<crate::AppMode>>,
     picker: ResMut<'w, UnitPicker>,
     picker_state: ResMut<'w, PickerState>,
+    activity: ResMut<'w, crate::activity::Activity>,
 }
 
 /// The board's counters are a *projection* of the rules engine state: this
@@ -407,10 +429,17 @@ pub struct SpriteReconcileCtx<'w> {
 ///
 /// Counters are hidden outside the Game view (menu / lobby), so returning
 /// to the board needs no snapshot: the sprites are re-derived here.
+///
+/// It runs only when one of its inputs moved -- the engine state, the
+/// recorded routes, the app mode, the picker (its sprite handles load
+/// late), counters spawned or despawned elsewhere -- or while an optimistic
+/// placement awaits its echo (that keeps the frames coming, see
+/// [`crate::activity::Activity`]); an idle board costs nothing.
 pub fn reconcile_unit_sprites(
     mut commands: Commands,
     ctx: SpriteReconcileCtx,
     mut query: Query<SpriteReconcileItem>,
+    mut removed: RemovedComponents<PlacedUnit>,
 ) {
     let SpriteReconcileCtx {
         game_state,
@@ -423,8 +452,34 @@ pub fn reconcile_unit_sprites(
         mode,
         mut picker,
         mut picker_state,
+        mut activity,
     } = ctx;
+    // One look over the counters (`iter_mut` without writing marks nothing
+    // changed): any spawned since the last run, any awaiting its echo.
+    let (mut fresh, mut awaiting_echo) = (false, false);
+    for (_, placed, ..) in query.iter_mut() {
+        fresh |= placed.is_added();
+        awaiting_echo |= placed.unit_id.is_none();
+    }
+    let despawned = removed.read().count() > 0;
+    if !(game_state.is_changed()
+        || paths.is_changed()
+        || mode.is_changed()
+        || picker.is_changed()
+        || fresh
+        || despawned
+        || awaiting_echo)
+    {
+        return;
+    }
+    if awaiting_echo {
+        // The grace period counts frames: keep them coming.
+        activity.keep_running();
+    }
     let gs = &game_state.0;
+    // One lookup table per run (`find_unit` is a linear scan).
+    let by_id: std::collections::HashMap<UnitId, &omdurman_rules::UnitPlacement> =
+        gs.units.iter().map(|u| (u.id, u)).collect();
     let origin = layout.adjusted_origin(&overlay.params);
     let world = |hex: HexCoord| {
         let p = hex_world_pos(hex, origin, &overlay.params);
@@ -448,7 +503,7 @@ pub fn reconcile_unit_sprites(
             None => {
                 // Optimistic local placement awaiting its echo.
                 let resolved = unit_id_for_section_pos(key.0, key.1 as u8, key.2 as u8)
-                    .filter(|id| gs.find_unit(*id).is_some() && !seen.contains(id));
+                    .filter(|id| by_id.contains_key(id) && !seen.contains(id));
                 if let Some(id) = resolved {
                     placed.unit_id = Some(id);
                     commands.entity(entity).remove::<PendingPlacement>();
@@ -480,7 +535,7 @@ pub fn reconcile_unit_sprites(
                 }
             }
         };
-        let Some(unit) = gs.find_unit(uid).filter(|_| !seen.contains(&uid)) else {
+        let Some(unit) = by_id.get(&uid).copied().filter(|_| !seen.contains(&uid)) else {
             // Gone from the engine (or a duplicate sprite): drop it.
             commands.entity(entity).despawn();
             continue;
@@ -682,6 +737,77 @@ fn set_placing_index(state: &mut ResMut<PickerState>, idx: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -- Idle frames cost nothing: a settled stack is not rewritten ---------
+
+    #[derive(Resource, Default)]
+    struct ChangedTransforms(usize);
+
+    fn count_changed(q: Query<(), Changed<Transform>>, mut n: ResMut<ChangedTransforms>) {
+        n.0 += q.iter().count();
+    }
+
+    /// A counter eases into its stack slot while the frame is marked busy,
+    /// then snaps and is left alone: no `Transform` write (so nothing
+    /// downstream re-runs) and no request for more frames.
+    #[test]
+    fn a_settled_counter_is_not_rewritten_and_asks_for_no_frames() {
+        let mut app = App::new();
+        app.add_plugins(bevy::time::TimePlugin)
+            .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+                std::time::Duration::from_millis(10),
+            ))
+            .insert_resource(HexOverlay::default())
+            .insert_resource(omdurman_board_ui::board_store::default_layout())
+            .init_resource::<crate::HoveredHex>()
+            .init_resource::<crate::activity::Activity>()
+            .init_resource::<ChangedTransforms>()
+            .add_systems(Update, (layout_stacked_units, count_changed).chain());
+        app.world_mut().spawn((
+            PlacedUnit {
+                coord: HexCoord::new(3, 3),
+                section_name: SectionName::Taiasha,
+                col: 0,
+                row: 0,
+                is_boat: false,
+                unit_id: None,
+                disrupted: false,
+            },
+            Transform::from_xyz(500.0, 0.0, 500.0),
+        ));
+
+        // Easing in: busy frames.
+        app.update();
+        app.update();
+        assert!(
+            app.world()
+                .resource::<crate::activity::Activity>()
+                .is_busy()
+        );
+
+        // Let it arrive.
+        for _ in 0..400 {
+            app.update();
+        }
+        // (No `request_redraws` here to consume the flag: clear it by hand.)
+        *app.world_mut().resource_mut::<crate::activity::Activity>() = Default::default();
+        app.world_mut().resource_mut::<ChangedTransforms>().0 = 0;
+
+        for _ in 0..5 {
+            app.update();
+        }
+        assert_eq!(
+            app.world().resource::<ChangedTransforms>().0,
+            0,
+            "a resting counter's Transform is not touched"
+        );
+        assert!(
+            !app.world()
+                .resource::<crate::activity::Activity>()
+                .is_busy(),
+            "a resting board asks for no frames"
+        );
+    }
 
     // -- Two-stack layout: undisrupted top / disrupted bottom (§6.22) ------
 

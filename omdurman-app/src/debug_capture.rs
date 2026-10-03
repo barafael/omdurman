@@ -47,7 +47,11 @@ fn capture_then_exit(
     mut counter: ResMut<FrameCounter>,
     mut captured_at: Local<Option<u32>>,
     mut exit: MessageWriter<AppExit>,
+    mut activity: ResMut<crate::activity::Activity>,
 ) {
+    // Counts frames: keep them coming (the app otherwise idles between
+    // inputs, see `activity`).
+    activity.keep_running();
     counter.0 += 1;
     if let Some(at) = *captured_at {
         // Hold for a margin of frames after the capture request: the screenshot
@@ -173,11 +177,36 @@ fn write_hex_probe(
 }
 
 /// Serve a `<probe>.shot` screenshot request (see [`HexProbePlugin`]).
-fn probe_screenshot(mut commands: Commands, path: Res<HexProbePath>) {
+/// How often the probe looks for a `<probe>.shot` request file.
+const PROBE_SHOT_POLL_SECS: f64 = 0.25;
+/// Frames kept running after a probe screenshot, so it is rendered, read back
+/// and written while the app would otherwise idle.
+const PROBE_SHOT_FRAMES: u8 = 10;
+
+fn probe_screenshot(
+    mut commands: Commands,
+    path: Res<HexProbePath>,
+    time: Res<Time>,
+    mut last_poll: Local<f64>,
+    mut capturing: Local<u8>,
+    mut activity: ResMut<crate::activity::Activity>,
+) {
+    if *capturing > 0 {
+        *capturing -= 1;
+        activity.keep_running();
+    }
+    // A syscall a frame for a dev aid is too much: poll a few times a second.
+    let now = time.elapsed_secs_f64();
+    if now - *last_poll < PROBE_SHOT_POLL_SECS {
+        return;
+    }
+    *last_poll = now;
     let request = format!("{}.shot", path.0);
     if std::fs::remove_file(&request).is_ok() {
         commands
             .spawn(Screenshot::primary_window())
             .observe(save_to_disk(format!("{}.png", path.0)));
+        *capturing = PROBE_SHOT_FRAMES;
+        activity.keep_running();
     }
 }

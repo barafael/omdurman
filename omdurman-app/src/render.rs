@@ -71,13 +71,13 @@ pub mod overlay_palette {
 
 /// Written every frame by `render::update_selection_marker` with the hex
 /// currently under the cursor (or `None` if no valid hex is hovered).
-#[derive(Resource, Default)]
+#[derive(Resource, Default, PartialEq, Eq, Debug)]
 pub struct HoveredHex(pub Option<HexCoord>);
 
 /// The placed-unit entity currently under the cursor (the specific counter in
 /// a stack, resolved by `update_hovered_unit`), or `None`. Drives the bright
 /// hover square that previews which unit a click would select.
-#[derive(Resource, Default)]
+#[derive(Resource, Default, PartialEq, Eq, Debug)]
 pub struct HoveredUnit(pub Option<bevy::prelude::Entity>);
 
 // -- Map plane -----------------------------------------------------------------
@@ -133,7 +133,10 @@ pub fn spawn_selection_marker(
 }
 
 /// Moves a translucent hex marker to whichever map hex the cursor is over, and
-/// records the hovered hex coordinate in [`HoveredHex`] for the UI.
+/// records the hovered hex coordinate in [`HoveredHex`] for the UI. Writes only
+/// what changed (`set_if_neq`), so `HoveredHex`, the marker's `Transform` and
+/// `Visibility` read as changed only when the hovered hex really moves --
+/// systems gated on them (the path arrows) stay idle otherwise.
 pub fn update_selection_marker(
     ground: Res<crate::picking::PointerGroundHit>,
     layout: Res<HexLayout>,
@@ -143,14 +146,14 @@ pub fn update_selection_marker(
     mut hovered: ResMut<HoveredHex>,
 ) {
     let Ok((mut transform, mut visibility)) = marker.single_mut() else {
-        hovered.0 = None;
+        hovered.set_if_neq(HoveredHex(None));
         return;
     };
     // `None` while the pointer is over UI, off the board, or unseen by any
     // camera (see `picking::update_pointer_ground_hit`).
     let Some(hit) = **ground else {
-        *visibility = Visibility::Hidden;
-        hovered.0 = None;
+        visibility.set_if_neq(Visibility::Hidden);
+        hovered.set_if_neq(HoveredHex(None));
         return;
     };
     let origin = layout.adjusted_origin(&overlay.params);
@@ -158,13 +161,17 @@ pub fn update_selection_marker(
 
     if game_map.hexes.contains_key(&coord) {
         let pos = hex_world_pos(coord, origin, &overlay.params);
-        transform.translation = Vec3::new(pos.x, 0.5, pos.z);
-        transform.scale = Vec3::splat(overlay.params.hex_size);
-        *visibility = Visibility::Visible;
-        hovered.0 = Some(coord);
+        let placed = Transform {
+            translation: Vec3::new(pos.x, 0.5, pos.z),
+            scale: Vec3::splat(overlay.params.hex_size),
+            ..*transform
+        };
+        transform.set_if_neq(placed);
+        visibility.set_if_neq(Visibility::Visible);
+        hovered.set_if_neq(HoveredHex(Some(coord)));
     } else {
-        *visibility = Visibility::Hidden;
-        hovered.0 = None;
+        visibility.set_if_neq(Visibility::Hidden);
+        hovered.set_if_neq(HoveredHex(None));
     }
 }
 
@@ -176,8 +183,9 @@ pub fn update_selection_marker(
 pub struct ActedMarker;
 
 /// Spawn or despawn acted-outline rings for every unit that has spent
-/// movement points this phase.  Runs every frame (despawn-all + respawn)
-/// like the fire/melee target rings.
+/// movement points this phase. The rings are rebuilt only when the set of
+/// marked hexes changes (or the overlays were cleared, see
+/// [`crate::picker::OverlayGeneration`]) -- not every frame.
 ///
 /// TODO(acted-universal): extend to fire allocations and melee once the
 /// rules engine has a universal `acted` field on `UnitState`.
@@ -186,20 +194,30 @@ pub fn update_acted_markers(
     hex: crate::HexRender,
     game_state: Res<crate::GameStateResource>,
     existing: Query<Entity, With<ActedMarker>>,
+    mut last: Local<Option<Vec<HexCoord>>>,
+    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
-    let existing: Vec<Entity> = existing.iter().collect();
-    crate::ui::despawn_all(&mut commands, &existing);
-
+    if generation.invalidates(&mut seen_generation) {
+        *last = None;
+    }
     let gs = game_state;
-    let origin = hex.layout.adjusted_origin(&hex.overlay.params);
-    let size = hex.overlay.params.hex_size;
-
-    for unit in
+    let marked: Vec<HexCoord> =
         gs.0.units
             .iter()
             .filter(|u| u.state.disrupted || gs.0.mp_spent(u.id) > 0)
-    {
-        let pos = hex_world_pos(unit.position, origin, &hex.overlay.params);
+            .map(|u| u.position)
+            .collect();
+    if last.as_ref() == Some(&marked) {
+        return;
+    }
+    let existing: Vec<Entity> = existing.iter().collect();
+    crate::ui::despawn_all(&mut commands, &existing);
+
+    let origin = hex.layout.adjusted_origin(&hex.overlay.params);
+    let size = hex.overlay.params.hex_size;
+
+    for &position in &marked {
+        let pos = hex_world_pos(position, origin, &hex.overlay.params);
         commands.spawn((
             ActedMarker,
             Mesh3d(hex.assets.mesh.clone()),
@@ -208,6 +226,7 @@ pub fn update_acted_markers(
             Visibility::Visible,
         ));
     }
+    *last = Some(marked);
 }
 
 // -- Helpers -------------------------------------------------------------------
@@ -397,5 +416,67 @@ impl Plugin for RenderPlugin {
                         .run_if(crate::board_view_active),
                 ),
             );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The hovered hex is published with `set_if_neq`: a pointer resting on
+    /// one hex leaves `HoveredHex` unchanged frame after frame, so systems
+    /// gated on it (the path arrows) stay idle.
+    #[test]
+    fn a_resting_pointer_leaves_the_hovered_hex_unchanged() {
+        #[derive(Resource, Default)]
+        struct Changes(usize);
+        fn count(hovered: Res<HoveredHex>, mut n: ResMut<Changes>) {
+            if hovered.is_changed() {
+                n.0 += 1;
+            }
+        }
+        let mut app = App::new();
+        let layout = omdurman_board_ui::board_store::default_layout();
+        let overlay = HexOverlay::default();
+        let hex = HexCoord::new(2, 2);
+        let at = hex_world_pos(
+            hex,
+            layout.adjusted_origin(&overlay.params),
+            &overlay.params,
+        );
+        let mut map = GameMap::default();
+        map.hexes.insert(
+            hex,
+            omdurman_types::HexData {
+                terrain: omdurman_types::Terrain::Clear {
+                    road: Default::default(),
+                },
+                location: None,
+                name: None,
+                setup_letter: None,
+                is_scattergram: false,
+                named_area: None,
+            },
+        );
+        app.insert_resource(crate::picking::PointerGroundHit(Some(at)))
+            .insert_resource(layout)
+            .insert_resource(overlay)
+            .insert_resource(map)
+            .init_resource::<HoveredHex>()
+            .init_resource::<Changes>()
+            .add_systems(Update, (update_selection_marker, count).chain());
+        app.world_mut()
+            .spawn((Transform::default(), Visibility::Hidden, SelectionMarker));
+        app.update();
+        assert_eq!(app.world().resource::<HoveredHex>().0, Some(hex));
+        let first = app.world().resource::<Changes>().0;
+        for _ in 0..5 {
+            app.update();
+        }
+        assert_eq!(
+            app.world().resource::<Changes>().0,
+            first,
+            "no change while the pointer rests"
+        );
     }
 }

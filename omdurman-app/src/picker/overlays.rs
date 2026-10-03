@@ -85,6 +85,11 @@ pub fn placement_preview_mesh(
     let existing: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &existing);
 
+    // Look before borrowing mutably: a `&mut *state` on every frame would
+    // mark `PickerState` changed even while nothing is being placed.
+    if !matches!(*state, PickerState::Placing { .. }) {
+        return;
+    }
     let PickerState::Placing {
         unit_idx,
         preview_hex,
@@ -697,8 +702,10 @@ pub(crate) fn update_hovered_unit(
     peers: crate::peers::Peers,
     mut hovered: ResMut<crate::HoveredUnit>,
 ) {
+    // `set_if_neq`: the resource reads as changed only when the hovered
+    // counter does.
     let Some(hit) = **ground else {
-        hovered.0 = None;
+        hovered.set_if_neq(crate::HoveredUnit(None));
         return;
     };
     let origin = layout.adjusted_origin(&overlay.params);
@@ -719,7 +726,7 @@ pub(crate) fn update_hovered_unit(
         None => true,
     })
     .map(|(e, _)| e);
-    hovered.0 = target;
+    hovered.set_if_neq(crate::HoveredUnit(target));
 }
 
 /// Bright square on the unit under the cursor, previewing which counter a
