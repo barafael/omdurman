@@ -57,7 +57,10 @@ against the AI Khalifa is (for a 2208x1403 window: 672 570, 1004 1006,
 $D click 1202 424        # Faction: Anglo-Egyptian
 $D click 1470 715        # AI Commanders: Khalifa (Dervish)
 $D click 1535 799        # Start Battle
-$D wait 'phase=Movement active=AngloEgyptian' 900   # the AI Dervish sets up first
+$D wait 'phase=Setup active=AngloEgyptian' 900      # the AI Dervish sets up first
+$D click 32 128          # Ready (rail): the A-E deploy nothing in the Campaign,
+                         # but set-up waits for it -- the game sits idle until then
+$D wait 'phase=Movement active=AngloEgyptian' 60
 $D state                 # turn/phase line + units per side
 ```
 
