@@ -62,7 +62,7 @@ pub fn draw_actions_section(
     fire_targets: &mut crate::fire::FireTargetCache,
     fire_allocation: Option<&mut crate::fire_allocation::FireAllocationState>,
     local_may_act: bool,
-    tray_open: bool,
+    (tray_open, spectator): (bool, bool),
     commands_out: &mut Vec<PickerCommand>,
 ) {
     crate::ui::section_header(ui, "Next step");
@@ -78,9 +78,13 @@ pub fn draw_actions_section(
     }
     if !local_may_act {
         ui.label(
-            egui::RichText::new("The other side is acting; watch the board.")
-                .color(crate::ui::palette::RAIL_DIM)
-                .size(13.0),
+            egui::RichText::new(if spectator {
+                "You are watching: the seated commanders play."
+            } else {
+                "The other side is acting; watch the board."
+            })
+            .color(crate::ui::palette::RAIL_DIM)
+            .size(13.0),
         );
         return;
     }
@@ -357,6 +361,14 @@ fn collect_hints(
     let campaign = gs.scenario == omdurman_types::Scenario::Campaign;
     let ae_moving = gs.active_player == omdurman_types::Player::AngloEgyptian;
     let optional = |rule| gs.optional_rules.contains(&rule);
+    // A counter still in hand (auto-next keeps one after each placement)
+    // takes every board click: say so first, with the way out.
+    if let PickerState::Placing { .. } = picker {
+        out.push(hint(
+            "A counter is in hand: click a highlighted hex to place it",
+            Some("Esc or right-click puts it back".into()),
+        ));
+    }
     let own_units = gs
         .units
         .iter()
@@ -414,10 +426,18 @@ fn collect_hints(
             } else if cx.staged > 0 {
                 out.push(hint("Stage more attacks, or resolve the staged ones", None));
             } else if fire_targets.side_target_count(gs) == 0 {
-                out.push(hint(
-                    "No enemy in range of a unit that may fire \u{2014} end the phase (E)",
-                    None,
-                ));
+                if fire_targets.side_can_breach(gs) {
+                    out.push(hint(
+                        "Your artillery can fire at the wall to breach it: select a battery, \
+                         then pick a wall in the Artillery Breach card",
+                        Some("§6.63".into()),
+                    ));
+                } else {
+                    out.push(hint(
+                        "No enemy in range of a unit that may fire \u{2014} end the phase (E)",
+                        None,
+                    ));
+                }
             } else if selected.is_some() {
                 out.push(hint(
                     "Click an enemy hex to aim at it",

@@ -978,13 +978,18 @@ impl PlacingClick<'_, '_, '_> {
 
 /// The slip for a destination the route finder cannot reach (§5.11-§5.4:
 /// movement points, terrain, zones of control, blocked hexsides): what the
-/// cheapest route would cost, when there is one at any price.
-fn no_route_reason(goal: HexCoord, budget: i16, cheapest: Option<i16>) -> String {
+/// cheapest route would cost, when there is one at any price, with the rule
+/// that usually explains it for this kind of mover.
+fn no_route_reason(goal: HexCoord, budget: i16, cheapest: Option<i16>, boat: bool) -> String {
+    let why = if boat {
+        "going upstream a gunboat has its smaller upstream allowance, §5.24"
+    } else {
+        "Rough and Swamp cost 3 MP a hex, §5.11"
+    };
     match cheapest {
         Some(cost) => format!(
             "{goal} is out of reach: the cheapest route costs {cost} MP, this move has \
-             {budget} MP left (§5.11; a gunboat going upstream has its smaller upstream \
-             allowance, §5.24). The outlined hexes are in reach."
+             {budget} MP left ({why}). The outlined hexes are in reach."
         ),
         None => format!(
             "No route to {goal}: zones of control (§5.4), enemy units or impassable \
@@ -1068,7 +1073,15 @@ fn unroutable_reason(
     });
     match stacking_refusal {
         Some(error) => format!("Cannot end a move on {goal}: {error}."),
-        None => no_route_reason(goal, budget, cheapest),
+        None => {
+            let boat = gs.is_some_and(|gs| {
+                movers
+                    .iter()
+                    .filter_map(|&id| gs.find_unit(id))
+                    .any(|u| u.profile.kind.is_boat())
+            });
+            no_route_reason(goal, budget, cheapest, boat)
+        }
     }
 }
 
