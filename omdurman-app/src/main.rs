@@ -35,7 +35,6 @@ mod overlay;
 mod overview;
 mod params;
 mod peers;
-mod phase_banner;
 mod picker;
 mod picking;
 #[cfg(not(target_arch = "wasm32"))]
@@ -195,7 +194,6 @@ fn add_game(app: &mut App, room: String) {
         .insert_resource(ui_plugin::DemolitionSelection::default())
         .insert_resource(ui_plugin::OptionalRulePlacement::default())
         .insert_resource(PendingMapLoad::default())
-        .insert_resource(phase_banner::PhaseBannerAnimation::default())
         .insert_resource(timeline::SpectatorTimeline::default())
         // (HexLayout comes from the shared board bootstrap: `load_annotations`
         // calibrates it from the embedded Fall-of-Khartoum board data at startup.)
@@ -241,16 +239,14 @@ fn add_game(app: &mut App, room: String) {
                     .run_if(in_state(AppState::Spectating))
                     .after(timeline::scrub_rebuild),
                 timeline::animate_spectator_combat_markers.run_if(in_state(AppState::Spectating)),
-                phase_banner::update_phase_banner_animation,
             ),
         )
         .add_systems(
             bevy_egui::EguiPrimaryContextPass,
             (
-                phase_banner::phase_banner_ui.run_if(in_game_view),
-                // The pause notice stacks under the phase banner.
+                // The pause notice stacks under the top bar.
                 seats_ui::pause_card_ui
-                    .after(phase_banner::phase_banner_ui)
+                    .after(ui_plugin::mode_toolbar_ui)
                     .run_if(in_game_view),
                 // A spectator's way into a running game, below the pause card.
                 seats_ui::join_panel_ui

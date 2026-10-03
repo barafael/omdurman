@@ -17,8 +17,6 @@ pub(crate) fn update_status_text(
     state: Res<State<AppState>>,
     mode: Res<State<crate::AppMode>>,
     room: Res<RoomId>,
-    game_state: Option<Res<crate::GameStateResource>>,
-    peers: Peers,
     mut query: Query<&mut Text, With<StatusText>>,
 ) {
     let Ok(mut text) = query.single_mut() else {
@@ -32,29 +30,8 @@ pub(crate) fn update_status_text(
             "Lobby -- choose your faction (share: #room={})",
             room.as_str()
         )),
-        // In game, the phase banner provides full turn/phase/sequence info.
-        // The status line is a minimal complement showing server info.
-        AppState::InGame => Cow::Owned(format!(
-            "Room: {}  |  {}",
-            room.as_str(),
-            match game_state.as_deref() {
-                Some(gs) => match gs.0.player_to_act() {
-                    // The side that may act *now*: the deploying side in
-                    // set-up, the turn owner except during defensive fire
-                    // (§6.4/§6.7), nobody once the game is over.
-                    Some(acting) => {
-                        let label = crate::ui::faction_name(acting);
-                        if peers.may_act(acting) {
-                            format!("You act now ({label})")
-                        } else {
-                            format!("Waiting on {label}")
-                        }
-                    }
-                    None => "Game over".to_string(),
-                },
-                None => "Setting up...".into(),
-            },
-        )),
+        // In game the top bar carries the turn, who acts and the room.
+        AppState::InGame => Cow::Borrowed(""),
         AppState::Spectating => Cow::Borrowed("Reviewing game -- use the timeline"),
     };
     if text.as_str() != new.as_ref() {

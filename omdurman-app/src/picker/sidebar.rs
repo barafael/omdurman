@@ -38,6 +38,7 @@ pub fn spawn_picker_assets(mut picker: ResMut<UnitPicker>, asset_server: Res<Ass
                 handle,
                 is_boat: false,
                 visible: true,
+                offered: true,
                 egui_texture: None,
                 annotations_loaded: false,
             });
@@ -147,7 +148,6 @@ struct UnitAnnotations<'a> {
 pub(crate) struct PickerAssetCtx<'w> {
     pub images: Res<'w, Assets<Image>>,
     pub annotations: Option<Res<'w, SpriteAnnotationsResource>>,
-    pub rulebook: Res<'w, crate::rulebook::Rulebook>,
 }
 
 fn render_faction_units(
@@ -168,7 +168,7 @@ fn render_faction_units(
     let UnitAnnotations { rulebook } = ctx;
     let mut current_section = None::<SectionName>;
     for idx in 0..picker.available.len() {
-        if !picker.available[idx].visible {
+        if !picker.available[idx].shown() {
             continue;
         }
         let section_name = picker.available[idx].section_name;
@@ -183,7 +183,7 @@ fn render_faction_units(
             let remaining = picker
                 .available
                 .iter()
-                .filter(|u| u.visible && u.section_name == section_name)
+                .filter(|u| u.shown() && u.section_name == section_name)
                 .count();
             ui.add_space(6.0);
             ui.horizontal(|ui| {
@@ -205,7 +205,7 @@ fn render_faction_units(
                     if Some(picker.available[j].section_name) != current_section {
                         break;
                     }
-                    if !picker.available[j].visible {
+                    if !picker.available[j].shown() {
                         continue;
                     }
                     let is_selected =
@@ -388,6 +388,101 @@ fn section_paragraph(section_name: SectionName) -> &'static str {
     }
 }
 
+/// The counter tray, drawn as a section of the command rail
+/// (`overview::unit_overview_ui`): only the counters that may be placed now
+/// -- the set-up force during set-up, this turn's arrivals during a Movement
+/// phase -- grouped by counter-sheet section. Click or drag a counter, then
+/// a hex. [`unit_picker_ui`] keeps the tray's flags and textures current.
+pub(crate) fn draw_tray(
+    ui: &mut egui::Ui,
+    picker: &mut UnitPicker,
+    state: &mut PickerState,
+    rulebook: &crate::rulebook::Rulebook,
+    stamp: &crate::ui_trace::Stamp,
+) {
+    use omdurman_types::Player;
+    let mut clicked_idx: Option<usize> = None;
+    let mut drag_idx: Option<usize> = None;
+    let mut drag_cancelled = false;
+    let sprite_size = 44.0;
+    let cell_size = sprite_size + 4.0;
+    let factions: Vec<Player> = [Player::Dervish, Player::AngloEgyptian]
+        .into_iter()
+        .filter(|&faction| {
+            picker.available.iter().any(|u| {
+                u.shown()
+                    && omdurman_rules::unit_profiles::section_owner(u.section_name) == Some(faction)
+            })
+        })
+        .collect();
+    for &faction in &factions {
+        // Both sides only in an unbound (solo test) session.
+        if factions.len() > 1 {
+            ui.label(
+                egui::RichText::new(crate::ui::faction_name(faction))
+                    .size(14.0)
+                    .color(crate::ui::faction_color(faction)),
+            );
+        }
+        render_faction_units(
+            ui,
+            PickerRead { picker, state },
+            faction,
+            cell_size,
+            sprite_size,
+            DragState {
+                clicked_idx: &mut clicked_idx,
+                drag_idx: &mut drag_idx,
+                drag_cancelled: &mut drag_cancelled,
+            },
+            UnitAnnotations { rulebook },
+        );
+    }
+    ui.add_space(2.0);
+    ui.checkbox(
+        &mut picker.auto_place_next,
+        egui::RichText::new("Then pick the next of the group")
+            .size(12.0)
+            .color(crate::ui::palette::TEXT_MUTED),
+    );
+
+    let pick_label = |picker: &UnitPicker, idx: usize| -> String {
+        picker
+            .available
+            .get(idx)
+            .map(|u| format!("{} {},{}", u.section_name.display_name(), u.col, u.row))
+            .unwrap_or_else(|| format!("tray#{idx}"))
+    };
+    if let Some(idx) = clicked_idx {
+        match &*state {
+            PickerState::Placing { unit_idx, .. } if *unit_idx == idx => {
+                *state = PickerState::Idle;
+            }
+            _ => {
+                crate::ui_trace::placement_pick(&pick_label(picker, idx), "click", stamp);
+                *state = PickerState::Placing {
+                    unit_idx: idx,
+                    preview_hex: None,
+                    preview_valid: false,
+                    drag_drop: false,
+                };
+            }
+        }
+    }
+    if drag_cancelled && let Some(next) = state_after_cancelled_drag(state) {
+        *state = next;
+    }
+    if let Some(idx) = drag_idx {
+        crate::ui_trace::placement_pick(&pick_label(picker, idx), "drag", stamp);
+        *state = PickerState::Placing {
+            unit_idx: idx,
+            preview_hex: None,
+            preview_valid: false,
+            drag_drop: true,
+        };
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn unit_picker_ui(
     mut contexts: EguiContexts,
@@ -396,13 +491,11 @@ pub fn unit_picker_ui(
     peers: crate::peers::Peers,
     assets: PickerAssetCtx,
     game_state: Option<Res<crate::GameStateResource>>,
-    mut was_game_started: Local<bool>,
-    mut layout: ResMut<crate::ScreenLayout>,
+    mut offer_cache: Local<Option<(usize, Vec<bool>)>>,
 ) {
     let PickerAssetCtx {
         images,
         annotations,
-        rulebook,
     } = assets;
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if !mode.is_play() {
@@ -424,6 +517,13 @@ pub fn unit_picker_ui(
                 omdurman_rules::Phase::Setup | omdurman_rules::Phase::Movement
             )
     }) {
+        // Nothing is placeable: empty the tray's "now" flags (cheaply, once).
+        if picker_ctx.picker.available.iter().any(|u| u.offered) {
+            for unit in &mut picker_ctx.picker.bypass_change_detection().available {
+                unit.offered = false;
+            }
+            *offer_cache = None;
+        }
         return;
     }
 
@@ -437,7 +537,7 @@ pub fn unit_picker_ui(
             .iter()
             .map(|u| {
                 (
-                    u.visible,
+                    u.visible && u.offered,
                     u.is_boat,
                     u.annotations_loaded,
                     u.egui_texture.is_some(),
@@ -630,28 +730,49 @@ pub fn unit_picker_ui(
             }
         }
 
-        // -- command-scope filter (§1.1 multi-player commands, setup only) --
-        // In a commanded game hide counters another member's command claims; one's
-        // own scope plus the communal pool (no scope claims it) stay visible and
-        // placable. `scope_allows` is the same predicate the pickup gates use.
-        // Sessions without command assignments are unaffected.
-        if let Some(state) = game_state.as_deref()
-            && matches!(state.0.phase, omdurman_rules::Phase::Setup)
-            && peers.any_commands()
-        {
-            for unit in &mut picker.available {
-                if !unit.visible {
-                    continue;
-                }
-                let Some(identity) = omdurman_rules::unit_profiles::identity_for_counter(
-                    unit.section_name,
-                    unit.col,
-                    unit.row,
-                ) else {
-                    continue;
-                };
-                if !peers.scope_allows(&identity) {
-                    unit.visible = false;
+        // -- placeable now (recomputed, never sticky) --
+        // Set-up offers the scenario's set-up force (§9.111/§9.211/§9.321;
+        // in the Campaign the Anglo-Egyptians deploy nothing), narrowed in a
+        // commanded game to one's own command scope plus the communal pool
+        // (§1.1); a Movement phase offers what may enter this turn
+        // (§9.112/§9.113). Recomputed when the engine state or the tray moved.
+        if let Some(state) = game_state.as_deref() {
+            let key = picker.available.len();
+            if game_state.as_ref().is_some_and(|gs| gs.is_changed())
+                || offer_cache.as_ref().is_none_or(|(len, _)| *len != key)
+            {
+                let gs = &state.0;
+                let offered: Vec<bool> = picker
+                    .available
+                    .iter()
+                    .map(|unit| {
+                        if !unit.visible {
+                            return false;
+                        }
+                        let Some(id) = unit_id_for_section_pos(
+                            unit.section_name,
+                            unit.col as u8,
+                            unit.row as u8,
+                        ) else {
+                            return false;
+                        };
+                        match gs.phase {
+                            omdurman_rules::Phase::Setup => {
+                                gs.counter_in_play_at_setup(id)
+                                    && (!peers.any_commands()
+                                        || omdurman_rules::unit_profiles::profile_for_unit(id)
+                                            .is_some_and(|p| peers.scope_allows(&p.identity)))
+                            }
+                            omdurman_rules::Phase::Movement => crate::reinforce::enterable(gs, id),
+                            _ => false,
+                        }
+                    })
+                    .collect();
+                *offer_cache = Some((key, offered));
+            }
+            if let Some((_, offered)) = offer_cache.as_ref() {
+                for (unit, &offered) in picker.available.iter_mut().zip(offered) {
+                    unit.offered = offered;
                 }
             }
         }
@@ -660,202 +781,17 @@ pub fn unit_picker_ui(
         picker_ctx.picker.set_changed();
     }
 
-    // -- Hide outside placing phases, or when the tray is empty --
-    // The picker window exists to *place* counters: deployment during Setup
-    // (§9.2/§9.3/§10) and reinforcements entering during Movement
-    // (§9.112/§9.113). During fire/melee nothing can be placed, so the whole
-    // left-rail panel collapses and the board gets the full width. The empty
-    // check also hides a spent tray instead of leaving an "all units placed"
-    // stub. Visibility filters (scenario OOB, faction, command scope) have all
-    // run above, so `.visible` is authoritative.
-    let placing_phase = game_state.as_deref().is_none_or(|gs| {
-        matches!(
-            gs.0.phase,
-            omdurman_rules::Phase::Setup | omdurman_rules::Phase::Movement
-        )
-    });
-    if !placing_phase || !picker_ctx.picker.available.iter().any(|u| u.visible) {
-        return;
+    // A counter in hand that is no longer placeable (its quota filled, the
+    // phase moved on) drops out of the hand.
+    if let PickerState::Placing { unit_idx, .. } = &*picker_ctx.state
+        && picker_ctx
+            .picker
+            .available
+            .get(*unit_idx)
+            .is_none_or(|u| !u.shown())
+    {
+        *picker_ctx.state = PickerState::Idle;
     }
-
-    crate::layout::left_rail_panel(
-        ctx,
-        &mut layout,
-        "picker_panel",
-        "unit_picker_panel",
-        216.0,
-        |ui| {
-            // -- sidebar --
-            egui::Panel::left("unit_picker_panel")
-                .resizable(true)
-                .default_size(200.0)
-                .size_range(140.0..=320.0)
-                .frame(crate::ui::frames::rail())
-                .show(ui, |ui| {
-                    ui.style_mut().override_font_id = Some(egui::FontId::proportional(14.0));
-                    ui.label(
-                        egui::RichText::new("Unit Picker")
-                            .size(16.0)
-                            .color(crate::ui::palette::TEXT_STRONG),
-                    );
-                    ui.separator();
-                    ui.add_space(4.0);
-
-                    // Auto-place-next toggle: when enabled, placing a unit
-                    // automatically selects the next one in the same section.
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            egui::RichText::new("Auto next")
-                                .size(12.0)
-                                .color(crate::ui::palette::TEXT_MUTED),
-                        );
-                        ui.checkbox(&mut picker_ctx.picker.auto_place_next, "");
-                    });
-                    ui.add_space(2.0);
-
-                    let mut clicked_idx: Option<usize> = None;
-                    let mut drag_idx: Option<usize> = None;
-                    let mut drag_cancelled = false;
-                    let sprite_size = 44.0;
-                    let margin = 2.0;
-                    let cell_size = sprite_size + margin * 2.0;
-
-                    // clear selection if the picked unit is now invisible
-                    if let PickerState::Placing { unit_idx, .. } = &*picker_ctx.state
-                        && picker_ctx
-                            .picker
-                            .available
-                            .get(*unit_idx)
-                            .is_some_and(|u| !u.visible)
-                    {
-                        *picker_ctx.state = PickerState::Idle;
-                    }
-
-                    // Once a game starts, default-open the local player's faction and
-                    // collapse the other. This is a local view choice -- afterwards the
-                    // user may fold/unfold either heading freely, and nothing is sent
-                    // over the network.
-                    let local_faction = peers.local();
-                    let game_started = peers.any_assigned();
-
-                    ui.style_mut().spacing.scroll.floating = false;
-                    egui::ScrollArea::vertical()
-                        .id_salt("unit_picker_scroll")
-                        .show(ui, |ui| {
-                            use omdurman_types::Player;
-                            // On the transition into a started game, force each category
-                            // open/closed once: the local faction open, the foreign one
-                            // collapsed. `default_open` alone wouldn't do this, because
-                            // egui persists the header's open state from before the game
-                            // (when both were open), so we set it explicitly on the edge.
-                            let just_started = game_started && !*was_game_started;
-                            *was_game_started = game_started;
-
-                            for faction in [Player::Dervish, Player::AngloEgyptian] {
-                                let heading = crate::ui::faction_name(faction);
-                                // Skip a category with no visible units.
-                                let any_visible = picker_ctx.picker.available.iter().any(|u| {
-                                    u.visible
-                                        && omdurman_rules::unit_profiles::section_owner(
-                                            u.section_name,
-                                        ) == Some(faction)
-                                });
-                                if !any_visible {
-                                    continue;
-                                }
-
-                                let header_id = ui.make_persistent_id(("picker_faction", heading));
-                                let mut header =
-                            egui::collapsing_header::CollapsingState::load_with_default_open(
-                                ui.ctx(),
-                                header_id,
-                                true,
-                            );
-                                // Force open/closed at the game-start edge.
-                                if just_started {
-                                    header.set_open(local_faction == Some(faction));
-                                }
-                                header
-                                    .show_header(ui, |ui| {
-                                        ui.label(
-                                            egui::RichText::new(heading)
-                                                .size(14.0)
-                                                .color(crate::ui::palette::TEXT),
-                                        );
-                                    })
-                                    .body(|ui| {
-                                        render_faction_units(
-                                            ui,
-                                            PickerRead {
-                                                picker: &picker_ctx.picker,
-                                                state: &picker_ctx.state,
-                                            },
-                                            faction,
-                                            cell_size,
-                                            sprite_size,
-                                            DragState {
-                                                clicked_idx: &mut clicked_idx,
-                                                drag_idx: &mut drag_idx,
-                                                drag_cancelled: &mut drag_cancelled,
-                                            },
-                                            UnitAnnotations {
-                                                rulebook: &rulebook,
-                                            },
-                                        );
-                                    });
-                            }
-                        });
-
-                    let pick_label = |idx: usize| -> String {
-                        picker_ctx
-                            .picker
-                            .available
-                            .get(idx)
-                            .map(|u| {
-                                format!("{} {},{}", u.section_name.display_name(), u.col, u.row)
-                            })
-                            .unwrap_or_else(|| format!("tray#{idx}"))
-                    };
-                    let pick_stamp = crate::ui_trace::Stamp::of(game_state.as_deref());
-                    if let Some(idx) = clicked_idx {
-                        match &*picker_ctx.state {
-                            PickerState::Placing { unit_idx, .. } if *unit_idx == idx => {
-                                *picker_ctx.state = PickerState::Idle;
-                            }
-                            _ => {
-                                crate::ui_trace::placement_pick(
-                                    &pick_label(idx),
-                                    "click",
-                                    &pick_stamp,
-                                );
-                                *picker_ctx.state = PickerState::Placing {
-                                    unit_idx: idx,
-                                    preview_hex: None,
-                                    preview_valid: false,
-                                    drag_drop: false,
-                                };
-                            }
-                        }
-                    }
-                    if drag_cancelled
-                        && let Some(next) = state_after_cancelled_drag(&picker_ctx.state)
-                    {
-                        *picker_ctx.state = next;
-                    }
-                    if let Some(idx) = drag_idx {
-                        crate::ui_trace::placement_pick(&pick_label(idx), "drag", &pick_stamp);
-                        *picker_ctx.state = PickerState::Placing {
-                            unit_idx: idx,
-                            preview_hex: None,
-                            preview_valid: false,
-                            drag_drop: true,
-                        };
-                    }
-                })
-                .response
-                .rect
-        },
-    );
 
     // -- ghost sprite at cursor when placing --
     if let PickerState::Placing { unit_idx, .. } = &*picker_ctx.state

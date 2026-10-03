@@ -33,9 +33,9 @@ same flow; see item 20.)
      2 gunboats), confirms Ready, and turn 1 opens on your movement.
      (Before: "Waiting on Dervish" forever.)
 3. **Set-up is the deployer's turn.** Campaign, you Dervish, AI Kitchener.
-   - Bottom status line reads "You act now (Dervish)" during set-up.
+   - The top bar reads "▶ Set-up: you deploy (Dervish)" during set-up.
    - Place a Taiasha in the walled city, click it on the board, press Del
-     (or "Return to tray"): it goes back to the sidebar.
+     (or "Return to tray"): it goes back to the counter tray.
      (Before: deployed counters could not be selected or returned, because
      the Anglo-Egyptians move first.)
 4. **Drag-and-drop placement.** During any set-up, or a Campaign movement

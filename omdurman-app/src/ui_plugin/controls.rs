@@ -44,40 +44,14 @@ pub(crate) fn game_control_section(
     local_setup_ready: Option<&mut crate::peers::LocalSetupReady>,
     extras: GameControlExtras<'_>,
 ) {
-    let turn = state.0.current_turn.value();
     let Some(pending) = pending else {
         return;
     };
-
-    let day_night_str = match state.0.day_night {
-        omdurman_types::DayNight::Day => "Day",
-        omdurman_types::DayNight::Night => "Night",
-    };
-
-    // The player who may act *now*: the side deploying during set-up, the
-    // turn owner, except during Defensive Fire where control passes to the
-    // non-moving side (§6.4/§6.7).
+    // The turn, the phase and who acts are in the top bar; this block holds
+    // the phase's one control.
     let acting = state.0.player_to_act().unwrap_or(state.0.phase_player());
-    let acting_str = crate::ui::faction_abbrev(acting);
     let my_turn = peers.may_act(acting);
     let in_setup = matches!(state.0.phase, omdurman_rules::Phase::Setup);
-
-    // At game over the engine's phase is whatever it rolled on to when it
-    // found no next turn -- not a phase anyone is in.
-    let phase_name = if state.0.game_over {
-        "(final)"
-    } else {
-        state.0.phase.top_level_name()
-    };
-    ui.colored_label(
-        crate::ui::palette::HEADING,
-        format!("Turn {turn}  {phase_name}  {day_night_str}"),
-    );
-
-    // Turn indicator -- only meaningful once play has begun. Setup is *not* a
-    // turn: deployment is sequential (§9.111/§9.211/§9.321), and the
-    // deployment status below tells each player whether to deploy or wait, so
-    // the "your turn / waiting on" indicator is suppressed during Setup.
     let game_over = state.0.game_over;
     if game_over {
         let result = state.0.game_result.map(|r| r.display_key());
@@ -94,39 +68,33 @@ pub(crate) fn game_control_section(
         {
             victory.dismissed = false;
         }
-    } else if !in_setup {
-        if my_turn {
-            ui.colored_label(
-                crate::ui::palette::GOLD,
-                format!("\u{25b6} Your turn ({acting_str})"),
-            );
-        } else {
-            ui.colored_label(
-                crate::ui::palette::TEXT_DIM,
-                format!("Waiting on {acting_str}"),
-            );
+    } else if in_setup {
+        // Per-member setup readiness needs the local flag; a None resource
+        // just falls back to "ready" semantics for unbound sessions.
+        if let Some(local_setup_ready) = local_setup_ready {
+            setup_control_section(ui, state, peers, pending, local_setup_ready);
         }
+    } else if my_turn {
+        // Each player ends their *own* turn: the End Phase button is shown only
+        // to whoever controls the active faction.
+        end_phase_button(ui, state, pending, extras.allocation);
     }
+}
 
-    ui.add_space(4.0);
-
-    // -- Scoreboard / victory progress --
-    // FoK uses a different victory scheme (§9.35: GORDON's fate + Dervish
-    // losses) that the §9.14 VP ladder does not model -- the generic scoreboard
-    // would read "No scoring yet." for the whole game. Replace it with the
-    // FoK-specific panel during a Fall-of-Khartoum session.
-    if !in_setup {
-        match state.0.scenario {
-            omdurman_types::Scenario::FallOfKhartoum => {
-                crate::fok_panel::fok_status_section(ui, state)
-            }
-            omdurman_types::Scenario::Historical => historical_scoreboard(ui, state),
-            omdurman_types::Scenario::Campaign => victory_point_scoreboard(ui, state),
-        }
+/// The score block of the command rail: the scenario's own victory measure
+/// (§9.14 VP ladder, §9.24 eliminations, §9.35 FoK), and the §8 night rules
+/// while it is night.
+pub(crate) fn score_section(ui: &mut egui::Ui, state: &crate::GameStateResource) {
+    if matches!(state.0.phase, omdurman_rules::Phase::Setup) {
+        return;
     }
-
-    // -- Night-effects reminder (§8) --
-    if !in_setup && state.0.day_night == omdurman_types::DayNight::Night {
+    match state.0.scenario {
+        omdurman_types::Scenario::FallOfKhartoum => crate::fok_panel::fok_status_section(ui, state),
+        omdurman_types::Scenario::Historical => historical_scoreboard(ui, state),
+        omdurman_types::Scenario::Campaign => victory_point_scoreboard(ui, state),
+    }
+    if state.0.day_night == omdurman_types::DayNight::Night {
+        ui.add_space(6.0);
         crate::rulebook::refs_rich(ui, "Night rules (§8)", 13.0, |t| {
             t.strong().color(crate::ui::palette::INFO)
         });
@@ -139,19 +107,6 @@ pub(crate) fn game_control_section(
             .small()
             .color(crate::ui::palette::TEXT_SOFT),
         );
-        ui.add_space(4.0);
-    }
-
-    if in_setup {
-        // Per-member setup readiness needs the local flag; a None resource
-        // just falls back to "ready" semantics for unbound sessions.
-        if let Some(local_setup_ready) = local_setup_ready {
-            setup_control_section(ui, state, peers, pending, local_setup_ready);
-        }
-    } else if my_turn && !game_over {
-        // Each player ends their *own* turn: the End Phase button is shown only
-        // to whoever controls the active faction.
-        end_phase_button(ui, state, pending, extras.allocation);
     }
 }
 
@@ -292,25 +247,14 @@ fn victory_point_scoreboard(ui: &mut egui::Ui, state: &crate::GameStateResource)
         .total_for(omdurman_types::Player::Dervish)
         .value();
     let net = ae_vp - dv_vp;
-    let net_color = if net > 0 {
-        crate::ui::palette::GOOD
-    } else if net < 0 {
-        crate::ui::palette::BAD
-    } else {
-        crate::ui::palette::TEXT_MUTED
-    };
-    ui.label(
-        egui::RichText::new("Score")
-            .strong()
-            .color(crate::ui::palette::HEADING),
-    );
+    crate::ui::section_header(ui, "Score");
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(format!("A-E: {ae_vp}")).color(crate::ui::palette::AE));
+        ui.label(egui::RichText::new(format!("A-E {ae_vp}")).color(crate::ui::palette::AE));
+        ui.label(egui::RichText::new("\u{2013}").color(crate::ui::palette::TEXT_DIM));
         ui.label(
-            egui::RichText::new(format!("Dervish: {dv_vp}")).color(crate::ui::palette::DERVISH),
+            egui::RichText::new(format!("{dv_vp} Dervish")).color(crate::ui::palette::DERVISH),
         );
     });
-    ui.colored_label(net_color, format!("Net: {net:+}"));
     // "If the game ended now" (§9.14): the Tomb's 25 VP to whoever holds it
     // now (already in the ledger once the game is over), and the level of
     // the difference.
@@ -324,31 +268,34 @@ fn victory_point_scoreboard(ui: &mut egui::Ui, state: &crate::GameStateResource)
             None => 0,
         };
     if let Some(holder) = tomb {
-        ui.colored_label(
-            crate::ui::faction_color(holder),
-            format!("Mahdi's Tomb: {holder} (25 VP at the end)"),
+        ui.label(
+            egui::RichText::new(format!(
+                "Mahdi's Tomb: held by the {holder} (+25 VP at the end)"
+            ))
+            .size(12.0)
+            .color(crate::ui::palette::TEXT_DIM),
         );
     }
     let level = omdurman_rules::CampaignVictoryLevel::from_superiority(
         omdurman_rules::VictoryPoints::new(projected),
     );
     let level_text = match level {
-        omdurman_rules::CampaignVictoryLevel::Draw => "Draw".to_string(),
-        omdurman_rules::CampaignVictoryLevel::Marginal(p) => format!("{p} Marginal"),
-        omdurman_rules::CampaignVictoryLevel::Tactical(p) => format!("{p} Tactical"),
-        omdurman_rules::CampaignVictoryLevel::Decisive(p) => format!("{p} Decisive"),
+        omdurman_rules::CampaignVictoryLevel::Draw => "a draw".to_string(),
+        omdurman_rules::CampaignVictoryLevel::Marginal(p) => format!("a {p} Marginal victory"),
+        omdurman_rules::CampaignVictoryLevel::Tactical(p) => format!("a {p} Tactical victory"),
+        omdurman_rules::CampaignVictoryLevel::Decisive(p) => format!("a {p} Decisive victory"),
     };
-    crate::rulebook::refs_label(
-        ui,
-        &format!("Level now: {level_text} (§9.14)"),
-        crate::ui::palette::TEXT_MUTED,
-        12.0,
-    );
 
-    // VP breakdown by source category (§9.14). Collapsible to keep the
-    // sidebar compact; defaults to collapsed.
-    ui.collapsing("Breakdown", |ui| {
+    // The projected level and the VP by source (§9.14), collapsed: early
+    // in the game the projection is only the Tomb's 25 VP.
+    ui.collapsing("Details", |ui| {
         ui.style_mut().override_font_id = Some(egui::FontId::proportional(11.0));
+        crate::rulebook::refs_label(
+            ui,
+            &format!("If the game ended now: {level_text} (§9.14)"),
+            crate::ui::palette::TEXT_MUTED,
+            12.0,
+        );
         let tally = |src: VpSource| -> i32 {
             state
                 .0
@@ -603,56 +550,57 @@ pub(crate) fn telegram_overlay(
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
     let mut dismiss = false;
-    // Backdrop: dims the board and swallows its clicks (egui owns the
-    // pointer everywhere while it is up), dismissing on click.
+    // A true modal: the backdrop dims and swallows the *whole* screen (rails
+    // and top bar included -- an `Area` is clipped to the space beside the
+    // panels), on the topmost order, and only Continue / Enter / Esc close
+    // it: a stray click must not dismiss a turn's report unread.
     let screen = ctx.viewport_rect();
     egui::Area::new(egui::Id::new("telegram_backdrop"))
-        .order(egui::Order::Middle)
+        .order(egui::Order::Tooltip)
         .fixed_pos(screen.min)
+        .constrain_to(screen)
         .show(ctx, |ui| {
-            let response = ui.allocate_rect(screen, egui::Sense::click());
+            ui.set_clip_rect(screen);
+            ui.allocate_rect(screen, egui::Sense::click_and_drag());
             ui.painter()
-                .rect_filled(screen, 0.0, egui::Color32::from_black_alpha(110));
-            if response.clicked() {
-                dismiss = true;
-            }
+                .rect_filled(screen, 0.0, egui::Color32::from_black_alpha(140));
         });
-    crate::ui::anchored_card(
-        ctx,
-        egui::Id::new("telegram_overlay"),
-        egui::Align2::CENTER_CENTER,
-        egui::Vec2::ZERO,
-        crate::ui::frames::modal(),
-        |ui| {
-            ui.set_max_width(460.0);
-            ui.vertical_centered(|ui| {
-                ui.label(
-                    egui::RichText::new("FIELD TELEGRAM")
-                        .size(18.0)
-                        .strong()
-                        .color(crate::ui::palette::BRASS),
-                );
-                ui.label(
-                    egui::RichText::new(format!("End of turn {turn}"))
-                        .size(11.0)
-                        .color(crate::ui::palette::TEXT_DIM),
-                );
-                ui.add_space(10.0);
-                ui.label(
-                    egui::RichText::new(text.trim())
-                        .monospace()
-                        .size(13.0)
-                        .color(crate::ui::palette::TEXT),
-                );
-                ui.add_space(14.0);
-                let button = ui.button("Continue");
-                button.request_focus();
-                if button.clicked() {
-                    dismiss = true;
-                }
+    let card = egui::Area::new(egui::Id::new("telegram_overlay"))
+        .order(egui::Order::Tooltip)
+        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+        .show(ctx, |ui| {
+            crate::ui::frames::modal().show(ui, |ui| {
+                ui.set_max_width(460.0);
+                ui.vertical_centered(|ui| {
+                    ui.label(
+                        egui::RichText::new("FIELD TELEGRAM")
+                            .size(18.0)
+                            .strong()
+                            .color(crate::ui::palette::BRASS),
+                    );
+                    ui.label(
+                        egui::RichText::new(format!("End of turn {turn}"))
+                            .size(11.0)
+                            .color(crate::ui::palette::TEXT_DIM),
+                    );
+                    ui.add_space(10.0);
+                    ui.label(
+                        egui::RichText::new(text.trim())
+                            .monospace()
+                            .size(13.0)
+                            .color(crate::ui::palette::TEXT),
+                    );
+                    ui.add_space(14.0);
+                    let button = ui.button("Continue  (Enter)");
+                    button.request_focus();
+                    if button.clicked() {
+                        dismiss = true;
+                    }
+                });
             });
-        },
-    );
+        });
+    // Above the backdrop, which shares its order.
+    ctx.move_to_top(card.response.layer_id);
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         dismiss = true;
     }

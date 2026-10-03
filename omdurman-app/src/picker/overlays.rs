@@ -39,6 +39,7 @@ pub(crate) struct HexMapView<'w, 's> {
 pub(crate) struct MovementOverlayCtx<'w> {
     pub game_map: Res<'w, GameMap>,
     pub game_state: Option<Res<'w, crate::GameStateResource>>,
+    pub movement_path: Res<'w, MovementPath>,
 }
 
 /// Bundle of the three movement-ring marker queries (green reachable, gray
@@ -340,6 +341,7 @@ pub fn movement_overlay_mesh(
     let MovementOverlayCtx {
         game_map,
         game_state,
+        movement_path,
     } = view;
     let PickerReadSelection {
         state,
@@ -462,13 +464,17 @@ pub fn movement_overlay_mesh(
     // start_coord == placed.coord. Each step is the route planner's own leg
     // check -- the engine's per-step rules and the *mover's* enemy ZOC -- so
     // the rings and click-routing agree.
+    // A gunboat's search also carries "went upstream yet" (§5.24), priced by
+    // the same `GunboatBudget` click-routing uses.
     let gs_ref = game_state.as_deref();
-    let mut best: HashMap<HexCoord, i16> = HashMap::from([(start_coord, 0)]);
+    let gunboat = super::movement::GunboatBudget::of(gs_ref, placed, &movement_path);
+    let limit = |up: bool| gunboat.map_or(budget, |g| budget.min(g.left(up)));
+    let mut best: HashMap<(HexCoord, bool), i16> = HashMap::from([((start_coord, false), 0)]);
     let mut stops: HashSet<HexCoord> = HashSet::new();
-    let mut heap = BinaryHeap::from([Reverse((0i16, start_coord.q, start_coord.r))]);
-    while let Some(Reverse((cost_so_far, q, r))) = heap.pop() {
+    let mut heap = BinaryHeap::from([Reverse((0i16, start_coord.q, start_coord.r, false))]);
+    while let Some(Reverse((cost_so_far, q, r, up))) = heap.pop() {
         let cur = HexCoord::new(q, r);
-        if best.get(&cur).is_some_and(|&b| b < cost_so_far) {
+        if best.get(&(cur, up)).is_some_and(|&b| b < cost_so_far) {
             continue;
         }
         for neighbor in cur.neighbors() {
@@ -486,26 +492,32 @@ pub fn movement_overlay_mesh(
             if leg.enemy_occupied || !leg.passable || leg.cost <= 0 {
                 continue;
             }
+            let next_up = up
+                || (gunboat.is_some()
+                    && gs_ref
+                        .is_some_and(|gs| super::movement::step_is_upstream(&gs.0, cur, neighbor)));
             let new_cost = cost_so_far + leg.cost;
-            if new_cost > budget || best.get(&neighbor).is_some_and(|&b| b <= new_cost) {
+            let node = (neighbor, next_up);
+            if new_cost > limit(next_up) || best.get(&node).is_some_and(|&b| b <= new_cost) {
                 continue;
             }
-            best.insert(neighbor, new_cost);
+            best.insert(node, new_cost);
             // §5.43: ZOC hexes are reachable as path termini but the search
             // does not expand from them.
             if leg.entering_enemy_zoc {
                 stops.insert(neighbor);
             } else {
                 stops.remove(&neighbor);
-                heap.push(Reverse((new_cost, neighbor.q, neighbor.r)));
+                heap.push(Reverse((new_cost, neighbor.q, neighbor.r, next_up)));
             }
         }
     }
+    let reached: HashSet<HexCoord> = best.keys().map(|&(hex, _)| hex).collect();
 
     let mut green_spawned = 0u32;
     let mut gray_spawned = 0u32;
     let mut zoc_spawned = 0u32;
-    for &reached in best.keys().filter(|&&h| h != start_coord) {
+    for &reached in reached.iter().filter(|&&h| h != start_coord) {
         if stops.contains(&reached) {
             // Yellow: a terminus inside an enemy ZOC.
             rings.ring(MovementZocRing, reached, 1.5, 1.0, &hex.assets.yellow);

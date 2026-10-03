@@ -219,14 +219,10 @@ impl Plugin for GamePlugin {
             .add_systems(
                 EguiPrimaryContextPass,
                 (
-                    // Left-rail order matters: picker first, overview chains
-                    // beside it (see `ScreenLayout::left_inset`), both below
-                    // the top bar. Both carry `LeftRailSet` so downstream
-                    // consumers order against the rail, not a (duplicated)
-                    // system type.
+                    // The tray's flags and textures, ahead of the command
+                    // rail that draws the tray (below the top bar).
                     unit_picker_ui
                         .in_set(crate::ui_plugin::PanelUiSet)
-                        .in_set(crate::ui_plugin::LeftRailSet)
                         .after(crate::ui_plugin::mode_toolbar_ui),
                     crate::fire_allocation::fire_allocation_review_ui,
                     crate::melee::melee_reaction_ui,

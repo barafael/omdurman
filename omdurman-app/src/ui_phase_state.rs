@@ -135,26 +135,6 @@ impl UiPhaseState {
 
     // -- Accessors used by the UI layer ---------------------------------------
 
-    /// The player who is *firing* in the current fire phase, or `None` if
-    /// not in a fire phase.  During offensive fire the active player fires;
-    /// during defensive fire the opponent of the active player fires (the
-    /// non-active side shoots back §6.41).
-    pub fn firing_player(self) -> Option<Player> {
-        match self {
-            Self::Turn {
-                active,
-                phase: PhaseKind::OffensiveFire(_),
-                ..
-            } => Some(active),
-            Self::Turn {
-                active,
-                phase: PhaseKind::DefensiveFire(_),
-                ..
-            } => Some(active.opponent()),
-            _ => None,
-        }
-    }
-
     /// The player who may act in the current phase — the turn's active player
     /// during Movement, Offensive Fire and Melee, but the *opponent* during
     /// Defensive Fire, where the non-moving side fires back (§6.4/§6.7).
@@ -514,90 +494,6 @@ mod tests {
                 night: false,
                 phase: PhaseKind::Melee,
             }
-        );
-    }
-
-    // -- firing_player --------------------------------------------------------
-
-    #[test]
-    fn firing_player_is_none_for_non_fire_phases() {
-        assert_eq!(UiPhaseState::Setup.firing_player(), None);
-        assert_eq!(
-            UiPhaseState::Turn {
-                active: Player::AngloEgyptian,
-                night: false,
-                phase: PhaseKind::Movement,
-            }
-            .firing_player(),
-            None
-        );
-        assert_eq!(
-            UiPhaseState::Turn {
-                active: Player::AngloEgyptian,
-                night: false,
-                phase: PhaseKind::Melee,
-            }
-            .firing_player(),
-            None
-        );
-        assert_eq!(UiPhaseState::GameOver.firing_player(), None);
-    }
-
-    #[test]
-    fn firing_player_offensive_returns_active() {
-        // AE offensive fire: AE fires.
-        assert_eq!(
-            UiPhaseState::Turn {
-                active: Player::AngloEgyptian,
-                night: false,
-                phase: PhaseKind::OffensiveFire(FireSubKind::Direct),
-            }
-            .firing_player(),
-            Some(Player::AngloEgyptian)
-        );
-        // Dervish offensive fire: Dervish fires.
-        assert_eq!(
-            UiPhaseState::Turn {
-                active: Player::Dervish,
-                night: false,
-                phase: PhaseKind::OffensiveFire(FireSubKind::Direct),
-            }
-            .firing_player(),
-            Some(Player::Dervish)
-        );
-    }
-
-    #[test]
-    fn firing_player_defensive_returns_opponent() {
-        // AE is active, Dervish fires defensively.
-        assert_eq!(
-            UiPhaseState::Turn {
-                active: Player::AngloEgyptian,
-                night: false,
-                phase: PhaseKind::DefensiveFire(FireSubKind::Direct),
-            }
-            .firing_player(),
-            Some(Player::Dervish)
-        );
-        // Dervish is active, AE fires defensively.
-        assert_eq!(
-            UiPhaseState::Turn {
-                active: Player::Dervish,
-                night: false,
-                phase: PhaseKind::DefensiveFire(FireSubKind::Direct),
-            }
-            .firing_player(),
-            Some(Player::AngloEgyptian)
-        );
-        // Maxim/howitzer defensive too.
-        assert_eq!(
-            UiPhaseState::Turn {
-                active: Player::Dervish,
-                night: false,
-                phase: PhaseKind::DefensiveFire(FireSubKind::MaximHowitzer),
-            }
-            .firing_player(),
-            Some(Player::AngloEgyptian)
         );
     }
 

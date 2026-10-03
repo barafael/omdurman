@@ -284,11 +284,20 @@ what the engine is doing and why. Every citation deep-links into the in-app Rule
   the preview shows the outcome bands across raw rolls 1..=10 ("1-3 no effect · 4-5 disrupt ·
   6-8 eliminate 1 · 9-10 eliminate 2"), computed from the CRT given the factor row + net
   modifier. The engine still pre-rolls for canonical resolution.
+- **Game-view chrome.** The top bar (`ui_plugin/toolbar.rs`) is the one place that says the turn,
+  clock, day/night, whose turn it is, the §4 phase ladder and who acts now (or why nothing
+  responds: waiting, paused); it also holds the ZOC/LOS toggles and the room. The command rail
+  (`overview.rs`) is the one left panel: the phase's control (End phase / set-up Ready), "Next
+  step" (`actions_panel.rs`: only what applies now, e.g. "no enemy in range"), the selected
+  unit and plotted move, the counter tray when counters may be placed (set-up force, this
+  turn's arrivals with their §9.113 allowance), the score, and the collapsed forces list. The
+  end-of-turn telegram is a true modal above all of it.
 - **Hover tooltip** (`hover_tooltip.rs`). Hovering any hex shows terrain, coord, landmark,
   occupants with their (fire/melee) factors, and — when a unit is selected — a movement/blocking
   hint that names *why*: terrain cost, wall hexside, ZOC, stacking, out-of-MP, Nile impassability.
   Each clause carries its § paragraph as a deep-link.
-- **Picker sprite tooltips** (`picker/sidebar.rs`). Hovering a sprite in the unit-picker sidebar
+- **Picker sprite tooltips** (`picker/sidebar.rs`). Hovering a sprite in the counter tray (a
+  section of the command rail, `overview.rs`)
   shows the counter's resolved profile (identity, fire/melee/move factors, weapon, kind, printed
   text, fires-twice flag) plus a §2.3x deep-link to its section.
 
