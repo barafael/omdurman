@@ -102,10 +102,8 @@ pub enum SectionName {
 
 impl SectionName {
     /// The canonical order in which counter sections appear on the
-    /// counter-sheet rows, top to bottom. Shared by the in-game unit picker
-    /// (`omdurman-app`) and the map editor's sprite browser
-    /// (`tools/map-editor`), so both iterate sections identically --
-    /// previously each held a private copy that had begun to drift.
+    /// counter-sheet rows, top to bottom. Used by the in-game unit picker
+    /// (`omdurman-app`).
     ///
     /// The engine-only `Mulazmin`, `Kehena`, `Degheim` and `Danagla` sections
     /// are not on it: their counters are printed in the Mulazmin I/II, Ali

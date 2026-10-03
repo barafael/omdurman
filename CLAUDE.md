@@ -14,12 +14,6 @@ Build / run the game native:
 cargo run -p omdurman-app
 ```
 
-Run the (native-only) map editor tool:
-
-```shell
-cargo run -p map-editor
-```
-
 Build / serve the WASM web build:
 
 ```shell
@@ -90,11 +84,10 @@ The signalling server URL is bakeable via the `MATCHBOX_SERVER` env var at build
 
 ## Workspace layout
 
-Six workspace crates plus three tools, all sharing `edition = "2024"`:
+Seven workspace crates plus the traceability tooling (two tools and a proc-macro), all sharing `edition = "2024"`:
 
 - **`omdurman-types`** — leaf crate, no Bevy. Pure serde types shared by everything else (`HexCoord`,
-  `SectionName` (+ `SHEET_ORDER`, the canonical counter-sheet section order shared by the picker
-  and the map editor), `MapData`, `SpriteAnnotation`, hexside/Nile/overlay types, `Faction`, `Brigade`),
+  `SectionName` (+ `SHEET_ORDER`, the canonical counter-sheet section order used by the picker), `MapData`, `SpriteAnnotation`, hexside/Nile/overlay types, `Faction`, `Brigade`),
   plus the net layer's sequencing primitives (`net_seq`: `RecentUids`, `ReorderBuffer`, here so
   Kani can prove them without Bevy).
   Must stay dependency-light so both the rules engine and the net layer can depend on it.
@@ -126,8 +119,8 @@ Six workspace crates plus three tools, all sharing `edition = "2024"`:
   tests in `tests.rs`, Kani proofs in `verification.rs`), so public paths stay
   `omdurman_rules::X`. Most rulebook constants are `value_enum!` enums (in `scalars.rs`) so
   match arms are exhaustive at compile time.
-- **`omdurman-board-ui`** — board-view plumbing shared by the app and the map editor
-  (previously two drifting copies per binary): RTS camera, input/raycast helpers, egui
+- **`omdurman-board-ui`** — board-view plumbing (split out when a map editor shared it; that
+  editor is retired, so the app is its only user): RTS camera, input/raycast helpers, egui
   pointer gating (`EguiPointerOverUi` snapshot + `MapPointerInputSet`), night shading
   (driven by the injected `BoardDayNight` resource), the two-board store + board
   bootstrap + map plane, and `SpriteAnnotationsResource`. Binaries keep only their small
@@ -135,8 +128,7 @@ Six workspace crates plus three tools, all sharing `edition = "2024"`:
   engine state on every board load).
 - **`omdurman-hexmap`** — Bevy plugin (`HexMapPlugin`) for the hex grid: `GameMap`, `HexLayout`,
   `MapDims`, world-space conversion, plus the shared board plane (`MapPlane`, `MapTextureCache`,
-  `HexOverlay`, `apply_map_data_to_plane`, `terrain_overlay_color`) used by both the game and the
-  map editor. `HexLayout` must be inserted manually with calibration data.
+  `HexOverlay`, `apply_map_data_to_plane`, `terrain_overlay_color`) used by the game. `HexLayout` must be inserted manually with calibration data.
 - **`omdurman-net`** — net glue. Defines `NetMsg`, `GameEvent`, `GameRecord` (event log),
   `InitialGameState`, and `room_id()`. `GameEvent` variants are the *only* messages recorded into
   the canonical event log and replayed for late joiners — adding a variant here automatically
@@ -145,13 +137,6 @@ Six workspace crates plus three tools, all sharing `edition = "2024"`:
   camera, networking glue, and the event-viewer debug overlay. Entry point:
   `omdurman-app/src/main.rs`.
 - **`omdurman-bot`** — bot / strategy advisor over the rules engine.
-- **`tools/map-editor`** — native-only Bevy map editor (`map-editor`): board authoring
-  (terrain, hexsides, roads, overlay calibration, turn-track bbox, scattergram, setup letters,
-  entrance areas), the unit-sheet cutting grid, and the sprite-annotation editor. Saves to the
-  RON data files under `omdurman-app/assets/`.
-- **`tools/asset-editor`** — eframe/egui desktop tool for the six rules-data RON tables under
-  `Boardgame - Remember_Gordon/tables/` (units roster, CRT, scattergram, LOS, range effects,
-  order of appearance), with undo/redo and engine cross-checks.
 - **`tools/traceability-typst`** (and `tools/traceability-lsp`) — regenerates the traceability
   PDF / serves live traceability diagnostics.
 
@@ -286,7 +271,8 @@ on the next frame; `omdurman-app/src/board_state.rs` owns this bootstrap.
 ## Board + sprite data (RON data files)
 
 The two boards live as RON data files under `omdurman-app/assets/boards/`
-(`campaign.ron`, `fall_of_khartoum.ron`) — authored by `tools/map-editor`, embedded at compile time
+(`campaign.ron`, `fall_of_khartoum.ron`) — edited as text (the map editor that authored them was retired in October 2026 and lives
+in git history), embedded at compile time
 by `omdurman-rules/src/board_data.rs` (the single `include_str!` owner), and parsed once on first
 use. The app's `LoadedAnnotations` and the tactics fixtures both consume those accessors.
 Sprite metadata: compiled fallbacks live in `omdurman-rules/src/sprite_data.rs` (keyed by
@@ -299,7 +285,7 @@ Sprite metadata: compiled fallbacks live in `omdurman-rules/src/sprite_data.rs` 
 
 The top-level `AppMode`s are `Menu`, `Lobby`, and `Game`.
 The splash screen provides the primary mode-switching UI.
-There is no in-app editor — board/asset authoring happens in `tools/map-editor`.
+There is no in-app editor — the board and asset data files are edited as text.
 
 ## Traceability
 

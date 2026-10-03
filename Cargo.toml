@@ -9,8 +9,6 @@ members = [
     "omdurman-rules",
     "omdurman-app",
     "omdurman-bot",
-    "tools/asset-editor",
-    "tools/map-editor",
     "tools/traceability-typst",
     "tools/traceability-lsp",
     "traceability-macro",
@@ -46,17 +44,11 @@ rand = "0.10"
 rand_chacha = "0.10"
 strum = { version = "0.28", features = ["derive"] }
 thiserror = "2"
-# `default-features = false`: only the codecs the tools/app need are enabled
-# per crate (the app enables the defaults for the asset server; the asset
-# editor adds webp/jpeg/png only).
+# `default-features = false`: the codecs are enabled per crate (the app
+# enables the defaults for the asset server).
 image = { version = "0.25", default-features = false }
 indexmap = { version = "2", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-# egui is version-locked to whatever bevy_egui wraps (bevy_egui 0.42 -> egui
-# 0.36); declaring it once here keeps the asset-editor's standalone egui in
-# lockstep with the game's.
-egui = "0.36"
-eframe = "0.36"
 
 toml = "1.1"
 tracing = "0.1"

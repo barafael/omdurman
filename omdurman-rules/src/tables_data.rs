@@ -1,8 +1,8 @@
 //! Rules tables (§tables-data): the four lookup tables the engine consults
 //! — Combat Results, Range Effects, Howitzer Scattergram, Line of Sight —
 //! embedded as Rust `static` constants below, transcribed from the RON
-//! files under `Boardgame - Remember_Gordon/tables/`. The asset editor
-//! (`tools/asset-editor`) edits those files offline; the `#[cfg(test)]`
+//! files under `Boardgame - Remember_Gordon/tables/`. Those files are
+//! edited as text (the asset editor that authored them is retired); the `#[cfg(test)]`
 //! parity tests at the bottom of this module parse the RON and fail the
 //! build if it ever drifts from the constants.
 //!

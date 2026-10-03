@@ -1,7 +1,7 @@
 //! Board data (§dual-map): the two boards as RON files under
 //! `omdurman-app/assets/boards/`, embedded at compile time and parsed once on
-//! first use. The map editor (`tools/map-editor`) edits those files offline;
-//! the game bootstrap (`omdurman-app/src/board_state.rs`) and the tactics
+//! first use. The files are edited as text (the map editor that authored
+//! them is retired); the game bootstrap (`omdurman-app/src/board_state.rs`) and the tactics
 //! fixtures (`tactics.rs`) consume them through the accessors below.
 //!
 //! The `include_str!` paths reach across workspace members on purpose: the

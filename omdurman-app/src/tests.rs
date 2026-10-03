@@ -395,7 +395,7 @@ mod late_joiner_tests {
         // After replay it must be gone. The map is seeded from the board RON
         // data, then rebuild_state_to clears it and re-seeds the default
         // board (map edits no longer travel as events; the boards are data
-        // files authored by tools/map-editor).
+        // files under assets/boards/).
         let record = make_record(vec![GameEvent::PlaceUnit {
             sprite: SpriteRef {
                 section_name: SectionName::HadendowaForts,

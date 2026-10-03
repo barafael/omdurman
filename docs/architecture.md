@@ -31,13 +31,12 @@ through at all.
 | `traceability-macro` | — | The `#[rulebook("§N")]` proc-macro attribute. |
 | `tools/traceability-typst` | — | Generates the traceability report (`traceability.typ` / PDF); CI builds it, Pages publishes it. |
 | `tools/traceability-lsp` | — | LSP server + VS Code client for rulebook↔code navigation; shares its `checks` with the rules test. |
-| `tools/map-editor` | yes | Native-only board authoring (terrain, hexsides, roads, overlay calibration, set-up letters, entrance areas), the unit-sheet cutting grid and the sprite-annotation editor; writes the RON data files under `omdurman-app/assets/`. |
-| `tools/asset-editor` | no (eframe/egui) | Native-only editor for the rules-data RON tables under `Boardgame - Remember_Gordon/tables/`, with undo/redo and engine cross-checks. |
 
-Two boards (`MapKind::{Campaign, FallOfKhartoum}`) live in the same binary. The authoring
-tooling (overlay calibration, terrain/hexside editor, sprite browser, unit-sheet editor) lives in
-`tools/map-editor`; it and the app's event-viewer overlay are implementation scaffolding for
-authoring *this* game's data — not a general-purpose wargame editor.
+Two boards (`MapKind::{Campaign, FallOfKhartoum}`) live in the same binary. The board, sprite
+and rules-table data files were authored with two native editors (`tools/map-editor`,
+`tools/asset-editor`), retired in October 2026 once the data was complete: the files are now
+edited as text, guarded by the rules crate's parity and audit tests (recover the editors from
+git history if a large re-authoring is ever needed).
 
 ---
 
@@ -230,8 +229,8 @@ every peer — when the send to any one peer fails.
 - **Modes.** Top-level `AppMode::{Menu, Lobby, Game}` (`M` returns to the menu), with
   `AppState::{Splash, Lobby, InGame, Spectating}` underneath; `Spectating` is the timeline
   scrubber (`timeline.rs`) that reviews a recorded game by rebuilding state to any event index.
-  There is no in-app editor: board and asset authoring happen in `tools/map-editor` and
-  `tools/asset-editor`. Behaviour is gated on the active mode, not a build flag.
+  There is no in-app editor: the board and asset data files are edited as text (see §1).
+  Behaviour is gated on the active mode, not a build flag.
 - **Dual-map.** `ActiveEditMap` (local) tracks the live board; `PendingMapLoad` defers a (re)load
   to the next frame; `LoadedAnnotations` holds both boards (all three in `omdurman-board-ui`). A
   play view (Game) follows its scenario's board for the whole session; the map editor's board

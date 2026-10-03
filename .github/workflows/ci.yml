@@ -43,7 +43,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       # The repo's canonical line endings are LF, and several tests assert
-      # byte-identical round trips over committed text files (asset-editor
+      # byte-identical round trips over committed text files (the rules
       # tables, splash's embedded text). Windows
       # runners default to core.autocrlf=true, which would CRLF-convert the
       # checkout and fail all of them.

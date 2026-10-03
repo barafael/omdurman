@@ -885,6 +885,35 @@ mod tests {
     /// `starts_with` match would swallow the fort counters into `Hadendowa`,
     /// which silently drops the auto-setup North Fort placement. (Sections off
     /// the cut sheet, like FALL OF KHARTOUM's `British_Forts`, count too.)
+    /// Every counter of the roster (`units.ron`) has its sprite: the cell the
+    /// game buckets from the sprite files exists for its section, column and
+    /// row. (Moved here from the retired asset editor.)
+    #[test]
+    fn every_unit_in_the_roster_has_a_sprite() {
+        use strum::VariantArray;
+        let roster = include_str!("../../../Boardgame - Remember_Gordon/tables/units.ron");
+        let ids: Vec<omdurman_rules::UnitId> = roster
+            .lines()
+            .filter_map(|l| l.trim_start().strip_prefix('"'))
+            .filter_map(|l| l.split('"').next())
+            .filter_map(|id| ron::from_str(id).ok())
+            .collect();
+        assert!(ids.len() > 200, "the full counter set, got {}", ids.len());
+        let order = SectionName::VARIANTS;
+        let missing: Vec<_> = ids
+            .iter()
+            .filter(|id| {
+                let (section, col, row) = id.section_pos();
+                !generated::SPRITE_PATHS.iter().any(|&(f, c, r)| {
+                    c == u32::from(col)
+                        && r == u32::from(row)
+                        && bucket_section(order, f, c, r) == Some(section)
+                })
+            })
+            .collect();
+        assert!(missing.is_empty(), "no sprite for {missing:?}");
+    }
+
     #[test]
     fn sprite_files_bucket_into_exact_sections() {
         use strum::VariantArray;

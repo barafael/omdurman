@@ -1,10 +1,9 @@
 //! Game-side board bootstrap (§dual-map).
 //!
 //! The two-board store, the deferred load request, and the shared loading
-//! flow live in `omdurman-board-ui::board_store` (single copies for the game
-//! and the map editor); this module keeps the game-specific hooks: seeding
+//! flow live in `omdurman-board-ui::board_store`; this module keeps the game-specific hooks: seeding
 //! the engine's `BoardInfo` on every board load, and loading the
-//! sprite-annotation file authored by the map-editor tool.
+//! sprite-annotation file (`assets/sprite_annotations.ron`).
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;

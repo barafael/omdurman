@@ -1,7 +1,7 @@
 //! Sprite-annotation support for the game's unit picker.
 //!
-//! The annotations themselves are authored offline by `tools/map-editor` and
-//! loaded at startup from `assets/sprite_annotations.ron`
+//! The annotations themselves are a data file (authored with the since-retired
+//! map editor, now edited as text) loaded at startup from `assets/sprite_annotations.ron`
 //! ([`crate::board_state::load_annotations`]); the picker overlays them on the
 //! compiled `omdurman_rules::sprite_data` fallback.
 

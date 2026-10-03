@@ -2,8 +2,7 @@
 //! (§dual-map): [`LoadedAnnotations`] (seeded from the RON data the rules
 //! crate embeds), the deferred [`PendingMapLoad`] request,
 //! [`apply_map_selection`], the map plane, and the lights. Previously two
-//! drifting copies (`omdurman-app/src/board_state.rs` and
-//! `tools/map-editor/src/board.rs`) — including the calibration block that
+//! drifting copies (the game's and the since-retired map editor's) — including the calibration block that
 //! turns a board's pixel anchors into a [`HexLayout`].
 
 use bevy::ecs::system::SystemParam;

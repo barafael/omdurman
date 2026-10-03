@@ -1,5 +1,5 @@
-//! Shared board-view plumbing used by both the game app (`omdurman-app`) and
-//! the map editor (`tools/map-editor`).
+//! Board-view plumbing for the game app (`omdurman-app`), split out while a
+//! map editor (since retired) shared it.
 //!
 //! Everything here used to exist as two near-verbatim copies (one per
 //! binary); any edit to one silently diverged the editor's rendering from the

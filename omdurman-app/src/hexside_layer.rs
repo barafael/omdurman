@@ -5,8 +5,7 @@
 //! shows the printed walls/khors, so only the engine's mutations are drawn
 //! here.
 //!
-//! The drawing is ported from the map editor's hexside tab
-//! (`tools/map-editor/src/editor/hexside.rs`): bars along the
+//! The drawing is ported from the (since-retired) map editor's hexside tab: bars along the
 //! perpendicular-bisector segment of the two hex centres, with the same
 //! per-kind colours.
 

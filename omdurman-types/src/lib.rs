@@ -663,8 +663,8 @@ pub enum Location {
 }
 
 /// Rules-significant named areas spanning multiple hexes: the Campaign-game
-/// reinforcement entrance areas (rulebook §9.112/§9.113), authored per-hex in
-/// the map editor. A hex belongs to at most one area.
+/// reinforcement entrance areas (rulebook §9.112/§9.113), tagged per hex in
+/// the board data files. A hex belongs to at most one area.
 ///
 /// - `DervishWestEdge` — the west map edge south of the Khor Shambat, where
 ///   all Dervish reinforcements enter (§9.112).
@@ -791,8 +791,8 @@ pub enum SpriteColor {
 }
 
 /// Editor-authored sprite annotation: the metadata painted onto one cut
-/// counter cell (section, col, row). Authored in the map-editor tool and
-/// persisted in `sprite_annotations.ron`; the game's unit picker consumes it
+/// counter cell (section, col, row). Persisted in
+/// `sprite_annotations.ron`; the game's unit picker consumes it
 /// as an optional overlay over the compiled `sprite_data` fallback.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SpriteAnnotation {

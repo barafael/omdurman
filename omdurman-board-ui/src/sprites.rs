@@ -1,6 +1,5 @@
-//! The sprite-annotation resource: the loaded per-sprite annotations authored
-//! offline by `tools/map-editor` (previously a struct defined in both
-//! binaries).
+//! The sprite-annotation resource: the loaded per-sprite annotations from
+//! `assets/sprite_annotations.ron`.
 
 use bevy::prelude::*;
 use omdurman_types::SpriteAnnotations;
