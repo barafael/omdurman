@@ -29,6 +29,7 @@ pub mod fire_plan;
 pub mod invariants;
 pub mod llm;
 pub mod log;
+pub mod move_memory;
 pub mod observer;
 pub mod oob;
 pub mod playthrough;

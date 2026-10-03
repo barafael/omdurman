@@ -34,6 +34,25 @@ pub struct TelegramLog {
 }
 
 impl TelegramLog {
+    /// Whether the latest finished turn's telegram still waits for this
+    /// player: not yet filed (the host is writing it) or not yet dismissed.
+    /// The host's AI holds its moves meanwhile, so play really waits for
+    /// the overlay (`ui_plugin::controls::telegram_overlay`); at game over
+    /// the newspaper replaces the telegram and nothing waits.
+    pub(crate) fn awaiting_ack(&self, state: &omdurman_rules::effects::GameState) -> bool {
+        if state.game_over {
+            return false;
+        }
+        let Some(latest) = state.turn_summaries.last().map(|s| s.turn.value()) else {
+            return false;
+        };
+        !self
+            .entries
+            .iter()
+            .take(self.acknowledged)
+            .any(|(turn, _)| *turn == latest)
+    }
+
     /// File a press event (the `game_apply` arm for both variants): the
     /// first telegram recorded for a turn wins, as does the first Gazette.
     /// Returns whether it was filed.
@@ -233,5 +252,53 @@ pub(crate) fn save_telegram_artifacts(
             // Leave `flushed` behind so the write is retried next frame.
             Err(error) => warn!(%error, %path, "failed to write telegrams artifact"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TelegramLog;
+    use omdurman_rules::effects::GameState;
+    use omdurman_rules::turn_summary::TurnSummary;
+    use omdurman_types::Scenario;
+
+    fn finished_turn(state: &mut GameState, turn: u8) {
+        state.turn_summaries.push(TurnSummary {
+            turn: omdurman_rules::GameTurnIndex::new(turn),
+            time: omdurman_rules::turn_track::GameTime::SixAM,
+            day_night: state.day_night,
+            first_player: omdurman_rules::effects::first_player(state.scenario),
+            events: Vec::new(),
+        });
+    }
+
+    /// The host's AI holds its moves while the latest turn's telegram is
+    /// unfiled or unread, and not once it has been dismissed.
+    #[test]
+    fn the_latest_telegram_holds_play_until_dismissed() {
+        let mut state = GameState::new(Scenario::Campaign);
+        let mut log = TelegramLog::default();
+        assert!(!log.awaiting_ack(&state), "no turn finished yet");
+
+        finished_turn(&mut state, 1);
+        assert!(
+            log.awaiting_ack(&state),
+            "the telegram is still being written"
+        );
+        log.entries.push((1, "turn 1".into()));
+        assert!(log.awaiting_ack(&state), "filed but unread");
+        log.acknowledged = 1;
+        assert!(!log.awaiting_ack(&state), "read");
+
+        finished_turn(&mut state, 2);
+        assert!(
+            log.awaiting_ack(&state),
+            "the next turn's telegram waits again"
+        );
+        state.game_over = true;
+        assert!(
+            !log.awaiting_ack(&state),
+            "at game over the newspaper takes over"
+        );
     }
 }

@@ -575,7 +575,8 @@ fn setup_control_section(
 
 /// The turn's field telegram, as a centered modal over a dimmed board: it
 /// arrives when a game turn completes (flavour text from the model, or the
-/// turn's own events), and play waits until the player dismisses it -- a
+/// turn's own events), and play waits until the player dismisses it (the
+/// host's AI holds its moves, `TelegramLog::awaiting_ack`) -- a
 /// click anywhere, the Continue button, or Enter / Space (the button takes
 /// keyboard focus, which also holds back the game hotkeys) or Esc.
 ///

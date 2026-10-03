@@ -159,15 +159,20 @@ pub fn pick_setup(
 ///
 /// The ranking is deterministic (score, then enumeration order) and draws
 /// nothing from `_rng`; the parameter is kept so callers need not change if
-/// rng tie-breaking is added later.
+/// rng tie-breaking is added later. `memory` is the driver's
+/// [`crate::move_memory::MoveMemory`], fed with the pick.
 pub fn pick_validated(
     state: &GameState,
     player: Player,
     candidates: &[GameEffect],
     _rng: &mut BotRng,
+    memory: &mut crate::move_memory::MoveMemory,
 ) -> GameEffect {
     // Fire phases: merge the per-stack shots into planned combined attacks
-    // (§6.14) before ranking -- see `crate::fire_plan`.
+    // (§6.14) before ranking -- see `crate::fire_plan`. Movement: a unit
+    // whose best step would take it back onto ground it covered this phase
+    // halts -- see `crate::move_memory` (the step-by-step scores would
+    // otherwise walk it back and forth until its MP ran out).
     let planned;
     let candidates = if matches!(
         state.phase,
@@ -179,8 +184,12 @@ pub fn pick_validated(
         candidates
     };
     for candidate in rank(state, player, candidates) {
+        if !memory.screen(state, &candidate) {
+            continue;
+        }
         let mut test = state.clone();
         if omdurman_rules::effects::apply_effect(&mut test, &candidate).is_ok() {
+            memory.record(state, &candidate);
             return candidate;
         }
     }

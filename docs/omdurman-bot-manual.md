@@ -306,6 +306,26 @@ cleared. The Khalifa garrisons the Tomb with his Taiasha and chooses §8.2
 deserters from the disrupted and the units in the fire lanes
 (`commanders::choose_deserters`, also used by the app).
 
+**No shuffling — `src/move_memory.rs`.** The commanders move one hex per
+decision and re-score the board after each step; the scores are not
+consistent from step to step (a step into a fire lane pays for its
+progress, the step back pays for the lane it leaves), so a unit used to
+walk A→B→A→B until its MP ran out. Every driver (the app's `BotDriver`,
+the arena, the playthrough) keeps a `MoveMemory` of the hexes each unit
+has occupied this movement phase; when a unit's best-ranked step would go
+back onto one of them, the unit halts for the rest of the phase
+(`commanders::pick_validated`). Halting -- not merely skipping that step --
+matters: a unit barred from its old hex took its next-best step instead,
+often deeper into the lane it was leaving (measured in the arena).
+`tests/no_oscillation.rs` plays every scenario and asserts no such step
+(the frozen baseline takes ~150 a turn).
+
+Removing the shuffle also exposed what it hid: the Campaign Tomb dash
+(`tomb_objective`) used to be cancelled out by the shuffling; with clean
+moves a stay-relative scoring of non-closing steps (tried and dropped)
+let the column actually march and die to the forts. Keep that in mind
+when tuning the dash.
+
 **Measuring strength — `src/arena.rs`, `tests/arena.rs`.** `arena::play`
 plays a whole game through the app's decision path with either the live
 commanders (`Version::Current`) or the frozen pre-tuning ones

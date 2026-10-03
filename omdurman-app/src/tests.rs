@@ -203,12 +203,14 @@ mod late_joiner_tests {
         let mut after = vec![state.clone()];
         let mut events = vec![start];
         let mut rng = omdurman_bot::rng::BotRng::from_seed(7);
+        let mut memory = omdurman_bot::move_memory::MoveMemory::new();
         for _ in 0..max_actions {
             if state.game_over {
                 break;
             }
             let chooser = state.phase_player();
-            let effect = crate::bot_player::next_ai_action(&state, chooser, &ai, &mut rng);
+            let effect =
+                crate::bot_player::next_ai_action(&state, chooser, &ai, &mut rng, &mut memory);
             let event = as_recorded_event(&effect, &state);
             apply_effect(&mut state, &effect).expect("the AI submits only validated effects");
             state.drain_observations();
@@ -1778,6 +1780,15 @@ fn ai_plays_headless(
     let mut after_the_end = 0;
     for _ in 0..frames {
         app.update();
+        // The viewer reads each end-of-turn telegram at once: the AI waits
+        // for it (`TelegramLog::awaiting_ack`), as for a player clicking
+        // Continue.
+        if let Some(mut log) = app
+            .world_mut()
+            .get_resource_mut::<crate::telegram::TelegramLog>()
+        {
+            log.acknowledged = log.entries.len();
+        }
         // Keep going a while after the end: the result, the Gazette and the
         // end-of-game screens run then.
         if app

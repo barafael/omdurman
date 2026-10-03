@@ -38,10 +38,13 @@ impl Version {
         player: Player,
         candidates: &[GameEffect],
         rng: &mut BotRng,
+        memory: &mut crate::move_memory::MoveMemory,
     ) -> GameEffect {
         match self {
             Version::Baseline => crate::baseline::pick_validated(state, player, candidates, rng),
-            Version::Current => crate::commanders::pick_validated(state, player, candidates, rng),
+            Version::Current => {
+                crate::commanders::pick_validated(state, player, candidates, rng, memory)
+            }
         }
     }
 
@@ -88,6 +91,9 @@ pub struct ArenaResult {
     pub mean_decision_ms: f64,
     /// The Anglo-Egyptians held the Mahdi's Tomb at the end (§9.14).
     pub tomb_taken: bool,
+    /// Moves that put a unit back on a hex it had already occupied in the
+    /// same movement phase (see [`crate::move_memory`]): wasted MP.
+    pub revisits: usize,
 }
 
 impl ArenaResult {
@@ -136,7 +142,7 @@ impl ArenaResult {
     /// A one-line summary.
     pub fn line(&self) -> String {
         format!(
-            "{:?} seed={} ae={} d={} turns={} over={} vp={}-{} lost ae={} d={} tomb={} score={:+} ms={:.1}/{:.0} result={}",
+            "{:?} seed={} ae={} d={} turns={} over={} vp={}-{} lost ae={} d={} tomb={} score={:+} ms={:.1}/{:.0} revisits={} result={}",
             self.scenario,
             self.seed,
             self.ae.name(),
@@ -151,6 +157,7 @@ impl ArenaResult {
             self.ae_score(),
             self.mean_decision_ms,
             self.max_decision_ms,
+            self.revisits,
             self.result
                 .map(|r| r.display_key())
                 .unwrap_or_else(|| "-".into()),
@@ -164,6 +171,18 @@ const MAX_STEPS: usize = 60_000;
 /// Play one game, `ae` commanding the Anglo-Egyptians and `dervish` the
 /// Dervish, through the app's decision path.
 pub fn play(scenario: Scenario, seed: u64, ae: Version, dervish: Version) -> ArenaResult {
+    play_until(scenario, seed, ae, dervish, u8::MAX)
+}
+
+/// [`play`], stopped once the game passes turn `last_turn` (for the faster
+/// regression tests).
+pub fn play_until(
+    scenario: Scenario,
+    seed: u64,
+    ae: Version,
+    dervish: Version,
+    last_turn: u8,
+) -> ArenaResult {
     let board = crate::playthrough::board_for_scenario(scenario);
     let mut state = GameState::with_board(scenario, board);
     let mut rng = BotRng::from_seed(seed);
@@ -173,11 +192,14 @@ pub fn play(scenario: Scenario, seed: u64, ae: Version, dervish: Version) -> Are
     };
     let mut steps = 0usize;
     let mut stuck = 0usize;
+    let mut memory = crate::move_memory::MoveMemory::new();
+    let mut revisit_check = crate::move_memory::MoveMemory::new();
+    let mut revisits = 0usize;
     let trace = std::env::var("ARENA_TRACE").is_ok();
     let started = std::time::Instant::now();
     let mut max_decision_ms = 0.0f64;
     let mut traced_turn = 0u8;
-    while !state.game_over && steps < MAX_STEPS {
+    while !state.game_over && steps < MAX_STEPS && state.current_turn.value() <= last_turn {
         steps += 1;
         if trace && state.current_turn.value() != traced_turn {
             traced_turn = state.current_turn.value();
@@ -208,8 +230,14 @@ pub fn play(scenario: Scenario, seed: u64, ae: Version, dervish: Version) -> Are
         } else if state.phase == Phase::Setup {
             version(chooser).pick_setup(&state, &candidates, Some(chooser), &mut rng)
         } else {
-            version(chooser).pick(&state, chooser, &candidates, &mut rng)
+            version(chooser).pick(&state, chooser, &candidates, &mut rng, &mut memory)
         };
+        // Count the steps back onto ground covered this phase (see
+        // `crate::move_memory`), whichever doctrine took them.
+        if revisit_check.revisits(&state, &effect) {
+            revisits += 1;
+        }
+        revisit_check.record(&state, &effect);
         max_decision_ms = max_decision_ms.max(decided.elapsed().as_secs_f64() * 1000.0);
         if apply_effect(&mut state, &effect).is_err() {
             // The app retries next frame; here, force the phase on after a
@@ -243,6 +271,7 @@ pub fn play(scenario: Scenario, seed: u64, ae: Version, dervish: Version) -> Are
             .events
             .iter()
             .any(|e| e.source == omdurman_rules::VpSource::MahdisTombTaken),
+        revisits,
     }
 }
 

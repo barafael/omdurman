@@ -149,6 +149,7 @@ pub async fn playthrough(
     // leader-command deadlock): hard ceiling on driver iterations so a bug can
     // never hang the caller. Well below a full-game action count.
     let mut iterations = 0usize;
+    let mut move_memory = crate::move_memory::MoveMemory::new();
 
     loop {
         // Termination conditions.
@@ -304,7 +305,17 @@ pub async fn playthrough(
             } else if agents.is_aggressive(chooser) {
                 crate::aggressive::pick(&state, chooser, &candidates, &mut rng)
             } else if let Some(commander) = agents.commander(chooser) {
-                commander.pick(&state, chooser, &candidates, &mut rng)
+                // A unit whose best step is back onto ground it covered
+                // this phase halts (`crate::move_memory`); pick again.
+                let pick = loop {
+                    let open = move_memory.without_halted(&state, &candidates);
+                    let pick = commander.pick(&state, chooser, &open, &mut rng);
+                    if move_memory.screen(&state, &pick) {
+                        break pick;
+                    }
+                };
+                move_memory.record(&state, &pick);
+                pick
             } else if agents.is_llm(chooser) {
                 pick_advised(
                     &state,

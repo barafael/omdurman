@@ -46,6 +46,9 @@ pub const BOT_SEED: u64 = 0x4F4D_4455_524D_414E;
 #[derive(Resource)]
 pub struct BotDriver {
     rng: BotRng,
+    /// Where each unit has stood this movement phase: no step back onto it
+    /// (see `omdurman_bot::move_memory`).
+    memory: omdurman_bot::move_memory::MoveMemory,
     cooldown: f32,
     /// Submission uid of the last action, until its sequenced echo confirms
     /// it. The engine state the next decision is computed from only reflects
@@ -69,6 +72,7 @@ impl BotDriver {
     pub fn from_seed(seed: u64) -> Self {
         Self {
             rng: BotRng::from_seed(seed),
+            memory: Default::default(),
             cooldown: 0.0,
             in_flight: None,
         }
@@ -83,6 +87,7 @@ const ACT_COOLDOWN_SECS: f32 = 0.4;
 /// commander's best *engine-validated* one, submit it as an ordinary game
 /// event. Runs in the game states (Setup included — the AI deploys its own
 /// force), paced by [`BotDriver`]'s cooldown.
+#[allow(clippy::too_many_arguments)]
 pub fn bot_player_act(
     time: Res<Time>,
     net: Res<NetState>,
@@ -91,10 +96,16 @@ pub fn bot_player_act(
     game_state: Res<GameStateResource>,
     mut pending: ResMut<PendingEdits>,
     offline: Option<Res<net_plugin::OfflineMode>>,
+    telegrams: Option<Res<crate::telegram::TelegramLog>>,
 ) {
     let ai = crate::seats::ai_factions(&seats.seats.0);
     // Paused waiting for an absent seat holder: the AI waits too.
     if ai.is_empty() || seats.presence.paused() {
+        return;
+    }
+    // The end-of-turn telegram is modal: the AI waits until the host's
+    // player has read it, instead of playing on underneath.
+    if telegrams.is_some_and(|log| log.awaiting_ack(&game_state.0)) {
         return;
     }
     // Only the host (or an offline self-hosted instance) drives the AI.
@@ -125,7 +136,8 @@ pub fn bot_player_act(
         return;
     }
 
-    let effect = next_ai_action(state, chooser, &ai, &mut driver.rng);
+    let driver = &mut *driver;
+    let effect = next_ai_action(state, chooser, &ai, &mut driver.rng, &mut driver.memory);
     driver.cooldown = ACT_COOLDOWN_SECS;
     driver.in_flight = Some(pending.submit_game(GameEvent::Effect(effect)));
 }
@@ -153,6 +165,7 @@ pub(crate) fn next_ai_action(
     chooser: Player,
     ai_factions: &[Player],
     rng: &mut BotRng,
+    memory: &mut omdurman_bot::move_memory::MoveMemory,
 ) -> GameEffect {
     let both_ai = ai_factions.len() == 2;
     let own_only = if state.phase == Phase::Setup && !both_ai {
@@ -180,7 +193,7 @@ pub(crate) fn next_ai_action(
     if state.phase == Phase::Setup {
         return commanders::pick_setup_validated(state, &candidates, own_only, rng);
     }
-    commanders::pick_validated(state, chooser, &candidates, rng)
+    commanders::pick_validated(state, chooser, &candidates, rng, memory)
 }
 
 /// Validate one candidate on a cloned state; fall back to `AdvancePhase`
@@ -292,6 +305,7 @@ mod tests {
             let ai = [Player::AngloEgyptian, Player::Dervish];
 
             let mut steps = 0usize;
+            let mut memory = omdurman_bot::move_memory::MoveMemory::new();
             while !state.game_over && state.current_turn.value() <= 12 && steps < 20_000 {
                 steps += 1;
                 let chooser = state.phase_player();
@@ -312,7 +326,7 @@ mod tests {
                 } else if state.phase == Phase::Setup {
                     commanders::pick_setup_validated(&state, &candidates, None, &mut rng)
                 } else {
-                    commanders::pick_validated(&state, chooser, &candidates, &mut rng)
+                    commanders::pick_validated(&state, chooser, &candidates, &mut rng, &mut memory)
                 };
                 apply_effect(&mut state, &effect).unwrap_or_else(|e| {
                     panic!("seed {seed}: the validated pick {effect:?} was rejected: {e}")
