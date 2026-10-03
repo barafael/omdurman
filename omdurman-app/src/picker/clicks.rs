@@ -942,7 +942,7 @@ impl PlacingClick<'_, '_, '_> {
                     .available
                     .iter()
                     .skip(unit_idx)
-                    .position(|u| u.visible && u.section_name == section)
+                    .position(|u| u.shown() && u.section_name == section)
                     .map(|p| unit_idx + p);
                 if let Some(next_idx) = next {
                     *self.state = PickerState::Placing {
@@ -977,12 +977,60 @@ impl PlacingClick<'_, '_, '_> {
 }
 
 /// The slip for a destination the route finder cannot reach (§5.11-§5.4:
-/// movement points, terrain, zones of control, blocked hexsides).
-fn no_route_reason(goal: HexCoord, budget: i16) -> String {
-    format!(
-        "No route to {goal} within {budget} MP: terrain costs, zones of control (§5.4) \
-         or impassable hexsides stand in the way. The outlined hexes are in reach."
-    )
+/// movement points, terrain, zones of control, blocked hexsides): what the
+/// cheapest route would cost, when there is one at any price.
+fn no_route_reason(goal: HexCoord, budget: i16, cheapest: Option<i16>) -> String {
+    match cheapest {
+        Some(cost) => format!(
+            "{goal} is out of reach: the cheapest route costs {cost} MP, this move has \
+             {budget} MP left (§5.11; a gunboat going upstream has its smaller upstream \
+             allowance, §5.24). The outlined hexes are in reach."
+        ),
+        None => format!(
+            "No route to {goal}: zones of control (§5.4), enemy units or impassable \
+             terrain and hexsides block every way there."
+        ),
+    }
+}
+
+/// Price a goal the route finder could not reach within the move's budget:
+/// the cheapest route's cost at any price (`None`: no route at all), and the
+/// MP this move has for that route -- a gunboat's upstream allowance once
+/// the route runs upstream (§5.24), else `budget`.
+fn price_unreachable(
+    game_map: &GameMap,
+    placed_units: &Query<(Entity, &PlacedUnit)>,
+    placed: &PlacedUnit,
+    (start, goal): (HexCoord, HexCoord),
+    budget: i16,
+    gunboat: Option<GunboatBudget>,
+    game_state: Option<&crate::GameStateResource>,
+) -> (Option<i16>, i16) {
+    let Some((route, cost)) = cheapest_route(
+        game_map,
+        placed_units,
+        placed,
+        start,
+        goal,
+        i16::MAX,
+        None,
+        game_state,
+    ) else {
+        return (None, budget);
+    };
+    let have = match (gunboat, game_state) {
+        (Some(gunboat), Some(gs)) => {
+            let mut from = start;
+            let upstream = route.iter().any(|&hex| {
+                let up = step_is_upstream(&gs.0, from, hex);
+                from = hex;
+                up
+            });
+            budget.min(gunboat.left(upstream))
+        }
+        _ => budget,
+    };
+    (Some(cost), have)
 }
 
 /// Why no route reaches `goal`: when the goal itself may not hold one of the
@@ -994,7 +1042,24 @@ fn unroutable_reason(
     movers: &[omdurman_rules::UnitId],
     goal: HexCoord,
     budget: i16,
+    cheapest: Option<i16>,
 ) -> String {
+    // The goal is no ground this unit can stand on: gunboats keep to the
+    // Nile, land units off it (§5.22).
+    let wrong_ground = gs.and_then(|gs| {
+        movers.iter().find_map(|&id| {
+            let mover = gs.find_unit(id)?;
+            let is_boat = mover.profile.kind.is_boat();
+            (!gs.on_deployable_terrain(goal, is_boat)).then_some(is_boat)
+        })
+    });
+    if let Some(is_boat) = wrong_ground {
+        return if is_boat {
+            format!("{goal} is not on the Nile: gunboats move only along the river (§5.22).")
+        } else {
+            format!("{goal} is the Nile: only gunboats move on the river (§5.22).")
+        };
+    }
     let stacking_refusal = gs.and_then(|gs| {
         movers.iter().find_map(|&id| {
             let mover = gs.find_unit(id)?;
@@ -1003,7 +1068,7 @@ fn unroutable_reason(
     });
     match stacking_refusal {
         Some(error) => format!("Cannot end a move on {goal}: {error}."),
-        None => no_route_reason(goal, budget),
+        None => no_route_reason(goal, budget, cheapest),
     }
 }
 
@@ -1034,6 +1099,7 @@ impl SelectedClick<'_> {
         } else {
             self.remaining_mp
         };
+        let gunboat = GunboatBudget::of(game_state, placed, self.movement_path);
         let Some(route) = auto_route(
             self.game_map,
             placed_units,
@@ -1041,15 +1107,26 @@ impl SelectedClick<'_> {
             start,
             goal,
             budget,
+            gunboat,
             game_state,
         ) else {
             info!(?start, ?goal, budget, "no legal route to the clicked hex");
             let movers: Vec<_> = placed.unit_id.into_iter().collect();
+            let (cheapest, have) = price_unreachable(
+                self.game_map,
+                placed_units,
+                placed,
+                (start, goal),
+                budget,
+                gunboat,
+                game_state,
+            );
             return Err(unroutable_reason(
                 game_state.map(|gs| &gs.0),
                 &movers,
                 goal,
-                budget,
+                have,
+                cheapest,
             ));
         };
         let mut from = start;
@@ -1068,6 +1145,13 @@ impl SelectedClick<'_> {
                 }
                 _ => break,
             }
+        }
+        // The engine's per-leg check refused a step the search accepted:
+        // say where the route stops instead of leaving it short silently.
+        if from != goal {
+            return Err(format!(
+                "The route to {goal} stops at {from}: the next step was refused."
+            ));
         }
         Ok(())
     }
@@ -1275,6 +1359,7 @@ impl SelectedStackClick<'_, '_, '_> {
         } else {
             self.remaining_mp.iter().copied().max().unwrap_or(0)
         };
+        let gunboat = GunboatBudget::of(game_state, placed, self.movement_path);
         let Some(route) = auto_route(
             self.game_map,
             placed_units,
@@ -1282,6 +1367,7 @@ impl SelectedStackClick<'_, '_, '_> {
             start,
             goal,
             budget,
+            gunboat,
             game_state,
         ) else {
             info!(?start, ?goal, budget, "no legal route to the clicked hex");
@@ -1289,11 +1375,21 @@ impl SelectedStackClick<'_, '_, '_> {
                 .iter()
                 .filter_map(|&s| placed_units.get(s).ok().and_then(|(_, p)| p.unit_id))
                 .collect();
+            let (cheapest, have) = price_unreachable(
+                self.game_map,
+                placed_units,
+                placed,
+                (start, goal),
+                budget,
+                gunboat,
+                game_state,
+            );
             return Err(unroutable_reason(
                 game_state.map(|gs| &gs.0),
                 &movers,
                 goal,
-                budget,
+                have,
+                cheapest,
             ));
         };
         let mut from = start;
@@ -1307,6 +1403,13 @@ impl SelectedStackClick<'_, '_, '_> {
                 }
                 _ => break,
             }
+        }
+        // The engine's per-leg check refused a step the search accepted:
+        // say where the route stops instead of leaving it short silently.
+        if from != goal {
+            return Err(format!(
+                "The route to {goal} stops at {from}: the next step was refused."
+            ));
         }
         Ok(())
     }
@@ -1951,7 +2054,7 @@ mod tests {
                 state: Default::default(),
             });
         }
-        let reason = unroutable_reason(Some(&gs), &[UnitId::AliWadHelu_0_0], goal, 14);
+        let reason = unroutable_reason(Some(&gs), &[UnitId::AliWadHelu_0_0], goal, 14, None);
         assert!(reason.contains("§5.53"), "{reason}");
         assert!(!reason.starts_with("No route"), "{reason}");
         // An empty goal keeps the routing explanation.
@@ -1960,7 +2063,17 @@ mod tests {
             &[UnitId::AliWadHelu_0_0],
             HexCoord::new(9, 9),
             14,
+            None,
         );
         assert!(reason.starts_with("No route"), "{reason}");
+        // A route that exists at some price says what it costs.
+        let reason = unroutable_reason(
+            Some(&gs),
+            &[UnitId::AliWadHelu_0_0],
+            HexCoord::new(9, 9),
+            14,
+            Some(19),
+        );
+        assert!(reason.contains("costs 19 MP"), "{reason}");
     }
 }

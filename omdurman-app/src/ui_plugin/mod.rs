@@ -141,7 +141,7 @@ impl Plugin for UiPlugin {
                         crate::fok_panel::gordon_badge_ui,
                     )
                         .chain()
-                        .after(crate::phase_banner::phase_banner_ui)
+                        .after(mode_toolbar_ui)
                         .run_if(crate::in_game_view),
                     // (`in_game_view`, not just `InGame`: the menu is shown
                     // with `AppState::InGame`, and must not have the in-game

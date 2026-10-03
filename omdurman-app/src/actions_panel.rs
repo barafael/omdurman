@@ -34,8 +34,15 @@ struct ActionHint {
     label: String,
     /// Optional sub-line: "3 in-range targets", "4 MP remaining".
     detail: Option<String>,
-    /// Rulebook citation, e.g. "5" (movement) or "6.41" (direct fire).
-    paragraph: String,
+}
+
+/// What [`collect_hints`] needs beyond the engine state: this fire
+/// sub-phase's allocations are resolved (§6.41), how many attacks are
+/// staged, and whether the counter tray offers counters to place.
+struct HintContext {
+    fire_committed: bool,
+    staged: usize,
+    tray_open: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -55,32 +62,10 @@ pub fn draw_actions_section(
     fire_targets: &mut crate::fire::FireTargetCache,
     fire_allocation: Option<&mut crate::fire_allocation::FireAllocationState>,
     local_may_act: bool,
+    tray_open: bool,
     commands_out: &mut Vec<PickerCommand>,
 ) {
-    crate::ui::section_header(ui, "Actions");
-
-    // Phase title from UiPhaseState (canonical label).
-    let phase_label = ui_state.phase_label();
-    ui.label(
-        egui::RichText::new(phase_label)
-            .color(crate::ui::palette::RAIL_TEXT)
-            .size(14.0)
-            .strong(),
-    );
-    ui.add_space(4.0);
-
-    // Rulebook deep-link for the active phase.
-    // Deployment follows the scenario's own set-up rules (§9.11 / §9.21 /
-    // §9.32), not the generic §9.2 (which is the Historical scenario).
-    let section = if matches!(ui_state, crate::ui_phase_state::UiPhaseState::Setup) {
-        setup_section(state.0.scenario)
-    } else {
-        ui_state.rulebook_section()
-    };
-    if !section.is_empty() {
-        deep_link(ui, rulebook, section, clicked_section);
-        ui.add_space(4.0);
-    }
+    crate::ui::section_header(ui, "Next step");
 
     // The battle is over: nothing left to do but read the result.
     if matches!(ui_state, UiPhaseState::GameOver) {
@@ -91,31 +76,33 @@ pub fn draw_actions_section(
         );
         return;
     }
-
-    // Firing-player indicator line.
-    if let Some(firer) = ui_state.firing_player() {
-        let firer_str = crate::ui::faction_name(firer);
-        ui.colored_label(
-            crate::ui::palette::RED,
-            format!("\u{1f525} {firer_str} fires"),
+    if !local_may_act {
+        ui.label(
+            egui::RichText::new("The other side is acting; watch the board.")
+                .color(crate::ui::palette::RAIL_DIM)
+                .size(13.0),
         );
-        ui.add_space(4.0);
+        return;
     }
 
-    // Opens/hides the allocation tray (the tray's own button resolves the
-    // attacks). Only meaningful during a fire sub-phase (the firing-player
-    // indicator above is exactly that gate).
-    // Once this sub-phase's fire is resolved the tray has nothing left to
-    // show (it stays closed until the sub-phase changes).
+    // The allocation tray (whose own button resolves the attacks), offered
+    // only once an attack is staged.
     let fire_committed = fire_allocation.as_ref().is_some_and(|a| a.committed);
-    if let Some(allocation) = fire_allocation.filter(|a| !a.committed) {
+    let staged = fire_allocation
+        .as_ref()
+        .filter(|a| !a.committed)
+        .map_or(0, |a| a.attacks.len());
+    if let Some(allocation) = fire_allocation.filter(|a| !a.committed && !a.attacks.is_empty()) {
         let open = allocation.panel_open;
-        let pending = allocation.attacks.len();
+        let s = if staged == 1 { "" } else { "s" };
         let (label, fill) = if open {
-            ("Hide allocations".to_string(), crate::ui::palette::BTN_GO)
+            (
+                "Hide staged attacks".to_string(),
+                crate::ui::palette::BTN_GO,
+            )
         } else {
             (
-                format!("Review allocations ({pending} pending)"),
+                format!("Resolve {staged} staged attack{s}\u{2026}"),
                 crate::ui::palette::BTN_COMBAT,
             )
         };
@@ -138,12 +125,16 @@ pub fn draw_actions_section(
         picker,
         placed_units,
         fire_targets,
-        fire_committed,
+        HintContext {
+            fire_committed,
+            staged,
+            tray_open,
+        },
     );
     if hints.is_empty() {
         ui.colored_label(
             crate::ui::palette::RAIL_DIM,
-            "no actions available — end the phase when ready.",
+            "Nothing to do here \u{2014} end the phase (E).",
         );
     } else {
         for hint in hints {
@@ -170,8 +161,16 @@ pub fn draw_actions_section(
                     );
                 }
             });
-            deep_link(ui, rulebook, &hint.paragraph, clicked_section);
         }
+    }
+    // One rules link for the phase, not one per line.
+    let section = if matches!(ui_state, UiPhaseState::Setup) {
+        setup_section(state.0.scenario)
+    } else {
+        ui_state.rulebook_section()
+    };
+    if !section.is_empty() {
+        deep_link(ui, rulebook, section, clicked_section);
     }
 
     ui.add_space(6.0);
@@ -334,209 +333,123 @@ pub fn draw_actions_section(
                 }
             });
         }
-        // Per-leg breakdown with gunboat direction annotations (§5.24).
-        let is_gunboat = selected_unit_id(picker, placed_units)
-            .and_then(|(uid, _)| state.0.find_unit(uid))
-            .is_some_and(|u| {
-                matches!(u.profile.movement, omdurman_rules::UnitMovement::Gunboat(_))
-            });
-        for (i, &(from, to)) in movement_path.legs.iter().enumerate() {
-            let dir = if is_gunboat {
-                state
-                    .0
-                    .board
-                    .step_direction(from, to)
-                    .map(|d| match d {
-                        omdurman_rules::board::StepDirection::Upstream => " \u{2191}", // ↑
-                        omdurman_rules::board::StepDirection::Downstream => " \u{2193}", // ↓
-                    })
-                    .unwrap_or("")
-            } else {
-                ""
-            };
-            ui.label(
-                egui::RichText::new(format!(
-                    "  {}({}, {}) -> ({}, {}){}",
-                    i + 1,
-                    from.q,
-                    from.r,
-                    to.q,
-                    to.r,
-                    dir,
-                ))
-                .color(crate::ui::palette::RAIL_DIM)
-                .size(11.0),
-            );
-        }
+        // (The arrows on the board show the route itself.)
     }
 }
 
-/// Enumerate the actions the rulebook permits in `phase`, with as much
-/// context (counts, selected-unit relevance) as can be cheaply derived. The
-/// list is intentionally short -- it points the player at *categories* of
-/// action (move, fire, melee, end-phase) rather than enumerating every legal
-/// target hex (the on-map rings do that). `fire_committed`: this fire
-/// sub-phase's allocations are already resolved (§6.41), so nothing more may
-/// be allocated until the next sub-phase.
+/// What the player can do right now, in plain words -- short, and only what
+/// applies: a phase with nothing to do says so instead of listing moves the
+/// rules allow in principle. The on-map rings name the individual targets.
 fn collect_hints(
     gs: &omdurman_rules::effects::GameState,
     phase: Phase,
     picker: &PickerState,
     placed_units: &bevy::ecs::system::Query<(bevy::prelude::Entity, &PlacedUnit)>,
     fire_targets: &mut crate::fire::FireTargetCache,
-    fire_committed: bool,
+    cx: HintContext,
 ) -> Vec<ActionHint> {
+    let hint = |label: &str, detail: Option<String>| ActionHint {
+        label: label.to_string(),
+        detail,
+    };
     let mut out: Vec<ActionHint> = Vec::new();
     let selected = selected_unit_id(picker, placed_units);
-    // Scenario-specific actions are only offered where they exist: the §10
-    // river obstacles are Campaign optional rules (and only when enabled),
-    // zariba building (§5.3) and the Friendlies' river crossing (§5.21) are
-    // Anglo-Egyptian Campaign actions.
     let campaign = gs.scenario == omdurman_types::Scenario::Campaign;
     let ae_moving = gs.active_player == omdurman_types::Player::AngloEgyptian;
     let optional = |rule| gs.optional_rules.contains(&rule);
+    let own_units = gs
+        .units
+        .iter()
+        .filter(|u| u.profile.identity.owner() == gs.phase_player())
+        .count();
     match phase {
         Phase::Setup => {
-            out.push(ActionHint {
-                label: "Deploy units".into(),
-                detail: Some("pick from the sidebar, click a hex in your zone".into()),
-                paragraph: setup_section(gs.scenario).into(),
-            });
+            if cx.tray_open {
+                out.push(hint("Pick a counter below, then a highlighted hex", None));
+            } else {
+                out.push(hint("Nothing (more) to deploy \u{2014} press Ready", None));
+            }
             if optional(omdurman_rules::OptionalRule::RiverMines) {
-                out.push(ActionHint {
-                    label: "Lay river mines (Dervish)".into(),
-                    detail: None,
-                    paragraph: "10.11".into(),
-                });
+                out.push(hint("Lay river mines (Dervish)", None));
             }
             if optional(omdurman_rules::OptionalRule::RiverChain) {
-                out.push(ActionHint {
-                    label: "Lay the river chain (Dervish)".into(),
-                    detail: None,
-                    paragraph: "10.21".into(),
-                });
+                out.push(hint("Lay the river chain (Dervish)", None));
             }
-            // Note: zariba construction (§5.3) is a Movement-phase action,
-            // not a Setup placement — hinted in the Movement list below.
         }
         Phase::Movement => {
-            out.push(ActionHint {
-                label: "Move selected unit".into(),
-                detail: selected_movement_detail(gs, selected),
-                paragraph: "5.12".into(),
+            if cx.tray_open {
+                out.push(hint(
+                    "Bring on reinforcements: pick a counter below, then a green hex",
+                    None,
+                ));
+            }
+            if selected.is_some() {
+                out.push(hint(
+                    "Click a destination, then Enter",
+                    selected_movement_detail(gs, selected),
+                ));
+            } else if own_units > 0 {
+                out.push(hint("Select one of your units to move it", None));
+            }
+            let ae_infantry_on_map = gs.units.iter().any(|u| {
+                matches!(
+                    u.profile.identity,
+                    omdurman_rules::UnitIdentity::AngloEgyptianInfantry { .. }
+                )
             });
-            if campaign && ae_moving {
-                out.push(ActionHint {
-                    label: "Build the Zariba (infantry inside it)".into(),
-                    detail: None,
-                    paragraph: "5.3".into(),
-                });
+            if campaign && ae_moving && ae_infantry_on_map {
+                out.push(hint("Build the Zariba with infantry inside it", None));
                 // §5.21: "after, and only after" the Isa Zachneih is gone.
                 if gs.isa_zachneih_eliminated {
-                    out.push(ActionHint {
-                        label: "Load / disembark Friendlies".into(),
-                        detail: None,
-                        paragraph: "5.21".into(),
-                    });
+                    out.push(hint("Load / disembark Friendlies", None));
                 }
             }
-            out.push(ActionHint {
-                label: "End phase".into(),
-                detail: None,
-                paragraph: "4".into(),
-            });
         }
-        Phase::OffensiveFire(sub) => {
-            let kind_word = match sub {
-                omdurman_rules::FireSubPhase::DirectFire => "Direct",
-                omdurman_rules::FireSubPhase::MaximSecondAndHowitzer => "Maxim / Howitzer",
-            };
-            let paragraph = match sub {
-                omdurman_rules::FireSubPhase::DirectFire => "6.41",
-                omdurman_rules::FireSubPhase::MaximSecondAndHowitzer => "6.42",
-            };
-            if fire_committed {
-                out.push(fire_resolved_hint(kind_word, paragraph));
+        Phase::OffensiveFire(_) | Phase::DefensiveFire(_) => {
+            if cx.fire_committed {
+                out.push(hint(
+                    "Fire resolved",
+                    Some(FIRE_ALREADY_RESOLVED_HINT.into()),
+                ));
+            } else if cx.staged > 0 {
+                out.push(hint("Stage more attacks, or resolve the staged ones", None));
+            } else if fire_targets.side_target_count(gs) == 0 {
+                out.push(hint(
+                    "No enemy in range of a unit that may fire \u{2014} end the phase (E)",
+                    None,
+                ));
+            } else if selected.is_some() {
+                out.push(hint(
+                    "Click an enemy hex to aim at it",
+                    fire_target_count(gs, picker, placed_units, fire_targets),
+                ));
             } else {
-                out.push(ActionHint {
-                    label: format!("Allocate fire — {kind_word}"),
-                    detail: fire_target_count(gs, picker, placed_units, fire_targets),
-                    paragraph: paragraph.into(),
-                });
-                out.push(ActionHint {
-                    label: "Review & resolve allocations".into(),
-                    detail: Some("'Resolve' in the allocation tray".into()),
-                    paragraph: "6.41".into(),
-                });
+                let n = fire_targets.side_target_count(gs);
+                out.push(hint(
+                    "Select a unit (double-click a stack), then an enemy hex",
+                    Some(format!(
+                        "{n} enemy hex{} in range",
+                        if n == 1 { "" } else { "es" }
+                    )),
+                ));
             }
-            out.push(ActionHint {
-                label: "Advance after fire".into(),
-                detail: Some("into vacated enemy hex (§6.82)".into()),
-                paragraph: "6.82".into(),
-            });
-            out.push(ActionHint {
-                label: "End phase".into(),
-                detail: None,
-                paragraph: "4".into(),
-            });
-        }
-        Phase::DefensiveFire(sub) => {
-            let kind_word = match sub {
-                omdurman_rules::FireSubPhase::DirectFire => "Direct",
-                omdurman_rules::FireSubPhase::MaximSecondAndHowitzer => "Maxim / Howitzer",
-            };
-            if fire_committed {
-                out.push(fire_resolved_hint(kind_word, "6.41"));
-            } else {
-                out.push(ActionHint {
-                    label: format!("Allocate defensive fire — {kind_word}"),
-                    detail: fire_target_count(gs, picker, placed_units, fire_targets),
-                    paragraph: "6.41".into(),
-                });
-                out.push(ActionHint {
-                    label: "Review & resolve allocations".into(),
-                    detail: Some("'Resolve' in the allocation tray".into()),
-                    paragraph: "6.41".into(),
-                });
-            }
-            out.push(ActionHint {
-                label: "End phase".into(),
-                detail: None,
-                paragraph: "4".into(),
-            });
         }
         Phase::Melee => {
             if let Some(pm) = &gs.pending_melee {
                 let retreat = crate::melee::defenders_may_retreat(gs, &pm.attack);
-                out.push(ActionHint {
-                    label: "Resolve the pending melee".into(),
-                    detail: retreat.then(|| "after the defender's reaction window".into()),
-                    paragraph: "7.5".into(),
-                });
+                out.push(hint(
+                    "Resolve the pending melee",
+                    retreat.then(|| "after the defender's reaction window".into()),
+                ));
                 if retreat {
-                    out.push(ActionHint {
-                        label: "Retreat before melee (defender)".into(),
-                        detail: None,
-                        paragraph: "7.5".into(),
-                    });
+                    out.push(hint("Retreat before melee (defender)", None));
                 }
             } else {
-                out.push(ActionHint {
-                    label: "Declare melee".into(),
-                    detail: melee_target_count(gs, picker, placed_units),
-                    paragraph: "7.1".into(),
-                });
+                out.push(hint(
+                    "Double-click your stack, then an adjacent enemy",
+                    melee_target_count(gs, picker, placed_units),
+                ));
             }
-            out.push(ActionHint {
-                label: "Advance after combat".into(),
-                detail: None,
-                paragraph: "7.6".into(),
-            });
-            out.push(ActionHint {
-                label: "End phase".into(),
-                detail: None,
-                paragraph: "4".into(),
-            });
         }
     }
     out
@@ -572,24 +485,11 @@ fn selected_movement_detail(
 /// The fire hint once this sub-phase's allocations are resolved: no more
 /// allocating (all fire of a sub-phase is allocated, then resolved, §6.41),
 /// only ending the phase.
-fn fire_resolved_hint(kind_word: &str, paragraph: &str) -> ActionHint {
-    ActionHint {
-        label: format!("Fire resolved — {kind_word}"),
-        detail: Some(FIRE_ALREADY_RESOLVED_HINT.into()),
-        paragraph: paragraph.into(),
-    }
-}
-
 /// What a player who tries to allocate after the resolution is told -- in
-/// the actions rail and as the refusal of such a click.
+/// the rail and as the refusal of such a click.
 pub(crate) const FIRE_ALREADY_RESOLVED_HINT: &str =
     "this sub-phase's fire is already resolved -- End phase (E) to go on";
 
-/// Count enemy-occupied hexes the selected fire group may legally fire at.
-/// Used as the "(N targets)" hint next to the Fire action. Resolves the same
-/// firing group ([`crate::fire::fire_selection`]) and reads the same cached
-/// enumeration (see `crate::fire::FireTargetCache`) the input handler and the
-/// on-map rings use, so the three can never disagree.
 fn fire_target_count(
     gs: &omdurman_rules::effects::GameState,
     picker: &PickerState,

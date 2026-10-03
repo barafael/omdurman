@@ -109,6 +109,63 @@ pub(crate) fn gunboat_cap_ok(
     gs.0.mp_spent(uid) + movement_path.cost_so_far + leg_cost <= g.upstream.value() as i16
 }
 
+/// A gunboat's §5.24 budget for a route plotted onward from the pending
+/// path: the downstream allowance binds until a step goes upstream, then
+/// the upstream allowance for the whole turn (sticky once any step this
+/// turn went upstream). Route searches carry "went upstream yet" in their
+/// state and price each hex with [`Self::left`], so the reach rings,
+/// click-routing and [`gunboat_cap_ok`] agree.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct GunboatBudget {
+    up_left: i16,
+    down_left: i16,
+    upstream_already: bool,
+}
+
+impl GunboatBudget {
+    /// `None` for a land mover (its scalar budget is exact) or with no
+    /// engine state.
+    pub(crate) fn of(
+        game_state: Option<&crate::GameStateResource>,
+        placed: &PlacedUnit,
+        movement_path: &MovementPath,
+    ) -> Option<Self> {
+        let gs = &game_state?.0;
+        let uid = placed.unit_id?;
+        let unit = gs.find_unit(uid)?;
+        // The night-halved allowances (§8.1).
+        let g = gs.gunboat_allowances(unit)?;
+        let spent = gs.mp_spent(uid) + movement_path.cost_so_far;
+        Some(Self {
+            up_left: g.upstream.value() as i16 - spent,
+            down_left: g.downstream.value() as i16 - spent,
+            upstream_already: gs.gunboats_upstream_this_turn.contains(&uid)
+                || movement_path
+                    .legs
+                    .iter()
+                    .any(|&(a, b)| step_is_upstream(gs, a, b)),
+        })
+    }
+
+    /// The MP left for the onward route once it `went_upstream` (or not).
+    pub(crate) fn left(self, went_upstream: bool) -> i16 {
+        if went_upstream || self.upstream_already {
+            self.up_left
+        } else {
+            self.down_left
+        }
+    }
+}
+
+/// Whether the step `a -> b` runs upstream on the Nile (§5.24).
+pub(crate) fn step_is_upstream(
+    gs: &omdurman_rules::effects::GameState,
+    a: HexCoord,
+    b: HexCoord,
+) -> bool {
+    gs.board.step_direction(a, b) == Some(omdurman_rules::board::StepDirection::Upstream)
+}
+
 /// Remaining movement points for a placed unit this turn, from the rules
 /// engine: full (night-adjusted) allowance minus what the unit already spent
 /// (§5.11/§5.12). Units with no rules identity, or in a session with no game
@@ -281,6 +338,7 @@ pub(crate) fn movement_leg_check(
 /// usable as the goal; stacking binds at the goal alone (§5.51). `budget` is
 /// the largest remaining MP of the mover(s). Returns the hexes after `start`,
 /// or `None` if the goal is out of reach.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn auto_route(
     game_map: &GameMap,
     placed_units: &Query<(Entity, &PlacedUnit)>,
@@ -288,27 +346,62 @@ pub(crate) fn auto_route(
     start: HexCoord,
     goal: HexCoord,
     budget: i16,
+    gunboat: Option<GunboatBudget>,
     game_state: Option<&crate::GameStateResource>,
 ) -> Option<Vec<HexCoord>> {
+    cheapest_route(
+        game_map,
+        placed_units,
+        placed,
+        start,
+        goal,
+        budget,
+        gunboat,
+        game_state,
+    )
+    .map(|(route, _)| route)
+}
+
+/// [`auto_route`] with the route's MP cost. With an unbounded `budget` and
+/// no `gunboat` cap it prices an unreachable move -- the "costs 19 MP, you
+/// have 15" a refusal should tell the player. A `gunboat` budget prices the
+/// route under §5.24: the search state is (hex, went upstream yet).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn cheapest_route(
+    game_map: &GameMap,
+    placed_units: &Query<(Entity, &PlacedUnit)>,
+    placed: &PlacedUnit,
+    start: HexCoord,
+    goal: HexCoord,
+    budget: i16,
+    gunboat: Option<GunboatBudget>,
+    game_state: Option<&crate::GameStateResource>,
+) -> Option<(Vec<HexCoord>, i16)> {
     use std::cmp::Reverse;
     use std::collections::{BinaryHeap, HashMap};
-    let mut best: HashMap<HexCoord, i16> = HashMap::from([(start, 0)]);
-    let mut prev: HashMap<HexCoord, HexCoord> = HashMap::new();
-    let mut heap = BinaryHeap::from([Reverse((0i16, start.q, start.r))]);
-    while let Some(Reverse((cost, q, r))) = heap.pop() {
+    type Node = (HexCoord, bool);
+    let gs = game_state.map(|gs| &gs.0);
+    let limit = |up: bool| gunboat.map_or(budget, |g| budget.min(g.left(up)));
+    let start_node: Node = (start, false);
+    let mut best: HashMap<Node, i16> = HashMap::from([(start_node, 0)]);
+    let mut prev: HashMap<Node, Node> = HashMap::new();
+    let mut heap = BinaryHeap::from([Reverse((0i16, start.q, start.r, false))]);
+    while let Some(Reverse((cost, q, r, up))) = heap.pop() {
         let hex = HexCoord::new(q, r);
         if hex == goal {
             let mut route = vec![goal];
-            while let Some(&p) = prev.get(route.last()?) {
-                if p == start {
+            let mut node = (hex, up);
+            while let Some(&p) = prev.get(&node) {
+                if p.0 == start {
                     break;
                 }
-                route.push(p);
+                route.push(p.0);
+                node = p;
             }
             route.reverse();
-            return Some(route);
+            return Some((route, cost));
         }
-        if best.get(&hex).is_some_and(|&b| b < cost) {
+        if best.get(&(hex, up)).is_some_and(|&b| b < cost) {
             continue;
         }
         for next in hex.neighbors() {
@@ -324,13 +417,16 @@ pub(crate) fn auto_route(
             if (next != goal && leg.entering_enemy_zoc) || (next == goal && !leg.stacking_ok) {
                 continue;
             }
-            let total = cost + leg.cost;
-            if total > budget || best.get(&next).is_some_and(|&b| b <= total) {
+            let next_up =
+                up || (gunboat.is_some() && gs.is_some_and(|gs| step_is_upstream(gs, hex, next)));
+            let total = cost.saturating_add(leg.cost);
+            let node = (next, next_up);
+            if total > limit(next_up) || best.get(&node).is_some_and(|&b| b <= total) {
                 continue;
             }
-            best.insert(next, total);
-            prev.insert(next, hex);
-            heap.push(Reverse((total, next.q, next.r)));
+            best.insert(node, total);
+            prev.insert(node, (hex, up));
+            heap.push(Reverse((total, next.q, next.r, next_up)));
         }
     }
     None
@@ -513,6 +609,43 @@ mod tests {
             unit_id,
             disrupted: false,
         }
+    }
+
+    /// §5.24: route searches price a gunboat like the per-leg gate -- the
+    /// downstream allowance (16) until the route goes upstream, the upstream
+    /// one (10) after, both less what is spent and plotted. A 13-hex upstream
+    /// route that fits the 16 downstream MP used to be plotted, then cut
+    /// short silently at the gate.
+    #[test]
+    fn gunboat_budget_prices_routes_like_the_gate() {
+        let (mut gs, id, section) = gunboat_state();
+        let placed = boat_placement(HexCoord::new(3, 0), section, Some(id));
+        let empty = MovementPath::default();
+        let budget = GunboatBudget::of(Some(&gs), &placed, &empty).expect("a gunboat");
+        assert_eq!(budget.left(false), 16);
+        assert_eq!(budget.left(true), 10);
+
+        // Plotted MP count against both; a plotted upstream leg binds the cap.
+        let mut pending = MovementPath::default();
+        pending
+            .legs
+            .push((HexCoord::new(3, 0), HexCoord::new(2, 0)));
+        pending.cost_so_far = 1;
+        let budget = GunboatBudget::of(Some(&gs), &placed, &pending).expect("a gunboat");
+        assert_eq!(budget.left(false), 9);
+
+        // Sticky: an upstream move earlier this turn binds the cap too.
+        gs.0.gunboats_upstream_this_turn.push(id);
+        let budget = GunboatBudget::of(Some(&gs), &placed, &empty).expect("a gunboat");
+        assert_eq!(budget.left(false), 10);
+
+        // Land movers keep their scalar budget.
+        let land = PlacedUnit {
+            is_boat: false,
+            unit_id: None,
+            ..placed
+        };
+        assert!(GunboatBudget::of(Some(&gs), &land, &empty).is_none());
     }
 
     /// §5.24: the §5.24 sticky upstream cap and the whole-path upstream

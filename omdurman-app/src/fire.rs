@@ -336,6 +336,7 @@ type FireCacheKey = (Vec<(UnitId, FireKind)>, u64);
 pub(crate) struct FireTargetCache {
     fire: Option<(FireCacheKey, Vec<HexCoord>)>,
     walls: Option<((UnitId, u64), Vec<WallTarget>)>,
+    side: Option<(u64, usize)>,
 }
 
 impl FireTargetCache {
@@ -358,6 +359,27 @@ impl FireTargetCache {
             self.fire = Some((key, targets));
         }
         &self.fire.as_ref().expect("just cached").1
+    }
+
+    /// How many enemy-occupied hexes the side firing now may fire at with
+    /// any unit that has not fired yet -- zero means the phase has nothing
+    /// to do. Recomputed only when the state stamp changed.
+    pub(crate) fn side_target_count(&mut self, gs: &GameState) -> usize {
+        let key = fire_target_stamp(gs);
+        if !matches!(self.side, Some((k, _)) if k == key) {
+            let firer = gs.phase_player();
+            let mut targets: Vec<HexCoord> = gs
+                .units
+                .iter()
+                .filter(|u| u.profile.identity.owner() == firer)
+                .filter_map(|u| fire_kind_for(gs, u.id).map(|kind| (u.id, kind)))
+                .flat_map(|(id, kind)| valid_target_hexes(id, kind, gs))
+                .collect();
+            targets.sort_by_key(|h| (h.q, h.r));
+            targets.dedup();
+            self.side = Some((key, targets.len()));
+        }
+        self.side.expect("just cached").1
     }
 
     /// Wall hexsides battery `uid` may fire at (§6.63), nearest first,

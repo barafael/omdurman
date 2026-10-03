@@ -85,6 +85,7 @@ impl UnitPicker {
                 handle: handle.clone(),
                 is_boat: *is_boat,
                 visible: true,
+                offered: true,
                 egui_texture: None,
                 annotations_loaded: false,
             })
@@ -99,9 +100,22 @@ pub struct PickerUnit {
     pub row: u32,
     pub handle: Handle<Image>,
     pub is_boat: bool,
+    /// In this game's order of battle for this player at all (sprite cell is
+    /// a unit, scenario, faction, not eliminated). Sticky once cleared.
     pub visible: bool,
+    /// May be placed *now* -- set up in this scenario, or enter this turn
+    /// (§9.112/§9.113). Recomputed every frame.
+    pub offered: bool,
     pub egui_texture: Option<egui::TextureHandle>,
     pub annotations_loaded: bool,
+}
+
+impl PickerUnit {
+    /// Shown in the tray (and eligible for auto-next): in the order of
+    /// battle and placeable now.
+    pub fn shown(&self) -> bool {
+        self.visible && self.offered
+    }
 }
 
 #[derive(Resource, Default, Clone)]

@@ -705,6 +705,7 @@ fn sync_picker_tray(
                 handle,
                 is_boat,
                 visible: true,
+                offered: true,
                 egui_texture: None,
                 annotations_loaded: false,
             },
