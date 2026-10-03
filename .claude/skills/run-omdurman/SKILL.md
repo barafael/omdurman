@@ -163,8 +163,11 @@ signalling server.
 - **zsh is the login shell**: unquoted `$var` does not word-split; loops
   over `"q r"` pairs belong in `bash`. Never `pkill -f` a pattern that
   also appears in your own command line — `stop` uses `pgrep -x omdurman`.
-- **Both factions AI + Faction: Spectate** plays a whole scenario
-  unattended (good for end-of-game rules such as victory levels).
+- **Both factions AI + Faction: Spectate** plays a whole scenario (good
+  for end-of-game rules such as victory levels) -- but the host's AI waits
+  for each end-of-turn telegram to be read, so keep pressing Return:
+  `until grep -q game_over /tmp/omdurman-play/probe.state; do $D key Return; sleep 8; done`.
+  The probe's state line ends in `game_over result=...` once it is over.
 
 ## Troubleshooting
 

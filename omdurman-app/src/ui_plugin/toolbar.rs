@@ -14,10 +14,11 @@ pub(crate) fn mode_toolbar_ui(
     mut layout: ResMut<crate::ScreenLayout>,
     progress: (Res<crate::TurnState>, Res<crate::game_record::GameRecorder>),
     peers: Peers,
-    (mut zoc, mut los, room): (
+    (mut zoc, mut los, room, telegrams): (
         ResMut<crate::zoc::ZocOverlay>,
         ResMut<crate::los::LosOverlay>,
         Res<RoomId>,
+        Option<Res<crate::telegram::TelegramLog>>,
     ),
 ) {
     let game_in_progress = crate::game_in_progress(&progress.0, &progress.1);
@@ -101,7 +102,10 @@ pub(crate) fn mode_toolbar_ui(
                             && *app_state.get() == crate::AppState::InGame
                         {
                             ui.separator();
-                            turn_status(ui, &game_state.0, *machine.get(), &peers);
+                            let telegram_due = telegrams
+                                .as_ref()
+                                .is_some_and(|log| log.awaiting_ack(&game_state.0));
+                            turn_status(ui, &game_state.0, *machine.get(), &peers, telegram_due);
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
@@ -172,6 +176,7 @@ fn turn_status(
     gs: &omdurman_rules::effects::GameState,
     machine: crate::ui_phase_state::UiPhaseState,
     peers: &Peers,
+    telegram_due: bool,
 ) {
     use crate::ui::palette;
     use crate::ui_phase_state::UiPhaseState;
@@ -240,7 +245,14 @@ fn turn_status(
             );
             ui.separator();
             let actor = machine.acting_player().unwrap_or(active);
-            if peers.paused() {
+            if telegram_due {
+                // The host's AI holds its moves until the turn's telegram
+                // is read here (`TelegramLog::awaiting_ack`).
+                (
+                    "Waiting for the turn's telegram (Enter to read on)".to_string(),
+                    palette::TEXT_DIM,
+                )
+            } else if peers.paused() {
                 (
                     "Paused \u{2014} waiting for a commander to return\u{2026}".to_string(),
                     palette::CAUTION,
