@@ -1193,6 +1193,15 @@ fn demolition_actions(state: &GameState, out: &mut Vec<GameEffect>) {
     }
 }
 
+/// The side besieging the scenario's walled city (§6.63): the Dervish at
+/// Khartoum, the Anglo-Egyptians at Omdurman.
+fn wall_besieger(scenario: Scenario) -> Player {
+    match scenario {
+        Scenario::FallOfKhartoum => Player::Dervish,
+        Scenario::Campaign | Scenario::Historical => Player::AngloEgyptian,
+    }
+}
+
 /// Artillery breaching of a Wall hexside (§6.63). The engine fully validates
 /// the target (must be a Wall), range and LOS via `can_fire_at_wall`, so this
 /// is clone-and-try over (artillery firer × Wall hexside). The Wall set is
@@ -1205,6 +1214,11 @@ fn artillery_breach_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<G
         return;
     }
     let firer = state.phase_player();
+    // §6.63 lets any artillery fire at any wall, but breaching one's own
+    // wall only opens it to the enemy.
+    if firer != wall_besieger(state.scenario) {
+        return;
+    }
     let artillery: Vec<UnitId> = state
         .units
         .iter()
@@ -1345,6 +1359,48 @@ mod campaign_schedule_tests {
         state.phase = Phase::Movement;
         state.active_player = player;
         state
+    }
+
+    /// Breach actions offered to `player`'s artillery standing at `at`
+    /// (beside the Omdurman wall) in its defensive direct-fire subphase.
+    fn breaches_offered(player: Player, identity: UnitIdentity, at: HexCoord) -> usize {
+        let mut state = campaign_movement(player.opponent());
+        state.phase = Phase::DefensiveFire(omdurman_rules::FireSubPhase::DirectFire);
+        let id = UnitId::ALL
+            .iter()
+            .copied()
+            .find(|&id| profile_for_unit(id).is_some_and(|p| p.identity == identity))
+            .expect("a counter with that identity");
+        state.units.push(omdurman_rules::UnitPlacement {
+            id,
+            position: at,
+            profile: profile_for_unit(id).unwrap(),
+            state: UnitState::default(),
+        });
+        let mut out = Vec::new();
+        artillery_breach_actions(&state, &mut crate::rng::BotRng::from_seed(5), &mut out);
+        out.iter()
+            .filter(|e| matches!(e, GameEffect::ArtilleryBreachWall { .. }))
+            .count()
+    }
+
+    #[test]
+    fn campaign_dervish_never_breach_their_own_wall() {
+        // A Dervish fort at (28,38) faces the Omdurman wall to (28,39) and
+        // used to pound it every fire phase, opening its own city.
+        let wall_side = HexCoord::new(28, 38);
+        assert_eq!(
+            breaches_offered(Player::Dervish, UnitIdentity::DervishFort, wall_side),
+            0
+        );
+        assert!(
+            breaches_offered(
+                Player::AngloEgyptian,
+                UnitIdentity::AngloEgyptianArtillery,
+                wall_side
+            ) > 0,
+            "the besieger's artillery may still breach (§6.63)"
+        );
     }
 
     #[test]
