@@ -208,11 +208,7 @@ fn historical_scoreboard(ui: &mut egui::Ui, state: &crate::GameStateResource) {
     use omdurman_types::Player;
     let ledger = &state.0.victory;
     let (ae, d) = ledger.historical_levels();
-    ui.label(
-        egui::RichText::new("Score")
-            .strong()
-            .color(crate::ui::palette::HEADING),
-    );
+    crate::ui::section_header(ui, "Score");
     for (who, level) in [(Player::AngloEgyptian, ae), (Player::Dervish, d)] {
         let killed = ledger.units_eliminated_by(who);
         let next = level
@@ -221,7 +217,11 @@ fn historical_scoreboard(ui: &mut egui::Ui, state: &crate::GameStateResource) {
             .unwrap_or_default();
         ui.colored_label(
             crate::ui::faction_color(who),
-            format!("{who}: {killed} eliminated, {}{next}", level.name()),
+            format!(
+                "{who}: destroyed {killed} {} units -- {}{next}",
+                who.opponent(),
+                level.name()
+            ),
         );
     }
     let (text, color) = match Level::net(ae, d) {

@@ -125,7 +125,10 @@ pub fn build_newspaper_prompt(
         "\nKeep to 2-4 brief paragraphs, at most 250 words total — stay well \
          under the limit and finish with a closing sentence, never cut off \
          mid-thought. Victorian newspaper tone. \
-         Do not repeat the headline or subhead in the body.",
+         Do not repeat the headline or subhead in the body. \
+         Never invent numbers -- casualty figures, men, guns or units -- \
+         nor commanders or places the facts above do not give: describe \
+         losses in words (heavy, light), not in figures.",
     );
 
     prompt
