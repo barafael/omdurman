@@ -253,9 +253,10 @@ pub(super) fn animate_splash_maps(
         _ => return,
     };
     maps.advance(time.delta_secs().min(MAP_MAX_STEP_SECS), pan_speed);
-    // The pan is a continuous animation (the lobby's backdrop too).
+    // The pan is slow continuous motion (the lobby's backdrop too): ambient
+    // frames are enough.
     if maps.is_animating() {
-        activity.keep_running();
+        activity.keep_ambient();
     }
 }
 

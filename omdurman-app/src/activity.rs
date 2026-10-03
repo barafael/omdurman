@@ -30,18 +30,34 @@ use bevy::winit::{UpdateMode, WinitSettings};
 pub const FOCUSED_WAIT: Duration = Duration::from_millis(100);
 /// The same for an unfocused window: other players' moves still arrive.
 pub const UNFOCUSED_WAIT: Duration = Duration::from_millis(500);
+/// Frame rate for slow ambient motion (the title screen's and the lobby's
+/// panning maps). They drift at most ~11 points a second (the lobby half
+/// that), so at this rate a frame moves the blurred map by under a point;
+/// display-rate frames only redrew sub-pixel steps, at ~95% CPU (15 fps:
+/// ~13%).
+pub const AMBIENT_FPS: f32 = 15.0;
+/// The same for an unfocused window: still drifting, at a few frames a
+/// second, for a menu left open on another screen.
+pub const AMBIENT_UNFOCUSED_FPS: f32 = 5.0;
 
 /// Something on screen or in the game loop needs the next frame now: set by
 /// the animating systems during a frame, consumed by [`request_redraws`].
 #[derive(Resource, Default, Debug)]
 pub struct Activity {
     busy: bool,
+    ambient: bool,
 }
 
 impl Activity {
     /// Ask for another frame right after this one.
     pub fn keep_running(&mut self) {
         self.busy = true;
+    }
+
+    /// Ask for frames at [`AMBIENT_FPS`]: slow continuous motion that needs
+    /// regular frames, but not every display refresh.
+    pub fn keep_ambient(&mut self) {
+        self.ambient = true;
     }
 
     /// Whether some system asked for another frame this frame.
@@ -57,18 +73,15 @@ pub struct ActivityPlugin;
 
 impl Plugin for ActivityPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(WinitSettings {
-            focused_mode: UpdateMode::reactive(FOCUSED_WAIT),
-            unfocused_mode: UpdateMode::reactive_low_power(UNFOCUSED_WAIT),
-        })
-        .init_resource::<Activity>()
-        .add_systems(
-            PreUpdate,
-            drop_unchanged_modifiers
-                .after(bevy_egui::EguiPreUpdateSet::ProcessInput)
-                .before(bevy_egui::EguiPreUpdateSet::BeginPass),
-        )
-        .add_systems(Last, (camera_activity, request_redraws).chain());
+        app.insert_resource(pacing(false))
+            .init_resource::<Activity>()
+            .add_systems(
+                PreUpdate,
+                drop_unchanged_modifiers
+                    .after(bevy_egui::EguiPreUpdateSet::ProcessInput)
+                    .before(bevy_egui::EguiPreUpdateSet::BeginPass),
+            )
+            .add_systems(Last, (camera_activity, request_redraws).chain());
     }
 }
 
@@ -106,22 +119,89 @@ pub fn drop_unchanged_modifiers(
 }
 
 /// End of the frame: if anything asked to keep running, request the next
-/// frame at once (instead of waiting for input or the timeout), then clear
-/// the flag for the next frame.
+/// frame at once (instead of waiting for input or the timeout); for ambient
+/// motion only, shorten the reactive wait to the ambient frame time. Then
+/// clear the flags for the next frame.
 pub fn request_redraws(
     mut activity: ResMut<Activity>,
     redraw: Option<ResMut<Messages<RequestRedraw>>>,
+    settings: Option<ResMut<WinitSettings>>,
 ) {
-    if std::mem::take(&mut activity.busy)
-        && let Some(mut redraw) = redraw
-    {
+    let busy = std::mem::take(&mut activity.busy);
+    let ambient = std::mem::take(&mut activity.ambient);
+    if busy && let Some(mut redraw) = redraw {
         redraw.write(RequestRedraw);
     }
+    // Write only on a change: the pacing stays put for whole screens.
+    let want = pacing(ambient && !busy);
+    if let Some(mut settings) = settings
+        && (settings.focused_mode != want.focused_mode
+            || settings.unfocused_mode != want.unfocused_mode)
+    {
+        *settings = want;
+    }
+}
+
+/// The frame pacing: the idle waits, or the ambient frame times.
+fn pacing(ambient: bool) -> WinitSettings {
+    if ambient {
+        let frame = |fps: f32| Duration::from_secs_f32(1.0 / fps);
+        WinitSettings {
+            focused_mode: UpdateMode::reactive(frame(ambient_fps())),
+            unfocused_mode: UpdateMode::reactive_low_power(frame(AMBIENT_UNFOCUSED_FPS)),
+        }
+    } else {
+        WinitSettings {
+            focused_mode: UpdateMode::reactive(FOCUSED_WAIT),
+            unfocused_mode: UpdateMode::reactive_low_power(UNFOCUSED_WAIT),
+        }
+    }
+}
+
+/// [`AMBIENT_FPS`], or `OMDURMAN_AMBIENT_FPS` when set (for measuring).
+fn ambient_fps() -> f32 {
+    std::env::var("OMDURMAN_AMBIENT_FPS")
+        .ok()
+        .and_then(|v| v.parse::<f32>().ok())
+        .filter(|fps| *fps > 0.0)
+        .unwrap_or(AMBIENT_FPS)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ambient_motion_paces_frames_without_forcing_them() {
+        let mut app = App::new();
+        app.add_message::<RequestRedraw>()
+            .init_resource::<Activity>()
+            .insert_resource(pacing(false))
+            .add_systems(Last, request_redraws);
+        let wait = |app: &App| match app.world().resource::<WinitSettings>().focused_mode {
+            UpdateMode::Reactive { wait, .. } => wait,
+            UpdateMode::Continuous => Duration::ZERO,
+        };
+
+        app.world_mut().resource_mut::<Activity>().keep_ambient();
+        app.update();
+        assert_eq!(
+            app.world_mut()
+                .resource_mut::<Messages<RequestRedraw>>()
+                .drain()
+                .count(),
+            0,
+            "ambient motion asks for no immediate frame"
+        );
+        assert_eq!(wait(&app), Duration::from_secs_f32(1.0 / ambient_fps()));
+
+        app.update();
+        assert_eq!(
+            wait(&app),
+            FOCUSED_WAIT,
+            "back to the idle wait once it stops"
+        );
+    }
 
     #[test]
     fn a_busy_frame_requests_the_next_and_then_resets() {

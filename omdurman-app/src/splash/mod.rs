@@ -270,10 +270,8 @@ fn splash_ui(
     };
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
-    // The map moves (`map::animate_splash_maps`): keep repainting.
-    if maps.is_animating() {
-        ctx.request_repaint();
-    }
+    // The moving map gets its frames from `map::animate_splash_maps` (ambient
+    // pacing); an egui repaint request here would force display-rate frames.
 
     let game_enabled = crate::game_in_progress(&progress.0, &progress.1);
     // A destination the player picked this frame, applied after the UI closure.

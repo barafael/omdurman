@@ -240,10 +240,9 @@ pub fn lobby_ui(
     let Ok(egui_ctx) = contexts.ctx_mut() else {
         return;
     };
-    // The background map moves (`splash::map::animate_splash_maps`).
-    if splash_maps.is_animating() {
-        egui_ctx.request_repaint();
-    }
+    // The background map gets its frames from
+    // `splash::map::animate_splash_maps` (ambient pacing); an egui repaint
+    // request here would force display-rate frames.
 
     let roster = build_roster(
         &net,
