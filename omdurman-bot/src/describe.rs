@@ -550,6 +550,7 @@ pub fn describe_observation(obs: &Observation) -> String {
 /// Render a structured turn event as a one-line dispatch (§4 turn record).
 pub fn describe_turn_event(ev: &TurnEventRecord) -> String {
     match ev {
+        TurnEventRecord::WallBreach { .. } => ev.format_for_dispatch(),
         TurnEventRecord::HowitzerImpact { at, scattered } => {
             if *scattered {
                 format!("Howitzer shell scattered to {}", hex(*at))

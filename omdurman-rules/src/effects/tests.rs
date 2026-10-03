@@ -5454,6 +5454,60 @@ mod tests {
         );
     }
 
+    #[test]
+    fn campaign_set_up_offers_only_the_dervish_initial_force() {
+        // §9.111/§9.113: the Anglo-Egyptians deploy nothing at Campaign
+        // set-up; the Dervish forts and Taiasha do.
+        let state = GameState::new(Scenario::Campaign);
+        let in_play = |owner: Player| {
+            UnitId::ALL
+                .iter()
+                .filter(|&&id| {
+                    crate::unit_profiles::profile_for_unit(id)
+                        .is_some_and(|p| p.identity.owner() == owner)
+                        && state.counter_in_play_at_setup(id)
+                })
+                .count()
+        };
+        assert_eq!(in_play(Player::AngloEgyptian), 0);
+        assert!(in_play(Player::Dervish) >= 38);
+    }
+
+    #[test]
+    fn breach_attempts_record_a_wall_breach_not_fire_combat() {
+        // The turn record feeds the telegram: a breach roll's CRT cell is not
+        // casualties, so it must not read as a fire combat.
+        for r in [1u16, 10] {
+            let mut state = GameState::new(Scenario::Campaign);
+            state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+            state.active_player = Player::AngloEgyptian;
+            let arty = make_ae_artillery(&mut state, HexCoord::new(0, 0));
+            let wall = omdurman_types::HexsideRef::new(HexCoord::new(1, 0), HexCoord::new(2, 0));
+            board_mut(&mut state)
+                .hexsides
+                .insert(wall, HexsideKind::Wall);
+            apply_effect(
+                &mut state,
+                &GameEffect::ArtilleryBreachWall {
+                    firers: vec![arty],
+                    target: wall,
+                    roll: DieRoll::try_from(r).unwrap(),
+                },
+            )
+            .unwrap();
+            let breached = state.breaches.contains(&wall);
+            assert!(
+                matches!(
+                    state.turn_events.as_slice(),
+                    [TurnEventRecord::WallBreach { hexside, breached: b, eliminated: None, .. }]
+                        if *hexside == wall && *b == breached
+                ),
+                "roll {r}: {:?}",
+                state.turn_events
+            );
+        }
+    }
+
     #[rulebook("§6.63")]
     #[test]
     fn artillery_breaches_wall_only_on_crt_two_or_better() {

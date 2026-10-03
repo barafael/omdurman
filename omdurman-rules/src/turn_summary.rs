@@ -7,6 +7,7 @@ use crate::{
     CombatResult, DayNight, DieRoll, FireKind, FireModifier, GameTurnIndex, HexCoord, Player,
     UnitId, VictoryPoints, VpSource,
 };
+use omdurman_types::HexsideRef;
 
 /// A single structured event recorded during a game turn.
 ///
@@ -75,6 +76,17 @@ pub enum TurnEventRecord {
         source: VpSource,
         points: VictoryPoints,
         for_player: Player,
+    },
+    /// Artillery fired to breach a wall hexside (§6.63) -- a CRT roll, but
+    /// no fire combat: its result is the breach, not casualties.
+    WallBreach {
+        attacker: Player,
+        firers: Vec<UnitId>,
+        hexside: HexsideRef,
+        roll: DieRoll,
+        breached: bool,
+        /// The adjacent enemy unit caught in a successful breach.
+        eliminated: Option<UnitId>,
     },
 }
 
@@ -211,6 +223,23 @@ impl TurnEventRecord {
             } => {
                 format!("{for_player} scores {} VP: {source}", points.value())
             }
+            TurnEventRecord::WallBreach {
+                attacker,
+                hexside,
+                breached,
+                eliminated,
+                ..
+            } => {
+                let at = format!("{}-{}", hex(&hexside.a), hex(&hexside.b));
+                match (breached, eliminated) {
+                    (false, _) => format!("{attacker} artillery failed to breach the wall at {at}"),
+                    (true, None) => format!("{attacker} artillery breached the wall at {at}"),
+                    (true, Some(victim)) => format!(
+                        "{attacker} artillery breached the wall at {at}; {} caught in the breach",
+                        unit_name(victim)
+                    ),
+                }
+            }
         }
     }
 }
@@ -230,15 +259,83 @@ impl TurnSummary {
             if no_vp && matches!(event, TurnEventRecord::VpScored { .. }) {
                 continue;
             }
-            out.push_str(&format!("- {}\n", event.format_for_dispatch()));
+            out.push_str(&format!(
+                "- {}\n",
+                without_hexes(&event.format_for_dispatch())
+            ));
         }
         out
     }
 }
 
+/// `line` without its hex coordinates ("(13, 5)") and the preposition
+/// before each (" at", " from", " to", " on", a hexside's "-"): the model
+/// quoted them back, and a reader cannot place them.
+fn without_hexes(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut rest = line;
+    while let Some(open) = rest.find('(') {
+        let (before, from_paren) = rest.split_at(open);
+        let close = from_paren.find(')');
+        let is_hex = close.is_some_and(|close| {
+            let inner = &from_paren[1..close];
+            inner.split_once(", ").is_some_and(|(q, r)| {
+                [q, r].iter().all(|n| {
+                    !n.is_empty()
+                        && n.trim_start_matches('-')
+                            .chars()
+                            .all(|c| c.is_ascii_digit())
+                })
+            })
+        });
+        match close {
+            Some(close) if is_hex => {
+                let mut kept = before;
+                for prep in [" at ", " from ", " to ", " on ", "-"] {
+                    if let Some(stripped) = kept.strip_suffix(prep) {
+                        kept = stripped;
+                        break;
+                    }
+                }
+                out.push_str(kept);
+                rest = &from_paren[close + 1..];
+            }
+            _ => {
+                out.push_str(before);
+                out.push('(');
+                rest = &from_paren[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The model's copy of the turn carries no hex coordinates (it quoted
+    /// them back); other parentheses survive.
+    #[test]
+    fn llm_lines_drop_hex_coordinates() {
+        assert_eq!(
+            without_hexes("Mulazmin retreated from (13, 5) to (14, 6)"),
+            "Mulazmin retreated"
+        );
+        assert_eq!(
+            without_hexes("Dervish fire at (40, 12): rolled 4 -> NoEffect"),
+            "Dervish fire: rolled 4 -> NoEffect"
+        );
+        assert_eq!(
+            without_hexes("Dervish artillery failed to breach the wall at (28, 38)-(28, 39)"),
+            "Dervish artillery failed to breach the wall"
+        );
+        assert_eq!(
+            without_hexes("Anglo-Egyptian reinforcements (Gunboat Naser) placed at (28, 0)"),
+            "Anglo-Egyptian reinforcements (Gunboat Naser) placed"
+        );
+    }
 
     /// Dispatch lines (shown to players and fed to the flavour-text model)
     /// name units and hexes the way the board does, never by internal id.

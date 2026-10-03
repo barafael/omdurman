@@ -1198,16 +1198,13 @@ pub fn apply_artillery_breach_wall(
         row: Some(row),
         adjacent_eliminated,
     });
-    state.turn_events.push(TurnEventRecord::FireCombat {
+    state.turn_events.push(TurnEventRecord::WallBreach {
         attacker: firing_player,
         firers: firers.to_vec(),
-        target: target.a,
+        hexside: target,
         roll,
-        modifiers: Vec::new(),
-        total_modifier: 0,
-        result,
-        kind: FireKind::Direct,
-        eliminated: adjacent_eliminated.into_iter().collect(),
+        breached,
+        eliminated: adjacent_eliminated,
     });
 
     Ok(())
