@@ -2573,7 +2573,9 @@ pub mod build_support {
 
     /// Scan `sprite_dir` for `<name>_<col>_<row>.webp` files and write the
     /// generated `sprites.rs` index (a `SPRITE_PATHS: &[(&str, u32, u32)]`
-    /// static) into Cargo's `OUT_DIR`. Registers rerun-if-changed notices.
+    /// static) and `sprite_bytes.rs` (`SPRITE_BYTES: &[(&str, &[u8])]`, the
+    /// files `include_bytes!`d) into Cargo's `OUT_DIR`. Registers
+    /// rerun-if-changed notices.
     pub fn generate_sprite_index(sprite_dir: &Path) {
         let mut entries: Vec<String> = Vec::new();
         // An unreadable dir must fail the build: an empty index compiles
@@ -2621,6 +2623,20 @@ pub mod build_support {
         code.push_str("];\n");
 
         std::fs::write(&out_path, &code).unwrap();
+
+        // The sprite bytes themselves (`sprite_bytes.rs`), for a binary that
+        // embeds them: index and images come from one scan, so they cannot
+        // drift apart.
+        let mut bytes = String::from("pub static SPRITE_BYTES: &[(&str, &[u8])] = &[\n");
+        for e in &entries {
+            let file = sprite_dir.join(format!("{e}.webp"));
+            bytes.push_str(&format!(
+                "    (\"{e}\", include_bytes!({:?})),\n",
+                file.display().to_string()
+            ));
+        }
+        bytes.push_str("];\n");
+        std::fs::write(Path::new(&out).join("sprite_bytes.rs"), &bytes).unwrap();
 
         for entry in &entries {
             println!(

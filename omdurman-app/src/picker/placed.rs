@@ -609,7 +609,9 @@ pub fn reconcile_unit_sprites(
             .iter()
             .find(|(sn, c, r, _, _)| *sn == section && *c == col && *r == row)
             .map(|(_, _, _, h, _)| h.clone())
-            .unwrap_or_else(|| asset_server.load(format!("sprites/{section}_{col}_{row}.webp")));
+            .unwrap_or_else(|| {
+                asset_server.load(super::sprite_asset_path(&format!("{section}_{col}_{row}")))
+            });
         let hex = unit.position;
         let entity = spawn_placed_unit(
             &mut commands,
