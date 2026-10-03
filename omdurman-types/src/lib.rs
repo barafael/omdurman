@@ -2576,7 +2576,11 @@ pub mod build_support {
     /// static) into Cargo's `OUT_DIR`. Registers rerun-if-changed notices.
     pub fn generate_sprite_index(sprite_dir: &Path) {
         let mut entries: Vec<String> = Vec::new();
-        if let Ok(dir) = std::fs::read_dir(sprite_dir) {
+        // An unreadable dir must fail the build: an empty index compiles
+        // fine but leaves the counter tray silently empty.
+        let dir = std::fs::read_dir(sprite_dir)
+            .unwrap_or_else(|e| panic!("sprite dir {}: {e}", sprite_dir.display()));
+        {
             for entry in dir.flatten() {
                 let path = entry.path();
                 if path.extension().and_then(|s| s.to_str()) != Some("webp") {
@@ -2597,6 +2601,11 @@ pub mod build_support {
                 }
             }
         }
+        assert!(
+            !entries.is_empty(),
+            "no <name>_<col>_<row>.webp sprites in {}",
+            sprite_dir.display()
+        );
         entries.sort();
 
         let out = std::env::var("OUT_DIR").unwrap();
