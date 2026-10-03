@@ -29,7 +29,7 @@ pub fn spawn_picker_assets(mut picker: ResMut<UnitPicker>, asset_server: Res<Ass
     for &(filename, col, row) in generated::SPRITE_PATHS {
         if let Some(section_name) = bucket_section(order, filename, col, row) {
             let idx = order.iter().position(|s| *s == section_name).unwrap();
-            let path = format!("sprites/{}.webp", filename);
+            let path = super::sprite_asset_path(filename);
             let handle = asset_server.load(&path);
             section_sprites[idx].push(PickerUnit {
                 section_name,

@@ -44,12 +44,35 @@ pub use state::*;
 
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/sprites.rs"));
+    include!(concat!(env!("OUT_DIR"), "/sprite_bytes.rs"));
 }
 
 pub struct GamePlugin;
 
+/// The asset path of counter sprite `name` (`<section>_<col>_<row>`): the
+/// sprites are baked into the binary (see [`register_embedded_sprites`]),
+/// not read from `assets/sprites/` at run time.
+pub(crate) fn sprite_asset_path(name: &str) -> String {
+    format!("embedded://sprites/{name}.webp")
+}
+
+/// Register every counter sprite with Bevy's `embedded://` asset source, so
+/// the game never depends on finding `assets/sprites/` beside the binary
+/// (or, on the web, on 240 separate fetches), and the sprite index and the
+/// images come from the same build.
+fn register_embedded_sprites(app: &mut App) {
+    let registry = app
+        .world_mut()
+        .resource_mut::<bevy::asset::io::embedded::EmbeddedAssetRegistry>();
+    for &(name, bytes) in generated::SPRITE_BYTES {
+        let path = std::path::PathBuf::from(format!("sprites/{name}.webp"));
+        registry.insert_asset(path.clone(), &path, bytes);
+    }
+}
+
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
+        register_embedded_sprites(app);
         app
             // -- Resources ----------------------------------------------
             .insert_resource(UnitPicker::default())
