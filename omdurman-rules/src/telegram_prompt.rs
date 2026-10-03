@@ -32,7 +32,8 @@ pub fn build_telegram_prompt(summary: &TurnSummary, scenario: Scenario) -> (Stri
          - Report only the events listed. Never invent units, commanders, \
          casualty figures, places or reinforcements that the data does not \
          name; if nothing is listed, report that the lines held.\n\
-         - Name specific units and locations when the data provides them.\n\
+         - Name specific units when the data provides them. Never quote hex \
+         coordinates such as (12, 5): readers cannot place them.\n\
          {vp_rule}\
          - One short paragraph, 2-4 sentences, at most 80 words.\n\
          - Do not add a header, greeting, or signature."

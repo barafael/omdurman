@@ -651,6 +651,21 @@ impl GameState {
         Some(cap.saturating_sub(already))
     }
 
+    /// Whether counter `id` may deploy at setup in this scenario at all --
+    /// the order-of-battle half of [`Self::can_deploy_unit`], with no hex.
+    /// The set-up tray offers only these counters.
+    pub fn counter_in_play_at_setup(&self, id: UnitId) -> bool {
+        crate::unit_profiles::profile_for_unit(id).is_some_and(|profile| {
+            self.unit_in_play_at_setup(&UnitPlacement {
+                id,
+                position: HexCoord::new(0, 0),
+                profile,
+                state: Default::default(),
+            })
+            .is_ok()
+        })
+    }
+
     /// Whether `profile` belongs to a unit that may be on the board at setup
     /// in the current scenario (§9.111 Campaign initial force; §9.211/§9.212
     /// Historical not-in-play lists; §9.321/§9.322 Fall of Khartoum orders of
