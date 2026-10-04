@@ -498,10 +498,17 @@ pub fn front_page(state: &GameState, telegrams: &[(u8, String)]) -> FrontPage {
         .iter()
         .map(|(turn, text)| {
             let (date, time) = when(*turn);
-            let head = fill(
-                pick(TELEGRAM_HEADS, salt(&[game_salt, u64::from(*turn), 99])),
-                &[("date", &date), ("time", &time)],
-            );
+            // 1885: Gordon's messages came by runner, the news of the fall
+            // by telegraph from Korti (see `telegram::filed`).
+            use super::telegram::Filed;
+            let head = match super::telegram::filed(state, *turn) {
+                Filed::RunnerFromKhartoum => format!("{date}, {time} (by runner)"),
+                Filed::TelegraphFromKorti => format!("Korti, {date} (by telegraph)"),
+                Filed::FieldTelegraph => fill(
+                    pick(TELEGRAM_HEADS, salt(&[game_salt, u64::from(*turn), 99])),
+                    &[("date", &date), ("time", &time)],
+                ),
+            };
             (head, super::telegram::telegraphese(text))
         })
         .collect();
@@ -709,6 +716,14 @@ mod tests {
             vec![],
         );
         state.gordon_eliminated_turn = Some(GameTurnIndex::new(3));
+        // Gordon's messages came by runner; the fall, by telegraph from Korti.
+        let heads: Vec<String> = front_page(&state, &[(2, "A".into()), (3, "B".into())])
+            .telegrams
+            .into_iter()
+            .map(|(head, _)| head)
+            .collect();
+        assert!(heads[0].ends_with("(by runner)"), "{heads:?}");
+        assert!(heads[1].starts_with("Korti"), "{heads:?}");
         let page = front_page(&state, &[]);
         let text = page.lead.paragraphs.join(" ");
         assert!(text.contains("Gordon"), "{text}");
