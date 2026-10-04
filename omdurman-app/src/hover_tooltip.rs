@@ -205,7 +205,11 @@ fn draw_hover_tooltip(
                                 .first()
                                 .and_then(|&s| placed_units.get(s).ok())
                                 .and_then(|(_, p)| p.unit_id)
-                                .map(|id| (id, sel.remaining_mp.iter().copied().max())),
+                                .map(|id| {
+                                    let min = sel.remaining_mp.iter().copied().min().unwrap_or(0);
+                                    let max = sel.remaining_mp.iter().copied().max().unwrap_or(0);
+                                    (id, Some((min, max)))
+                                }),
                             _ => None,
                         };
                         let hint = if let Some((unit_id, left)) = stack_pick {
@@ -295,7 +299,7 @@ type RouteKey = (
 fn route_hint(
     game_state: Option<&crate::GameStateResource>,
     placed_units: &Query<(Entity, &crate::picker::PlacedUnit)>,
-    (unit_id, hex, stack_left): (omdurman_rules::UnitId, HexCoord, Option<i16>),
+    (unit_id, hex, stack_left): (omdurman_rules::UnitId, HexCoord, Option<(i16, i16)>),
     game_map: &GameMap,
     movement_path: &crate::picker::MovementPath,
     cache: &mut Option<(RouteKey, Option<String>)>,
@@ -328,9 +332,11 @@ fn route_hint(
             .find(|(_, p)| p.unit_id == Some(unit_id))?;
         // A stack moves as far as its fastest unit can (the stack's own
         // budget, plotted legs already charged); a unit, its engine budget.
-        let left = stack_left.unwrap_or_else(|| {
-            gs.remaining_movement(unit_id)
-                .saturating_sub(movement_path.cost_so_far)
+        let (slowest, left) = stack_left.unwrap_or_else(|| {
+            let own = gs
+                .remaining_movement(unit_id)
+                .saturating_sub(movement_path.cost_so_far);
+            (own, own)
         });
         let gunboat = crate::picker::GunboatBudget::of(game_state, placed, movement_path);
         let route = crate::picker::cheapest_route(
@@ -344,9 +350,14 @@ fn route_hint(
             game_state,
         );
         Some(match route {
+            // A stack's slower units drop off where their budget ends.
+            Some((_, cost)) if cost > slowest => format!(
+                "Route here: {cost} MP \u{2014} only the faster units get there; those with \
+                 {slowest} MP stop on the way (\u{00a7}5.11)."
+            ),
             Some((_, cost)) => format!(
                 "Route here: {cost} MP, {} left after \u{2014} click to plot it (\u{00a7}5.11).",
-                left - cost
+                slowest - cost
             ),
             None => match crate::picker::cheapest_route(
                 game_map,
