@@ -6,7 +6,7 @@
 use omdurman_types::{HexCoord, Player, Scenario};
 
 use super::phrases::TELEGRAM as T;
-use super::{Bank, and_list, field_force, number_word, pick, salt, whereabouts};
+use super::{Bank, field_force, number_word, pick, salt, whereabouts};
 use crate::effects::{ElimCause, GameState};
 use crate::turn_summary::{TurnEventRecord, TurnSummary};
 use crate::{CombatResult, UnitId, UnitIdentity, VpSource};
@@ -77,6 +77,13 @@ fn wire_list(units: &[UnitId], scenario: Scenario) -> String {
             names.join(" and ")
         )
     }
+}
+
+/// A list as the clerk keys it: the wire drops commas, so every item is
+/// joined by "and" ("the Sirdar and General Hunter and cavalry", not
+/// "THE SIRDAR GENERAL HUNTER AND CAVALRY").
+fn wire_and(items: &[String]) -> String {
+    items.join(" and ")
 }
 
 /// Distinct names in first-seen order, at most `cap`.
@@ -216,7 +223,7 @@ fn event_facts(state: &GameState, summary: &TurnSummary) -> Vec<Fact> {
         facts.push(
             Fact::new(3, 11, T.enemy_losses)
                 .with("n", number_word(their_lost.len()))
-                .with("tribes", and_list(&tribes))
+                .with("tribes", wire_and(&tribes))
                 .with("place", place(usual(&at))),
         );
     }
@@ -233,7 +240,7 @@ fn event_facts(state: &GameState, summary: &TurnSummary) -> Vec<Fact> {
                         "Friendlies".to_string()
                     }
                     UnitIdentity::AngloEgyptianInfantry { brigade, .. } => {
-                        format!("{brigade} brigade")
+                        format!("{} Brigade", super::brigade_words(brigade))
                     }
                     UnitIdentity::AngloEgyptianLeader(crate::BritishLeader::Kitchener) => {
                         "the Sirdar".into()
@@ -252,7 +259,7 @@ fn event_facts(state: &GameState, summary: &TurnSummary) -> Vec<Fact> {
         facts.push(
             Fact::new(4, 13, T.our_arrivals)
                 .with("n", number_word(our_arrivals.len()))
-                .with("units", and_list(&kinds)),
+                .with("units", wire_and(&kinds)),
         );
     }
     if !their_arrivals.is_empty() {
@@ -268,7 +275,7 @@ fn event_facts(state: &GameState, summary: &TurnSummary) -> Vec<Fact> {
         facts.push(
             Fact::new(4, 14, T.enemy_arrivals)
                 .with("n", number_word(their_arrivals.len()))
-                .with("tribes", and_list(&tribes))
+                .with("tribes", wire_and(&tribes))
                 .with("place", place(usual(&at))),
         );
     }
@@ -363,15 +370,26 @@ pub fn telegram(state: &GameState, summary: &TurnSummary) -> String {
 /// The facts as sentences (ordinary case, before telegraphese).
 fn word(facts: &[Fact], summary: &TurnSummary, scenario: Scenario) -> Vec<String> {
     let turn = u64::from(summary.turn.value());
-    facts
-        .iter()
-        .map(|fact| {
-            let wording = pick(fact.bank, salt(&[turn, fact.kind, scenario as u64]));
-            let values: Vec<(&str, &str)> =
-                fact.values.iter().map(|(k, v)| (*k, v.as_str())).collect();
-            super::fill(wording, &values)
-        })
-        .collect()
+    // A place named by the sentence before is "there" ("hand to hand
+    // fighting at Abu Alim. Friendlies cut up there"), not named again.
+    let mut last_place: Option<&str> = None;
+    let mut out = Vec::with_capacity(facts.len());
+    for fact in facts {
+        let wording = pick(fact.bank, salt(&[turn, fact.kind, scenario as u64]));
+        let mut values: Vec<(&str, &str)> =
+            fact.values.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        let place = values.iter_mut().find(|(k, _)| *k == "place");
+        let here = place.as_ref().map(|(_, v)| *v).filter(|v| !v.is_empty());
+        if let Some((_, v)) = place
+            && here.is_some()
+            && here == last_place
+        {
+            *v = "there";
+        }
+        last_place = here;
+        out.push(super::fill(wording, &values));
+    }
+    out
 }
 
 /// What happened in `summary`'s turn as plain sentences for the
@@ -555,6 +573,41 @@ mod tests {
         assert!(text.contains("TWO") || text.contains("BAGGARA"), "{text}");
         // Deterministic: the same turn reads the same.
         assert_eq!(text, telegram(&state, &summary(events)));
+    }
+
+    #[test]
+    fn the_wire_keeps_lists_apart_and_names_a_place_once() {
+        // Commas do not survive the wire: "THE SIRDAR GENERAL HUNTER" would
+        // read as one man. Brigades go by name, not counter code.
+        let state = campaign();
+        let events = vec![TurnEventRecord::Reinforcements {
+            units: vec![
+                UnitId::Kitchener_0_0,
+                UnitId::Kitchener_2_0,
+                UnitId::Kitchener_5_0,
+            ],
+            player: Player::AngloEgyptian,
+            at: HexCoord::new(26, 0),
+        }];
+        let text = telegram(&state, &summary(events));
+        assert!(
+            text.contains("THE SIRDAR AND GENERAL HUNTER AND FIRST EGYPTIAN BRIGADE"),
+            "{text}"
+        );
+        // The same place twice running: the second sentence says "there".
+        let abu_alim = whereabouts(Scenario::Campaign, HexCoord::new(40, 12));
+        let facts = [
+            Fact::new(2, 9, T.melee).with("place", abu_alim.clone()),
+            Fact::new(2, 10, T.our_losses)
+                .with("units", "Friendlies")
+                .with("place", abu_alim.clone()),
+        ];
+        let said = word(&facts, &summary(vec![]), Scenario::Campaign);
+        assert!(said[0].contains(&abu_alim), "{said:?}");
+        assert!(
+            !said[1].contains(&abu_alim) && said[1].contains("there"),
+            "{said:?}"
+        );
     }
 
     /// Only the Campaign keeps victory points: the Historical scenario

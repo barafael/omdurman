@@ -318,7 +318,7 @@ fn dervish_wave_leaders(turn: u8) -> Option<&'static [&'static str]> {
 const CAMPAIGN_INITIAL_DERVISH: &[&str] = &[
     "KhalifaAbdullah",
     "Taiasha",
-    "IsaZachneih",
+    "Isa Zachneih",
     "Dervish Fort",
     "Dervish Artillery",
     "Dervish Gunboat DervishGunboat",
@@ -371,7 +371,7 @@ const DERVISH_TRIBES: &[&str] = &[
     "Mulazmin",
     "Jehadia",
     "Taiasha",
-    "IsaZachneih",
+    "Isa Zachneih",
 ];
 
 fn dervish_tribe_of(label: &str) -> Option<&'static str> {
@@ -605,7 +605,7 @@ pub fn audit_log(text: &str) -> AuditReport {
                 } else {
                     p.label.starts_with("Dervish Gunboat")
                         || p.label.starts_with("Dervish Fort")
-                        || p.label.starts_with("IsaZachneih")
+                        || p.label.starts_with("Isa Zachneih")
                 };
                 if bad {
                     report.findings.push(Finding {
@@ -676,7 +676,7 @@ pub fn audit_log(text: &str) -> AuditReport {
                 "Jaalin",
                 "Danagla",
                 "Taiasha",
-                "IsaZachneih",
+                "Isa Zachneih",
                 "Dervish Gunboat",
                 "KhalifaAbdullah",
                 "OsmanDigna",
