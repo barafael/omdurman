@@ -195,6 +195,8 @@ pub struct LeadBanks {
     pub we_breached: Bank,
     pub enemy_breached: Bank,
     pub emirs_killed: Bank,
+    /// The same for a single emir.
+    pub emir_killed: Bank,
     pub tomb_taken: Bank,
     pub khalifa_killed: Bank,
     pub gordon_fell: Bank,
@@ -302,6 +304,10 @@ pub static LEAD: LeadBanks = LeadBanks {
     ],
     emirs_killed: &[
         "The emirs {units} are among the slain.",
+        "Of the enemy's leaders, {units} fell.",
+    ],
+    emir_killed: &[
+        "The emir {units} is among the slain.",
         "Of the enemy's leaders, {units} fell.",
     ],
     tomb_taken: &[

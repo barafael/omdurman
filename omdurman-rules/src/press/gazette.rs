@@ -332,7 +332,12 @@ pub fn front_page(state: &GameState, telegrams: &[(u8, String)]) -> FrontPage {
             .iter()
             .map(|&u| super::prose_name(u, scenario))
             .collect();
-        course.push(say(L.emirs_killed, 17, &[("units", &and_list(&names))]));
+        let bank = if names.len() == 1 {
+            L.emir_killed
+        } else {
+            L.emirs_killed
+        };
+        course.push(say(bank, 17, &[("units", &and_list(&names))]));
     }
     if let Some(turn) = state.gordon_eliminated_turn {
         let (date, time) = when(turn.value());
@@ -504,7 +509,16 @@ pub fn front_page(state: &GameState, telegrams: &[(u8, String)]) -> FrontPage {
     let roll_of_honour = {
         let mut counted: Vec<(String, UnitId, usize)> = Vec::new();
         for &unit in &rec.ours_lost {
-            let name = super::prose_name(unit, scenario);
+            // A brigade's battalions are entered together ("Four battalions
+            // of the First Egyptian Brigade"), as the rolls of the day did.
+            let name = match identity(unit) {
+                Some(i @ UnitIdentity::AngloEgyptianInfantry { brigade, .. })
+                    if !i.is_friendlies() && scenario != Scenario::FallOfKhartoum =>
+                {
+                    format!("brigade {}", brigade.designation())
+                }
+                _ => super::prose_name(unit, scenario),
+            };
             match counted.iter_mut().find(|(n, _, _)| *n == name) {
                 Some((_, _, count)) => *count += 1,
                 None => counted.push((name, unit, 1)),
@@ -666,6 +680,25 @@ mod tests {
         );
         let text = front_page(&state, &[]).lead.paragraphs.join(" ");
         assert!(text.contains("zariba") && text.contains("Egeiga"), "{text}");
+    }
+
+    #[test]
+    fn one_emir_is_singular_and_a_brigade_is_one_entry() {
+        let mut events = shelled(UnitId::Sherif_0_0, HexCoord::new(25, 7));
+        events.extend(shelled(UnitId::Kitchener_5_0, HexCoord::new(25, 7)));
+        events.extend(shelled(UnitId::Kitchener_6_0, HexCoord::new(25, 7)));
+        let state = finished(
+            Scenario::Campaign,
+            GameResult::Campaign(crate::CampaignVictoryLevel::Draw),
+            events,
+        );
+        let page = front_page(&state, &[]);
+        let text = page.lead.paragraphs.join(" ");
+        assert!(!text.contains("The emirs Sherif are"), "{text}");
+        assert_eq!(
+            page.roll_of_honour,
+            ["Two battalions of the First Egyptian Brigade"]
+        );
     }
 
     #[test]

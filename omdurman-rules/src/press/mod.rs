@@ -267,6 +267,12 @@ pub fn prose_count(id: crate::UnitId, n: usize, scenario: Scenario) -> String {
         Some(U::AngloEgyptianInfantry { .. }) if scenario == Scenario::FallOfKhartoum => {
             format!("{count} battalions of the garrison")
         }
+        Some(U::AngloEgyptianInfantry { brigade, .. }) => {
+            format!(
+                "{count} battalions of the {} Brigade",
+                brigade_words(brigade)
+            )
+        }
         _ => format!("{} ({count})", prose_name(id, scenario)),
     }
 }
