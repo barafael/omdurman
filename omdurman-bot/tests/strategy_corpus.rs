@@ -1,11 +1,8 @@
-//! Validate the strategy doctrine corpus (`docs/strategy/*.md`):
-//!
-//! 1. Every section-number citation in the corpus resolves to a `[[mapping]]`
-//!    in `docs/traceability.toml` — the advice must be grounded in the manual,
-//!    and the mapping table is the single source of truth for which sections
-//!    exist.
-//! 2. The corpus files load non-empty through the same [`doctrine_brief`]
-//!    loader the LLM agents use.
+//! Validate the strategy doctrine corpus (`docs/strategy/*.md`) the
+//! commanders' doctrine is distilled from: every section-number citation in
+//! the corpus resolves to a `[[mapping]]` in `docs/traceability.toml` — the
+//! advice must be grounded in the manual, and the mapping table is the single
+//! source of truth for which sections exist.
 //!
 //! Citations are checked by section *number* only (prefix match on the TOML
 //! `section` field), so section-level entries satisfy references to
@@ -13,10 +10,15 @@
 //! test file never contains the literal character (the traceability source
 //! scan keys on it).
 
-use omdurman_bot::doctrine::{corpus_files, doctrine_brief};
-use omdurman_types::{Player, Scenario};
-
 const SECTION_MARKER: &str = "\u{a7}";
+
+/// The corpus files, in reading order.
+const CORPUS_FILES: &[&str] = &[
+    "common_doctrine.md",
+    "anglo_egyptian_doctrine.md",
+    "dervish_doctrine.md",
+    "fall_of_khartoum_doctrine.md",
+];
 
 fn workspace_root() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -72,7 +74,7 @@ fn covers(mapped: &str, cite: &str) -> bool {
 fn every_corpus_citation_exists_in_traceability() {
     let mapped = mapped_sections();
     let mut failures = Vec::new();
-    for name in corpus_files() {
+    for name in CORPUS_FILES {
         let text = read_corpus(name);
         for (line_no, cite) in corpus_citations(&text) {
             let has = mapped.iter().any(|m| covers(m, &cite));
@@ -91,24 +93,13 @@ fn every_corpus_citation_exists_in_traceability() {
 }
 
 #[test]
-fn briefs_load_for_every_side_and_scenario() {
-    for scenario in [
-        Scenario::Campaign,
-        Scenario::Historical,
-        Scenario::FallOfKhartoum,
-    ] {
-        for player in [Player::AngloEgyptian, Player::Dervish] {
-            let brief = doctrine_brief(player, scenario);
-            assert!(
-                !brief.trim().is_empty(),
-                "empty brief for {player:?} in {scenario:?}"
-            );
-        }
+fn corpus_files_exist_and_are_substantial() {
+    for name in CORPUS_FILES {
+        assert!(
+            !read_corpus(name).trim().is_empty(),
+            "corpus file {name} is empty"
+        );
     }
-}
-
-#[test]
-fn corpus_is_substantial() {
-    let total: usize = corpus_files().iter().map(|n| read_corpus(n).len()).sum();
+    let total: usize = CORPUS_FILES.iter().map(|n| read_corpus(n).len()).sum();
     assert!(total > 10_000, "corpus is thin: {total} chars");
 }

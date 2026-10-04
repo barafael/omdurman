@@ -176,7 +176,6 @@ fn seed_config() -> PlayConfig {
     PlayConfig {
         max_actions_per_phase: 50,
         max_turns: 8,
-        keep_out: None,
     }
 }
 
@@ -362,12 +361,12 @@ proptest! {
 
     #[test]
     fn fire_at_hex_without_opponents_is_always_rejected(seed in 0u64..32) {
-        let result = futures::executor::block_on(playthrough(
+        let result = playthrough(
             Scenario::FallOfKhartoum,
             seed,
             seed_config(),
             Agents::random(),
-        ));
+        );
 
         // Sweep reachable Direct Fire states: for every firer whose earlier
         // `can_fire_at` gates pass, every neighbor hex without opponent
@@ -527,12 +526,12 @@ proptest! {
 
     #[test]
     fn mutated_effects_never_panic_and_accepted_ones_hold_invariants(seed in 0u64..32) {
-        let result = futures::executor::block_on(playthrough(
+        let result = playthrough(
             Scenario::FallOfKhartoum,
             seed,
             seed_config(),
             Agents::random(),
-        ));
+        );
         let mut rng = BotRng::from_seed(seed ^ 0xada1f);
         for state in direct_fire_states(&result.events, 3)
             .into_iter()

@@ -152,14 +152,6 @@ item when it is fixed.
   and `omdurman-board-ui/src/sprites.rs`, so the two can drift.
 - 25 systems still take `Option<Res<GameStateResource>>`.
 
-## Bot / LLM
-
-- The planner overwrites its cache unconditionally (`cache.0 = parsed.cache`
-  in `omdurman-bot/src/llm.rs`, `advise_turn`), so a malformed or empty reply
-  wipes it. The
-  observer keeps its previous cache. Decide which behaviour the planner should
-  have.
-
 ## Verification
 
 - Weak clause witnesses (`docs/traceability.toml`): the named test asserts

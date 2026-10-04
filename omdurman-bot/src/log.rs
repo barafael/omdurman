@@ -1,10 +1,11 @@
-//! The human-readable game log that the offline observer reviews.
+//! The human-readable game log that the offline audit (`crate::audit`)
+//! scans and a human reviews.
 //!
 //! One plain-text file: a header, one line per applied `GameEffect` with the
 //! acting side, the engine's `Observation`s (carrying authoritative §
-//! citations), turn-boundary summaries, and interleaved agent reasoning. The
-//! log is the observer's ground truth — it must "give enough context" on its
-//! own, with no live engine access.
+//! citations), turn-boundary summaries, and driver notes. The log is the
+//! audit's ground truth — it must "give enough context" on its own, with no
+//! live engine access.
 
 use omdurman_rules::effects::{GameState, Observation};
 use omdurman_rules::turn_summary::TurnSummary;
@@ -61,12 +62,6 @@ impl GameLog {
         self.observations_logged += 1;
     }
 
-    /// Interleaved agent reasoning (LLM-advised sides only).
-    pub fn push_reasoning(&mut self, side: Player, turn: u8, text: &str) {
-        self.lines
-            .push(format!("[reasoning, {side} T{turn}] {text}"));
-    }
-
     /// A completed-game-turn boundary, from the engine's `TurnSummary`.
     /// `state` supplies the victory ledger for the running VP line.
     pub fn push_turn_boundary(&mut self, summary: &TurnSummary, state: &GameState) {
@@ -105,9 +100,8 @@ impl GameLog {
         }
     }
 
-    /// A driver annotation that is neither an event nor agent reasoning --
-    /// e.g. a dropped LLM plan index or an illegal generated pick. These
-    /// lines mark where an agent ran into the rules' boundaries.
+    /// A driver annotation that is not an event -- e.g. an illegal generated
+    /// pick. These lines mark where an agent ran into the rules' boundaries.
     pub fn push_note(&mut self, turn: u8, text: &str) {
         self.lines.push(format!("[note, T{turn}] {text}"));
     }

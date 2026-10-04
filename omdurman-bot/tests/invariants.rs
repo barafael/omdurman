@@ -25,16 +25,15 @@ proptest! {
     #[test]
     fn fok_random_playthrough_holds_invariants(seed in 0u64..10_000) {
         let cfg = PlayConfig {
-            keep_out: None,
             max_actions_per_phase: 80,
             max_turns: 10,
         };
-        let result = futures::executor::block_on(playthrough(
+        let result = playthrough(
             Scenario::FallOfKhartoum,
             seed,
             cfg,
             Agents::random(),
-        ));
+        );
         prop_assert!(
             result.actions_taken > 0,
             "playthrough with seed {seed} took no actions"

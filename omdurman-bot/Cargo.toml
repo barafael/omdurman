@@ -1,6 +1,6 @@
 [package]
 name = "omdurman-bot"
-description = "Headless AI playthrough driver for rule verification (random + LLM-advised)"
+description = "Headless AI playthrough driver for rule verification (random, aggressive, historical commanders)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -13,14 +13,6 @@ rand           = { workspace = true }
 chrono         = { workspace = true }
 serde          = { workspace = true }
 serde_json     = { workspace = true }
-futures        = { workspace = true }
-
-# Native-only: reqwest's async transport needs a Tokio reactor and the CLI
-# reads .env — neither is used by the library, which must also build for
-# wasm32 (the app embeds the commanders as its in-game AI).
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-tokio   = { workspace = true, features = ["rt"] }
-dotenvy = { workspace = true }
 
 [dev-dependencies]
 proptest = "1"

@@ -152,14 +152,8 @@ fn fok_playthrough_effects_all_have_ui_paths() {
         let cfg = PlayConfig {
             max_actions_per_phase: 80,
             max_turns: 12,
-            keep_out: None,
         };
-        let result = futures::executor::block_on(playthrough(
-            Scenario::FallOfKhartoum,
-            seed,
-            cfg,
-            Agents::random(),
-        ));
+        let result = playthrough(Scenario::FallOfKhartoum, seed, cfg, Agents::random());
         assert!(
             result.actions_taken > 0,
             "seed {seed}: playthrough took no actions"
@@ -200,14 +194,8 @@ fn fok_playthrough_exercises_the_core_action_set() {
     let cfg = PlayConfig {
         max_actions_per_phase: 80,
         max_turns: 12,
-        keep_out: None,
     };
-    let result = futures::executor::block_on(playthrough(
-        Scenario::FallOfKhartoum,
-        42,
-        cfg,
-        Agents::random(),
-    ));
+    let result = playthrough(Scenario::FallOfKhartoum, 42, cfg, Agents::random());
     let seen = variants_of(&result.variant_coverage);
     for expected in [
         "DeployUnit",
