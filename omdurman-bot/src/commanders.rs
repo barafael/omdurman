@@ -136,6 +136,7 @@ pub fn pick_setup(
             | GameEffect::ConfirmSetupReady { player, .. } => {
                 Commander::for_player(*player).score(effect, state, *player)
             }
+            GameEffect::PlaceMine { .. } | GameEffect::PlaceChain { .. } => 30,
             GameEffect::AdvancePhase => 1,
             _ => 0,
         };
@@ -479,6 +480,9 @@ fn rank_setup(state: &GameState, candidates: &[GameEffect]) -> Vec<GameEffect> {
                 | GameEffect::ConfirmSetupReady { player, .. } => {
                     Commander::for_player(*player).score(e, state, *player)
                 }
+                // The river obstacles (§10.11, §10.21): after the force is
+                // placed (deployment scores higher), before Ready.
+                GameEffect::PlaceMine { .. } | GameEffect::PlaceChain { .. } => 30,
                 GameEffect::AdvancePhase => 1,
                 _ => 0,
             };
