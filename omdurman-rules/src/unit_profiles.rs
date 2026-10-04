@@ -551,18 +551,18 @@ fn british_boats(col: u32, row: u32) -> Option<Classification> {
             weapon: WeaponClass::Melee,
         }),
         // Named new-type gunboats (§6.64). The sheet's fifth boat is printed
-        // "Abu Klea"; the `NamedGunboat` enum's spare variant is `Naser`.
+        // "Abu Klea" (the `NamedGunboat::Naser` variant, shown as Abu Klea).
         (4, 0) => gunboat(GunboatId::Named(NamedGunboat::Sultan)),
         (5, 0) => gunboat(GunboatId::Named(NamedGunboat::Sheik)),
         (6, 0) => gunboat(GunboatId::Named(NamedGunboat::Fateh)),
         (7, 0) => gunboat(GunboatId::Named(NamedGunboat::Melik)),
         (3, 0) => gunboat(GunboatId::Named(NamedGunboat::Naser)),
-        // Old-style gunboats (§2.32) -- no howitzer. Four cells, three named
-        // variants; the fourth reuses a variant (identity is cosmetic).
+        // Old-style gunboats (§2.32) -- no howitzer; printed "GUNBOAT", named
+        // after the flotilla's older boats (El Teb, Tamai, Metemmeh, Naser).
         (4, 1) => gunboat(GunboatId::Old(OldGunboat::LordKitchener)),
         (5, 1) => gunboat(GunboatId::Old(OldGunboat::Tamai)),
         (6, 1) => gunboat(GunboatId::Old(OldGunboat::Metemmeh)),
-        (7, 1) => gunboat(GunboatId::Old(OldGunboat::LordKitchener)),
+        (7, 1) => gunboat(GunboatId::Old(OldGunboat::Naser)),
         // BREECH markers (§6.63) and anything else: not a placeable unit.
         _ => None,
     }

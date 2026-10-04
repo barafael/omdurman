@@ -12,13 +12,14 @@ use bevy::prelude::*;
 pub(crate) struct Keepsakes {
     /// File names already taken (or queued): each is taken once.
     taken: std::collections::BTreeSet<String>,
-    /// Pictures to take, with the frames still to wait so the screen they
-    /// show has been drawn.
-    queue: std::collections::VecDeque<(String, u8)>,
+    /// Pictures to take, with the seconds still to wait so the screen they
+    /// show has faded in (egui fades a new area in over a fraction of a
+    /// second; an early picture caught an empty, translucent card).
+    queue: std::collections::VecDeque<(String, f32)>,
 }
 
-/// Frames between a screen first showing and its picture.
-const SETTLE_FRAMES: u8 = 3;
+/// Seconds between a screen first showing and its picture.
+const SETTLE_SECS: f32 = 0.6;
 
 impl Keepsakes {
     /// Ask for a picture of what is on screen now, called `what` (e.g.
@@ -34,7 +35,7 @@ impl Keepsakes {
         };
         let name = format!("{game}-{what}.png");
         if self.taken.insert(name.clone()) {
-            self.queue.push_back((name, SETTLE_FRAMES));
+            self.queue.push_back((name, SETTLE_SECS));
         }
     }
 }
@@ -45,14 +46,15 @@ pub(crate) fn take_keepsakes(
     mut commands: Commands,
     mut keepsakes: ResMut<Keepsakes>,
     mut activity: ResMut<crate::activity::Activity>,
+    time: Res<Time>,
 ) {
-    let Some((_, frames)) = keepsakes.queue.front_mut() else {
+    let Some((_, wait)) = keepsakes.queue.front_mut() else {
         return;
     };
     // The countdown needs frames: the app otherwise idles between inputs.
     activity.keep_running();
-    if *frames > 0 {
-        *frames -= 1;
+    if *wait > 0.0 {
+        *wait -= time.delta_secs();
         return;
     }
     let Some((name, _)) = keepsakes.queue.pop_front() else {

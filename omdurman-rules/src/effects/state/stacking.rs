@@ -168,6 +168,22 @@ impl GameState {
         stacking_rule(&occupants)
     }
 
+    /// [`Self::check_stacking`] for a group moving together: whether all of
+    /// `movers` may end a move in `dest` with whoever already stands there
+    /// (§5.51-5.53). A stack routed as one must fit at its goal as one.
+    pub fn check_group_stacking(
+        &self,
+        movers: &[UnitId],
+        dest: HexCoord,
+    ) -> Result<(), crate::StackingError> {
+        let occupants: Vec<&UnitPlacement> = self
+            .units
+            .iter()
+            .filter(|u| (u.position == dest && !movers.contains(&u.id)) || movers.contains(&u.id))
+            .collect();
+        stacking_rule(&occupants)
+    }
+
     /// Whole-state stacking invariant check (§5.51-5.53): every occupied hex
     /// must satisfy the stacking law ([`stacking_rule`]) on its *actual*
     /// occupants. Unlike [`Self::check_stacking`] this is not a prospective-move

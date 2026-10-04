@@ -436,24 +436,63 @@ pub fn whereabouts(scenario: Scenario, hex: HexCoord) -> String {
     format!("{miles_word} {point} of {city}")
 }
 
-/// The date of a turn as the press prints it: "September 1" / "January 26,
-/// 1885" and the hour ("6 a.m."). Turns are two hours apart.
+/// The date of a turn as the press prints it: "September 2" and the hour
+/// ("6 a.m."), read off the scenario's Turn Record Track (the Campaign's
+/// nights are two turns, so the clock is not a uniform two hours a turn).
 pub fn turn_date(scenario: Scenario, turn: u8) -> (String, String) {
-    let (start_hour, day0, month, year) = match scenario {
-        Scenario::Campaign => (6u32, 1u32, "September", 1898),
-        Scenario::Historical => (6, 2, "September", 1898),
-        Scenario::FallOfKhartoum => (4, 26, "January", 1885),
+    use crate::turn_track::GameTime as T;
+    let (day0, month) = match scenario {
+        Scenario::Campaign => (1u32, "September"),
+        Scenario::Historical => (2, "September"),
+        Scenario::FallOfKhartoum => (26, "January"),
     };
-    let hours = start_hour + 2 * u32::from(turn.saturating_sub(1));
-    let day = day0 + hours / 24;
-    let hour = hours % 24;
-    let clock = match hour {
+    let hour = |time: T| -> u32 {
+        match time {
+            T::SixAM => 6,
+            T::EightAM => 8,
+            T::TenAM => 10,
+            T::Noon => 12,
+            T::TwoPM => 14,
+            T::FourPM => 16,
+            T::SixPM => 18,
+            T::EightPM => 20,
+            T::TenPM => 22,
+            T::Midnight => 24,
+            T::TwoAM => 26,
+            T::FourAM => 28,
+        }
+    };
+    // Walk the track on a running clock (hours since midnight of the first
+    // day): each turn's hour of day, moved on a day whenever it would not
+    // come after the turn before -- "midnight" after "10 p.m." is the next
+    // day, so is "6 a.m." after it.
+    let mut elapsed: Option<u32> = None;
+    for t in 1..=turn.max(1) {
+        let Some(entry) = crate::turn_track::scenario_turn(scenario, crate::GameTurnIndex::new(t))
+        else {
+            break;
+        };
+        let of_day = hour(entry.time) % 24;
+        elapsed = Some(match elapsed {
+            None => of_day,
+            Some(before) => {
+                let mut now = before - before % 24 + of_day;
+                while now <= before {
+                    now += 24;
+                }
+                now
+            }
+        });
+    }
+    let elapsed = elapsed.unwrap_or(6);
+    let day = day0 + elapsed / 24;
+    let at = elapsed % 24;
+    let clock = match at {
         0 => "midnight".to_string(),
         12 => "noon".to_string(),
         h if h < 12 => format!("{h} a.m."),
         h => format!("{} p.m.", h - 12),
     };
-    let _ = year;
     (format!("{month} {day}"), clock)
 }
 
@@ -519,9 +558,22 @@ mod tests {
             turn_date(Scenario::Campaign, 1),
             ("September 1".to_string(), "6 a.m.".to_string())
         );
+        // The Campaign's nights are two turns: midnight, then dawn.
         assert_eq!(
             turn_date(Scenario::Campaign, 10),
             ("September 2".to_string(), "midnight".to_string())
+        );
+        assert_eq!(
+            turn_date(Scenario::Campaign, 11),
+            ("September 2".to_string(), "6 a.m.".to_string())
+        );
+        assert_eq!(
+            turn_date(Scenario::Campaign, 22),
+            ("September 3".to_string(), "8 a.m.".to_string())
+        );
+        assert_eq!(
+            turn_date(Scenario::Historical, 4),
+            ("September 2".to_string(), "noon".to_string())
         );
         assert_eq!(
             turn_date(Scenario::FallOfKhartoum, 1),
