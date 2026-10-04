@@ -265,13 +265,86 @@ fn setup_actions(
             }
         }
 
-        // 3. Confirm readiness only once nothing placeable remains for this
+        // 3. The optional river obstacles (§10.11 mines, §10.21 chain): the
+        //    Dervish lay them once their force is placed, before Ready.
+        let obstacles = if player == Player::Dervish && !any_pending {
+            river_obstacle_actions(state)
+        } else {
+            Vec::new()
+        };
+        let obstacles_pending = !obstacles.is_empty();
+        out.extend(obstacles);
+
+        // 4. Confirm readiness only once nothing placeable remains for this
         //    side: confirming mid-deployment is one-way, and readiness while
         //    units are still pending would let a driver stop deploying early.
-        if !any_pending && state.setup_target_met(player) {
+        if !any_pending && !obstacles_pending && state.setup_target_met(player) {
             out.push(GameEffect::ConfirmSetupReady { player });
         }
     }
+}
+
+/// The river obstacles still to lay in the Campaign's set-up when their
+/// optional rules are in play: the two mines (§10.11) and the chain
+/// (§10.21), in the Nile just south of the row where the Khor Shambat
+/// empties into it -- the first water the gunboats must cross to reach
+/// Omdurman. Empty once laid (or when the rules are off): the engine's own
+/// checks pick the hexes.
+fn river_obstacle_actions(state: &GameState) -> Vec<GameEffect> {
+    use omdurman_rules::OptionalRule;
+    let mut out = Vec::new();
+    let Some(mouth) = state.board.khor_shambat_mouth_row() else {
+        return out;
+    };
+    // The Nile hexes row by row south of the mouth, west to east.
+    let rows: Vec<Vec<HexCoord>> = (mouth + 1..=mouth + 8)
+        .map(|r| {
+            let mut row: Vec<HexCoord> = state
+                .board
+                .terrain
+                .keys()
+                .copied()
+                .filter(|h| h.r == r && state.board.is_nile(*h))
+                .collect();
+            row.sort_by_key(|h| h.q);
+            row
+        })
+        .collect();
+    if state.optional_rules.contains(&OptionalRule::RiverMines) && state.mines.len() < 2 {
+        // One mine per row, nearest the mouth first, mid-channel.
+        if let Some(hex) = rows
+            .iter()
+            .filter(|row| !row.is_empty())
+            .map(|row| row[row.len() / 2])
+            .find(|&hex| state.can_place_mine(hex).is_ok())
+        {
+            out.push(GameEffect::PlaceMine { hex });
+        }
+    }
+    if state.optional_rules.contains(&OptionalRule::RiverChain) && state.chain.is_none() {
+        // Across the river: the first row whose water a line of up to four
+        // adjacent hexes can span, below the mines.
+        for row in rows.iter().skip(2) {
+            let mut line: Vec<HexCoord> = Vec::new();
+            for &hex in row {
+                if line
+                    .last()
+                    .is_some_and(|last: &HexCoord| !last.is_adjacent_to(hex))
+                {
+                    line.clear();
+                }
+                line.push(hex);
+                if line.len() == 4 {
+                    break;
+                }
+            }
+            if !line.is_empty() && state.can_place_chain(&line).is_ok() {
+                out.push(GameEffect::PlaceChain { hexes: line });
+                break;
+            }
+        }
+    }
+    out
 }
 
 /// Whether `id` belongs to the scenario's *initial* (at-setup) force.
@@ -1401,6 +1474,38 @@ mod campaign_schedule_tests {
             ) > 0,
             "the besieger's artillery may still breach (§6.63)"
         );
+    }
+
+    #[test]
+    fn the_dervish_lay_the_river_obstacles_when_the_options_are_on() {
+        // §10.11/§10.21: with both optional rules in play the Khalifa's set-up
+        // lays two mines and the chain before he confirms Ready.
+        let mut state = campaign_movement(Player::Dervish);
+        state.phase = Phase::Setup;
+        state.optional_rules = vec![
+            omdurman_rules::OptionalRule::RiverMines,
+            omdurman_rules::OptionalRule::RiverChain,
+        ];
+        let mut rng = crate::rng::BotRng::from_seed(3);
+        for _ in 0..400 {
+            if state.setup_ready(Player::Dervish) {
+                break;
+            }
+            let candidates = legal_actions_deep_setup(&state, &mut rng);
+            let effect = crate::commanders::pick_setup_validated(
+                &state,
+                &candidates,
+                Some(Player::Dervish),
+                &mut rng,
+            );
+            omdurman_rules::effects::apply_effect(&mut state, &effect).expect("legal");
+        }
+        assert!(
+            state.setup_ready(Player::Dervish),
+            "the Dervish finished set-up"
+        );
+        assert_eq!(state.mines.len(), 2, "two mines");
+        assert!(state.chain.is_some(), "the chain");
     }
 
     #[test]
