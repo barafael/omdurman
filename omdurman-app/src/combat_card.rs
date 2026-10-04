@@ -507,6 +507,9 @@ fn target_hex_label(hex: HexCoord, gs: Option<&omdurman_rules::effects::GameStat
 // Render: queue -> egui cards
 // ---------------------------------------------------------------------------
 
+/// The width of the right-hand column of combat cards and slips.
+const COLUMN_WIDTH: f32 = 360.0;
+
 /// A combat result as one line of the session log.
 fn log_line(entry: &CombatCardEntry) -> String {
     let place = if entry.hex_label.is_empty() {
@@ -584,7 +587,11 @@ fn combat_card_ui(
         egui::vec2(-(layout.right_inset + 12.0), layout.top_bar_height + 8.0),
         egui::Frame::NONE,
         |ui| {
-            ui.set_max_width(360.0);
+            // A fixed width: the area is anchored at its right edge, which
+            // egui places by the previous frame's size -- a column sized by
+            // its content kept the width of the last narrow slip, so a wider
+            // one wrapped short and ran off the screen edge, cut off.
+            ui.set_width(COLUMN_WIDTH);
             // A volley of resolutions outgrows the window: scroll the column
             // instead of letting the oldest cards run off the bottom unread.
             let max_height = ctx_height - layout.top_bar_height - 60.0;
@@ -592,44 +599,47 @@ fn combat_card_ui(
                 .id_salt("combat_cards_scroll")
                 .max_height(max_height.max(120.0))
                 .show(ui, |ui| {
-                    // Newest at the top, closest to the screen edge.
-                    for (_, item) in &items {
-                        let entry = match item {
-                            Item::Slip(i) => {
-                                let slip = &mut dispatches.slips[*i];
-                                let fade = ((crate::dispatch::DISPATCH_TTL - slip.age)
-                                    / crate::dispatch::DISPATCH_FADE)
-                                    .clamp(0.0, 1.0);
-                                slip.hold
-                                    .begin(ui, egui::Id::new(("dispatch_slip", slip.serial)));
-                                let (sec, rect) = crate::dispatch::draw_slip(ui, slip, fade);
-                                slip.hold.end(ui, rect);
-                                if let Some(sec) = sec {
-                                    clicked_section = Some(sec);
+                    ui.with_layout(egui::Layout::top_down(egui::Align::Max), |ui| {
+                        ui.set_width(COLUMN_WIDTH);
+                        // Newest at the top, closest to the screen edge.
+                        for (_, item) in &items {
+                            let entry = match item {
+                                Item::Slip(i) => {
+                                    let slip = &mut dispatches.slips[*i];
+                                    let fade = ((crate::dispatch::DISPATCH_TTL - slip.age)
+                                        / crate::dispatch::DISPATCH_FADE)
+                                        .clamp(0.0, 1.0);
+                                    slip.hold
+                                        .begin(ui, egui::Id::new(("dispatch_slip", slip.serial)));
+                                    let (sec, rect) = crate::dispatch::draw_slip(ui, slip, fade);
+                                    slip.hold.end(ui, rect);
+                                    if let Some(sec) = sec {
+                                        clicked_section = Some(sec);
+                                    }
+                                    ui.add_space(6.0);
+                                    continue;
                                 }
-                                ui.add_space(6.0);
-                                continue;
+                                Item::Card(i) => &mut queue.entries[*i],
+                            };
+                            let fade = ((CARD_TTL - entry.age) / CARD_FADE).clamp(0.0, 1.0);
+                            entry
+                                .hold
+                                .begin(ui, egui::Id::new(("combat_card", entry.serial)));
+                            // Fade the whole card -- paper, text and chips together. (Fading
+                            // only the text colours left an empty yellow box behind.)
+                            let (sec, rect) = ui
+                                .scope(|ui| {
+                                    ui.set_opacity(fade);
+                                    draw_card(ui, entry, &rulebook)
+                                })
+                                .inner;
+                            entry.hold.end(ui, rect);
+                            if let Some(sec) = sec {
+                                clicked_section = Some(sec);
                             }
-                            Item::Card(i) => &mut queue.entries[*i],
-                        };
-                        let fade = ((CARD_TTL - entry.age) / CARD_FADE).clamp(0.0, 1.0);
-                        entry
-                            .hold
-                            .begin(ui, egui::Id::new(("combat_card", entry.serial)));
-                        // Fade the whole card -- paper, text and chips together. (Fading
-                        // only the text colours left an empty yellow box behind.)
-                        let (sec, rect) = ui
-                            .scope(|ui| {
-                                ui.set_opacity(fade);
-                                draw_card(ui, entry, &rulebook)
-                            })
-                            .inner;
-                        entry.hold.end(ui, rect);
-                        if let Some(sec) = sec {
-                            clicked_section = Some(sec);
+                            ui.add_space(6.0);
                         }
-                        ui.add_space(6.0);
-                    }
+                    });
                 });
         },
     );
