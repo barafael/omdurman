@@ -294,6 +294,13 @@ pub fn fire_allocation_review_ui(
             }
 
             ui.add_space(6.0);
+            // §6.41: the sub-phase's fire resolves together -- a player who
+            // resolved one attack to see how it went found the rest refused.
+            if !allocation.attacks.is_empty() {
+                ui.label(crate::ui::text::note(
+                    "All of this sub-phase's fire resolves at once: stage every attack first.",
+                ));
+            }
 
             if !allocation.attacks.is_empty()
                 && ui
