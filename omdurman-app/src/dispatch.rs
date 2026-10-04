@@ -187,65 +187,69 @@ pub(crate) fn draw_slip(
     let frame = crate::ui::frames::paper(egui::Stroke::new(stroke, a(crate::ui::palette::INK)))
         .inner_margin(egui::Margin::symmetric(10, 7))
         .show(ui, |ui| {
-            ui.set_max_width(300.0);
-            // Header: letter-spaced small caps, faint ink.
-            let header: String = slip
-                .header
-                .to_uppercase()
-                .chars()
-                .flat_map(|c| [c, '\u{2009}']) // thin space between glyphs
-                .collect();
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(header)
-                        .color(a(crate::ui::palette::FAINT_INK))
-                        .size(11.0)
-                        .strong(),
-                );
-                if slip.hold.pinned {
+            // Text runs left to right: the column aligns its cards to the
+            // right, which egui would carry into the wrapped rows.
+            ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                ui.set_max_width(300.0);
+                // Header: letter-spaced small caps, faint ink.
+                let header: String = slip
+                    .header
+                    .to_uppercase()
+                    .chars()
+                    .flat_map(|c| [c, '\u{2009}']) // thin space between glyphs
+                    .collect();
+                ui.horizontal(|ui| {
                     ui.label(
-                        egui::RichText::new("(pinned)")
+                        egui::RichText::new(header)
                             .color(a(crate::ui::palette::FAINT_INK))
-                            .size(10.0)
-                            .italics(),
+                            .size(11.0)
+                            .strong(),
                     );
-                }
-            });
-            ui.add_space(2.0);
-            // Body: dry text with §N references as rulebook links. References
-            // are annotated with their section title via `Rulebook::title_of`
-            // so a reader sees the rule's name, not just its number.
-            ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing.x = 0.0;
-                for tok in split_refs(&slip.body) {
-                    match tok {
-                        RefTok::Text(t) => {
-                            ui.label(
-                                egui::RichText::new(t)
-                                    .color(a(crate::ui::palette::INK))
-                                    .size(14.0),
-                            );
-                        }
-                        RefTok::Ref(n) => {
-                            let label = format!("§{n}");
-                            if ui
-                                .add(
-                                    egui::Label::new(
-                                        egui::RichText::new(label)
-                                            .color(a(crate::ui::palette::INK))
-                                            .size(14.0)
-                                            .underline(),
+                    if slip.hold.pinned {
+                        ui.label(
+                            egui::RichText::new("(pinned)")
+                                .color(a(crate::ui::palette::FAINT_INK))
+                                .size(10.0)
+                                .italics(),
+                        );
+                    }
+                });
+                ui.add_space(2.0);
+                // Body: dry text with §N references as rulebook links. References
+                // are annotated with their section title via `Rulebook::title_of`
+                // so a reader sees the rule's name, not just its number.
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    for tok in split_refs(&slip.body) {
+                        match tok {
+                            RefTok::Text(t) => {
+                                ui.label(
+                                    egui::RichText::new(t)
+                                        .color(a(crate::ui::palette::INK))
+                                        .size(14.0),
+                                );
+                            }
+                            RefTok::Ref(n) => {
+                                let label = format!("§{n}");
+                                if ui
+                                    .add(
+                                        egui::Label::new(
+                                            egui::RichText::new(label)
+                                                .color(a(crate::ui::palette::INK))
+                                                .size(14.0)
+                                                .underline(),
+                                        )
+                                        .sense(egui::Sense::click()),
                                     )
-                                    .sense(egui::Sense::click()),
-                                )
-                                .clicked()
-                            {
-                                clicked = Some(n.to_string());
+                                    .clicked()
+                                {
+                                    clicked = Some(n.to_string());
+                                }
                             }
                         }
                     }
-                }
-            });
+                });
+            })
         });
     (clicked, frame.response.rect)
 }
