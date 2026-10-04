@@ -104,6 +104,8 @@ pub(crate) fn mode_toolbar_ui(
                             && let Some(dispatches) = dispatches.as_ref()
                         {
                             ui.menu_button("Log", |ui| {
+                                // Room for the scrolling log as it grows (see `with_room`).
+                                crate::ui::with_room(ui, |ui| {
                                 ui.set_max_width(520.0);
                                 if dispatches.log.is_empty() {
                                     ui.label("Nothing yet.");
@@ -118,6 +120,7 @@ pub(crate) fn mode_toolbar_ui(
                                         }
                                     });
                             });
+                        });
                         }
 
                         // The turn and who acts now: the one place the game

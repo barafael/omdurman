@@ -100,49 +100,52 @@ pub(crate) fn victory_modal(
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
         .show(ctx, |ui| {
-            let width = (screen.width() - 80.0).clamp(600.0, 1180.0);
-            let height = screen.height() - 70.0;
-            ui.set_max_width(width);
-            match &page {
-                Some(page) => {
-                    egui::ScrollArea::vertical()
-                        .id_salt("gazette_scroll")
-                        .max_height(height - 50.0)
-                        .show(ui, |ui| super::gazette::draw_front_page(ui, page, width));
+            // Room to the screen bottom: the front page scrolls in it (see `with_room`).
+            crate::ui::with_room(ui, |ui| {
+                let width = (screen.width() - 80.0).clamp(600.0, 1180.0);
+                let height = screen.height() - 70.0;
+                ui.set_max_width(width);
+                match &page {
+                    Some(page) => {
+                        egui::ScrollArea::vertical()
+                            .id_salt("gazette_scroll")
+                            .max_height(height - 50.0)
+                            .show(ui, |ui| super::gazette::draw_front_page(ui, page, width));
+                    }
+                    None => {
+                        crate::ui::frames::modal().show(ui, |ui| {
+                            ui.label(
+                                egui::RichText::new("GAME OVER")
+                                    .size(28.0)
+                                    .strong()
+                                    .color(crate::ui::palette::TITLE),
+                            );
+                        });
+                    }
                 }
-                None => {
-                    crate::ui::frames::modal().show(ui, |ui| {
-                        ui.label(
-                            egui::RichText::new("GAME OVER")
-                                .size(28.0)
-                                .strong()
-                                .color(crate::ui::palette::TITLE),
-                        );
+                ui.add_space(8.0);
+                ui.vertical_centered(|ui| {
+                    ui.horizontal(|ui| {
+                        if ui.button("Close").clicked() {
+                            action = Some(VictoryAction::Close);
+                        }
+                        if !spectating
+                            && ui
+                                .add_enabled(has_record, egui::Button::new("Review timeline"))
+                                .on_hover_text("Scrub back through the recorded game")
+                                .clicked()
+                        {
+                            action = Some(VictoryAction::Review);
+                        }
+                        let leave = if spectating {
+                            "Back to lobby"
+                        } else {
+                            "Main menu"
+                        };
+                        if ui.button(leave).clicked() {
+                            action = Some(VictoryAction::Leave);
+                        }
                     });
-                }
-            }
-            ui.add_space(8.0);
-            ui.vertical_centered(|ui| {
-                ui.horizontal(|ui| {
-                    if ui.button("Close").clicked() {
-                        action = Some(VictoryAction::Close);
-                    }
-                    if !spectating
-                        && ui
-                            .add_enabled(has_record, egui::Button::new("Review timeline"))
-                            .on_hover_text("Scrub back through the recorded game")
-                            .clicked()
-                    {
-                        action = Some(VictoryAction::Review);
-                    }
-                    let leave = if spectating {
-                        "Back to lobby"
-                    } else {
-                        "Main menu"
-                    };
-                    if ui.button(leave).clicked() {
-                        action = Some(VictoryAction::Leave);
-                    }
                 });
             });
         });
