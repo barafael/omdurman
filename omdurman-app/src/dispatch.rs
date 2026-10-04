@@ -344,10 +344,17 @@ fn format_observation(
         {
             None
         }
-        Observation::LeaderKilled { id, by } => Some((
-            "Leader Dispatch".into(),
-            format!("{} lost to the {by} (§6.51).", unit_label(*id)),
-        )),
+        // Whose leader fell, not who was moving: in defensive fire the
+        // active side is the one that lost him ("Yakub lost to the Dervish").
+        Observation::LeaderKilled { id, .. } => {
+            let side = omdurman_rules::unit_profiles::profile_for_unit(*id)
+                .map(|p| p.identity.owner().to_string())
+                .unwrap_or_default();
+            Some((
+                "Leader Dispatch".into(),
+                format!("The {side} leader {} has fallen (§6.51).", unit_label(*id)),
+            ))
+        }
         Observation::GordonEliminated { turn } => Some((
             "Fall of Khartoum".into(),
             format!(
@@ -465,5 +472,28 @@ fn format_observation(
                  melee lapses, with no roll and no forced advance (§7.6)."
             ),
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A leader's slip names whose leader fell -- not the side that was
+    /// moving, which in defensive fire is the one that lost him.
+    #[test]
+    fn a_fallen_leader_is_named_with_his_side() {
+        let (_, body) = format_observation(
+            &omdurman_rules::effects::Observation::LeaderKilled {
+                id: omdurman_rules::UnitId::JaalinI_0_0,
+                by: omdurman_types::Player::Dervish,
+            },
+            None,
+        )
+        .expect("a slip");
+        assert!(
+            body.starts_with("The Dervish leader Yakub has fallen"),
+            "{body}"
+        );
     }
 }
