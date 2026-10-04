@@ -136,7 +136,9 @@ fn main() {
         }
     }
     for (h, t) in &page.chronicle {
-        println!("CHRONICLE {h}.— {t}");
+        // As the app sets it: "6 a.m." keeps its own stop.
+        let stop = if h.ends_with('.') { "" } else { "." };
+        println!("CHRONICLE {h}{stop}— {t}");
     }
     println!("ROLL: {:?}", page.roll_of_honour);
     for f in &page.features {

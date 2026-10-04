@@ -93,7 +93,8 @@ pub static TELEGRAM: TelegramBanks = TelegramBanks {
         "Enemy guns played on wall without effect",
         "Wall holds under enemy fire",
     ],
-    gunboat_sunk: &["Regret gunboat {units} sunk", "Gunboat {units} lost"],
+    // {units} carries the kind: "Gunboat Sultan", "Steamer Bordein" (1885).
+    gunboat_sunk: &["Regret {units} sunk", "{units} lost"],
     melee: &[
         "Hand to hand fighting {place}",
         "Spear and bayonet met {place}",
