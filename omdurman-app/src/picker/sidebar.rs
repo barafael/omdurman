@@ -141,6 +141,8 @@ struct UnitAnnotations<'a> {
     rulebook: &'a crate::rulebook::Rulebook,
     /// Counters placed this phase: their slots stay, empty.
     ghosts: &'a [UnitId],
+    /// Show counters that may not be placed now, dimmed (Movement phases).
+    show_unavailable: bool,
 }
 
 /// Bundle of the image assets + sprite annotations + rulebook reference
@@ -167,7 +169,11 @@ fn render_faction_units(
         drag_idx,
         drag_cancelled,
     } = drag;
-    let UnitAnnotations { rulebook, ghosts } = ctx;
+    let UnitAnnotations {
+        rulebook,
+        ghosts,
+        show_unavailable,
+    } = ctx;
     // Grouped by what the units are, not by counter sheet: leaders,
     // gunboats, one group per brigade (brigade integrity, §5.54), mounted
     // units, guns -- and each Dervish tribe apart (tribes may not stack
@@ -188,9 +194,15 @@ fn render_faction_units(
             None => groups.push((key, vec![(slot, pos)])),
         };
     for (idx, unit) in picker.available.iter().enumerate() {
-        if !unit.shown()
+        if !unit.visible
             || omdurman_rules::unit_profiles::section_owner(unit.section_name) != Some(faction)
         {
+            continue;
+        }
+        // In a Movement phase a counter that may not enter this turn keeps
+        // its slot, dimmed (`show_unavailable`), so a group reaching its
+        // quota does not shrink and move the groups below.
+        if !unit.offered && !show_unavailable {
             continue;
         }
         let key = unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
@@ -199,11 +211,12 @@ fn render_faction_units(
                 || (9, unit.section_name.display_name().to_string()),
                 |p| tray_group(&p.identity),
             );
-        add(
-            key,
-            TraySlot::Counter(idx),
-            sheet_pos(unit.section_name, unit.col, unit.row),
-        );
+        let slot = if unit.offered {
+            TraySlot::Counter(idx)
+        } else {
+            TraySlot::Unavailable(idx)
+        };
+        add(key, slot, sheet_pos(unit.section_name, unit.col, unit.row));
     }
     for &id in ghosts {
         let Some(profile) = omdurman_rules::unit_profiles::profile_for_unit(id) else {
@@ -228,7 +241,7 @@ fn render_faction_units(
             .iter()
             .filter_map(|(slot, _)| match slot {
                 TraySlot::Counter(i) => Some(*i),
-                TraySlot::Placed => None,
+                TraySlot::Placed | TraySlot::Unavailable(_) => None,
             })
             .collect();
         {
@@ -249,6 +262,32 @@ fn render_faction_units(
 
             ui.horizontal_wrapped(|ui| {
                 for (slot, _) in slots {
+                    if let TraySlot::Unavailable(j) = *slot {
+                        // Not this turn: the counter, dimmed and inert.
+                        let (rect, response) = ui.allocate_exact_size(
+                            egui::Vec2::new(cell_size, cell_size),
+                            egui::Sense::hover(),
+                        );
+                        if let Some(tex_id) =
+                            picker.available[j].egui_texture.as_ref().map(|t| t.id())
+                        {
+                            ui.painter().image(
+                                tex_id,
+                                egui::Rect::from_center_size(
+                                    rect.center(),
+                                    egui::Vec2::splat(sprite_size),
+                                ),
+                                egui::Rect::from_min_max(
+                                    egui::pos2(0.0, 0.0),
+                                    egui::pos2(1.0, 1.0),
+                                ),
+                                egui::Color32::from_white_alpha(70),
+                            );
+                        }
+                        response
+                            .on_hover_text("Not available this turn (order of appearance, §9.113)");
+                        continue;
+                    }
                     let TraySlot::Counter(j) = *slot else {
                         // Placed this phase: an empty slot holds its place.
                         let (rect, _) = ui.allocate_exact_size(
@@ -351,6 +390,8 @@ type SheetPos = (usize, u32, u32);
 enum TraySlot {
     Counter(usize),
     Placed,
+    /// In the order of battle but not placeable this turn (shown dimmed).
+    Unavailable(usize),
 }
 
 /// A counter's tray group: (display order, heading).
@@ -486,6 +527,7 @@ pub(crate) fn draw_tray(
     rulebook: &crate::rulebook::Rulebook,
     stamp: &crate::ui_trace::Stamp,
     ghosts: &[UnitId],
+    show_unavailable: bool,
 ) {
     use omdurman_types::Player;
     let mut clicked_idx: Option<usize> = None;
@@ -522,7 +564,11 @@ pub(crate) fn draw_tray(
                 drag_idx: &mut drag_idx,
                 drag_cancelled: &mut drag_cancelled,
             },
-            UnitAnnotations { rulebook, ghosts },
+            UnitAnnotations {
+                rulebook,
+                ghosts,
+                show_unavailable,
+            },
         );
     }
     ui.add_space(2.0);

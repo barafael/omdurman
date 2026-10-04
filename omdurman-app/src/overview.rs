@@ -177,6 +177,7 @@ pub fn unit_overview_ui(
                                         &rulebook,
                                         &stamp,
                                         &ghosts,
+                                        !in_setup,
                                     );
                                     if !same_hand(&before, &hand) {
                                         *picker_state = hand;
