@@ -227,15 +227,7 @@ fn drain_combat_observations(
                 );
                 // §6.64: where the shell landed, and on what roll.
                 if let Some((impact_roll, landed)) = impact {
-                    card.note = Some(if *landed == attack.target_hex {
-                        format!("Impact roll {}: on target (§6.64).", impact_roll.value())
-                    } else {
-                        format!(
-                            "Impact roll {}: the shell scattered to {} (§6.64).",
-                            impact_roll.value(),
-                            target_hex_label(*landed, gs)
-                        )
-                    });
+                    card.note = Some(impact_note(*impact_roll, *landed, attack.target_hex, gs));
                 }
                 card
             }
@@ -481,6 +473,28 @@ fn list_unit_names(ids: &[UnitId], gs: Option<&omdurman_rules::effects::GameStat
 
 /// A short label for any landmark at the target hex (fort, palace, etc.).
 /// Returns an empty string for an ordinary hex so the renderer can skip it.
+/// §6.64: where a howitzer shell landed, and on what roll.
+fn impact_note(
+    roll: omdurman_rules::DieRoll,
+    landed: HexCoord,
+    target: HexCoord,
+    gs: Option<&omdurman_rules::effects::GameState>,
+) -> String {
+    if landed == target {
+        return format!("Impact roll {}: on target (§6.64).", roll.value());
+    }
+    // An unnamed hex has no label: say where by coordinates (it read
+    // "scattered to  (§6.64)").
+    let mut at = target_hex_label(landed, gs);
+    if at.is_empty() {
+        at = format!("({},{})", landed.q, landed.r);
+    }
+    format!(
+        "Impact roll {}: the shell scattered to {at} (§6.64).",
+        roll.value()
+    )
+}
+
 fn target_hex_label(hex: HexCoord, gs: Option<&omdurman_rules::effects::GameState>) -> String {
     let Some(gs) = gs else { return String::new() };
     gs.board
@@ -794,6 +808,25 @@ fn draw_side(
             egui::RichText::new(format!("lost: {}", side.losses.join(", ")))
                 .color(a(crate::ui::palette::INK_LOSS))
                 .size(12.0),
+        );
+    }
+}
+
+#[cfg(test)]
+mod impact_tests {
+    use super::*;
+
+    #[test]
+    fn a_scattered_shell_says_where_it_landed() {
+        let note = impact_note(
+            omdurman_rules::DieRoll::Four,
+            HexCoord::new(24, 10),
+            HexCoord::new(23, 10),
+            None,
+        );
+        assert_eq!(
+            note,
+            "Impact roll 4: the shell scattered to (24,10) (§6.64)."
         );
     }
 }
