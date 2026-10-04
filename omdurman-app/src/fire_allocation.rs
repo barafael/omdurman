@@ -306,7 +306,7 @@ pub fn fire_allocation_review_ui(
                 && ui
                     .add(
                         egui::Button::new(format!(
-                            "Resolve {} attack{}",
+                            "Resolve {} attack{} (Enter)",
                             allocation.attacks.len(),
                             if allocation.attacks.len() == 1 {
                                 ""
@@ -485,6 +485,34 @@ fn draw_allocation_row(
 /// Runs once when the player clicks "Resolve N attacks". Each attack is
 /// pre-validated against the engine (in order, over the earlier ones); a
 /// refused attack is reported on a slip and not sent.
+/// Enter resolves the staged attacks, as it confirms a move: the key the
+/// player already has under the finger for "go".
+pub fn resolve_fire_on_enter(
+    mut commands: MessageReader<crate::hotkeys::PickerCommand>,
+    game_state: Option<Res<GameStateResource>>,
+    mut allocation: ResMut<FireAllocationState>,
+    peers: Peers,
+) {
+    if !commands
+        .read()
+        .any(|c| *c == crate::hotkeys::PickerCommand::ConfirmMove)
+    {
+        return;
+    }
+    let Some(gs) = game_state else { return };
+    if allocation.attacks.is_empty()
+        || allocation.committed
+        || !matches!(
+            gs.0.phase,
+            Phase::OffensiveFire(_) | Phase::DefensiveFire(_)
+        )
+        || !peers.may_act(gs.0.phase_player())
+    {
+        return;
+    }
+    allocation.execute_requested = true;
+}
+
 pub fn execute_fire_allocations(
     mut allocation: ResMut<FireAllocationState>,
     mut rng: Option<ResMut<GameRng>>,
