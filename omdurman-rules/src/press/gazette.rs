@@ -101,6 +101,8 @@ struct Record {
     /// (turn, enemy units lost that turn, where they fell).
     bloodiest: Option<(u8, usize, Option<HexCoord>)>,
     melees: usize,
+    /// (turn, complete) when the Zariba was finished, else first built.
+    zariba: Option<(u8, bool)>,
     /// (hex, by our guns) of each breach made.
     breaches: Vec<(HexCoord, bool)>,
     /// Dervish emirs (leaders other than the Khalifa) killed.
@@ -128,6 +130,12 @@ fn read_record(state: &GameState) -> Record {
         for event in &summary.events {
             match event {
                 TurnEventRecord::MeleeCombat { .. } => rec.melees += 1,
+                TurnEventRecord::ZaribaBuilt { complete, .. } => {
+                    // When begun, until the record says it was finished.
+                    if rec.zariba.is_none_or(|(_, done)| *complete && !done) {
+                        rec.zariba = Some((turn, *complete));
+                    }
+                }
                 TurnEventRecord::WallBreach {
                     attacker,
                     hexside,
@@ -280,6 +288,15 @@ pub fn front_page(state: &GameState, telegrams: &[(u8, String)]) -> FrontPage {
                 ("place", &place_or_field(at)),
             ],
         ));
+    }
+    if let Some((turn, complete)) = rec.zariba {
+        let (date, time) = when(turn);
+        let bank = if complete {
+            L.zariba_complete
+        } else {
+            L.zariba_begun
+        };
+        course.push(say(bank, 18, &[("date", &date), ("time", &time)]));
     }
     if rec.melees > 0 {
         let times = match rec.melees {
@@ -632,6 +649,23 @@ mod tests {
             page,
             front_page(&state, &[(1, "LINES HOLD FULL STOP".into())])
         );
+    }
+
+    #[test]
+    fn the_lead_tells_of_the_zariba() {
+        let state = finished(
+            Scenario::Campaign,
+            GameResult::Historical {
+                ae: crate::HistoricalVictoryLevel::Strategic,
+                d: crate::HistoricalVictoryLevel::Draw,
+            },
+            vec![TurnEventRecord::ZaribaBuilt {
+                hexsides: 6,
+                complete: true,
+            }],
+        );
+        let text = front_page(&state, &[]).lead.paragraphs.join(" ");
+        assert!(text.contains("zariba") && text.contains("Egeiga"), "{text}");
     }
 
     #[test]

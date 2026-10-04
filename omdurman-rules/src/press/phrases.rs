@@ -189,6 +189,9 @@ pub struct LeadBanks {
     pub no_contact: Bank,
     pub bloodiest: Bank,
     pub melees: Bank,
+    /// The Zariba round the camp at Egeiga (§5.3): finished / begun.
+    pub zariba_complete: Bank,
+    pub zariba_begun: Bank,
     pub we_breached: Bank,
     pub enemy_breached: Bank,
     pub emirs_killed: Bank,
@@ -280,6 +283,14 @@ pub static LEAD: LeadBanks = LeadBanks {
     melees: &[
         "On {n} occasions the fighting came to hand-to-hand.",
         "The bayonet and the spear met at close quarters {n} times.",
+    ],
+    zariba_complete: &[
+        "By {time} on {date} the army lay at Egeiga behind a completed zariba of thorn and trench.",
+        "The camp at Egeiga was enclosed by its zariba at {time} on {date}.",
+    ],
+    zariba_begun: &[
+        "A zariba was begun about the camp at Egeiga at {time} on {date}.",
+        "The troops set to cutting thorn for a zariba at Egeiga at {time} on {date}.",
     ],
     we_breached: &[
         "Our guns opened a breach in the city wall {place}.",
