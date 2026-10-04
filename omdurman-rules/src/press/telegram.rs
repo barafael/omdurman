@@ -407,6 +407,15 @@ pub fn telegram(state: &GameState, summary: &TurnSummary) -> String {
         situation.push(Fact::new(9, 27, T.night));
     }
 
+    // Once Gordon has fallen nobody in Khartoum is left to report the
+    // front: the message is Korti's news of the fall (see [`filed`]).
+    if scenario == Scenario::FallOfKhartoum
+        && state
+            .gordon_eliminated_turn
+            .is_some_and(|t| t.value() <= summary.turn.value())
+    {
+        situation.clear();
+    }
     facts.truncate(MOST);
     for fact in situation {
         if facts.len() >= LEAST {
@@ -419,6 +428,43 @@ pub fn telegram(state: &GameState, summary: &TurnSummary) -> String {
     }
 
     telegraphese(&word(&facts, summary, scenario).join(". "))
+}
+
+/// How a turn's message travelled. In 1885 the wire from Khartoum had long
+/// been cut -- Gordon wrote by runner and steamer -- and London had the news
+/// of the fall by telegraph from Korti, Wolseley's headquarters. In 1898 the
+/// field telegraph ran with the army.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Filed {
+    FieldTelegraph,
+    RunnerFromKhartoum,
+    TelegraphFromKorti,
+}
+
+impl Filed {
+    /// The overlay's title.
+    pub fn title(self) -> &'static str {
+        match self {
+            Filed::FieldTelegraph => "FIELD TELEGRAM",
+            Filed::RunnerFromKhartoum => "MESSAGE FROM KHARTOUM",
+            Filed::TelegraphFromKorti => "TELEGRAM FROM KORTI",
+        }
+    }
+}
+
+/// How the message of `turn` was filed.
+pub fn filed(state: &GameState, turn: u8) -> Filed {
+    match state.scenario {
+        Scenario::FallOfKhartoum
+            if state
+                .gordon_eliminated_turn
+                .is_some_and(|t| t.value() <= turn) =>
+        {
+            Filed::TelegraphFromKorti
+        }
+        Scenario::FallOfKhartoum => Filed::RunnerFromKhartoum,
+        Scenario::Campaign | Scenario::Historical => Filed::FieldTelegraph,
+    }
 }
 
 /// The facts as sentences (ordinary case, before telegraphese).
@@ -685,6 +731,31 @@ mod tests {
         assert!(
             !said[1].contains(&abu_alim) && said[1].contains("there"),
             "{said:?}"
+        );
+    }
+
+    /// 1885: Gordon's messages go by runner; the fall is Korti's news, with
+    /// no report from a front nobody is left to hold.
+    #[test]
+    fn khartoum_falls_by_telegraph_from_korti() {
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        assert_eq!(filed(&state, 3), Filed::RunnerFromKhartoum);
+        state.gordon_eliminated_turn = Some(GameTurnIndex::new(2));
+        assert_eq!(filed(&state, 1), Filed::RunnerFromKhartoum);
+        assert_eq!(filed(&state, 2), Filed::TelegraphFromKorti);
+        assert_eq!(
+            filed(&GameState::new(Scenario::Campaign), 2),
+            Filed::FieldTelegraph
+        );
+        let events = vec![TurnEventRecord::UnitEliminated {
+            unit: UnitId::BritishBoats_3_1,
+            cause: ElimCause::GordonAtPalace,
+        }];
+        let text = telegram(&state, &summary(events));
+        assert!(text.contains("KHARTOUM"), "{text}");
+        assert!(
+            !text.contains("CONTACT") && !text.contains("FRONT"),
+            "{text}"
         );
     }
 

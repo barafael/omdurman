@@ -53,10 +53,11 @@ pub struct TelegramBanks {
 }
 
 pub static TELEGRAM: TelegramBanks = TelegramBanks {
+    // Reported from Korti: the news came down the river by steamer.
     gordon_killed: &[
-        "Gordon killed at the Palace",
-        "General Gordon fallen at his post",
-        "Palace entered Gordon killed",
+        "Khartoum fallen Gordon reported killed at the Palace",
+        "News from Khartoum city taken General Gordon fallen at his post",
+        "Khartoum in enemy hands Gordon believed killed",
     ],
     leader_lost: &[
         "Regret {leader} killed {place}",
