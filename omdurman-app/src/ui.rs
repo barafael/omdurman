@@ -162,14 +162,17 @@ pub mod palette {
     /// Fire-allocation tray (long rows of firers and modifiers over the
     /// board: kept near-opaque, see `CARD_MELEE_DECLARED`).
     pub const CARD_ALLOCATION: Color32 = Color32::from_rgba_unmultiplied_const(30, 30, 40, 245);
+    // The cards below carry rules text to read over the map: 210 blended in
+    // linear light came out at about 60% (the Zariba card's text was lost
+    // in the scan behind it), so they are near-opaque like the rest.
     /// Positive / friendly card (Friendlies transport, Gordon holds).
-    pub const CARD_GOOD: Color32 = Color32::from_rgba_unmultiplied_const(35, 50, 30, 210);
+    pub const CARD_GOOD: Color32 = Color32::from_rgba_unmultiplied_const(35, 50, 30, 245);
     /// Negative card (Gordon fallen).
-    pub const CARD_BAD: Color32 = Color32::from_rgba_unmultiplied_const(60, 25, 25, 210);
+    pub const CARD_BAD: Color32 = Color32::from_rgba_unmultiplied_const(60, 25, 25, 245);
     /// Engineering / siege card (zariba, demolition, artillery breach).
-    pub const CARD_ENGINEERING: Color32 = Color32::from_rgba_unmultiplied_const(50, 38, 30, 210);
+    pub const CARD_ENGINEERING: Color32 = Color32::from_rgba_unmultiplied_const(50, 38, 30, 245);
     /// Setup-time optional-rule card (river mines / chain).
-    pub const CARD_SETUP: Color32 = Color32::from_rgba_unmultiplied_const(40, 30, 40, 210);
+    pub const CARD_SETUP: Color32 = Color32::from_rgba_unmultiplied_const(40, 30, 40, 245);
     /// Board-anchored refusal tag (LOS blocked reason).
     pub const REFUSAL_TAG_BG: Color32 = Color32::from_rgba_premultiplied(40, 10, 10, 200);
 
