@@ -377,7 +377,7 @@ fn collect_hints(
     match phase {
         Phase::Setup => {
             if cx.tray_open {
-                out.push(hint("Pick a counter below, then a highlighted hex", None));
+                out.push(hint("Pick a counter above, then a highlighted hex", None));
             } else {
                 out.push(hint("Nothing (more) to deploy \u{2014} press Ready", None));
             }
@@ -400,7 +400,7 @@ fn collect_hints(
         Phase::Movement => {
             if cx.tray_open {
                 out.push(hint(
-                    "Bring on reinforcements: pick a counter below, then a green hex",
+                    "Bring on reinforcements: pick a counter above, then a green hex",
                     None,
                 ));
             }
