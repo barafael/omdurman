@@ -92,6 +92,7 @@ fn main() {
     let room = room_id();
 
     let mut app = App::new();
+    picker::register_sprite_source(&mut app);
     app.add_plugins(
         DefaultPlugins
             .set(WindowPlugin {

@@ -50,29 +50,32 @@ mod generated {
 pub struct GamePlugin;
 
 /// The asset path of counter sprite `name` (`<section>_<col>_<row>`): the
-/// sprites are baked into the binary (see [`register_embedded_sprites`]),
-/// not read from `assets/sprites/` at run time.
+/// sprites are baked into the binary and served by the `sprite://` asset
+/// source (see [`register_sprite_source`]), not read from `assets/sprites/`.
 pub(crate) fn sprite_asset_path(name: &str) -> String {
-    format!("embedded://sprites/{name}.webp")
+    format!("sprite://{name}.webp")
 }
 
-/// Register every counter sprite with Bevy's `embedded://` asset source, so
-/// the game never depends on finding `assets/sprites/` beside the binary
-/// (or, on the web, on 240 separate fetches), and the sprite index and the
-/// images come from the same build.
-fn register_embedded_sprites(app: &mut App) {
-    let registry = app
-        .world_mut()
-        .resource_mut::<bevy::asset::io::embedded::EmbeddedAssetRegistry>();
+/// Register the `sprite://` asset source: every counter sprite, baked into
+/// the binary from the same build-script scan as the sprite index, served
+/// from memory. The game never depends on finding `assets/sprites/` beside
+/// the binary (or, on the web, on 240 separate fetches). Must run before
+/// `AssetPlugin` (i.e. before `DefaultPlugins`) is added.
+pub fn register_sprite_source(app: &mut App) {
+    use bevy::asset::io::AssetSourceBuilder;
+    use bevy::asset::io::memory::{Dir, MemoryAssetReader};
+    let root = Dir::default();
     for &(name, bytes) in generated::SPRITE_BYTES {
-        let path = std::path::PathBuf::from(format!("sprites/{name}.webp"));
-        registry.insert_asset(path.clone(), &path, bytes);
+        root.insert_asset(std::path::Path::new(&format!("{name}.webp")), bytes);
     }
+    app.register_asset_source(
+        "sprite",
+        AssetSourceBuilder::new(move || Box::new(MemoryAssetReader { root: root.clone() })),
+    );
 }
 
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
-        register_embedded_sprites(app);
         app
             // -- Resources ----------------------------------------------
             .insert_resource(UnitPicker::default())

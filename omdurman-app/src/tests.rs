@@ -1673,6 +1673,7 @@ mod mode_transition_tests {
 fn headless_game_app(window: bool) -> bevy::app::App {
     use bevy::prelude::*;
     let mut app = App::new();
+    crate::picker::register_sprite_source(&mut app);
     app.add_plugins(
         DefaultPlugins
             .set(WindowPlugin {
