@@ -231,8 +231,6 @@ pub mod palette {
 
     /// Current-turn marker on the board's turn track.
     pub const TURN_MARKER: Color32 = Color32::from_rgba_premultiplied(255, 100, 80, 240);
-    /// Other turn markers on the board's turn track.
-    pub const TURN_MARKER_DIM: Color32 = Color32::from_rgba_premultiplied(180, 180, 180, 140);
 
     // -- Buttons -----------------------------------------------------------------
 

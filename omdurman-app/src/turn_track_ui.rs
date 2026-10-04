@@ -171,13 +171,24 @@ pub(crate) fn turn_track_labels(
                 None => format!("Turn {turn_num}"),
             };
 
-            let is_current = (idx as usize) == current_idx;
-            let (color, size) = if is_current {
-                (crate::ui::palette::TURN_MARKER, 11.0)
-            } else {
-                (crate::ui::palette::TURN_MARKER_DIM, 9.0)
+            // The scan prints every cell's time; only the current one is
+            // marked, in a size that fits its cell on screen (fixed-size
+            // labels on every cell ran into each other when zoomed out).
+            if (idx as usize) != current_idx {
+                continue;
+            }
+            let (Some(left), Some(right)) = (
+                screen_centre(cx_px - cell_w / 2.0, cy_px),
+                screen_centre(cx_px + cell_w / 2.0, cy_px),
+            ) else {
+                continue;
             };
-
+            // Monospace glyphs are about 0.6 em wide.
+            let fit = (right.x - left.x) * 0.9 / (0.6 * text.chars().count() as f32);
+            let size = fit.min(14.0);
+            if size < 6.0 {
+                continue;
+            }
             ctx.debug_painter().text(
                 screen,
                 egui::Align2::CENTER_CENTER,
@@ -186,7 +197,7 @@ pub(crate) fn turn_track_labels(
                     size,
                     family: egui::FontFamily::Monospace,
                 },
-                color,
+                crate::ui::palette::TURN_MARKER,
             );
         }
     }
