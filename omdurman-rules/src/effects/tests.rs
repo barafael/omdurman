@@ -5466,6 +5466,21 @@ mod tests {
     }
 
     #[test]
+    fn a_group_must_fit_at_its_goal_together() {
+        // Two battalions already stand in the goal hex: a four-stack may not
+        // join them (eight units), two more may (§5.51's four-unit limit).
+        let mut state = GameState::new(Scenario::Campaign);
+        let goal = HexCoord::new(5, 5);
+        make_ae_infantry(&mut state, goal);
+        make_ae_infantry(&mut state, goal);
+        let movers: Vec<UnitId> = (0..4)
+            .map(|_| make_ae_infantry(&mut state, HexCoord::new(1, 1)))
+            .collect();
+        assert!(state.check_group_stacking(&movers, goal).is_err());
+        assert!(state.check_group_stacking(&movers[..2], goal).is_ok());
+    }
+
+    #[test]
     fn campaign_set_up_offers_only_the_dervish_initial_force() {
         // §9.111/§9.113: the Anglo-Egyptians deploy nothing at Campaign
         // set-up; the Dervish forts and Taiasha do.

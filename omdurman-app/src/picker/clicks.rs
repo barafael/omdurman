@@ -1388,6 +1388,22 @@ impl SelectedStackClick<'_, '_, '_> {
         let Some(Ok((_, placed))) = sources.first().map(|&s| placed_units.get(s)) else {
             return Ok(());
         };
+        // The whole group must fit at its goal (§5.51-5.53): checking only
+        // the representative unit let a four-stack be routed onto a hex
+        // holding two, and the commit then moved two and silently left the
+        // rest behind.
+        if let Some(gs) = game_state {
+            let movers: Vec<_> = sources
+                .iter()
+                .filter_map(|&s| placed_units.get(s).ok().and_then(|(_, p)| p.unit_id))
+                .collect();
+            if let Err(error) = gs.0.check_group_stacking(&movers, goal) {
+                return Err(format!(
+                    "The stack cannot end its move on {goal} together: {error}. Move fewer \
+                     units, or pick another hex."
+                ));
+            }
+        }
         let budget = if self.forced_stop {
             0
         } else {

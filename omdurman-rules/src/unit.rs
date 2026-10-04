@@ -164,13 +164,17 @@ impl GunboatId {
     }
 }
 
-/// The five named gunboats with howitzer capability (rulebook §6.64, §2.32).
+/// The five named gunboats with howitzer capability (rulebook §6.64, §2.32),
+/// as printed on the counters: Sultan, Melik, Sheik, Fateh and Abu Klea.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
 pub enum NamedGunboat {
     Sultan,
     Melik,
     Sheik,
     Fateh,
+    /// The counter printed "Abu Klea". (The variant keeps its old name:
+    /// it is serialised in records.)
+    #[strum(serialize = "Abu Klea")]
     Naser,
 }
 
@@ -180,10 +184,15 @@ pub enum NamedGunboat {
 /// in the Maxim Second Fire and Howitzer subphase (§6.42).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
 pub enum OldGunboat {
-    #[strum(serialize = "Lord Kitchener")]
+    /// The four old boats are printed only "GUNBOAT"; they carry the names
+    /// of the 1898 flotilla's older boats not on a named counter: El Teb,
+    /// Tamai, Metemmeh and Naser. (Variant names are serialised in records;
+    /// new variants are appended.)
+    #[strum(serialize = "El Teb")]
     LordKitchener,
     Tamai,
     Metemmeh,
+    Naser,
 }
 
 // ---------------------------------------------------------------------------
