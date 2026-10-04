@@ -24,6 +24,7 @@ mod game_record;
 mod hexside_layer;
 mod hotkeys;
 mod hover_tooltip;
+mod keepsakes;
 mod lobby;
 mod melee;
 mod mode_transitions;
@@ -265,6 +266,8 @@ fn add_game(app: &mut App, room: String) {
         .insert_resource(game_record::SavedGamesCache::default())
         .insert_resource(telegram::TelegramLog::default())
         .insert_resource(newspaper::NewspaperReport::default())
+        .init_resource::<keepsakes::Keepsakes>()
+        .add_systems(Update, keepsakes::take_keepsakes)
         .add_systems(
             OnEnter(AppState::Lobby),
             game_record::refresh_saved_games_on_lobby,

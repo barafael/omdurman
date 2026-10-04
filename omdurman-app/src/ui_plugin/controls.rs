@@ -542,6 +542,10 @@ pub(crate) fn telegram_overlay(
     mut contexts: EguiContexts,
     game_state: Option<Res<crate::GameStateResource>>,
     telegram_log: Option<ResMut<crate::telegram::TelegramLog>>,
+    keepsakes: Option<(
+        ResMut<crate::keepsakes::Keepsakes>,
+        Res<crate::game_record::GameRecorder>,
+    )>,
 ) {
     let (Some(state), Some(mut log)) = (game_state, telegram_log) else {
         return;
@@ -555,6 +559,10 @@ pub(crate) fn telegram_overlay(
     let Some((turn, text)) = log.entries.get(log.acknowledged).cloned() else {
         return;
     };
+    // A keepsake of the game played: each turn's telegram, once.
+    if let Some((mut keepsakes, recorder)) = keepsakes {
+        keepsakes.request(&recorder, &format!("telegram-turn-{turn:02}"));
+    }
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
     let mut dismiss = false;
