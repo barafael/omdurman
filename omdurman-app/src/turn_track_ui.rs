@@ -189,7 +189,9 @@ pub(crate) fn turn_track_labels(
             if size < 6.0 {
                 continue;
             }
-            ctx.debug_painter().text(
+            // On the board, under every window: the debug painter drew it
+            // over the newspaper and the telegram.
+            ctx.layer_painter(egui::LayerId::background()).text(
                 screen,
                 egui::Align2::CENTER_CENTER,
                 text,
