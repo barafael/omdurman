@@ -107,6 +107,7 @@ pub fn unit_overview_ui(
                             if *app_state.get() == crate::AppState::InGame
                                 && let Some(state) = game_state.as_deref()
                             {
+                                let block_top = ui.cursor().top();
                                 crate::ui_plugin::game_control_section(
                                     ui,
                                     state,
@@ -146,6 +147,24 @@ pub fn unit_overview_ui(
                                 }
                                 if let Some(sec) = clicked_section {
                                     crate::rulebook::request_section(&mut rulebook, &sec);
+                                }
+                                // While counters are being placed the block above the tray never
+                                // shrinks within a phase (and starts with room for two more lines):
+                                // a hint appearing or vanishing must not move the tray under the
+                                // pointer.
+                                if tray_open {
+                                    let key = egui::Id::new((
+                                        "rail_block_height",
+                                        state.0.current_turn.value(),
+                                        format!("{:?}{:?}", state.0.phase, state.0.active_player),
+                                    ));
+                                    let used = ui.cursor().top() - block_top;
+                                    let keep = ui
+                                        .data(|d| d.get_temp::<f32>(key))
+                                        .unwrap_or(used + 36.0)
+                                        .max(used);
+                                    ui.data_mut(|d| d.insert_temp(key, keep));
+                                    ui.add_space(keep - used);
                                 }
 
                                 // -- Counter tray: set-up force / this turn's arrivals --

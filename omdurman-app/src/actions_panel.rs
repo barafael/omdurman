@@ -381,11 +381,20 @@ fn collect_hints(
             } else {
                 out.push(hint("Nothing (more) to deploy \u{2014} press Ready", None));
             }
-            if optional(omdurman_rules::OptionalRule::RiverMines) {
-                out.push(hint("Lay river mines (Dervish)", None));
+            // The Dervish set-up's own tasks, while still to do (§10.11 the
+            // mines are secret: never hinted to the other side).
+            let dervish_deploying = gs.player_to_act() == Some(omdurman_types::Player::Dervish);
+            if dervish_deploying
+                && optional(omdurman_rules::OptionalRule::RiverMines)
+                && gs.mines.len() < 2
+            {
+                out.push(hint("Lay the two river mines in the Nile", None));
             }
-            if optional(omdurman_rules::OptionalRule::RiverChain) {
-                out.push(hint("Lay the river chain (Dervish)", None));
+            if dervish_deploying
+                && optional(omdurman_rules::OptionalRule::RiverChain)
+                && gs.chain.is_none()
+            {
+                out.push(hint("String the river chain across the Nile", None));
             }
         }
         Phase::Movement => {
