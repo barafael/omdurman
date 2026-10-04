@@ -310,7 +310,11 @@ pub fn front_page(state: &GameState, telegrams: &[(u8, String)]) -> FrontPage {
         course.push(say(L.khalifa_killed, 7, &[("place", &place_or_field(at))]));
     }
     if !rec.emirs.is_empty() {
-        let names: Vec<String> = rec.emirs.iter().map(|&u| super::prose_name(u)).collect();
+        let names: Vec<String> = rec
+            .emirs
+            .iter()
+            .map(|&u| super::prose_name(u, scenario))
+            .collect();
         course.push(say(L.emirs_killed, 17, &[("units", &and_list(&names))]));
     }
     if let Some(turn) = state.gordon_eliminated_turn {
@@ -348,17 +352,21 @@ pub fn front_page(state: &GameState, telegrams: &[(u8, String)]) -> FrontPage {
         .ours_lost
         .iter()
         .filter(|&&u| matches!(identity(u), Some(UnitIdentity::AngloEgyptianLeader(_))))
-        .map(|&u| super::prose_name(u))
+        .map(|&u| super::prose_name(u, scenario))
         .collect();
     let gunboats: Vec<String> = rec
         .ours_lost
         .iter()
         .filter(|&&u| matches!(identity(u), Some(UnitIdentity::AngloEgyptianGunboat(_))))
-        .map(|&u| super::prose_name(u))
+        .map(|&u| super::prose_name(u, scenario))
         .collect();
     let named: Vec<String> = {
         let mut seen: Vec<String> = Vec::new();
-        for n in rec.ours_lost.iter().map(|&u| super::prose_name(u)) {
+        for n in rec
+            .ours_lost
+            .iter()
+            .map(|&u| super::prose_name(u, scenario))
+        {
             if !seen.contains(&n) {
                 seen.push(n);
             }
@@ -479,7 +487,7 @@ pub fn front_page(state: &GameState, telegrams: &[(u8, String)]) -> FrontPage {
     let roll_of_honour = {
         let mut counted: Vec<(String, UnitId, usize)> = Vec::new();
         for &unit in &rec.ours_lost {
-            let name = super::prose_name(unit);
+            let name = super::prose_name(unit, scenario);
             match counted.iter_mut().find(|(n, _, _)| *n == name) {
                 Some((_, _, count)) => *count += 1,
                 None => counted.push((name, unit, 1)),
@@ -493,7 +501,7 @@ pub fn front_page(state: &GameState, telegrams: &[(u8, String)]) -> FrontPage {
         });
         counted
             .into_iter()
-            .map(|(_, unit, count)| capitalize(&super::prose_count(unit, count)))
+            .map(|(_, unit, count)| capitalize(&super::prose_count(unit, count, scenario)))
             .collect()
     };
     let pool = match scenario {

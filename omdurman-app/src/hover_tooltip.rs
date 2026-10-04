@@ -148,7 +148,7 @@ fn draw_hover_tooltip(
                                     };
                                     let label = format!(
                                         "{owner_mark} {} ({}/{})",
-                                        u.profile.identity.short_label(),
+                                        u.profile.identity.label_in(gs.scenario),
                                         u.profile.fire.map(|f| f.value()).unwrap_or(0),
                                         u.profile.melee.map(|m| m.value()).unwrap_or(0),
                                     );

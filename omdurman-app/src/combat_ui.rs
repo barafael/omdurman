@@ -108,10 +108,12 @@ pub(crate) fn unit_name(
     id: omdurman_rules::UnitId,
     gs: Option<&omdurman_rules::effects::GameState>,
 ) -> String {
+    let scenario = gs.map_or(omdurman_types::Scenario::Campaign, |s| s.scenario);
     gs.and_then(|s| s.find_unit(id))
-        .map(|u| u.profile.identity.short_label())
+        .map(|u| u.profile.identity.label_in(scenario))
         .or_else(|| {
-            omdurman_rules::unit_profiles::profile_for_unit(id).map(|p| p.identity.short_label())
+            omdurman_rules::unit_profiles::profile_for_unit(id)
+                .map(|p| p.identity.label_in(scenario))
         })
         .unwrap_or_else(|| format!("unit {id:?}"))
 }

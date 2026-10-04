@@ -469,6 +469,27 @@ impl UnitIdentity {
     /// dispatch slip, tooltip, picker row, or combat-card line. The single
     /// source of truth for the short label previously duplicated as
     /// `identity_short` across the app surfaces.
+    /// [`Self::short_label`] as the unit is called in `scenario`'s battle:
+    /// in FALL OF KHARTOUM (1885) the old gunboats are Gordon's steamers --
+    /// Bordein, Talahawiyeh, Safia, Mansura -- not the 1898 flotilla's boats
+    /// the counters are otherwise named after.
+    pub fn label_in(&self, scenario: omdurman_types::Scenario) -> String {
+        match self {
+            UnitIdentity::AngloEgyptianGunboat(GunboatId::Old(boat))
+                if scenario == omdurman_types::Scenario::FallOfKhartoum =>
+            {
+                let steamer = match boat {
+                    OldGunboat::LordKitchener => "Bordein",
+                    OldGunboat::Tamai => "Talahawiyeh",
+                    OldGunboat::Metemmeh => "Safia",
+                    OldGunboat::Naser => "Mansura",
+                };
+                format!("Steamer {steamer}")
+            }
+            other => other.short_label(),
+        }
+    }
+
     pub fn short_label(&self) -> String {
         match self {
             UnitIdentity::DervishTribal { tribe } => tribe.to_string(),

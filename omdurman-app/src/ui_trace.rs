@@ -283,11 +283,12 @@ pub fn placed_label(placed: &PlacedUnit, game_state: Option<&crate::GameStateRes
         placed.col,
         placed.row
     );
+    let scenario = game_state.map_or(omdurman_types::Scenario::Campaign, |gs| gs.0.scenario);
     match placed
         .unit_id
         .and_then(|uid| game_state.and_then(|gs| gs.0.find_unit(uid)))
     {
-        Some(unit) => unit.profile.identity.short_label(),
+        Some(unit) => unit.profile.identity.label_in(scenario),
         None => cell,
     }
 }

@@ -399,7 +399,7 @@ pub fn melee_combat_preview_ui(
         .filter_map(|id| gs.0.find_unit(*id))
         .map(|u| {
             let mf = u.profile.melee.map(|m| m.value()).unwrap_or(0);
-            format!("{}: {}", u.profile.identity.short_label(), mf)
+            format!("{}: {}", u.profile.identity.label_in(gs.0.scenario), mf)
         })
         .collect();
     let def_details: Vec<String> = attack
@@ -407,7 +407,7 @@ pub fn melee_combat_preview_ui(
         .iter()
         .filter_map(|id| gs.0.find_unit(*id))
         .map(|u| {
-            let name = u.profile.identity.short_label();
+            let name = u.profile.identity.label_in(gs.0.scenario);
             if u.state.disrupted {
                 // Disrupted units may not melee (reference notes).
                 format!("{name}: 0 (disrupted)")
