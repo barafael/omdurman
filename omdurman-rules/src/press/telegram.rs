@@ -67,6 +67,27 @@ fn usual(hexes: &[HexCoord]) -> Option<HexCoord> {
 /// Our lost units as the clerk keys a list: "3E First Btn and battery", or
 /// "five units including 3E First Btn and battery".
 fn wire_list(units: &[UnitId], scenario: Scenario) -> String {
+    // Battalions of one brigade go together: "two battalions First British
+    // Brigade", not each spelled out.
+    let brigades: Vec<Option<omdurman_types::BrigadeId>> = units
+        .iter()
+        .map(|&u| match identity(u) {
+            Some(i @ UnitIdentity::AngloEgyptianInfantry { brigade, .. }) if !i.is_friendlies() => {
+                Some(brigade.designation())
+            }
+            _ => None,
+        })
+        .collect();
+    if units.len() >= 2
+        && let Some(Some(brigade)) = brigades.first()
+        && brigades.iter().all(|b| *b == Some(*brigade))
+    {
+        return format!(
+            "{} battalions {} Brigade",
+            number_word(units.len()),
+            super::brigade_words(*brigade)
+        );
+    }
     let names = distinct(units.iter().map(|&u| super::wire_name(u, scenario)), 2);
     if units.len() <= 2 {
         names.join(" and ")
@@ -593,6 +614,13 @@ mod tests {
         assert!(
             text.contains("THE SIRDAR AND GENERAL HUNTER AND FIRST EGYPTIAN BRIGADE"),
             "{text}"
+        );
+        assert_eq!(
+            wire_list(
+                &[UnitId::Kitchener_5_0, UnitId::Kitchener_6_0],
+                Scenario::Campaign
+            ),
+            "two battalions First Egyptian Brigade"
         );
         // The same place twice running: the second sentence says "there".
         let abu_alim = whereabouts(Scenario::Campaign, HexCoord::new(40, 12));

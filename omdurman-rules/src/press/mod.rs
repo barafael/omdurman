@@ -445,8 +445,17 @@ pub fn whereabouts(scenario: Scenario, hex: HexCoord) -> String {
     {
         return format!("near {name}");
     }
+    // Measured from the nearest named place while it is within two miles
+    // ("a mile west of Egeiga", as the correspondents at the zariba wrote),
+    // else from the city.
     let city = home_city(scenario);
-    let Some((centre, _, _)) = places.iter().find(|(_, name, _)| name == city) else {
+    let nearby = places
+        .iter()
+        .filter(|(at, _, _)| at.distance(hex) <= 8)
+        .min_by_key(|(at, _, _)| at.distance(hex));
+    let Some((centre, city, _)) =
+        nearby.or_else(|| places.iter().find(|(_, name, _)| name == city))
+    else {
         return "in the field".into();
     };
     let miles = ((hex.distance(*centre) + 2) / 4).max(1) as usize;
@@ -584,6 +593,13 @@ mod tests {
         assert_eq!(
             whereabouts(Scenario::Campaign, HexCoord::new(31, 19)),
             "near Jebel Surgham"
+        );
+        // Out past "near", but a mile or so from a named place: measured
+        // from it, not from a city six miles off.
+        let by_egeiga = whereabouts(Scenario::Campaign, HexCoord::new(29, 13));
+        assert!(
+            !by_egeiga.contains("Omdurman") && by_egeiga.contains(" of "),
+            "{by_egeiga}"
         );
         let far = whereabouts(Scenario::Campaign, HexCoord::new(5, 30));
         assert!(
