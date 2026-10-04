@@ -714,6 +714,14 @@ impl GameState {
         if unit.profile.identity.owner() != player {
             return Err(RuleError::NotOwner(unit_id));
         }
+        // The scenario's own counters (GORDON, the North Fort) are placed by
+        // the scenario, never from the tray: picked up, one could not be put
+        // back, and the set-up could never be completed.
+        if crate::scenario_setup::is_fixed_placement(self.scenario, unit_id) {
+            return Err(RuleError::SetupLimit(
+                "the scenario places this counter; it stays where it is",
+            ));
+        }
         self.require_setup_turn(player)
     }
 

@@ -3972,6 +3972,37 @@ mod tests {
     }
 
     #[test]
+    fn remove_deployed_unit_rejected_for_the_scenarios_own_counters() {
+        // The FoK North Fort is placed by the scenario, not from the tray:
+        // picked up, it could never be put back -- found in a play-test,
+        // where the Dervish set-up then could not be completed.
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        let fort = UnitId::HadendowaForts_0_0;
+        assert!(crate::scenario_setup::is_fixed_placement(
+            Scenario::FallOfKhartoum,
+            fort
+        ));
+        state.units.push(UnitPlacement {
+            id: fort,
+            position: HexCoord::new(19, 3),
+            profile: crate::unit_profiles::profile_for_unit(fort).expect("a counter"),
+            state: Default::default(),
+        });
+        assert!(matches!(
+            apply_effect(
+                &mut state,
+                &GameEffect::RemoveDeployedUnit {
+                    unit_id: fort,
+                    player: Player::Dervish,
+                }
+            )
+            .unwrap_err(),
+            RuleError::SetupLimit(_)
+        ));
+        assert_eq!(state.units.len(), 1);
+    }
+
+    #[test]
     fn remove_deployed_unit_rejected_unknown() {
         let mut state = GameState::new(Scenario::Campaign);
         let id = state.alloc_unit_id(); // never deployed
