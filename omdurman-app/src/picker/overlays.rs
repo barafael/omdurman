@@ -543,6 +543,11 @@ pub fn movement_overlay_mesh(
 #[derive(Component)]
 pub(crate) struct DeploymentZoneRing;
 
+/// What the deployment rings were drawn for: the side, the deployed count
+/// (when the zone depends on it), the counter in hand (boat or not), and
+/// whether a boat is still to place.
+type ZoneKey = (omdurman_types::Player, usize, Option<bool>, bool);
+
 /// During [`omdurman_rules::Phase::Setup`], outline the hexes where the local
 /// player may deploy (§9.2/§9.3), so setup is legible. Highlights the local
 /// faction's zone (or, in an unbound session, the active player's). Cleared
@@ -555,7 +560,7 @@ pub fn deployment_zone_overlay_mesh(
     game_state: Option<Res<crate::GameStateResource>>,
     peers: crate::peers::Peers,
     existing: Query<Entity, With<DeploymentZoneRing>>,
-    mut last_key: Local<Option<(omdurman_types::Player, usize, Option<bool>)>>,
+    mut last_key: Local<Option<ZoneKey>>,
     (generation, mut seen_generation): (Res<OverlayGeneration>, Local<u32>),
     (picker_state, tray): (Res<PickerState>, Res<UnitPicker>),
 ) {
@@ -602,6 +607,16 @@ pub fn deployment_zone_overlay_mesh(
         }),
         _ => None,
     };
+    // With nothing in hand, the Nile is outlined only while a boat of ours
+    // is still to place: the FoK Dervish have none, and every Nile hex on
+    // their edges was ringed for nothing -- their land units were refused
+    // there ("Gunboats only").
+    let boats_to_place = tray.available.iter().any(|u| {
+        u.shown()
+            && u.is_boat
+            && omdurman_rules::unit_id_for_section_pos(u.section_name, u.col as u8, u.row as u8)
+                .is_some_and(|id| gs.0.find_unit(id).is_none())
+    });
     let key = (
         who,
         if depends_on_units {
@@ -610,6 +625,7 @@ pub fn deployment_zone_overlay_mesh(
             0
         },
         hand_is_boat,
+        boats_to_place,
     );
     if *last_key == Some(key) {
         return; // unchanged -- leave the rings in place
@@ -633,7 +649,7 @@ pub fn deployment_zone_overlay_mesh(
                     && gs.0.on_deployable_terrain(*coord, is_boat)
             }
             None => {
-                gs.0.in_deployment_zone(who, *coord, true)
+                (boats_to_place && gs.0.in_deployment_zone(who, *coord, true))
                     || gs.0.in_deployment_zone(who, *coord, false)
             }
         };
