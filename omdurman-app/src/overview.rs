@@ -176,12 +176,32 @@ pub fn unit_overview_ui(
                                     // marks the hand changed.
                                     let before = picker_state.clone();
                                     let mut hand = before.clone();
+                                    // This phase's placements keep their slots: the turn's
+                                    // arrivals, or in set-up the side's deployed counters.
+                                    let ghosts: Vec<omdurman_rules::UnitId> = if in_setup {
+                                        let side = state.0.player_to_act();
+                                        state
+                                            .0
+                                            .units
+                                            .iter()
+                                            .filter(|u| Some(u.profile.identity.owner()) == side)
+                                            .map(|u| u.id)
+                                            .collect()
+                                    } else {
+                                        state
+                                            .0
+                                            .reinforcements_placed_this_turn
+                                            .iter()
+                                            .map(|&(_, id)| id)
+                                            .collect()
+                                    };
                                     crate::picker::draw_tray(
                                         ui,
                                         tray.bypass_change_detection(),
                                         &mut hand,
                                         &rulebook,
                                         &stamp,
+                                        &ghosts,
                                     );
                                     if !same_hand(&before, &hand) {
                                         *picker_state = hand;

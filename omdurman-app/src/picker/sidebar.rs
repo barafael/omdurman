@@ -139,6 +139,8 @@ fn state_after_cancelled_drag(state: &PickerState) -> Option<PickerState> {
 /// [`render_faction_units`] stays under clippy's argument limit.
 struct UnitAnnotations<'a> {
     rulebook: &'a crate::rulebook::Rulebook,
+    /// Counters placed this phase: their slots stay, empty.
+    ghosts: &'a [UnitId],
 }
 
 /// Bundle of the image assets + sprite annotations + rulebook reference
@@ -165,12 +167,26 @@ fn render_faction_units(
         drag_idx,
         drag_cancelled,
     } = drag;
-    let UnitAnnotations { rulebook } = ctx;
+    let UnitAnnotations { rulebook, ghosts } = ctx;
     // Grouped by what the units are, not by counter sheet: leaders,
     // gunboats, one group per brigade (brigade integrity, §5.54), mounted
     // units, guns -- and each Dervish tribe apart (tribes may not stack
     // together, §5.52). Within a group, sheet order.
-    let mut groups: Vec<((u8, String), Vec<usize>)> = Vec::new();
+    // A counter placed this phase leaves an empty slot where it stood
+    // (`ghosts`), so the tray never shifts under the pointer while placing.
+    let sheet_pos = |section: SectionName, col: u32, row: u32| {
+        let s = SectionName::SHEET_ORDER
+            .iter()
+            .position(|x| *x == section)
+            .unwrap_or(usize::MAX);
+        (s, row, col)
+    };
+    let mut groups: Vec<(GroupKey, Vec<(TraySlot, SheetPos)>)> = Vec::new();
+    let mut add =
+        |key: (u8, String), slot: TraySlot, pos| match groups.iter_mut().find(|(k, _)| *k == key) {
+            Some((_, members)) => members.push((slot, pos)),
+            None => groups.push((key, vec![(slot, pos)])),
+        };
     for (idx, unit) in picker.available.iter().enumerate() {
         if !unit.shown()
             || omdurman_rules::unit_profiles::section_owner(unit.section_name) != Some(faction)
@@ -183,13 +199,38 @@ fn render_faction_units(
                 || (9, unit.section_name.display_name().to_string()),
                 |p| tray_group(&p.identity),
             );
-        match groups.iter_mut().find(|(k, _)| *k == key) {
-            Some((_, members)) => members.push(idx),
-            None => groups.push((key, vec![idx])),
+        add(
+            key,
+            TraySlot::Counter(idx),
+            sheet_pos(unit.section_name, unit.col, unit.row),
+        );
+    }
+    for &id in ghosts {
+        let Some(profile) = omdurman_rules::unit_profiles::profile_for_unit(id) else {
+            continue;
+        };
+        if profile.identity.owner() != faction {
+            continue;
         }
+        let (section, col, row) = id.section_pos();
+        add(
+            tray_group(&profile.identity),
+            TraySlot::Placed,
+            sheet_pos(section, u32::from(col), u32::from(row)),
+        );
     }
     groups.sort_by(|(a, _), (b, _)| a.cmp(b));
-    for ((_, label), members) in &groups {
+    for (_, members) in &mut groups {
+        members.sort_by_key(|(_, pos)| *pos);
+    }
+    for ((_, label), slots) in &groups {
+        let members: Vec<usize> = slots
+            .iter()
+            .filter_map(|(slot, _)| match slot {
+                TraySlot::Counter(i) => Some(*i),
+                TraySlot::Placed => None,
+            })
+            .collect();
         {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
@@ -207,7 +248,21 @@ fn render_faction_units(
             ui.add_space(2.0);
 
             ui.horizontal_wrapped(|ui| {
-                for &j in members {
+                for (slot, _) in slots {
+                    let TraySlot::Counter(j) = *slot else {
+                        // Placed this phase: an empty slot holds its place.
+                        let (rect, _) = ui.allocate_exact_size(
+                            egui::Vec2::new(cell_size, cell_size),
+                            egui::Sense::hover(),
+                        );
+                        ui.painter().rect_stroke(
+                            rect.shrink(4.0),
+                            3.0,
+                            egui::Stroke::new(1.0, crate::ui::palette::TEXT_FAINT),
+                            egui::StrokeKind::Inside,
+                        );
+                        continue;
+                    };
                     let is_selected =
                         matches!(&*state, PickerState::Placing { unit_idx, .. } if *unit_idx == j);
                     let unit = &picker.available[j];
@@ -283,6 +338,19 @@ fn render_faction_units(
             });
         }
     }
+}
+
+/// A tray group's (display order, heading).
+type GroupKey = (u8, String);
+/// A cell's place on the counter sheets: (section, row, column).
+type SheetPos = (usize, u32, u32);
+
+/// One cell of the tray: a counter to place, or the empty slot of one
+/// placed this phase.
+#[derive(Clone, Copy)]
+enum TraySlot {
+    Counter(usize),
+    Placed,
 }
 
 /// A counter's tray group: (display order, heading).
@@ -417,6 +485,7 @@ pub(crate) fn draw_tray(
     state: &mut PickerState,
     rulebook: &crate::rulebook::Rulebook,
     stamp: &crate::ui_trace::Stamp,
+    ghosts: &[UnitId],
 ) {
     use omdurman_types::Player;
     let mut clicked_idx: Option<usize> = None;
@@ -453,7 +522,7 @@ pub(crate) fn draw_tray(
                 drag_idx: &mut drag_idx,
                 drag_cancelled: &mut drag_cancelled,
             },
-            UnitAnnotations { rulebook },
+            UnitAnnotations { rulebook, ghosts },
         );
     }
     ui.add_space(2.0);
