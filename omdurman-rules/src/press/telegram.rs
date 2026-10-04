@@ -66,8 +66,8 @@ fn usual(hexes: &[HexCoord]) -> Option<HexCoord> {
 
 /// Our lost units as the clerk keys a list: "3E First Btn and battery", or
 /// "five units including 3E First Btn and battery".
-fn wire_list(units: &[UnitId]) -> String {
-    let names = distinct(units.iter().map(|&u| super::wire_name(u)), 2);
+fn wire_list(units: &[UnitId], scenario: Scenario) -> String {
+    let names = distinct(units.iter().map(|&u| super::wire_name(u, scenario)), 2);
     if units.len() <= 2 {
         names.join(" and ")
     } else {
@@ -142,7 +142,7 @@ fn event_facts(state: &GameState, summary: &TurnSummary) -> Vec<Fact> {
                         if matches!(id, UnitIdentity::AngloEgyptianGunboat(_)) {
                             facts.push(
                                 Fact::new(1, 5, T.gunboat_sunk)
-                                    .with("units", super::wire_name(*unit)),
+                                    .with("units", super::wire_name(*unit, scenario)),
                             );
                         } else {
                             our_lost.push(*unit);
@@ -206,7 +206,7 @@ fn event_facts(state: &GameState, summary: &TurnSummary) -> Vec<Fact> {
         let at: Vec<HexCoord> = our_lost.iter().filter_map(|&u| death_place(u)).collect();
         facts.push(
             Fact::new(2, 10, T.our_losses)
-                .with("units", wire_list(&our_lost))
+                .with("units", wire_list(&our_lost, scenario))
                 .with("place", place(usual(&at))),
         );
     }

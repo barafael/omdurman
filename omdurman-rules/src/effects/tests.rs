@@ -5466,6 +5466,21 @@ mod tests {
     }
 
     #[test]
+    fn gunboats_carry_the_names_of_their_battle() {
+        // The counters print Abu Klea and four plain "GUNBOAT"s; 1898 names
+        // them after Kitchener's flotilla, 1885 after Gordon's steamers.
+        let abu_klea = crate::UnitIdentity::AngloEgyptianGunboat(crate::GunboatId::Named(
+            crate::NamedGunboat::Naser,
+        ));
+        assert_eq!(abu_klea.short_label(), "Gunboat Abu Klea");
+        let old = crate::UnitIdentity::AngloEgyptianGunboat(crate::GunboatId::Old(
+            crate::OldGunboat::LordKitchener,
+        ));
+        assert_eq!(old.label_in(Scenario::Campaign), "Gunboat El Teb");
+        assert_eq!(old.label_in(Scenario::FallOfKhartoum), "Steamer Bordein");
+    }
+
+    #[test]
     fn a_group_must_fit_at_its_goal_together() {
         // Two battalions already stand in the goal hex: a four-stack may not
         // join them (eight units), two more may (§5.51's four-unit limit).

@@ -193,7 +193,7 @@ pub(crate) fn target_label(
                     omdurman_types::UnitKind::BritishLeader { .. }
                 )
         })
-        .map(|u| u.profile.identity.short_label())
+        .map(|u| u.profile.identity.label_in(gs.scenario))
         .collect();
     let what = match names.len() {
         0 => gs

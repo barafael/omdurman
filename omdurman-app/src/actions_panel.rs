@@ -196,7 +196,7 @@ pub fn draw_actions_section(
             },
         );
         ui.label(
-            egui::RichText::new(unit.profile.identity.short_label())
+            egui::RichText::new(unit.profile.identity.label_in(state.0.scenario))
                 .color(crate::ui::palette::RAIL_TEXT)
                 .size(13.0),
         );
@@ -215,7 +215,7 @@ pub fn draw_actions_section(
                 else {
                     continue;
                 };
-                let mut label = member.profile.identity.short_label();
+                let mut label = member.profile.identity.label_in(state.0.scenario);
                 if state.0.units_fired_this_phase.contains(&id) {
                     label.push_str("  (fired)");
                 }

@@ -155,7 +155,7 @@ pub fn agree(text: &str) -> String {
 
 /// What the telegraph clerk keys for a unit: "3E First Btn", "battery",
 /// "squadron", "Gunboat Naser", "General Gatacre"; a tribe by name.
-pub fn wire_name(id: crate::UnitId) -> String {
+pub fn wire_name(id: crate::UnitId, scenario: Scenario) -> String {
     use crate::UnitIdentity as U;
     let Some(identity) = crate::unit_profiles::profile_for_unit(id).map(|p| p.identity) else {
         return "unit".into();
@@ -168,21 +168,28 @@ pub fn wire_name(id: crate::UnitId) -> String {
         U::AngloEgyptianCamelCorps => "camel company".into(),
         U::RoyalEngineers => "Engineers".into(),
         U::AngloEgyptianInfantry { .. } if identity.is_friendlies() => "Friendlies".into(),
-        other => other.short_label(),
+        other => other.label_in(scenario),
     }
 }
 
 /// What a correspondent calls one of our units in prose: "General
 /// Gatacre", "the gunboat Naser", "a field battery", "the First
 /// Battalion of the 3E Brigade"; an enemy unit by its tribe or leader.
-pub fn prose_name(id: crate::UnitId) -> String {
+pub fn prose_name(id: crate::UnitId, scenario: Scenario) -> String {
     use crate::UnitIdentity as U;
     let Some(identity) = crate::unit_profiles::profile_for_unit(id).map(|p| p.identity) else {
         return "a unit".into();
     };
     match identity {
         U::AngloEgyptianLeader(l) => format!("General {l}"),
-        U::AngloEgyptianGunboat(g) => format!("the gunboat {g}"),
+        U::AngloEgyptianGunboat(_) => {
+            // "the gunboat Sultan", "the steamer Bordein" (1885).
+            let label = identity.label_in(scenario);
+            match label.split_once(' ') {
+                Some((kind, name)) => format!("the {} {name}", kind.to_lowercase()),
+                None => label,
+            }
+        }
         U::AngloEgyptianArtillery => "a field battery".into(),
         U::AngloEgyptianMaxim => "a Maxim battery".into(),
         U::AngloEgyptianCavalry => "a squadron of cavalry".into(),
@@ -195,16 +202,16 @@ pub fn prose_name(id: crate::UnitId) -> String {
         U::AngloEgyptianInfantry { brigade, battalion } => {
             format!("the {battalion} Battalion of the {brigade} Brigade")
         }
-        other => other.short_label(),
+        other => other.label_in(scenario),
     }
 }
 
 /// `n` of the unit kind `id` belongs to, in prose: "six field batteries",
 /// "five bodies of Friendlies"; [`prose_name`] for one.
-pub fn prose_count(id: crate::UnitId, n: usize) -> String {
+pub fn prose_count(id: crate::UnitId, n: usize, scenario: Scenario) -> String {
     use crate::UnitIdentity as U;
     if n == 1 {
-        return prose_name(id);
+        return prose_name(id, scenario);
     }
     let count = number_word(n);
     match crate::unit_profiles::profile_for_unit(id).map(|p| p.identity) {
@@ -216,7 +223,7 @@ pub fn prose_count(id: crate::UnitId, n: usize) -> String {
         Some(identity @ U::AngloEgyptianInfantry { .. }) if identity.is_friendlies() => {
             format!("{count} bodies of Friendlies")
         }
-        _ => format!("{} ({count})", prose_name(id)),
+        _ => format!("{} ({count})", prose_name(id, scenario)),
     }
 }
 
