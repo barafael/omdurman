@@ -276,34 +276,19 @@ impl Rulebook {
             .map(|s| s.title.as_str())
     }
 
-    /// Render `text` with inline `§N` references as clickable links that deep-
-    /// link into the Rulebook tab, and any non-§ text as plain labels. Each
-    /// reference is annotated with its section title when one is known
-    /// (`§5.41 Zones of Control`), so a reader sees the rule's name without
-    /// leaving the current view.
-    ///
-    /// Returns the section number of any `§` reference the user clicked, so
-    /// the caller can re-target the rulebook tab via [`request_section`].
-    /// Like [`Rulebook::render_ref_chips`] but every `§` reference is rendered as a
-    /// standalone clickable chip (used in lists / footers where each citation
-    /// is on its own line). Returns the clicked section, if any.
-    ///
-    /// Used by the Combat Resolution Card footer to render the paragraph list.
-    pub fn render_ref_chips(&self, ui: &mut egui::Ui, numbers: &[&str]) -> Option<String> {
+    /// Bare `§N` links, each section's opening words on hover -- compact
+    /// enough for a card, where a full excerpt per reference outweighed the
+    /// result itself.
+    pub fn render_ref_links(&self, ui: &mut egui::Ui, numbers: &[&str]) -> Option<String> {
         let mut clicked = None;
         ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            for (i, num) in numbers.iter().enumerate() {
-                if i > 0 {
-                    ui.label(" ");
-                }
-                let title = self.title_of(num);
-                let label = if let Some(t) = title {
-                    format!("§{num} {t}")
-                } else {
-                    format!("§{num}")
+            for num in numbers {
+                let link = ui.link(egui::RichText::new(format!("§{num}")).size(11.0));
+                let link = match self.title_of(num) {
+                    Some(title) => link.on_hover_text(title),
+                    None => link,
                 };
-                if ui.link(label).clicked() {
+                if link.clicked() {
                     clicked = Some((*num).to_string());
                 }
             }

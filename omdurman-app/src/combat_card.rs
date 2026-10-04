@@ -151,6 +151,8 @@ struct CombatCardEntry {
     hold: crate::ui::CardHold,
     /// Stable per-card id (egui click target), assigned on push.
     serial: u64,
+    /// Arrival order in the event feed (see `dispatch::feed_seq`).
+    seq: u64,
 }
 
 #[derive(Resource, Default)]
@@ -165,6 +167,7 @@ impl CombatCardQueue {
     fn push(&mut self, mut entry: CombatCardEntry) {
         self.next_serial += 1;
         entry.serial = self.next_serial;
+        entry.seq = crate::dispatch::feed_seq();
         self.entries.push(entry);
         while self.entries.len() > MAX_ENTRIES {
             let victim = self
@@ -188,6 +191,7 @@ fn drain_combat_observations(
     mut reader: MessageReader<events::ObservationEvent>,
     mut queue: ResMut<CombatCardQueue>,
     game_state: Option<Res<GameStateResource>>,
+    mut dispatches: ResMut<crate::dispatch::Dispatches>,
 ) {
     let gs = game_state.as_deref().map(|r| &r.0);
     for ev in reader.read() {
@@ -292,6 +296,7 @@ fn drain_combat_observations(
             }
             _ => continue,
         };
+        dispatches.log_line(log_line(&entry));
         queue.push(entry);
     }
 }
@@ -340,6 +345,7 @@ fn build_fire_card(
         age: 0.0,
         hold: crate::ui::CardHold::default(),
         serial: 0,
+        seq: 0,
     }
 }
 
@@ -413,6 +419,7 @@ fn build_melee_card(
         age: 0.0,
         hold: crate::ui::CardHold::default(),
         serial: 0,
+        seq: 0,
     }
 }
 
@@ -486,9 +493,37 @@ fn target_hex_label(hex: HexCoord, gs: Option<&omdurman_rules::effects::GameStat
 // Render: queue -> egui cards
 // ---------------------------------------------------------------------------
 
+/// A combat result as one line of the session log.
+fn log_line(entry: &CombatCardEntry) -> String {
+    let place = if entry.hex_label.is_empty() {
+        format!("({},{})", entry.target_hex.q, entry.target_hex.r)
+    } else {
+        entry.hex_label.clone()
+    };
+    let side = |side: &CombatSide| {
+        let mut text = format!("{}: {}", side.units_label, side.result_label);
+        if !side.losses.is_empty() {
+            text.push_str(&format!(", lost {}", side.losses.join(", ")));
+        }
+        text
+    };
+    match (&entry.kind, &entry.defender) {
+        (CombatKind::Melee, Some(defender)) => format!(
+            "Melee at {place}: {} / {}",
+            side(&entry.attacker),
+            side(defender)
+        ),
+        _ => format!("Fire at {place}: {}", side(&entry.attacker)),
+    }
+}
+
+/// The event feed: combat cards and dispatch slips (refusals, notices) in
+/// one column at the top right, newest first -- one place to look instead of
+/// three corners. The top bar's Log menu keeps every line after it fades.
 fn combat_card_ui(
     mut contexts: EguiContexts,
     mut queue: ResMut<CombatCardQueue>,
+    mut dispatches: ResMut<crate::dispatch::Dispatches>,
     time: Res<Time>,
     mut rulebook: ResMut<Rulebook>,
     layout: Res<crate::ScreenLayout>,
@@ -498,9 +533,29 @@ fn combat_card_ui(
         entry.hold.age(&mut entry.age, dt, CARD_TTL, CARD_FADE);
     }
     queue.entries.retain(|e| e.age < CARD_TTL);
-    if queue.entries.is_empty() {
+    dispatches.age(dt);
+    if queue.entries.is_empty() && dispatches.slips.is_empty() {
         return;
     }
+    // Newest first, across both queues.
+    enum Item {
+        Card(usize),
+        Slip(usize),
+    }
+    let mut items: Vec<(u64, Item)> = queue
+        .entries
+        .iter()
+        .enumerate()
+        .map(|(i, e)| (e.seq, Item::Card(i)))
+        .chain(
+            dispatches
+                .slips
+                .iter()
+                .enumerate()
+                .map(|(i, s)| (s.seq, Item::Slip(i))),
+        )
+        .collect();
+    items.sort_by_key(|(seq, _)| std::cmp::Reverse(*seq));
     let Ok(ctx) = contexts.ctx_mut() else { return };
     let ctx_height = ctx.content_rect().height();
 
@@ -523,9 +578,26 @@ fn combat_card_ui(
                 .id_salt("combat_cards_scroll")
                 .max_height(max_height.max(120.0))
                 .show(ui, |ui| {
-                    // Newest at the top: render in reverse so the freshest card is
-                    // closest to the screen edge.
-                    for entry in queue.entries.iter_mut().rev() {
+                    // Newest at the top, closest to the screen edge.
+                    for (_, item) in &items {
+                        let entry = match item {
+                            Item::Slip(i) => {
+                                let slip = &mut dispatches.slips[*i];
+                                let fade = ((crate::dispatch::DISPATCH_TTL - slip.age)
+                                    / crate::dispatch::DISPATCH_FADE)
+                                    .clamp(0.0, 1.0);
+                                slip.hold
+                                    .begin(ui, egui::Id::new(("dispatch_slip", slip.serial)));
+                                let (sec, rect) = crate::dispatch::draw_slip(ui, slip, fade);
+                                slip.hold.end(ui, rect);
+                                if let Some(sec) = sec {
+                                    clicked_section = Some(sec);
+                                }
+                                ui.add_space(6.0);
+                                continue;
+                            }
+                            Item::Card(i) => &mut queue.entries[*i],
+                        };
                         let fade = ((CARD_TTL - entry.age) / CARD_FADE).clamp(0.0, 1.0);
                         entry
                             .hold
@@ -597,13 +669,11 @@ fn draw_card(
             });
             ui.add_space(2.0);
             // Target line.
+            // A named place reads better than its coordinates.
             let hex_str = if entry.hex_label.is_empty() {
                 format!("at ({},{})", entry.target_hex.q, entry.target_hex.r)
             } else {
-                format!(
-                    "at {} ({},{})",
-                    entry.hex_label, entry.target_hex.q, entry.target_hex.r
-                )
+                format!("at {}", entry.hex_label)
             };
             ui.label(
                 egui::RichText::new(hex_str)
@@ -635,7 +705,7 @@ fn draw_card(
             // Footer: paragraph chips.
             if !entry.paragraphs.is_empty() {
                 let refs: Vec<&str> = entry.paragraphs.iter().map(String::as_str).collect();
-                if let Some(p) = rulebook.render_ref_chips(ui, &refs) {
+                if let Some(p) = rulebook.render_ref_links(ui, &refs) {
                     clicked = Some(p);
                 }
             }
@@ -698,24 +768,21 @@ fn draw_side(
                         .color(a(crate::ui::palette::FAINT_INK))
                         .size(11.0),
                 );
-                let title = rulebook.title_of(&line.paragraph);
-                let chip = if let Some(t) = title {
-                    format!("§{} {}", line.paragraph, t)
-                } else {
-                    format!("§{}", line.paragraph)
-                };
-                if ui
-                    .add(
-                        egui::Label::new(
-                            egui::RichText::new(chip)
-                                .color(a(crate::ui::palette::INK))
-                                .size(11.0)
-                                .underline(),
-                        )
-                        .sense(egui::Sense::click()),
+                // The bare number; the rule's opening words on hover.
+                let chip = ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(format!(" §{}", line.paragraph))
+                            .color(a(crate::ui::palette::INK))
+                            .size(11.0)
+                            .underline(),
                     )
-                    .clicked()
-                {
+                    .sense(egui::Sense::click()),
+                );
+                let chip = match rulebook.title_of(&line.paragraph) {
+                    Some(title) => chip.on_hover_text(title),
+                    None => chip,
+                };
+                if chip.clicked() {
                     *clicked = Some(line.paragraph.clone());
                 }
             }

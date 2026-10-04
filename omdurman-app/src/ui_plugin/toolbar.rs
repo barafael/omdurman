@@ -14,11 +14,14 @@ pub(crate) fn mode_toolbar_ui(
     mut layout: ResMut<crate::ScreenLayout>,
     progress: (Res<crate::TurnState>, Res<crate::game_record::GameRecorder>),
     peers: Peers,
-    (mut zoc, mut los, room, telegrams): (
+    (mut zoc, mut los, room): (
         ResMut<crate::zoc::ZocOverlay>,
         ResMut<crate::los::LosOverlay>,
         Res<RoomId>,
+    ),
+    (telegrams, dispatches): (
         Option<Res<crate::telegram::TelegramLog>>,
+        Option<Res<crate::dispatch::Dispatches>>,
     ),
 ) {
     let game_in_progress = crate::game_in_progress(&progress.0, &progress.1);
@@ -94,6 +97,28 @@ pub(crate) fn mode_toolbar_ui(
                                     }
                                 });
                         });
+
+                        // Every message of the session, newest first: what
+                        // the event feed showed, after it faded.
+                        if **mode == crate::AppMode::Game
+                            && let Some(dispatches) = dispatches.as_ref()
+                        {
+                            ui.menu_button("Log", |ui| {
+                                ui.set_max_width(520.0);
+                                if dispatches.log.is_empty() {
+                                    ui.label("Nothing yet.");
+                                    return;
+                                }
+                                egui::ScrollArea::vertical()
+                                    .max_height(480.0)
+                                    .show(ui, |ui| {
+                                        for line in dispatches.log.iter().rev() {
+                                            ui.label(egui::RichText::new(line).size(12.0));
+                                            ui.separator();
+                                        }
+                                    });
+                            });
+                        }
 
                         // The turn and who acts now: the one place the game
                         // view says it (it used to be said four times).

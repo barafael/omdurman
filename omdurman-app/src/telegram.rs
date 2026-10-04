@@ -106,28 +106,6 @@ impl PressDesk<'_> {
     }
 }
 
-/// A telegram written from the turn's recorded events, for when no flavour
-/// model is available: the first few dispatch lines, or a quiet-turn line.
-pub(crate) fn fallback_telegram(summary: &omdurman_rules::turn_summary::TurnSummary) -> String {
-    let lines: Vec<String> = summary
-        .events
-        .iter()
-        .filter(|e| {
-            !matches!(
-                e,
-                omdurman_rules::turn_summary::TurnEventRecord::VpScored { .. }
-            )
-        })
-        .take(5)
-        .map(|e| e.format_for_dispatch())
-        .collect();
-    if lines.is_empty() {
-        "All quiet. The lines held; no engagements to report.".to_string()
-    } else {
-        lines.join(". ") + "."
-    }
-}
-
 /// Host: write the telegram of every finished turn that has none yet -- ask
 /// the flavour model, or publish the turn's own events at once when there is
 /// none. Guests only wait for the host's telegram to arrive. A new host picks
@@ -151,7 +129,7 @@ pub(crate) fn generate_telegrams(
             continue;
         }
         telegram_log.requested.insert(turn);
-        let fallback = fallback_telegram(summary);
+        let fallback = omdurman_rules::telegram_prompt::fallback_telegram(summary);
         telegram_log.fallbacks.insert(turn, fallback.clone());
         if llm_config.has_key() {
             let (system, user) =
@@ -190,14 +168,16 @@ pub(crate) fn poll_telegram_completions(
                 let item = pending.items.swap_remove(i);
                 match item.tag {
                     CompletionTag::Telegram { turn } => {
-                        let text = result.unwrap_or_else(|e| {
-                            warn!("LLM telegram generation failed for turn {turn}: {e}");
-                            telegram_log
-                                .fallbacks
-                                .get(&turn)
-                                .cloned()
-                                .unwrap_or_else(|| stub_telegram_text(turn))
-                        });
+                        let text = result
+                            .map(|t| omdurman_rules::telegram_prompt::telegraphese(&t))
+                            .unwrap_or_else(|e| {
+                                warn!("LLM telegram generation failed for turn {turn}: {e}");
+                                telegram_log
+                                    .fallbacks
+                                    .get(&turn)
+                                    .cloned()
+                                    .unwrap_or_else(stub_telegram_text)
+                            });
                         desk.publish(&mut telegram_log, GameEvent::Telegram { turn, text });
                     }
                     CompletionTag::Newspaper => unreachable!(),
@@ -211,10 +191,8 @@ pub(crate) fn poll_telegram_completions(
     }
 }
 
-fn stub_telegram_text(turn: u8) -> String {
-    format!(
-        "[Turn {turn}] The situation develops. Our correspondent reports from the forward positions."
-    )
+fn stub_telegram_text() -> String {
+    "NO REPORT FROM FORWARD POSITIONS STOP LINES HOLD FULL STOP".to_string()
 }
 
 /// Persist new telegram entries to the game's artifact directory

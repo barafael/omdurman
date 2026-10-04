@@ -166,34 +166,40 @@ fn render_faction_units(
         drag_cancelled,
     } = drag;
     let UnitAnnotations { rulebook } = ctx;
-    let mut current_section = None::<SectionName>;
-    for idx in 0..picker.available.len() {
-        if !picker.available[idx].shown() {
+    // Grouped by what the units are, not by counter sheet: leaders,
+    // gunboats, one group per brigade (brigade integrity, §5.54), mounted
+    // units, guns -- and each Dervish tribe apart (tribes may not stack
+    // together, §5.52). Within a group, sheet order.
+    let mut groups: Vec<((u8, String), Vec<usize>)> = Vec::new();
+    for (idx, unit) in picker.available.iter().enumerate() {
+        if !unit.shown()
+            || omdurman_rules::unit_profiles::section_owner(unit.section_name) != Some(faction)
+        {
             continue;
         }
-        let section_name = picker.available[idx].section_name;
-        if omdurman_rules::unit_profiles::section_owner(section_name) != Some(faction) {
-            continue;
+        let key = unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
+            .and_then(omdurman_rules::unit_profiles::profile_for_unit)
+            .map_or_else(
+                || (9, unit.section_name.display_name().to_string()),
+                |p| tray_group(&p.identity),
+            );
+        match groups.iter_mut().find(|(k, _)| *k == key) {
+            Some((_, members)) => members.push(idx),
+            None => groups.push((key, vec![idx])),
         }
-        if Some(section_name) != current_section {
-            current_section = Some(section_name);
-            // Count how many counters in this section remain unplaced, so the
-            // player can track deployment progress per block (e.g. "32×
-            // Mulazmin") rather than only watching the tray empty.
-            let remaining = picker
-                .available
-                .iter()
-                .filter(|u| u.shown() && u.section_name == section_name)
-                .count();
+    }
+    groups.sort_by(|(a, _), (b, _)| a.cmp(b));
+    for ((_, label), members) in &groups {
+        {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 ui.label(
-                    egui::RichText::new(section_name.display_name())
+                    egui::RichText::new(label)
                         .size(13.0)
                         .color(crate::ui::palette::TEXT_SOFT),
                 );
                 ui.label(
-                    egui::RichText::new(format!("({remaining})"))
+                    egui::RichText::new(format!("({})", members.len()))
                         .size(11.0)
                         .color(crate::ui::palette::TEXT_FAINT),
                 );
@@ -201,13 +207,7 @@ fn render_faction_units(
             ui.add_space(2.0);
 
             ui.horizontal_wrapped(|ui| {
-                for j in idx..picker.available.len() {
-                    if Some(picker.available[j].section_name) != current_section {
-                        break;
-                    }
-                    if !picker.available[j].shown() {
-                        continue;
-                    }
+                for &j in members {
                     let is_selected =
                         matches!(&*state, PickerState::Placing { unit_idx, .. } if *unit_idx == j);
                     let unit = &picker.available[j];
@@ -282,6 +282,24 @@ fn render_faction_units(
                 }
             });
         }
+    }
+}
+
+/// A counter's tray group: (display order, heading).
+pub(crate) fn tray_group(identity: &omdurman_rules::UnitIdentity) -> (u8, String) {
+    use omdurman_rules::UnitIdentity as U;
+    match identity {
+        U::AngloEgyptianLeader(_) | U::DervishLeader(_) => (0, "Leaders".into()),
+        U::AngloEgyptianGunboat(_) | U::DervishGunboat(_) => (1, "Gunboats".into()),
+        U::AngloEgyptianInfantry { .. } if identity.is_friendlies() => (3, "Friendlies".into()),
+        U::AngloEgyptianInfantry { brigade, .. } => (2, format!("{brigade} Brigade")),
+        U::DervishTribal { tribe } => (2, tribe.to_string()),
+        U::AngloEgyptianCavalry => (4, "Cavalry".into()),
+        U::AngloEgyptianCamelCorps => (4, "Camel Corps".into()),
+        U::AngloEgyptianArtillery | U::DervishArtillery => (5, "Artillery".into()),
+        U::AngloEgyptianMaxim => (5, "Maxims".into()),
+        U::RoyalEngineers => (6, "Royal Engineers".into()),
+        U::AngloEgyptianFort | U::DervishFort => (7, "Forts".into()),
     }
 }
 

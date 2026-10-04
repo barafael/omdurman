@@ -290,6 +290,7 @@ pub(crate) fn artillery_breach_ui(
     mut layout: ResMut<crate::ScreenLayout>,
     mut fire_targets: ResMut<crate::fire::FireTargetCache>,
     mut aimed: ResMut<crate::hexside_layer::HighlightedHexside>,
+    view: crate::picker::HexMapView,
 ) {
     use omdurman_rules::WeaponClass;
     use omdurman_rules::effects::GameEffect;
@@ -341,6 +342,11 @@ pub(crate) fn artillery_breach_ui(
         return;
     }
 
+    let in_reach: Vec<(omdurman_types::HexsideRef, u16)> = targets
+        .iter()
+        .copied()
+        .filter(|(_, range)| *range != u16::MAX)
+        .collect();
     let Ok(ctx) = contexts.ctx_mut() else { return };
     crate::ui::stacked_card(
         ctx,
@@ -356,14 +362,13 @@ pub(crate) fn artillery_breach_ui(
                 13.0,
             );
             ui.label(
-                crate::ui::text::note("Fire at a wall hexside. A CRT result of Eliminate 2+ breaches it, and one enemy unit adjacent to it is eliminated."),
+                crate::ui::text::note("Fire at a wall: a combat result of 2 or more breaches it and eliminates one enemy unit beside it."),
             );
             ui.add_space(2.0);
             if let Some((_, range, hex)) = chain {
+                let _ = hex;
                 let button = ui.small_button(format!(
-                    "River chain at ({},{})  [range {}] -- 3+ sinks it (§10.23)",
-                    hex.q,
-                    hex.r,
+                    "The river chain \u{00b7} range {} \u{00b7} 3+ sinks it (§10.23)",
                     range.value()
                 ));
                 if button.clicked() {
@@ -376,31 +381,40 @@ pub(crate) fn artillery_breach_ui(
                     );
                 }
             }
-            for (edge, range) in &targets {
-                if *range == u16::MAX {
-                    continue;
-                }
+            let mut fire_at: Option<omdurman_types::HexsideRef> = None;
+            for (number, (edge, range)) in in_reach.iter().enumerate() {
                 let label = format!(
-                    "Wall ({},{})–({},{})  [range {}]",
-                    edge.a.q, edge.a.r, edge.b.q, edge.b.r, range
+                    "{} \u{00b7} {} \u{00b7} range {range}",
+                    number + 1,
+                    compass(unit.position, *edge, &view)
                 );
                 let button = ui.small_button(label);
                 if button.hovered() {
                     aimed.set_if_neq(crate::hexside_layer::HighlightedHexside(Some(*edge)));
                 }
                 if button.clicked() {
-                    // The "Wall Breached" / "Breach Attempt Failed" slip on
-                    // the echo reports the outcome; no slip for the click.
-                    let roll = game_rng.roll_d10();
-                    submit.submit(
-                        &gs.0,
-                        omdurman_net::GameEvent::Effect(GameEffect::ArtilleryBreachWall {
-                            firers: vec![uid],
-                            target: *edge,
-                            roll,
-                        }),
-                    );
+                    fire_at = Some(*edge);
                 }
+            }
+            ui.label(crate::ui::text::note(
+                "Or click a numbered wall on the map.",
+            ));
+            // The numbered badges on the board, clickable like the buttons.
+            if let Some(edge) = wall_badges(ui.ctx(), &in_reach, &view, &mut aimed) {
+                fire_at = Some(edge);
+            }
+            if let Some(edge) = fire_at {
+                // The "Wall Breached" / "Breach Attempt Failed" slip on the
+                // echo reports the outcome; no slip for the click.
+                let roll = game_rng.roll_d10();
+                submit.submit(
+                    &gs.0,
+                    omdurman_net::GameEvent::Effect(GameEffect::ArtilleryBreachWall {
+                        firers: vec![uid],
+                        target: edge,
+                        roll,
+                    }),
+                );
             }
         },
     );
@@ -544,4 +558,82 @@ pub(crate) fn optional_rule_setup_ui(
             }
         },
     );
+}
+
+/// The world-space midpoint of a hexside.
+fn hexside_mid(edge: omdurman_types::HexsideRef, view: &crate::picker::HexMapView) -> Vec3 {
+    let origin = view.layout.adjusted_origin(&view.overlay.params);
+    let a = omdurman_hexmap::hex_world_pos(edge.a, origin, &view.overlay.params);
+    let b = omdurman_hexmap::hex_world_pos(edge.b, origin, &view.overlay.params);
+    (a + b) / 2.0
+}
+
+/// Where the wall lies from the battery, as a player reads the map: one of
+/// eight compass points (north is up the board).
+fn compass(
+    from: omdurman_types::HexCoord,
+    edge: omdurman_types::HexsideRef,
+    view: &crate::picker::HexMapView,
+) -> &'static str {
+    let origin = view.layout.adjusted_origin(&view.overlay.params);
+    let at = omdurman_hexmap::hex_world_pos(from, origin, &view.overlay.params);
+    let mid = hexside_mid(edge, view);
+    // Bearing clockwise from north (-z on the board).
+    let bearing = (mid.x - at.x)
+        .atan2(-(mid.z - at.z))
+        .to_degrees()
+        .rem_euclid(360.0);
+    const POINTS: [&str; 8] = [
+        "north",
+        "north-east",
+        "east",
+        "south-east",
+        "south",
+        "south-west",
+        "west",
+        "north-west",
+    ];
+    POINTS[((bearing + 22.5) / 45.0) as usize % 8]
+}
+
+/// Draw a numbered, clickable badge on every wall in reach; returns the
+/// wall whose badge was clicked. Hovering a badge highlights its wall.
+fn wall_badges(
+    ctx: &egui::Context,
+    in_reach: &[(omdurman_types::HexsideRef, u16)],
+    view: &crate::picker::HexMapView,
+    aimed: &mut crate::hexside_layer::HighlightedHexside,
+) -> Option<omdurman_types::HexsideRef> {
+    let Ok((camera, camera_transform)) = view.cameras.single() else {
+        return None;
+    };
+    let mut clicked = None;
+    for (number, (edge, _)) in in_reach.iter().enumerate() {
+        let mid = hexside_mid(*edge, view);
+        let Ok(screen) = camera.world_to_viewport(camera_transform, Vec3::new(mid.x, 2.0, mid.z))
+        else {
+            continue;
+        };
+        egui::Area::new(egui::Id::new(("wall_badge", number)))
+            .fixed_pos(egui::pos2(screen.x - 10.0, screen.y - 10.0))
+            .order(egui::Order::Foreground)
+            .show(ctx, |ui| {
+                let button = ui.add(
+                    egui::Button::new(
+                        egui::RichText::new(format!("{}", number + 1))
+                            .strong()
+                            .color(egui::Color32::WHITE),
+                    )
+                    .fill(crate::ui::palette::BTN_DANGER)
+                    .min_size(egui::vec2(20.0, 20.0)),
+                );
+                if button.hovered() {
+                    aimed.0 = Some(*edge);
+                }
+                if button.clicked() {
+                    clicked = Some(*edge);
+                }
+            });
+    }
+    clicked
 }
