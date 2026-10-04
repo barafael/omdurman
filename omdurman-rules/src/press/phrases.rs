@@ -47,6 +47,9 @@ pub struct TelegramBanks {
     pub gordon_holds: Bank,
     pub night: Bank,
     pub quiet: Bank,
+    /// The Zariba (thorn hedge and trench) built round the camp (§5.3).
+    pub zariba_begun: Bank,
+    pub zariba_complete: Bank,
 }
 
 pub static TELEGRAM: TelegramBanks = TelegramBanks {
@@ -158,6 +161,14 @@ pub static TELEGRAM: TelegramBanks = TelegramBanks {
     ],
     night: &["Night falling", "Darkness coming on"],
     quiet: &["All quiet", "Nothing to report from the front"],
+    zariba_begun: &[
+        "Zariba begun at Egeiga",
+        "Men cutting thorn for zariba at Egeiga",
+    ],
+    zariba_complete: &[
+        "Zariba complete camp entrenched at Egeiga",
+        "Camp at Egeiga now enclosed by zariba",
+    ],
 };
 
 /// The building blocks of the newspaper's lead article.

@@ -5950,6 +5950,55 @@ mod tests {
         );
         assert_eq!(state.hexside_effective(far.a, far.b), None);
         assert!(!state.find_unit(builder).unwrap().state.constructing_zariba);
+        // The turn record notes the work (the press reports it): two sides,
+        // the far one still to build.
+        assert!(state.turn_events.iter().any(|e| matches!(
+            e,
+            TurnEventRecord::ZaribaBuilt {
+                hexsides: 2,
+                complete: false
+            }
+        )));
+        // A turn with nothing built records nothing.
+        end_player_turn(&mut state);
+        let records = state
+            .turn_summaries
+            .iter()
+            .flat_map(|t| &t.events)
+            .chain(&state.turn_events)
+            .filter(|e| matches!(e, TurnEventRecord::ZaribaBuilt { .. }))
+            .count();
+        assert_eq!(records, 1);
+    }
+
+    // §5.3: the turn record says when the last printed Zariba side stands.
+    #[rulebook("§5.3")]
+    #[test]
+    fn the_last_zariba_side_built_completes_the_zariba() {
+        let mut state = playing(Scenario::Campaign);
+        state.active_player = Player::AngloEgyptian;
+        let inside = HexCoord::new(3, 0);
+        let side = HexsideRef::new(inside, HexCoord::new(3, 1));
+        print_zariba(&mut state, inside, side.b, HexsideKind::ZaribaTrench);
+        assert!(!state.zariba_complete());
+        let builder = make_ae_infantry(&mut state, inside);
+        apply_effect(
+            &mut state,
+            &GameEffect::ConstructZariba {
+                unit_ids: vec![builder],
+                hexside: side,
+            },
+        )
+        .unwrap();
+        end_player_turn(&mut state);
+        assert!(state.zariba_complete());
+        assert!(state.turn_events.iter().any(|e| matches!(
+            e,
+            TurnEventRecord::ZaribaBuilt {
+                hexsides: 1,
+                complete: true
+            }
+        )));
     }
 
     // §5.53: a stacked Dervish leader only accepts units of his command
