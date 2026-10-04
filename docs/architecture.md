@@ -279,6 +279,9 @@ what the engine is doing and why. Every citation deep-links into the in-app Rule
   (`press::gazette::front_page`, drawn by `ui_plugin::gazette`): the lead article and a
   turn-by-turn chronicle from the record, the telegrams as Late Telegrams, a roll of honour, and
   the other news of 1898 / 1885. All wordings live in the phrase banks of `press/phrases.rs`.
+  As a keepsake of the game played (`keepsakes.rs`, native only), each turn's telegram and the
+  front page are saved as screenshots in the working directory when first shown in live play,
+  named after the game's record (`game_<time>_<id>-telegram-turn-03.png`, `...-gazette.png`).
 - **Action discovery panel** (`actions_panel.rs`, in the right sidebar). Names the current
   phase + active player, lists the categories of action the rulebook allows in it (move / fire
   / melee / construct zariba / load Friendlies / end phase), each with a § deep-link, and shows

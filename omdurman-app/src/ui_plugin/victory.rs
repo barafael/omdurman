@@ -33,6 +33,7 @@ pub(crate) fn victory_modal(
     game_state: Option<Res<crate::GameStateResource>>,
     report: Option<Res<crate::newspaper::NewspaperReport>>,
     mut telegrams: Option<ResMut<crate::telegram::TelegramLog>>,
+    mut keepsakes: Option<ResMut<crate::keepsakes::Keepsakes>>,
     mut modal: ResMut<VictoryModalState>,
     mut nav: VictoryNav,
 ) {
@@ -64,6 +65,13 @@ pub(crate) fn victory_modal(
 
     let mut action: Option<VictoryAction> = None;
     let page = report.as_ref().and_then(|r| r.page.clone());
+    // A keepsake of the game played (live play only, not a review).
+    if page.is_some()
+        && !spectating
+        && let Some(keepsakes) = keepsakes.as_mut()
+    {
+        keepsakes.request(&nav.recorder, "gazette");
+    }
     let has_record = nav
         .recorder
         .record
