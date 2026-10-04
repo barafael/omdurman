@@ -280,15 +280,6 @@ pub mod palette {
         pub const COMMENT: Color32 = Color32::from_rgb(150, 130, 90);
     }
 
-    /// Victory newspaper modal (text over [`MODAL_BG`]).
-    pub mod newspaper {
-        use bevy_egui::egui::Color32;
-        /// Body paragraphs.
-        pub const BODY: Color32 = Color32::from_rgb(190, 180, 150);
-        /// Date line and footnotes.
-        pub const DIM: Color32 = Color32::from_rgb(140, 130, 100);
-    }
-
     /// `color` with its alpha replaced by `alpha` (unmultiplied). For
     /// data-driven fades of an opaque palette colour.
     pub fn with_alpha(color: Color32, alpha: u8) -> Color32 {

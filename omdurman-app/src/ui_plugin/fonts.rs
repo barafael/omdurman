@@ -94,6 +94,42 @@ pub(crate) fn setup_egui_fonts(mut contexts: EguiContexts, mut installed: ResMut
             },
         ],
     ));
+    // -- The newspaper: a blackletter masthead and 19th-century body type ---
+    // UnifrakturMaguntia and Old Standard TT (both SIL OFL, see the
+    // OFL-*.txt files beside them), each its own family so only the end-of-
+    // game front page uses them (`ui_plugin::victory`).
+    for (name, family, bytes) in [
+        (
+            "UnifrakturMaguntia",
+            "Masthead",
+            &include_bytes!("../../../assets/fonts/UnifrakturMaguntia-Book.ttf")[..],
+        ),
+        (
+            "OldStandard-Regular",
+            "OldStandard",
+            &include_bytes!("../../../assets/fonts/OldStandard-Regular.ttf")[..],
+        ),
+        (
+            "OldStandard-Bold",
+            "OldStandardBold",
+            &include_bytes!("../../../assets/fonts/OldStandard-Bold.ttf")[..],
+        ),
+        (
+            "OldStandard-Italic",
+            "OldStandardItalic",
+            &include_bytes!("../../../assets/fonts/OldStandard-Italic.ttf")[..],
+        ),
+    ] {
+        ctx.add_font(FontInsert::new(
+            name,
+            egui::FontData::from_static(bytes),
+            vec![InsertFontFamily {
+                family: egui::FontFamily::Name(family.into()),
+                priority: FontPriority::Highest,
+            }],
+        ));
+    }
+
     // NOTE: a full-app paper-skin override was tried and dropped UI contrast
     // too far, so egui keeps its default neutrals. What *is* applied is the
     // minimal accent pass below: luminance-matched warm shifts plus brass

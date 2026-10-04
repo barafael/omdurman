@@ -586,8 +586,9 @@ pub(crate) fn telegram_overlay(
                             .strong()
                             .color(crate::ui::palette::BRASS),
                     );
+                    let (date, time) = omdurman_rules::press::turn_date(state.0.scenario, turn);
                     ui.label(
-                        egui::RichText::new(format!("End of turn {turn}"))
+                        egui::RichText::new(format!("{date}, {time} \u{00b7} end of turn {turn}"))
                             .size(11.0)
                             .color(crate::ui::palette::TEXT_DIM),
                     );
@@ -595,7 +596,7 @@ pub(crate) fn telegram_overlay(
                     // Keyed as a telegram of the day; records filed
                     // before the style read the same.
                     ui.label(
-                        egui::RichText::new(omdurman_rules::telegram_prompt::telegraphese(&text))
+                        egui::RichText::new(omdurman_rules::press::telegram::telegraphese(&text))
                             .monospace()
                             .size(14.0)
                             .color(crate::ui::palette::TEXT),

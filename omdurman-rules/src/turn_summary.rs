@@ -244,100 +244,11 @@ impl TurnEventRecord {
     }
 }
 
-impl TurnSummary {
-    /// Format the full turn as a structured text block for LLM input. In a
-    /// scenario that keeps no victory points
-    /// ([`Scenario::keeps_victory_points`](omdurman_types::Scenario::keeps_victory_points))
-    /// the engine's VP bookkeeping never reaches the text.
-    pub fn format_for_llm(&self, scenario: omdurman_types::Scenario) -> String {
-        let mut out = format!(
-            "=== Turn {} ({}, {:?}) ===\n",
-            self.turn.0, self.time, self.day_night,
-        );
-        let no_vp = !scenario.keeps_victory_points();
-        for event in &self.events {
-            if no_vp && matches!(event, TurnEventRecord::VpScored { .. }) {
-                continue;
-            }
-            out.push_str(&format!(
-                "- {}\n",
-                without_hexes(&event.format_for_dispatch())
-            ));
-        }
-        out
-    }
-}
-
-/// `line` without its hex coordinates ("(13, 5)") and the preposition
-/// before each (" at", " from", " to", " on", a hexside's "-"): the model
-/// quoted them back, and a reader cannot place them.
-fn without_hexes(line: &str) -> String {
-    let mut out = String::with_capacity(line.len());
-    let mut rest = line;
-    while let Some(open) = rest.find('(') {
-        let (before, from_paren) = rest.split_at(open);
-        let close = from_paren.find(')');
-        let is_hex = close.is_some_and(|close| {
-            let inner = &from_paren[1..close];
-            inner.split_once(", ").is_some_and(|(q, r)| {
-                [q, r].iter().all(|n| {
-                    !n.is_empty()
-                        && n.trim_start_matches('-')
-                            .chars()
-                            .all(|c| c.is_ascii_digit())
-                })
-            })
-        });
-        match close {
-            Some(close) if is_hex => {
-                let mut kept = before;
-                for prep in [" at ", " from ", " to ", " on ", "-"] {
-                    if let Some(stripped) = kept.strip_suffix(prep) {
-                        kept = stripped;
-                        break;
-                    }
-                }
-                out.push_str(kept);
-                rest = &from_paren[close + 1..];
-            }
-            _ => {
-                out.push_str(before);
-                out.push('(');
-                rest = &from_paren[1..];
-            }
-        }
-    }
-    out.push_str(rest);
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// The model's copy of the turn carries no hex coordinates (it quoted
-    /// them back); other parentheses survive.
-    #[test]
-    fn llm_lines_drop_hex_coordinates() {
-        assert_eq!(
-            without_hexes("Mulazmin retreated from (13, 5) to (14, 6)"),
-            "Mulazmin retreated"
-        );
-        assert_eq!(
-            without_hexes("Dervish fire at (40, 12): rolled 4 -> NoEffect"),
-            "Dervish fire: rolled 4 -> NoEffect"
-        );
-        assert_eq!(
-            without_hexes("Dervish artillery failed to breach the wall at (28, 38)-(28, 39)"),
-            "Dervish artillery failed to breach the wall"
-        );
-        assert_eq!(
-            without_hexes("Anglo-Egyptian reinforcements (Gunboat Naser) placed at (28, 0)"),
-            "Anglo-Egyptian reinforcements (Gunboat Naser) placed"
-        );
-    }
-
-    /// Dispatch lines (shown to players and fed to the flavour-text model)
+    /// Dispatch lines (shown to players)
     /// name units and hexes the way the board does, never by internal id.
     #[test]
     fn dispatch_lines_use_player_facing_names() {
@@ -354,37 +265,5 @@ mod tests {
         }
         .format_for_dispatch();
         assert_eq!(line, "Mulazmin retreated from (13, 5) to (14, 6)");
-    }
-
-    /// Only the Campaign keeps victory points: the Historical scenario
-    /// (§9.24, units eliminated) and FALL OF KHARTOUM never feed VP lines to
-    /// the telegraph, and tell it not to mention points.
-    #[traceability_macro::rulebook("§9.24")]
-    #[test]
-    fn only_the_campaign_reports_victory_points() {
-        use omdurman_types::Scenario;
-        let summary = TurnSummary {
-            turn: GameTurnIndex::new(1),
-            time: crate::turn_track::GameTime::SixAM,
-            day_night: DayNight::Day,
-            first_player: Player::Dervish,
-            events: vec![TurnEventRecord::VpScored {
-                source: VpSource::DervishUnitEliminated,
-                points: VpSource::DervishUnitEliminated.points(),
-                for_player: Player::AngloEgyptian,
-            }],
-        };
-        assert!(summary.format_for_llm(Scenario::Campaign).contains("VP"));
-        for scenario in [Scenario::Historical, Scenario::FallOfKhartoum] {
-            assert!(
-                !summary.format_for_llm(scenario).contains("VP"),
-                "{scenario:?}"
-            );
-            let (system, _) = crate::telegram_prompt::build_telegram_prompt(&summary, scenario);
-            assert!(
-                system.contains("never mention victory points"),
-                "{scenario:?}"
-            );
-        }
     }
 }

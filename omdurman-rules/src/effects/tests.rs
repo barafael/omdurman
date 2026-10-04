@@ -368,6 +368,17 @@ mod tests {
         assert!(result.is_ok());
         // Dervish unit should be eliminated (roll 8, factor 8 -> Eliminate(1) on A-E Combat Results Table).
         assert!(state.find_unit(target).is_none());
+        // The turn record keeps the combat, where it was and whom it killed
+        // (the telegrams and the newspaper are written from it).
+        assert!(
+            state.turn_events.iter().any(|e| matches!(
+                e,
+                TurnEventRecord::FireCombat { target: hex, eliminated, .. }
+                    if *hex == HexCoord::new(1, 0) && eliminated == &vec![target]
+            )),
+            "{:?}",
+            state.turn_events
+        );
     }
 
     #[rulebook("§6.24")]

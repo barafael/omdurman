@@ -2377,7 +2377,7 @@ tests = [
     "omdurman-rules::src::tests::historical_victory_level_for_anglo_egyptian",
     "omdurman-rules::src::tests::historical_net_result_follows_the_worked_example",
     "omdurman-rules::src::newspaper::historical_headline_follows_the_net_result",
-    "omdurman-rules::src::turn_summary::only_the_campaign_reports_victory_points",
+    "omdurman-rules::src::press::telegram::only_the_campaign_reports_victory_points",
 ]
 
 [[mapping.impl]]

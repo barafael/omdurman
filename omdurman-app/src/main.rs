@@ -24,7 +24,6 @@ mod game_record;
 mod hexside_layer;
 mod hotkeys;
 mod hover_tooltip;
-mod llm;
 mod lobby;
 mod melee;
 mod mode_transitions;
@@ -266,22 +265,23 @@ fn add_game(app: &mut App, room: String) {
         .insert_resource(game_record::SavedGamesCache::default())
         .insert_resource(telegram::TelegramLog::default())
         .insert_resource(newspaper::NewspaperReport::default())
-        .insert_resource(newspaper::NewspaperLlmState::default())
-        .insert_resource(llm::LlmConfig::default())
-        .insert_resource(llm::PendingCompletions::default())
         .add_systems(
             OnEnter(AppState::Lobby),
             game_record::refresh_saved_games_on_lobby,
+        )
+        // Every peer composes the end-of-game front page, live or when
+        // reviewing a finished record.
+        .add_systems(
+            Update,
+            newspaper::compose_newspaper
+                .before(newspaper::save_newspaper_artifact)
+                .run_if(in_state(AppState::InGame).or_else(in_state(AppState::Spectating))),
         )
         .add_systems(
             Update,
             (
                 telegram::generate_telegrams,
-                telegram::poll_telegram_completions,
                 telegram::save_telegram_artifacts,
-                newspaper::generate_newspaper,
-                newspaper::poll_newspaper_completion,
-                newspaper::adopt_filed_gazette,
                 newspaper::save_newspaper_artifact,
             )
                 .chain()

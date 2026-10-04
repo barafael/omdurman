@@ -420,6 +420,19 @@ fn commit_fire_attack(
     let target_units = leaders_last(state, target_units);
     apply_combat_results_table_result(state, result, &target_units, disruption);
     let eliminations: Vec<UnitId> = diff_eliminated(state, pre_units);
+    // The turn record (the telegrams, the newspaper, the bot's log) holds
+    // every fire combat, not only the special targets above.
+    state.turn_events.push(TurnEventRecord::FireCombat {
+        attacker: attack.firing_player,
+        firers: attack.all_firing_units(),
+        target: target_hex,
+        roll,
+        modifiers: attack.modifiers.clone(),
+        total_modifier: total_mod,
+        result,
+        kind: attack.kind,
+        eliminated: eliminations.clone(),
+    });
     state.observations.push(Observation::FireResolved {
         // Deliberate clone: observations are self-contained records for
         // replay/UI and must own their attack, not borrow it.
