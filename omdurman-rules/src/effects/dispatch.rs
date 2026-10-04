@@ -426,13 +426,23 @@ fn end_zariba_construction(state: &mut GameState) {
         .map(|u| u.position)
         .filter(|hex| state.board.is_zariba(*hex))
         .collect();
+    let mut built: u8 = 0;
     for hex in builders {
         for n in hex.neighbors() {
             let side = HexsideRef::new(hex, n);
             if state.is_printed_zariba_side(hex, n) && !state.zariba_hexsides.contains(&side) {
                 state.zariba_hexsides.push(side);
+                built = built.saturating_add(1);
             }
         }
+    }
+    // For the turn record (the press reports the work).
+    if built > 0 {
+        let complete = state.zariba_complete();
+        state.turn_events.push(TurnEventRecord::ZaribaBuilt {
+            hexsides: built,
+            complete,
+        });
     }
     for unit in state
         .units

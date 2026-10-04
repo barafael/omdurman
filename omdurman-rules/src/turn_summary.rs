@@ -88,6 +88,9 @@ pub enum TurnEventRecord {
         /// The adjacent enemy unit caught in a successful breach.
         eliminated: Option<UnitId>,
     },
+    /// The builders' turn ended and they built Zariba hexsides (§5.3):
+    /// `hexsides` new this turn, `complete` once every printed one stands.
+    ZaribaBuilt { hexsides: u8, complete: bool },
 }
 
 /// A structured summary of one complete game turn (both players' turns).
@@ -239,6 +242,10 @@ impl TurnEventRecord {
                         unit_name(victim)
                     ),
                 }
+            }
+            TurnEventRecord::ZaribaBuilt { hexsides, complete } => {
+                let state = if *complete { "complete" } else { "in part" };
+                format!("Zariba built ({hexsides} hexsides, {state})")
             }
         }
     }

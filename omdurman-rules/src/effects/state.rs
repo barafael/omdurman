@@ -320,6 +320,17 @@ impl GameState {
             .is_some_and(HexsideKind::is_zariba)
     }
 
+    /// Whether every printed Zariba hexside has been built (§5.3): each
+    /// printed side borders a Zariba hex, so walking those hexes finds all.
+    pub fn zariba_complete(&self) -> bool {
+        self.board.zariba.iter().all(|&hex| {
+            hex.neighbors()
+                .into_iter()
+                .filter(|&n| self.is_printed_zariba_side(hex, n))
+                .all(|n| self.zariba_hexsides.contains(&HexsideRef::new(hex, n)))
+        })
+    }
+
     /// [`Self::hexside_effective`] under a predicate.
     pub fn hexside_effective_is(
         &self,

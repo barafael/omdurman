@@ -89,6 +89,12 @@ fn wire_list(units: &[UnitId], scenario: Scenario) -> String {
         );
     }
     let names = distinct(units.iter().map(|&u| super::wire_name(u, scenario)), 2);
+    // Several of one kind: "two squadrons", not "squadron".
+    if let [only] = names.as_slice()
+        && units.len() > 1
+    {
+        return format!("{} {}", number_word(units.len()), plural(only));
+    }
     if units.len() <= 2 {
         names.join(" and ")
     } else {
@@ -97,6 +103,18 @@ fn wire_list(units: &[UnitId], scenario: Scenario) -> String {
             number_word(units.len()),
             names.join(" and ")
         )
+    }
+}
+
+/// A wire name in the plural ("squadrons", "Maxim batteries"); names
+/// already plural ("Friendlies", "Engineers") stay.
+fn plural(name: &str) -> String {
+    if name.ends_with('s') {
+        name.to_string()
+    } else if let Some(stem) = name.strip_suffix('y') {
+        format!("{stem}ies")
+    } else {
+        format!("{name}s")
     }
 }
 
@@ -184,6 +202,15 @@ fn event_facts(state: &GameState, summary: &TurnSummary) -> Vec<Fact> {
                 source: VpSource::MahdisTombTaken,
                 ..
             } => facts.push(Fact::new(0, 6, T.tomb_taken)),
+            TurnEventRecord::ZaribaBuilt { complete, .. } => facts.push(Fact::new(
+                4,
+                29,
+                if *complete {
+                    T.zariba_complete
+                } else {
+                    T.zariba_begun
+                },
+            )),
             TurnEventRecord::WallBreach {
                 attacker,
                 hexside,
@@ -622,6 +649,15 @@ mod tests {
             ),
             "two battalions First Egyptian Brigade"
         );
+        assert_eq!(
+            wire_list(
+                &[UnitId::EgyptianArmy_0_0, UnitId::EgyptianArmy_1_0],
+                Scenario::Campaign
+            ),
+            "two squadrons"
+        );
+        assert_eq!(plural("Maxim battery"), "Maxim batteries");
+        assert_eq!(plural("Friendlies"), "Friendlies");
         // The same place twice running: the second sentence says "there".
         let abu_alim = whereabouts(Scenario::Campaign, HexCoord::new(40, 12));
         let facts = [

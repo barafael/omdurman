@@ -595,6 +595,7 @@ approximation = "The engine reads \"begins and ends the turn adjacent\" as not m
 note = "Engine-enforced: in the Campaign the printed Zariba is clear ground until built (hexside_effective, §2.1). can_construct_zariba accepts undisrupted Anglo-Egyptian infantry that have not moved, in the Anglo-Egyptian Movement phase, standing inside the printed Zariba (its Nile side) next to a printed, unbuilt Zariba hexside. Builders may not move, fire offensively or melee that turn; at the end of the Anglo-Egyptian player turn every builder still inside has built all printed Zariba hexsides around it, each in its printed kind (thorn hedge or trench, §9.23)."
 tests = [
     "omdurman-rules::src::effects::tests::construct_zariba_marks_builders_and_records_hexside",
+    "omdurman-rules::src::effects::tests::the_last_zariba_side_built_completes_the_zariba",
     "omdurman-rules::src::effects::tests::zariba_builders_may_not_fire_offensively_or_melee_until_turn_end",
     "omdurman-rules::src::effects::tests::zariba_construction_is_a_campaign_movement_phase_action",
     "omdurman-rules::src::effects::tests::world_lens_composes_breaches_and_constructed_zariba",
