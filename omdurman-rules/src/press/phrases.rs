@@ -121,7 +121,7 @@ pub static TELEGRAM: TelegramBanks = TelegramBanks {
         "{units} joined force {n} units in all",
     ],
     enemy_arrivals: &[
-        "Fresh enemy forces {tribes} {place}",
+        "Fresh enemy forces {tribes} reported {place}",
         "{n} enemy bands came up {place}",
         "Enemy reinforced {tribes}",
     ],

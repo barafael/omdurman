@@ -153,7 +153,8 @@ pub fn agree(text: &str) -> String {
     out
 }
 
-/// What the telegraph clerk keys for a unit: "3E First Btn", "battery",
+/// What the telegraph clerk keys for a unit: "First Battalion Third
+/// Egyptian Brigade", "battery",
 /// "squadron", "Gunboat Naser", "General Gatacre"; a tribe by name.
 pub fn wire_name(id: crate::UnitId, scenario: Scenario) -> String {
     use crate::UnitIdentity as U;
@@ -171,13 +172,36 @@ pub fn wire_name(id: crate::UnitId, scenario: Scenario) -> String {
         U::AngloEgyptianCamelCorps => "camel company".into(),
         U::RoyalEngineers => "Engineers".into(),
         U::AngloEgyptianInfantry { .. } if identity.is_friendlies() => "Friendlies".into(),
+        U::AngloEgyptianInfantry { brigade, battalion } => {
+            format!("{battalion} Battalion {} Brigade", brigade_words(brigade))
+        }
         other => other.label_in(scenario),
     }
 }
 
+/// A brigade as the despatches name it: "First Egyptian", "Second British"
+/// (the counter's "1E", "2B"; a Sudanese battalion's brigade is Egyptian).
+pub fn brigade_words(brigade: omdurman_types::BrigadeId) -> String {
+    use omdurman_types::BrigadeNationality as N;
+    let printed = brigade.designation();
+    let ordinal = match printed.number {
+        1 => "First".to_string(),
+        2 => "Second".to_string(),
+        3 => "Third".to_string(),
+        4 => "Fourth".to_string(),
+        n => format!("No. {n}"),
+    };
+    let nationality = match printed.nationality {
+        N::British => "British",
+        N::Egyptian | N::Sudanese => "Egyptian",
+        N::Friendlies => "Friendly",
+    };
+    format!("{ordinal} {nationality}")
+}
+
 /// What a correspondent calls one of our units in prose: "General
 /// Gatacre", "the gunboat Naser", "a field battery", "the First
-/// Battalion of the 3E Brigade"; an enemy unit by its tribe or leader.
+/// Battalion of the Third Egyptian Brigade"; an enemy unit by its tribe or leader.
 pub fn prose_name(id: crate::UnitId, scenario: Scenario) -> String {
     use crate::UnitIdentity as U;
     let Some(identity) = crate::unit_profiles::profile_for_unit(id).map(|p| p.identity) else {
@@ -206,7 +230,10 @@ pub fn prose_name(id: crate::UnitId, scenario: Scenario) -> String {
             "a body of Friendlies".into()
         }
         U::AngloEgyptianInfantry { brigade, battalion } => {
-            format!("the {battalion} Battalion of the {brigade} Brigade")
+            format!(
+                "the {battalion} Battalion of the {} Brigade",
+                brigade_words(brigade)
+            )
         }
         other => other.label_in(scenario),
     }

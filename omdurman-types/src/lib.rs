@@ -852,6 +852,7 @@ pub enum DervishTribe {
     /// The Khalifa's bodyguard (§9.111 -- may enter the walled city).
     Taiasha,
     /// East-bank infantry (§9.111).
+    #[strum(serialize = "Isa Zachneih")]
     IsaZachneih,
 }
 
