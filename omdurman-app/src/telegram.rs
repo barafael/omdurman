@@ -1,20 +1,18 @@
 use bevy::prelude::*;
-use bevy::tasks::futures::check_ready;
 
 use omdurman_net::GameEvent;
 
-use crate::llm::{CompletionTag, LlmConfig, PendingCompletions, spawn_completion};
-
-/// The press of the game: one field telegram per finished turn and, at game
-/// over, the Gazette's report. Filed from recorded events
-/// ([`GameEvent::Telegram`] / [`GameEvent::Gazette`]), so every peer -- and a
-/// replay -- reads the same text; only the host writes it.
+/// The field telegrams: one per finished turn, written by the host from the
+/// turn's record ([`omdurman_rules::press::telegram`]) and filed from the
+/// recorded [`GameEvent::Telegram`], so every peer -- and a replay -- reads
+/// the same text. (The end-of-game newspaper is composed by every peer from
+/// the game state, see `crate::newspaper`; a [`GameEvent::Gazette`] in an
+/// older record is filed but no longer shown.)
 #[derive(Resource, Default)]
 pub struct TelegramLog {
     /// Filed telegrams, one per turn, in record order.
     pub entries: Vec<(u8, String)>,
-    /// Host: turns whose telegram has been asked for (the model's answer is
-    /// in flight, or it has been submitted).
+    /// Host: turns whose telegram has been written and submitted.
     pub requested: std::collections::BTreeSet<u8>,
     /// How many entries have been persisted to the artifacts file. The file
     /// is rewritten whole (sorted by turn) each time this lags behind
@@ -25,11 +23,7 @@ pub struct TelegramLog {
     /// unseen telegram of the latest turn and waits for a click (see
     /// `ui_plugin::controls::telegram_overlay`).
     pub acknowledged: usize,
-    /// Per-turn fallback text built from the turn's own events, used when
-    /// no flavour model is configured or its request fails -- never an
-    /// empty "the situation develops" stub.
-    pub fallbacks: std::collections::HashMap<u8, String>,
-    /// The Gazette's report paragraphs, once filed.
+    /// The Gazette paragraphs of an older record (no longer written).
     pub gazette: Option<Vec<String>>,
 }
 
@@ -88,7 +82,7 @@ pub(crate) struct PressDesk<'w> {
 }
 
 impl PressDesk<'_> {
-    /// Whether this peer writes the press (so asks the flavour model).
+    /// Whether this peer writes the press.
     pub(crate) fn writes(&self) -> bool {
         self.net.as_ref().is_none_or(|net| net.is_host)
     }
@@ -106,15 +100,13 @@ impl PressDesk<'_> {
     }
 }
 
-/// Host: write the telegram of every finished turn that has none yet -- ask
-/// the flavour model, or publish the turn's own events at once when there is
-/// none. Guests only wait for the host's telegram to arrive. A new host picks
-/// up any turn the old one left unwritten.
+/// Host: write the telegram of every finished turn that has none yet, from
+/// the turn's record and the game as the turn left it, and submit it.
+/// Guests only wait for the host's telegram to arrive. A new host picks up
+/// any turn the old one left unwritten.
 pub(crate) fn generate_telegrams(
     game_state: Option<Res<crate::GameStateResource>>,
-    llm_config: Res<LlmConfig>,
     mut telegram_log: ResMut<TelegramLog>,
-    mut pending: ResMut<PendingCompletions>,
     mut desk: PressDesk,
 ) {
     let Some(state) = game_state else { return };
@@ -129,70 +121,9 @@ pub(crate) fn generate_telegrams(
             continue;
         }
         telegram_log.requested.insert(turn);
-        let fallback = omdurman_rules::telegram_prompt::fallback_telegram(summary);
-        telegram_log.fallbacks.insert(turn, fallback.clone());
-        if llm_config.has_key() {
-            let (system, user) =
-                omdurman_rules::telegram_prompt::build_telegram_prompt(summary, state.0.scenario);
-            spawn_completion(
-                &llm_config,
-                &system,
-                &user,
-                CompletionTag::Telegram { turn },
-                crate::llm::TELEGRAM_MAX_TOKENS,
-                &mut pending,
-            );
-        } else {
-            desk.publish(
-                &mut telegram_log,
-                GameEvent::Telegram {
-                    turn,
-                    text: fallback,
-                },
-            );
-        }
+        let text = omdurman_rules::press::telegram::telegram(&state.0, summary);
+        desk.publish(&mut telegram_log, GameEvent::Telegram { turn, text });
     }
-}
-
-/// Host: publish each telegram the flavour model returns (or, if it failed,
-/// the turn's fallback text).
-pub(crate) fn poll_telegram_completions(
-    mut pending: ResMut<PendingCompletions>,
-    mut telegram_log: ResMut<TelegramLog>,
-    mut desk: PressDesk,
-) {
-    let mut i = 0;
-    while i < pending.items.len() {
-        if matches!(pending.items[i].tag, CompletionTag::Telegram { .. }) {
-            if let Some(result) = check_ready(&mut pending.items[i].task) {
-                let item = pending.items.swap_remove(i);
-                match item.tag {
-                    CompletionTag::Telegram { turn } => {
-                        let text = result
-                            .map(|t| omdurman_rules::telegram_prompt::telegraphese(&t))
-                            .unwrap_or_else(|e| {
-                                warn!("LLM telegram generation failed for turn {turn}: {e}");
-                                telegram_log
-                                    .fallbacks
-                                    .get(&turn)
-                                    .cloned()
-                                    .unwrap_or_else(stub_telegram_text)
-                            });
-                        desk.publish(&mut telegram_log, GameEvent::Telegram { turn, text });
-                    }
-                    CompletionTag::Newspaper => unreachable!(),
-                }
-            } else {
-                i += 1;
-            }
-        } else {
-            i += 1;
-        }
-    }
-}
-
-fn stub_telegram_text() -> String {
-    "NO REPORT FROM FORWARD POSITIONS STOP LINES HOLD FULL STOP".to_string()
 }
 
 /// Persist new telegram entries to the game's artifact directory

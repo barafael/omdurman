@@ -27,7 +27,7 @@ through at all.
 | `omdurman-board-ui` | yes | Board-view plumbing shared by the app and the map editor: RTS camera, input/raycast helpers, egui pointer gating (`MapPointerInputSet`), night shading, the two-board store (`LoadedAnnotations`, `PendingMapLoad`). |
 | `omdurman-net` | yes | Net glue: `NetMsg`, `GameEvent`, `GameRecord`, `InitialGameState`, `PlayerKey`, `Seat`, `room_id()`. Pulls Bevy for `Resource` derives and the log macros. |
 | `omdurman-app` | yes | The Bevy binary: rendering, input, egui UI, camera, net glue, seats, the in-game AI driver (`bot_player.rs`). |
-| `omdurman-bot` | via net | Headless AI playthrough driver and the in-game AI's decision logic: random, aggressive, LLM-advised and Kitchener/Khalifa commander agents, invariant checks, an offline log auditor. |
+| `omdurman-bot` | via net | Headless AI playthrough driver and the in-game AI's decision logic: random, aggressive and Kitchener/Khalifa commander agents, invariant checks, an offline log auditor. |
 | `traceability-macro` | — | The `#[rulebook("§N")]` proc-macro attribute. |
 | `tools/traceability-typst` | — | Generates the traceability report (`traceability.typ` / PDF); CI builds it, Pages publishes it. |
 | `tools/traceability-lsp` | — | LSP server + VS Code client for rulebook↔code navigation; shares its `checks` with the rules test. |
@@ -270,10 +270,15 @@ what the engine is doing and why. Every citation deep-links into the in-app Rule
   FortDestroyed, UnitEliminated) and every refused action renders as a paper-card "field
   telegraph" slip with its authorising § references deep-linked. The slip queue is bounded and
   ages out.
-- **Turn telegram** (`telegram.rs`, `ui_plugin::controls::telegram_overlay`). Each turn's
-  telegram is a centred modal over the dimmed board; play waits until it is dismissed. Without a
-  flavour model it reports the turn's own events (`telegram::fallback_telegram` over
-  `turn_summary::TurnSummary`).
+- **The press** (`omdurman-rules/src/press/`, deterministic -- no LLM). Each turn's field
+  telegram (`press::telegram`) carries three to five facts from the turn record, the most
+  important first, filled in from the situation when the turn was quiet, keyed in telegraphese
+  (capitals, STOP, FULL STOP); the host writes it and records it as `GameEvent::Telegram`, and
+  it shows as a modal over the dimmed board (`ui_plugin::controls::telegram_overlay`) that play
+  waits on. At game over every peer composes the newspaper's front page
+  (`press::gazette::front_page`, drawn by `ui_plugin::gazette`): the lead article and a
+  turn-by-turn chronicle from the record, the telegrams as Late Telegrams, a roll of honour, and
+  the other news of 1898 / 1885. All wordings live in the phrase banks of `press/phrases.rs`.
 - **Action discovery panel** (`actions_panel.rs`, in the right sidebar). Names the current
   phase + active player, lists the categories of action the rulebook allows in it (move / fire
   / melee / construct zariba / load Friendlies / end phase), each with a § deep-link, and shows

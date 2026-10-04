@@ -693,13 +693,6 @@ mod late_joiner_tests {
                 events: Vec::new(),
             });
             app.insert_resource(crate::GameStateResource(state));
-            // No key: the host publishes the fallback at once (and a test
-            // never calls a model).
-            app.insert_resource(crate::llm::LlmConfig {
-                api_key: None,
-                ..Default::default()
-            });
-            app.insert_resource(crate::llm::PendingCompletions::default());
             app.insert_resource(crate::telegram::TelegramLog::default());
             let mut net = omdurman_net::NetState::default();
             net.is_host = is_host;
@@ -932,27 +925,32 @@ mod late_joiner_tests {
             entries: vec![(2, "Second.".to_string()), (1, "First report.".to_string())],
             ..Default::default()
         });
-        app.insert_resource(crate::newspaper::NewspaperReport {
-            masthead: "THE LONDON GAZETTE".to_string(),
-            date_line: "September 1898".to_string(),
-            headline: "DECISIVE BATTLE".to_string(),
-            subhead: "Full details inside".to_string(),
-            scenario: "Campaign".to_string(),
-            turns_played: 7,
-            result_key: "anglo_victory".to_string(),
-            paragraphs: vec!["The forces met at dawn.".to_string()],
-        });
-        app.insert_resource(crate::newspaper::NewspaperLlmState {
-            dispatched: true,
-            completed: true,
-            ..Default::default()
-        });
+        // A finished game: every peer composes the front page from it.
+        let mut finished =
+            omdurman_rules::effects::GameState::new(omdurman_types::Scenario::Campaign);
+        finished
+            .turn_summaries
+            .push(omdurman_rules::turn_summary::TurnSummary {
+                turn: omdurman_rules::GameTurnIndex::new(2),
+                time: omdurman_rules::turn_track::GameTime::EightAM,
+                day_night: omdurman_types::DayNight::Day,
+                first_player: omdurman_types::Player::AngloEgyptian,
+                events: Vec::new(),
+            });
+        finished.game_over = true;
+        finished.game_result = Some(omdurman_rules::GameResult::Campaign(
+            omdurman_rules::CampaignVictoryLevel::Decisive(omdurman_types::Player::AngloEgyptian),
+        ));
+        app.insert_resource(crate::GameStateResource(finished));
+        app.insert_resource(crate::newspaper::NewspaperReport::default());
         app.add_systems(
             Update,
             (
                 crate::telegram::save_telegram_artifacts,
+                crate::newspaper::compose_newspaper,
                 crate::newspaper::save_newspaper_artifact,
-            ),
+            )
+                .chain(),
         );
         app.update();
 
@@ -978,10 +976,11 @@ mod late_joiner_tests {
         assert!(turn1 < turn2, "telegrams not sorted by turn:\n{telegrams}");
 
         let newspaper = std::fs::read_to_string(game_dir.join("newspaper.md")).unwrap();
-        assert!(newspaper.contains("THE LONDON GAZETTE"));
-        assert!(newspaper.contains("DECISIVE BATTLE"));
-        assert!(newspaper.contains("The forces met at dawn."));
-        assert!(newspaper.contains("Result: anglo_victory"));
+        assert!(newspaper.contains("The London Gazette"), "{newspaper}");
+        assert!(newspaper.contains("GLORIOUS VICTORY"), "{newspaper}");
+        assert!(newspaper.contains("THE BATTLE OF OMDURMAN"), "{newspaper}");
+        // The filed telegrams make the Late Telegrams column.
+        assert!(newspaper.contains("FIRST REPORT FULL STOP"), "{newspaper}");
     }
 
     #[test]
@@ -1005,8 +1004,7 @@ mod late_joiner_tests {
 /// Telegrams are generated per completed game turn; the newspaper needs the
 /// game to be over (`game_result` set), so only completed records qualify.
 ///
-/// Run explicitly (it performs LLM calls and writes into the workspace's
-/// `games/` directory):
+/// Run explicitly (it writes into the workspace's `games/` directory):
 ///
 /// ```shell
 /// ARTIFACT_RECORDS="games/game_bot_<a>/events.jsonl,games/game_bot_<b>/events.jsonl" \
@@ -1021,8 +1019,7 @@ mod artifact_fixture_tests {
 
     use crate::LoadedAnnotations;
     use crate::game_record::{self, GameRecorder};
-    use crate::llm::{LlmConfig, PendingCompletions};
-    use crate::newspaper::{NewspaperLlmState, NewspaperReport};
+    use crate::newspaper::NewspaperReport;
     use crate::state::GameStateResource;
     use crate::telegram::TelegramLog;
 
@@ -1030,7 +1027,7 @@ mod artifact_fixture_tests {
     static CWD_SWAP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
-    #[ignore = "fixture generator: performs LLM calls and writes into games/"]
+    #[ignore = "fixture generator: writes into games/"]
     fn generate_artifact_fixtures() {
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -1041,9 +1038,6 @@ mod artifact_fixture_tests {
                 .filter(|s| !s.is_empty())
                 .collect();
             assert!(!records.is_empty(), "no record paths given");
-
-            // LLM config reads the key from the environment at construction.
-            dotenvy::dotenv().ok();
 
             let _cwd_guard = CWD_SWAP_LOCK.lock().unwrap();
             // The recorder's games/ dir is CWD-relative; cargo test starts in
@@ -1114,37 +1108,29 @@ mod artifact_fixture_tests {
         recorder.install_history(record);
         app.insert_resource(recorder);
         app.insert_resource(GameStateResource(state));
-        app.insert_resource(LlmConfig::default());
         app.insert_resource(TelegramLog::default());
         app.insert_resource(NewspaperReport::default());
-        app.insert_resource(NewspaperLlmState::default());
-        app.insert_resource(PendingCompletions::default());
         app.add_systems(
             Update,
             (
                 crate::telegram::generate_telegrams,
-                crate::telegram::poll_telegram_completions,
                 crate::telegram::save_telegram_artifacts,
-                crate::newspaper::generate_newspaper,
-                crate::newspaper::poll_newspaper_completion,
-                crate::newspaper::adopt_filed_gazette,
+                crate::newspaper::compose_newspaper,
                 crate::newspaper::save_newspaper_artifact,
                 game_record::flush_game_record,
-            ),
+            )
+                .chain(),
         );
 
-        // Pump frames until everything drains: all telegram entries flushed,
-        // the newspaper saved, no completions in flight. The savers fall back
-        // to stub text on LLM failure, so this always terminates.
+        // Pump frames until everything drains: all telegram entries flushed
+        // and the newspaper saved.
         let mut iterations = 0usize;
         loop {
             app.update();
             let telegram_log = app.world().resource::<TelegramLog>();
-            let newspaper = app.world().resource::<NewspaperLlmState>();
-            let pending = app.world().resource::<PendingCompletions>();
+            let newspaper = app.world().resource::<NewspaperReport>();
             let done = newspaper.saved
                 && telegram_log.flushed == telegram_log.entries.len()
-                && pending.items.is_empty()
                 && !telegram_log.entries.is_empty();
             iterations += 1;
             if done || iterations > 6_000 {
@@ -1153,7 +1139,7 @@ mod artifact_fixture_tests {
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
         let telegram_log = app.world().resource::<TelegramLog>();
-        let newspaper = app.world().resource::<NewspaperLlmState>();
+        let newspaper = app.world().resource::<NewspaperReport>();
         assert!(
             newspaper.saved,
             "newspaper artifact was not written for {record_path}"
@@ -1738,11 +1724,7 @@ fn ai_plays_headless(
         .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
             std::time::Duration::from_millis(250),
         ))
-        // No flavour-text model calls, and records into the temp dir.
-        .insert_resource(omdurman_net::llm::LlmConfig {
-            api_key: None,
-            ..Default::default()
-        })
+        // Records into the temp dir.
         .insert_resource(crate::game_record::GameRecorder::init_in(
             games.path().to_str().expect("utf-8 temp path"),
             7,

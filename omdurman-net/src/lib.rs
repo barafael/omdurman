@@ -162,13 +162,15 @@ pub enum GameEvent {
         holder: PlayerKey,
     },
     /// The field telegram for finished game turn `turn`. Written once, by
-    /// the host (its flavour model, or the turn's own events when it has
-    /// none), so every peer reads the same text; recorded, so a replay or a
-    /// late joiner shows it too. Presentation only: no engine effect, and
+    /// the host from the turn's record (`omdurman_rules::press::telegram`),
+    /// so every peer reads the same text; recorded, so a replay or a late
+    /// joiner shows it too. Presentation only: no engine effect, and
     /// the first telegram recorded for a turn wins.
     Telegram { turn: u8, text: String },
-    /// The London Gazette's report paragraphs at game over, written once by
-    /// the host like [`GameEvent::Telegram`].
+    /// The London Gazette's report paragraphs at game over. No longer
+    /// written: every peer composes the front page from the game state
+    /// (`omdurman_rules::press::gazette`). Kept so older records still
+    /// decode (the variant index is the wire format).
     Gazette { paragraphs: Vec<String> },
 }
 

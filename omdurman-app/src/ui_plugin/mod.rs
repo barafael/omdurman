@@ -41,6 +41,7 @@ pub struct LeftRailSet;
 mod controls;
 mod cursor_overlay;
 mod fonts;
+mod gazette;
 mod special_actions;
 mod status;
 mod toolbar;

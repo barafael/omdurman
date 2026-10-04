@@ -32,6 +32,7 @@ pub(crate) fn victory_modal(
     mut contexts: EguiContexts,
     game_state: Option<Res<crate::GameStateResource>>,
     report: Option<Res<crate::newspaper::NewspaperReport>>,
+    mut telegrams: Option<ResMut<crate::telegram::TelegramLog>>,
     mut modal: ResMut<VictoryModalState>,
     mut nav: VictoryNav,
 ) {
@@ -62,119 +63,62 @@ pub(crate) fn victory_modal(
     }
 
     let mut action: Option<VictoryAction> = None;
+    let page = report.as_ref().and_then(|r| r.page.clone());
+    let has_record = nav
+        .recorder
+        .record
+        .as_ref()
+        .is_some_and(|r| !r.events.is_empty());
+    // The Gazette replaces the last telegram: mark them all read.
+    if let Some(log) = telegrams.as_mut() {
+        let filed = log.entries.len();
+        if log.acknowledged < filed {
+            log.acknowledged = filed;
+        }
+    }
 
-    crate::ui::anchored_card(
-        ctx,
-        egui::Id::new("victory_modal"),
-        egui::Align2::CENTER_CENTER,
-        egui::Vec2::ZERO,
-        crate::ui::frames::modal(),
-        |ui| {
-            ui.set_max_width(520.0);
-            ui.vertical_centered(|ui| {
-                if let Some(r) = report.as_ref() {
-                    // Masthead
-                    ui.label(
-                        egui::RichText::new(&r.masthead)
-                            .size(22.0)
-                            .strong()
-                            .color(crate::ui::palette::BRASS),
-                    );
-                    ui.label(
-                        egui::RichText::new(&r.date_line)
-                            .size(11.0)
-                            .color(crate::ui::palette::newspaper::DIM),
-                    );
-                } else {
-                    // Fallback before the report is populated.
-                    ui.label(
-                        egui::RichText::new("GAME OVER")
-                            .size(28.0)
-                            .strong()
-                            .color(crate::ui::palette::TITLE),
-                    );
+    // A dimmed desk behind the paper.
+    let screen = ctx.viewport_rect();
+    egui::Area::new(egui::Id::new("gazette_backdrop"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(screen.min)
+        .show(ctx, |ui| {
+            ui.set_clip_rect(screen);
+            ui.allocate_rect(screen, egui::Sense::click_and_drag());
+            ui.painter()
+                .rect_filled(screen, 0.0, egui::Color32::from_black_alpha(170));
+        });
+    let card = egui::Area::new(egui::Id::new("victory_modal"))
+        .order(egui::Order::Foreground)
+        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+        .show(ctx, |ui| {
+            let width = (screen.width() - 80.0).clamp(600.0, 1180.0);
+            let height = screen.height() - 70.0;
+            ui.set_max_width(width);
+            match &page {
+                Some(page) => {
+                    egui::ScrollArea::vertical()
+                        .id_salt("gazette_scroll")
+                        .max_height(height - 50.0)
+                        .show(ui, |ui| super::gazette::draw_front_page(ui, page, width));
                 }
-
-                ui.add_space(6.0);
-                // Horizontal rule
-                let rect = ui.available_rect_before_wrap();
-                let y = rect.min.y;
-                ui.painter().line_segment(
-                    [
-                        egui::pos2(rect.min.x + 8.0, y),
-                        egui::pos2(rect.max.x - 8.0, y),
-                    ],
-                    egui::Stroke::new(1.0, crate::ui::palette::CHROME_BORDER),
-                );
-                ui.add_space(6.0);
-
-                // Headline
-                if let Some(r) = report.as_ref() {
-                    ui.label(
-                        egui::RichText::new(&r.headline)
-                            .size(20.0)
-                            .strong()
-                            .color(crate::ui::palette::TITLE),
-                    );
-                    ui.add_space(2.0);
-                    ui.label(
-                        egui::RichText::new(&r.subhead)
-                            .size(13.0)
-                            .italics()
-                            .color(crate::ui::palette::BRASS_DIM),
-                    );
-                }
-
-                ui.add_space(6.0);
-                // Horizontal rule
-                let rect = ui.available_rect_before_wrap();
-                let y = rect.min.y;
-                ui.painter().line_segment(
-                    [
-                        egui::pos2(rect.min.x + 8.0, y),
-                        egui::pos2(rect.max.x - 8.0, y),
-                    ],
-                    egui::Stroke::new(0.5, crate::ui::palette::CHROME_BORDER),
-                );
-                ui.add_space(8.0);
-
-                // Stats block
-                if let Some(r) = report.as_ref() {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "Scenario: {}   |   Turns played: {}   |   Result: {}",
-                            r.scenario, r.turns_played, r.result_key,
-                        ))
-                        .size(11.0)
-                        .color(crate::ui::palette::newspaper::DIM),
-                    );
-                    ui.add_space(6.0);
-                }
-
-                // LLM-generated body paragraphs.
-                if let Some(r) = report.as_ref()
-                    && !r.paragraphs.is_empty()
-                {
-                    for para in &r.paragraphs {
+                None => {
+                    crate::ui::frames::modal().show(ui, |ui| {
                         ui.label(
-                            egui::RichText::new(para)
-                                .size(12.0)
-                                .color(crate::ui::palette::newspaper::BODY),
+                            egui::RichText::new("GAME OVER")
+                                .size(28.0)
+                                .strong()
+                                .color(crate::ui::palette::TITLE),
                         );
-                        ui.add_space(4.0);
-                    }
+                    });
                 }
-
-                ui.add_space(10.0);
+            }
+            ui.add_space(8.0);
+            ui.vertical_centered(|ui| {
                 ui.horizontal(|ui| {
                     if ui.button("Close").clicked() {
                         action = Some(VictoryAction::Close);
                     }
-                    let has_record = nav
-                        .recorder
-                        .record
-                        .as_ref()
-                        .is_some_and(|r| !r.events.is_empty());
                     if !spectating
                         && ui
                             .add_enabled(has_record, egui::Button::new("Review timeline"))
@@ -193,8 +137,8 @@ pub(crate) fn victory_modal(
                     }
                 });
             });
-        },
-    );
+        });
+    ctx.move_to_top(card.response.layer_id);
 
     match action {
         Some(VictoryAction::Close) => modal.dismissed = true,
