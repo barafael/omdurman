@@ -215,10 +215,15 @@ fn validated(state: &GameState, effect: GameEffect) -> GameEffect {
     GameEffect::AdvancePhase
 }
 
-/// Display name of the AI commander of `player`'s faction, for the lobby
-/// roster and faction banners ("AI · Kitchener").
-pub fn commander_name_for(player: Player) -> &'static str {
-    Commander::for_player(player).name()
+/// Display name of the AI commander of `player`'s faction in `scenario`,
+/// for the lobby roster ("AI · Kitchener"). In 1885 the sides were
+/// Gordon's and the Mahdi's, not Kitchener's and the Khalifa's.
+pub fn commander_name_for(player: Player, scenario: omdurman_types::Scenario) -> &'static str {
+    match (scenario, player) {
+        (omdurman_types::Scenario::FallOfKhartoum, Player::AngloEgyptian) => "Gordon",
+        (omdurman_types::Scenario::FallOfKhartoum, Player::Dervish) => "the Mahdi",
+        _ => Commander::for_player(player).name(),
+    }
 }
 
 #[cfg(test)]
@@ -286,8 +291,19 @@ mod tests {
     /// Commander naming is stable — the lobby roster renders it.
     #[test]
     fn commander_names() {
-        assert_eq!(commander_name_for(Player::AngloEgyptian), "Kitchener");
-        assert_eq!(commander_name_for(Player::Dervish), "Khalifa");
+        use omdurman_types::Scenario;
+        assert_eq!(
+            commander_name_for(Player::AngloEgyptian, Scenario::Campaign),
+            "Kitchener"
+        );
+        assert_eq!(
+            commander_name_for(Player::Dervish, Scenario::Historical),
+            "Khalifa"
+        );
+        assert_eq!(
+            commander_name_for(Player::AngloEgyptian, Scenario::FallOfKhartoum),
+            "Gordon"
+        );
     }
 
     /// The exact decision path [`bot_player_act`] uses —
