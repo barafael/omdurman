@@ -161,6 +161,9 @@ pub fn wire_name(id: crate::UnitId, scenario: Scenario) -> String {
         return "unit".into();
     };
     match identity {
+        // Kitchener commanded as the Sirdar (his counter: "Lord Kitchener,
+        // Sirdar"); Gordon was Governor-General.
+        U::AngloEgyptianLeader(crate::BritishLeader::Kitchener) => "the Sirdar".into(),
         U::AngloEgyptianLeader(l) => format!("General {l}"),
         U::AngloEgyptianArtillery => "battery".into(),
         U::AngloEgyptianMaxim => "Maxim battery".into(),
@@ -181,6 +184,9 @@ pub fn prose_name(id: crate::UnitId, scenario: Scenario) -> String {
         return "a unit".into();
     };
     match identity {
+        // Kitchener commanded as the Sirdar (his counter: "Lord Kitchener,
+        // Sirdar"); Gordon was Governor-General.
+        U::AngloEgyptianLeader(crate::BritishLeader::Kitchener) => "the Sirdar".into(),
         U::AngloEgyptianLeader(l) => format!("General {l}"),
         U::AngloEgyptianGunboat(_) => {
             // "the gunboat Sultan", "the steamer Bordein" (1885).

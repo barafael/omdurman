@@ -125,7 +125,7 @@ fn event_facts(state: &GameState, summary: &TurnSummary) -> Vec<Fact> {
                         } else {
                             facts.push(
                                 Fact::new(0, 2, T.leader_lost)
-                                    .with("leader", leader.to_string())
+                                    .with("leader", super::wire_name(*unit, scenario))
                                     .with("place", place(at)),
                             );
                         }
@@ -234,6 +234,9 @@ fn event_facts(state: &GameState, summary: &TurnSummary) -> Vec<Fact> {
                     }
                     UnitIdentity::AngloEgyptianInfantry { brigade, .. } => {
                         format!("{brigade} brigade")
+                    }
+                    UnitIdentity::AngloEgyptianLeader(crate::BritishLeader::Kitchener) => {
+                        "the Sirdar".into()
                     }
                     UnitIdentity::AngloEgyptianLeader(l) => format!("General {l}"),
                     UnitIdentity::AngloEgyptianCavalry => "cavalry".into(),
