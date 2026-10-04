@@ -419,7 +419,12 @@ fn collect_hints(
                 )
             });
             if campaign && ae_moving && ae_infantry_on_map {
-                out.push(hint("Build the Zariba with infantry inside it", None));
+                // §5.3: only a battalion that has not moved this turn
+                // builds -- a newcomer marches in and finds no button.
+                out.push(hint(
+                    "Build the Zariba with infantry inside it",
+                    Some("select a battalion that began the turn there, before it moves".into()),
+                ));
                 // §5.21: "after, and only after" the Isa Zachneih is gone.
                 if gs.isa_zachneih_eliminated {
                     out.push(hint("Load / disembark Friendlies", None));
