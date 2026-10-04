@@ -172,6 +172,11 @@ pub fn wire_name(id: crate::UnitId, scenario: Scenario) -> String {
         U::AngloEgyptianCamelCorps => "camel company".into(),
         U::RoyalEngineers => "Engineers".into(),
         U::AngloEgyptianInfantry { .. } if identity.is_friendlies() => "Friendlies".into(),
+        // 1885: Gordon's garrison, Egyptian and Sudanese -- no British
+        // brigades in Khartoum, whatever the counters print.
+        U::AngloEgyptianInfantry { .. } if scenario == Scenario::FallOfKhartoum => {
+            "garrison battalion".into()
+        }
         U::AngloEgyptianInfantry { brigade, battalion } => {
             format!("{battalion} Battalion {} Brigade", brigade_words(brigade))
         }
@@ -229,6 +234,9 @@ pub fn prose_name(id: crate::UnitId, scenario: Scenario) -> String {
         U::AngloEgyptianInfantry { .. } if identity.is_friendlies() => {
             "a body of Friendlies".into()
         }
+        U::AngloEgyptianInfantry { .. } if scenario == Scenario::FallOfKhartoum => {
+            "a battalion of the garrison".into()
+        }
         U::AngloEgyptianInfantry { brigade, battalion } => {
             format!(
                 "the {battalion} Battalion of the {} Brigade",
@@ -255,6 +263,9 @@ pub fn prose_count(id: crate::UnitId, n: usize, scenario: Scenario) -> String {
         Some(U::RoyalEngineers) => format!("{count} companies of Royal Engineers"),
         Some(identity @ U::AngloEgyptianInfantry { .. }) if identity.is_friendlies() => {
             format!("{count} bodies of Friendlies")
+        }
+        Some(U::AngloEgyptianInfantry { .. }) if scenario == Scenario::FallOfKhartoum => {
+            format!("{count} battalions of the garrison")
         }
         _ => format!("{} ({count})", prose_name(id, scenario)),
     }

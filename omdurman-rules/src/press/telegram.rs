@@ -79,6 +79,7 @@ fn wire_list(units: &[UnitId], scenario: Scenario) -> String {
         })
         .collect();
     if units.len() >= 2
+        && scenario != Scenario::FallOfKhartoum
         && let Some(Some(brigade)) = brigades.first()
         && brigades.iter().all(|b| *b == Some(*brigade))
     {
@@ -286,6 +287,11 @@ fn event_facts(state: &GameState, summary: &TurnSummary) -> Vec<Fact> {
                     UnitIdentity::AngloEgyptianInfantry { brigade, .. } if i.is_friendlies() => {
                         let _ = brigade;
                         "Friendlies".to_string()
+                    }
+                    UnitIdentity::AngloEgyptianInfantry { .. }
+                        if scenario == Scenario::FallOfKhartoum =>
+                    {
+                        "garrison troops".into()
                     }
                     UnitIdentity::AngloEgyptianInfantry { brigade, .. } => {
                         format!("{} Brigade", super::brigade_words(brigade))
@@ -657,6 +663,14 @@ mod tests {
             "two squadrons"
         );
         assert_eq!(plural("Maxim battery"), "Maxim batteries");
+        // 1885: no British brigades in Khartoum -- Gordon's garrison.
+        assert_eq!(
+            wire_list(
+                &[UnitId::Kitchener_5_0, UnitId::BritishArmy_0_1],
+                Scenario::FallOfKhartoum
+            ),
+            "two garrison battalions"
+        );
         assert_eq!(plural("Friendlies"), "Friendlies");
         // The same place twice running: the second sentence says "there".
         let abu_alim = whereabouts(Scenario::Campaign, HexCoord::new(40, 12));
