@@ -668,71 +668,75 @@ fn draw_card(
     let frame = crate::ui::frames::paper(egui::Stroke::new(stroke, a(crate::ui::palette::INK)))
         .inner_margin(egui::Margin::symmetric(12, 9))
         .show(ui, |ui| {
-            ui.set_max_width(340.0);
-            // Header line: "FIRE COMBAT — Anglo-Egyptian"
-            ui.horizontal(|ui| {
+            // Text runs left to right: the column aligns its cards to the
+            // right, which egui would carry into the wrapped rows.
+            ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                ui.set_max_width(340.0);
+                // Header line: "FIRE COMBAT — Anglo-Egyptian"
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(header_word)
+                            .color(a(crate::ui::palette::INK))
+                            .size(13.0)
+                            .strong(),
+                    );
+                    ui.label(
+                        egui::RichText::new(format!("— {kind_label}"))
+                            .color(a(crate::ui::palette::FAINT_INK))
+                            .size(12.0),
+                    );
+                    if entry.hold.pinned {
+                        ui.label(
+                            egui::RichText::new("(pinned)")
+                                .color(a(crate::ui::palette::FAINT_INK))
+                                .size(10.0)
+                                .italics(),
+                        );
+                    }
+                });
+                ui.add_space(2.0);
+                // Target line.
+                // A named place reads better than its coordinates.
+                let hex_str = if entry.hex_label.is_empty() {
+                    format!("at ({},{})", entry.target_hex.q, entry.target_hex.r)
+                } else {
+                    format!("at {}", entry.hex_label)
+                };
                 ui.label(
-                    egui::RichText::new(header_word)
-                        .color(a(crate::ui::palette::INK))
-                        .size(13.0)
-                        .strong(),
-                );
-                ui.label(
-                    egui::RichText::new(format!("— {kind_label}"))
+                    egui::RichText::new(hex_str)
                         .color(a(crate::ui::palette::FAINT_INK))
                         .size(12.0),
                 );
-                if entry.hold.pinned {
-                    ui.label(
-                        egui::RichText::new("(pinned)")
-                            .color(a(crate::ui::palette::FAINT_INK))
-                            .size(10.0)
-                            .italics(),
-                    );
-                }
-            });
-            ui.add_space(2.0);
-            // Target line.
-            // A named place reads better than its coordinates.
-            let hex_str = if entry.hex_label.is_empty() {
-                format!("at ({},{})", entry.target_hex.q, entry.target_hex.r)
-            } else {
-                format!("at {}", entry.hex_label)
-            };
-            ui.label(
-                egui::RichText::new(hex_str)
-                    .color(a(crate::ui::palette::FAINT_INK))
-                    .size(12.0),
-            );
-            ui.add_space(4.0);
-
-            // Attacker side block: firers shoot, melee attackers fight.
-            let role = match entry.kind {
-                CombatKind::Fire => "Firers:",
-                CombatKind::Melee => "Attackers:",
-            };
-            draw_side(ui, role, &entry.attacker, a, rulebook, &mut clicked);
-            // Defender block for melee (symmetric).
-            if let Some(defender) = &entry.defender {
                 ui.add_space(4.0);
-                draw_side(ui, "Defenders:", defender, a, rulebook, &mut clicked);
-            }
 
-            if let Some(note) = &entry.note {
-                ui.add_space(4.0);
-                crate::rulebook::refs_rich(ui, note, 12.0, |t| {
-                    t.color(a(crate::ui::palette::INK)).italics()
-                });
-            }
-
-            ui.add_space(4.0);
-            // Footer: paragraph chips.
-            if !entry.paragraphs.is_empty() {
-                let refs: Vec<&str> = entry.paragraphs.iter().map(String::as_str).collect();
-                if let Some(p) = rulebook.render_ref_links(ui, &refs) {
-                    clicked = Some(p);
+                // Attacker side block: firers shoot, melee attackers fight.
+                let role = match entry.kind {
+                    CombatKind::Fire => "Firers:",
+                    CombatKind::Melee => "Attackers:",
+                };
+                draw_side(ui, role, &entry.attacker, a, rulebook, &mut clicked);
+                // Defender block for melee (symmetric).
+                if let Some(defender) = &entry.defender {
+                    ui.add_space(4.0);
+                    draw_side(ui, "Defenders:", defender, a, rulebook, &mut clicked);
                 }
-            }
+
+                if let Some(note) = &entry.note {
+                    ui.add_space(4.0);
+                    crate::rulebook::refs_rich(ui, note, 12.0, |t| {
+                        t.color(a(crate::ui::palette::INK)).italics()
+                    });
+                }
+
+                ui.add_space(4.0);
+                // Footer: paragraph chips.
+                if !entry.paragraphs.is_empty() {
+                    let refs: Vec<&str> = entry.paragraphs.iter().map(String::as_str).collect();
+                    if let Some(p) = rulebook.render_ref_links(ui, &refs) {
+                        clicked = Some(p);
+                    }
+                }
+            })
         });
     (clicked, frame.response.rect)
 }
