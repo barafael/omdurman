@@ -163,6 +163,11 @@ signalling server.
 - **zsh is the login shell**: unquoted `$var` does not word-split; loops
   over `"q r"` pairs belong in `bash`. Never `pkill -f` a pattern that
   also appears in your own command line — `stop` uses `pgrep -x omdurman`.
+- **Campaign as the Anglo-Egyptians: Kitchener, Gatacre and Hunter must be
+  on the map by the end of turn 4** (§9.113) -- End phase is refused until
+  then (the rail says so). A fast-forward that only presses E stalls there:
+  bring the leaders on first, and make any fast-forward loop give up when a
+  phase of yours does not advance.
 - **Both factions AI + Faction: Spectate** plays a whole scenario (good
   for end-of-game rules such as victory levels) -- but the host's AI waits
   for each end-of-turn telegram to be read, so keep pressing Return:
