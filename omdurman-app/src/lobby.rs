@@ -740,11 +740,14 @@ fn setup_tab(
                 for (faction, commander) in [
                     (
                         Player::AngloEgyptian,
-                        crate::bot_player::commander_name_for(Player::AngloEgyptian),
+                        crate::bot_player::commander_name_for(
+                            Player::AngloEgyptian,
+                            lobby_scenario.0,
+                        ),
                     ),
                     (
                         Player::Dervish,
-                        crate::bot_player::commander_name_for(Player::Dervish),
+                        crate::bot_player::commander_name_for(Player::Dervish, lobby_scenario.0),
                     ),
                 ] {
                     let claimed = human_picked(faction);
@@ -792,7 +795,7 @@ fn setup_tab(
                 ui.label(
                     egui::RichText::new(format!(
                         "AI \u{b7} {}",
-                        crate::bot_player::commander_name_for(*faction)
+                        crate::bot_player::commander_name_for(*faction, lobby_scenario.0)
                     ))
                     .color(crate::ui::palette::INFO),
                 );
