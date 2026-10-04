@@ -477,11 +477,35 @@ pub fn anchored_card<R>(
         .anchor(anchor, offset.into())
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
-            frame.show(ui, |ui| {
-                inner = Some(contents(ui));
+            with_room(ui, |ui| {
+                frame.show(ui, |ui| {
+                    inner = Some(contents(ui));
+                });
             });
         });
     inner
+}
+
+/// The width a card's text may wrap at unless the card sets its own.
+pub const CARD_ROOM_WIDTH: f32 = 460.0;
+
+/// Run `contents` with room to lay out in: down to the bottom of the screen
+/// and at least [`CARD_ROOM_WIDTH`] wide. egui hands an area *last frame's*
+/// size as its room, so a card could never outgrow what it once was: a
+/// scroll area inside was cut off at the bottom for good (a volley of combat
+/// results), and wrapped text only ever got narrower (a fire preview that
+/// once said "No effect" wrapped its firers a word to a line). The area
+/// re-centres / re-anchors on the grown size from the next frame on.
+pub fn with_room<R>(ui: &mut egui::Ui, contents: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let screen = ui.ctx().content_rect();
+    let top_left = ui.max_rect().min;
+    let width = ui.max_rect().width().max(CARD_ROOM_WIDTH);
+    let room = egui::Rect::from_min_max(
+        top_left,
+        egui::pos2(top_left.x + width, screen.max.y.max(top_left.y)),
+    );
+    ui.scope_builder(egui::UiBuilder::new().max_rect(room), contents)
+        .inner
 }
 
 /// Like [`anchored_card`] at `CENTER_TOP`, but anchored at the shared
@@ -535,8 +559,10 @@ fn stacked_card_impl<R>(
                 ui.style_mut().visuals.disabled_alpha = 1.0;
                 ui.disable();
             }
-            let response = frame.show(ui, |ui| {
-                inner = Some(contents(ui));
+            let response = with_room(ui, |ui| {
+                frame.show(ui, |ui| {
+                    inner = Some(contents(ui));
+                })
             });
             height = response.response.rect.height();
         });
@@ -574,6 +600,129 @@ pub fn section_header(ui: &mut egui::Ui, title: &str) {
 #[cfg(test)]
 mod tests {
     use super::CardHold;
+    use bevy_egui::egui;
+
+    /// Run `frames` egui passes on a 1200x800 screen, calling `draw` with
+    /// the frame number; returns the context for inspection.
+    fn headless(frames: usize, mut draw: impl FnMut(&egui::Context, usize)) -> egui::Context {
+        let ctx = egui::Context::default();
+        for frame in 0..frames {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1200.0, 800.0),
+                )),
+                ..Default::default()
+            };
+            ctx.begin_pass(input);
+            draw(&ctx, frame);
+            ctx.end_pass().drop_without_applying_deltas();
+        }
+        ctx
+    }
+
+    /// An anchored card whose scrolling column grows (a volley of combat
+    /// cards arriving) shows all of it: egui hands an area last frame's size
+    /// as its room, and a scroll area inside it never grew past that -- the
+    /// newest cards were cut off at the bottom.
+    #[test]
+    fn an_anchored_card_grows_with_its_content() {
+        let lines = |frame: usize| if frame < 3 { 1 } else { 12 };
+        let ctx = headless(8, |ctx, frame| {
+            super::anchored_card(
+                ctx,
+                "growing",
+                egui::Align2::RIGHT_TOP,
+                egui::vec2(-10.0, 40.0),
+                egui::Frame::NONE,
+                |ui| {
+                    egui::ScrollArea::vertical()
+                        .max_height(600.0)
+                        .show(ui, |ui| {
+                            for i in 0..lines(frame) {
+                                ui.label(format!("line {i}"));
+                            }
+                        });
+                },
+            );
+        });
+        let rect = ctx
+            .memory(|m| m.area_rect(egui::Id::new("growing")))
+            .expect("the card was shown");
+        assert!(rect.height() > 12.0 * 14.0, "card height {}", rect.height());
+        assert!(rect.max.x <= 1200.0, "card runs off screen: {rect:?}");
+    }
+
+    /// A centred card (the fire / melee previews) whose text gets longer
+    /// widens to fit it, rather than wrapping at the width its earlier,
+    /// shorter text needed.
+    #[test]
+    fn a_stacked_card_widens_for_longer_text() {
+        let text = |frame: usize| {
+            if frame < 3 {
+                "No effect".to_string()
+            } else {
+                "Firers: 1B First Btn, 1B Second Btn, 1B Third Btn, 1B Fourth Btn, Maxim, Maxim"
+                    .to_string()
+            }
+        };
+        let ctx = headless(8, |ctx, frame| {
+            let mut layout = crate::ScreenLayout::default();
+            super::stacked_card(ctx, &mut layout, "preview", egui::Frame::NONE, |ui| {
+                ui.label(text(frame));
+            });
+        });
+        let rect = ctx
+            .memory(|m| m.area_rect(egui::Id::new("preview")))
+            .expect("the card was shown");
+        assert!(rect.width() > 300.0, "wrapped narrow: {rect:?}");
+    }
+
+    /// The room is a ceiling, not a size: a short card stays short.
+    #[test]
+    fn a_short_card_stays_narrow() {
+        let ctx = headless(4, |ctx, _| {
+            let mut layout = crate::ScreenLayout::default();
+            super::stacked_card(ctx, &mut layout, "short", egui::Frame::NONE, |ui| {
+                ui.label("No effect");
+            });
+        });
+        let rect = ctx
+            .memory(|m| m.area_rect(egui::Id::new("short")))
+            .expect("the card was shown");
+        assert!(rect.width() < 120.0, "inflated: {rect:?}");
+    }
+
+    /// The same for width: a right-anchored card that widens stays on
+    /// screen and wraps at its own width, not at last frame's.
+    #[test]
+    fn an_anchored_card_widens_on_screen() {
+        let text = |frame: usize| {
+            if frame < 3 {
+                "short".to_string()
+            } else {
+                "Fire refused -- target (29, 14) out of range from (33, 12).".repeat(2)
+            }
+        };
+        let ctx = headless(8, |ctx, frame| {
+            super::anchored_card(
+                ctx,
+                "widening",
+                egui::Align2::RIGHT_TOP,
+                egui::vec2(-10.0, 40.0),
+                egui::Frame::NONE,
+                |ui| {
+                    ui.set_max_width(300.0);
+                    ui.label(text(frame));
+                },
+            );
+        });
+        let rect = ctx
+            .memory(|m| m.area_rect(egui::Id::new("widening")))
+            .expect("the card was shown");
+        assert!(rect.width() > 250.0, "wrapped short: {rect:?}");
+        assert!(rect.max.x <= 1200.0, "card runs off screen: {rect:?}");
+    }
 
     #[test]
     fn held_cards_do_not_age_and_leave_their_fade() {
