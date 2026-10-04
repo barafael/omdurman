@@ -15,7 +15,7 @@
 //! runs it), `--section <§N>` (repeatable: only the functions those sections
 //! cite, still judged by every citing section's tests), `--list` (show the plan, run
 //! nothing), `--in-place` (mutate the checkout itself -- CI only), `--jobs
-//! <n>`, `--output <dir>` (default `target/mutation-gate`). Exits non-zero
+//! <n>` (copies built in parallel; ignored in place), `--output <dir>` (default `target/mutation-gate`). Exits non-zero
 //! when a mutant is missed or a cited function has no engine test to run.
 //! Accepted equivalent mutants go in `.cargo/mutants.toml` (`exclude_re`),
 //! each with a comment saying why.
@@ -365,27 +365,25 @@ fn main() -> ExitCode {
             .collect::<Vec<_>>()
             .join("|");
         let mut run = cargo_mutants(&root);
-        run.args([
-            "--test-workspace",
-            "false",
-            "--no-shuffle",
-            "--gitignore",
-            "true",
-        ])
-        .arg("--jobs")
-        .arg(opts.jobs.to_string())
-        .arg("--file")
-        .arg(file)
-        .arg("--re")
-        .arg(format!("^(?:{names})$"))
-        .arg("--output")
-        .arg(&out_dir);
+        run.args(["--test-workspace", "false", "--no-shuffle"])
+            .arg("--file")
+            .arg(file)
+            .arg("--re")
+            .arg(format!("^(?:{names})$"))
+            .arg("--output")
+            .arg(&out_dir);
         if let Some(diff) = &opts.in_diff {
             run.arg("--in-diff").arg(diff);
         }
+        // In place, the checkout is the one build tree: nothing is copied,
+        // mutants run one at a time, and cargo-mutants (27+) refuses the
+        // copy options (`--jobs`, `--gitignore`) with it.
         if opts.in_place {
             run.arg("--in-place");
         } else {
+            run.args(["--gitignore", "true"])
+                .arg("--jobs")
+                .arg(opts.jobs.to_string());
             // The scratch copies of the tree go on disk next to the results,
             // not in a tmpfs /tmp.
             let scratch = opts.output.join("scratch");
