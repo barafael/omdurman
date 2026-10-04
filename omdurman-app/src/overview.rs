@@ -107,7 +107,6 @@ pub fn unit_overview_ui(
                             if *app_state.get() == crate::AppState::InGame
                                 && let Some(state) = game_state.as_deref()
                             {
-                                let block_top = ui.cursor().top();
                                 crate::ui_plugin::game_control_section(
                                     ui,
                                     state,
@@ -124,52 +123,9 @@ pub fn unit_overview_ui(
                                 let local_may_act = peers.may_act_now(&state.0);
                                 let tray_open =
                                     local_may_act && tray.available.iter().any(|u| u.shown());
-                                let mut clicked_section: Option<String> = None;
-                                let mut commands_out = Vec::new();
-                                crate::actions_panel::draw_actions_section(
-                                    ui,
-                                    state,
-                                    *phase_machine.get(),
-                                    &picker_state,
-                                    &placed_units,
-                                    &rulebook,
-                                    &mut clicked_section,
-                                    &movement_path,
-                                    &mut fire_targets,
-                                    allocation.as_deref_mut(),
-                                    local_may_act,
-                                    (tray_open, peers.is_spectator()),
-                                    &mut commands_out,
-                                );
-                                for cmd in commands_out {
-                                    crate::ui_trace::button(cmd.key_label());
-                                    picker_commands.write(cmd);
-                                }
-                                if let Some(sec) = clicked_section {
-                                    crate::rulebook::request_section(&mut rulebook, &sec);
-                                }
-                                // While counters are being placed the block above the tray never
-                                // shrinks within a phase (and starts with room for two more lines):
-                                // a hint appearing or vanishing must not move the tray under the
-                                // pointer.
+                                // -- Counter tray: set-up force / this turn's arrivals,
+                                // straight under the phase control --
                                 if tray_open {
-                                    let key = egui::Id::new((
-                                        "rail_block_height",
-                                        state.0.current_turn.value(),
-                                        format!("{:?}{:?}", state.0.phase, state.0.active_player),
-                                    ));
-                                    let used = ui.cursor().top() - block_top;
-                                    let keep = ui
-                                        .data(|d| d.get_temp::<f32>(key))
-                                        .unwrap_or(used + 36.0)
-                                        .max(used);
-                                    ui.data_mut(|d| d.insert_temp(key, keep));
-                                    ui.add_space(keep - used);
-                                }
-
-                                // -- Counter tray: set-up force / this turn's arrivals --
-                                if tray_open {
-                                    ui.add_space(8.0);
                                     let in_setup =
                                         matches!(state.0.phase, omdurman_rules::Phase::Setup);
                                     crate::ui::section_header(
@@ -227,6 +183,34 @@ pub fn unit_overview_ui(
                                     }
                                 }
 
+                                // -- Next step: below the tray while counters are
+                                // placed, so a hint coming or going never moves the
+                                // tray under the pointer.
+                                ui.add_space(8.0);
+                                let mut clicked_section: Option<String> = None;
+                                let mut commands_out = Vec::new();
+                                crate::actions_panel::draw_actions_section(
+                                    ui,
+                                    state,
+                                    *phase_machine.get(),
+                                    &picker_state,
+                                    &placed_units,
+                                    &rulebook,
+                                    &mut clicked_section,
+                                    &movement_path,
+                                    &mut fire_targets,
+                                    allocation.as_deref_mut(),
+                                    local_may_act,
+                                    (tray_open, peers.is_spectator()),
+                                    &mut commands_out,
+                                );
+                                for cmd in commands_out {
+                                    crate::ui_trace::button(cmd.key_label());
+                                    picker_commands.write(cmd);
+                                }
+                                if let Some(sec) = clicked_section {
+                                    crate::rulebook::request_section(&mut rulebook, &sec);
+                                }
                                 ui.add_space(10.0);
                                 crate::ui_plugin::score_section(ui, state);
                             }
