@@ -1,42 +1,37 @@
 # `omdurman-bot` + Tactics Suite — Manual
 
 How to use the headless rule-verification stack: the `omdurman-bot` crate
-(agents, playthrough driver, game log, audits, LLM observer), its CLI
-`omdurman-bot-cli`, and the deterministic tactics vignette suite in
-`omdurman-rules`. §-references are to the Phoenix Enterprises (1982) manual.
+(agents, playthrough driver, game log, audits), its CLI `omdurman-bot-cli`,
+and the deterministic tactics vignette suite in `omdurman-rules`.
+§-references are to the Phoenix Enterprises (1982) manual.
 
 ---
 
 ## 1. Overview
 
 ```
-  Agent AE ─────┐                                        ┌─> audit (deterministic)   ─> report, exit 1 on Error
-                ├─> rules engine ─> GameLog (text) ──────┤
-  Agent Dervish ┘   (apply_effect)                       └─> review (LLM observer)   ─> findings.md / .json
+  Agent AE ─────┐
+                ├─> rules engine ─> GameLog (text) ──────> audit (deterministic) ─> report, exit 1 on Error
+  Agent Dervish ┘   (apply_effect)
                          │
                          └──────> events.jsonl (replay record) ─> audit-record, app replay viewer
 ```
 
-- **Two independent agents**, one per faction, each with its own strategy
-  (and, for LLM sides, its own cache and brief).
+- **Two independent agents**, one per faction, each with its own strategy.
 - **The engine is authoritative.** The driver never bypasses `apply_effect`.
   Engine observations are drained into the log as a side-channel, so the
   `GameEvent` trace stays byte-for-byte deterministic for a given seed.
-- **Two artifacts per game:** a human/LLM-readable text log and an
+- **Two artifacts per game:** a human-readable text log and an
   app-compatible `events.jsonl` replay record.
 - **Verification layers**, from hard to advisory:
   1. engine validation (`apply_effect` / `can_*`);
   2. hard invariants (`invariants::check_all_with_tribal`) after every effect,
      in the proptest and adversarial test suites;
   3. deterministic scanners over the log (`audit`) and the record
-     (`audit-record`);
-  4. the LLM observer (`review`), whose findings are **advisory only**: rule
-     *misapplications* the invariants can't encode (wrong CRT row, missed
-     modifier, phase-order slip, FoK deltas).
+     (`audit-record`), whose Warnings a human triages.
 
 The library also builds for `wasm32`: the app embeds the historical
-commanders (§4.4) as its in-game AI. Only the CLI's Tokio runtime and `.env`
-loading are native-only.
+commanders (§4.3) as its in-game AI.
 
 ---
 
@@ -58,21 +53,10 @@ cargo run -p omdurman-bot --bin omdurman-bot-cli -- play Campaign 123 random 30
 cargo run -p omdurman-bot --bin omdurman-bot-cli -- play FallOfKhartoum 777 commanders
 cargo run -p omdurman-bot --bin omdurman-bot-cli -- audit game.log
 cargo run -p omdurman-bot --bin omdurman-bot-cli -- audit-record games/game_bot_<ts>/events.jsonl
-cargo run -p omdurman-bot --bin omdurman-bot-cli -- review game.log findings
 cargo run -p omdurman-bot --bin omdurman-bot-cli -- run run.json
 ```
 
-Everything except the LLM paths runs offline. The LLM paths (`llm`-based
-presets, `review`) need an API key; the CLI loads `.env` at startup:
-
-| Env var | Default |
-|---|---|
-| `LLM_API_KEY` (falls back to `OPENAI_API_KEY`) | none |
-| `LLM_BASE_URL` | `https://api.openai.com/v1` |
-| `LLM_MODEL` | `gpt-4o-mini` |
-
-Without a key, an LLM side plays the aggressive heuristic (§4.2) for every
-pick, and `review` returns an empty report with a "review skipped" summary.
+Everything runs offline; no network access or credentials are needed.
 
 ---
 
@@ -84,7 +68,6 @@ without spawning a process.
 
 ```
 omdurman-bot-cli play         [scenario] [seed] [strategy] [max_turns] [log_file]
-omdurman-bot-cli review       [log_file] [findings_prefix]
 omdurman-bot-cli audit        [log_file]
 omdurman-bot-cli audit-record <events.jsonl>
 omdurman-bot-cli run          [run.json]
@@ -112,21 +95,12 @@ without a path.
 | Preset | Anglo-Egyptian | Dervish | Notes |
 |---|---|---|---|
 | `random` (default) | Random | Random | fastest, broadest coverage |
-| `llm` | LLM + doctrine | LLM + doctrine | brief = `doctrine_brief` per side |
-| `ae` | LLM + doctrine | Random | |
-| `dervish` | Random | LLM + doctrine | |
 | `aggressive`, `agg` | Aggressive | Aggressive | |
 | `ae-agg` | Aggressive | Random | |
 | `dervish-agg`, `agg-dervish` | Random | Aggressive | historical swarm on GORDON (§9.346) |
 | `commanders`, `kitchener-vs-khalifa`, `kitchener_vs_khalifa` | Kitchener | Khalifa | tuning match-up; same code as the in-app AI |
 | `ae-kitchener` | Kitchener | Random | |
 | `dervish-khalifa` | Random | Khalifa | |
-| `storm`, `dervish-storm` | Random | LLM + `storm_brief` | all-out assault on the Palace |
-| `siege`, `fortress` | LLM + `fortress_brief` | LLM + `horde_brief` | |
-| `laststand`, `drama`, `final` | LLM + `defender_brief` | LLM + `besieger_brief` | in FoK also sets a keep-out zone: the Dervish may not end a move within 2 hexes of the Palace before turn 5 |
-
-The scripted briefs (`storm_brief` etc., in `src/doctrine.rs`) are the side's
-normal doctrine brief plus appended override orders.
 
 **Outputs:** the text log (§5), plus a replay record
 `games/game_bot_<UTC timestamp>/events.jsonl` relative to the working
@@ -137,44 +111,31 @@ events, observations) is printed.
 
 ### 3.2 `run`
 
-One JSON spec (default `run.json`) to play and optionally review in one go:
+One JSON spec (default `run.json`) to play one game:
 
 ```json
 {
   "scenario": "fok",
   "seed": 777,
   "ae_strategy": "kitchener",
-  "dervish_strategy": "llm",
+  "dervish_strategy": "khalifa",
   "max_turns": 8,
-  "output_log": "game.log",
-  "output_findings": "findings",
-  "review": true
+  "output_log": "game.log"
 }
 ```
 
 | Key | Required | Meaning |
 |---|---|---|
 | `scenario` | yes | same names as `play` |
-| `ae_strategy`, `dervish_strategy` | yes | per-side name, case-insensitive: `random` / `rand` / `""`, `aggressive` / `agg`, `kitchener`, `khalifa`, `llm` / `llm-advised` / `llm_advised` (brief = `doctrine_brief` for that side). Unknown → warning, then Random. |
+| `ae_strategy`, `dervish_strategy` | yes | per-side name, case-insensitive: `random` / `rand` / `""`, `aggressive` / `agg`, `kitchener`, `khalifa`. Unknown → warning, then Random. |
 | `seed` | no | `u64`; default from the system RNG |
 | `max_turns` | no | default 30 |
 | `output_log` | no | default `game.log` |
-| `output_findings` | no | findings prefix, default `findings` |
-| `review` | no | run the observer afterwards (default `false`) |
 
-The preset names from §3.1 are not accepted here; compose the two sides
-explicitly. Outputs are the same as `play`, plus the findings files when
-`review` is true.
+Unknown keys are ignored. The preset names from §3.1 are not accepted here;
+compose the two sides explicitly. Outputs are the same as `play`.
 
-### 3.3 `review`
-
-Reads a log (default `game.log`), runs the LLM observer (§6) with the rules
-crib sheet `docs/rules_crib_sheet.md`, and writes `{prefix}.md` and
-`{prefix}.json` (default prefix `findings`). The crib-sheet path is baked in
-at compile time from the crate directory; a missing file silently yields an
-empty crib sheet.
-
-### 3.4 `audit`
+### 3.3 `audit`
 
 Deterministic scanners over a rendered log (`src/audit.rs`). Each finding
 is an **Error** (a rule the engine must enforce was demonstrably broken) or a
@@ -194,7 +155,7 @@ explanation). Exit 1 on any Error.
 
 Run it over a fixed-seed matrix after any rules-engine change.
 
-### 3.5 `audit-record`
+### 3.4 `audit-record`
 
 Replays an `events.jsonl` record through `apply_effect` from its
 `StartGame` and reports, per effect: a rejection on replay (nondeterminism),
@@ -203,9 +164,9 @@ by a one- or two-hex `MoveUnit` / `RetreatBeforeMelee` / `AdvanceAfterCombat`
 (a breached wall is legal, §6.63). Exit 1 on any violation. Works on the
 app's own saved games too.
 
-### 3.6 `tactics`
+### 3.5 `tactics`
 
-Replays every tactics vignette (§8) from a fresh clone of its state and
+Replays every tactics vignette (§6) from a fresh clone of its state and
 prints `PASS  <name> [<citation>]` or `FAIL … step N (<note>) -- <reason>`,
 then `all 25 tactics scripts passed`. Exit 1 on any failure.
 
@@ -215,20 +176,17 @@ then `all 25 tactics scripts passed`. Exit 1 on any failure.
 
 `Agents { ae, dervish }` holds one `AgentStrategy` per faction
 (`Agents::random()` is the default). The driver
-`playthrough(scenario, seed, cfg, agents) -> PlayResult` (async,
-`src/playthrough.rs`) enumerates candidates with `actions::legal_actions`
+`playthrough(scenario, seed, cfg, agents) -> PlayResult`
+(`src/playthrough.rs`) enumerates candidates with `actions::legal_actions`
 (or `legal_actions_deep_setup`, with per-hex deployment options, when a
 commander plays) and asks the side that owns the phase to pick: the active
 player, except in Defensive Fire, where the non-moving player fires. The
 mandatory arrivals (the §8.2 desertion roll, reinforcement waves) are forced
 through regardless of strategy.
 
-`PlayConfig` holds `max_actions_per_phase` (anti-stall, default 200),
-`max_turns` (default 30) and an optional `keep_out` pacing zone (used by the
-`laststand` preset; it only filters candidates and never touches the engine).
-`PlayResult` carries `events`, `log`, `llm_annotations`,
-`ae_final_cache` / `dervish_final_cache`, `seed`, `final_state`,
-`variant_coverage`, `actions_taken` and `observations_total`.
+`PlayConfig` holds `max_actions_per_phase` (anti-stall, default 200) and
+`max_turns` (default 30). `PlayResult` carries `events`, `log`, `seed`,
+`final_state`, `variant_coverage`, `actions_taken` and `observations_total`.
 
 ### 4.1 `Random`
 
@@ -243,30 +201,12 @@ scored by progress toward the objective (the Palace for the Dervish in Fall
 of Khartoum, otherwise the nearest enemy); never retreats (§7.5); ends the
 phase only when nothing better remains.
 
-### 4.3 `LlmAdvised { config, brief }` — `src/llm.rs`
-
-- Once per side-turn, at the start of that side's Movement phase, the
-  driver calls `advise_turn` with the side, its brief (prepended to the
-  system prompt), the state, the indexed candidate list and the side's own
-  500 KB `LlmCache`.
-- The returned indices are resolved into concrete actions against that
-  candidate list; out-of-range indices and `AdvancePhase` entries are
-  dropped. Each later pick takes the first plan entry that matches a current
-  candidate *by intent* (ignoring pre-rolled dice); stale entries are
-  dropped with a `[note, …]` log line.
-- When no plan entry matches (or there is no plan: no key, an API error, an
-  unparsable reply), the pick falls back to the aggressive heuristic.
-- The reply's `cache` overwrites the side's cache; each reasoning string is
-  logged as a `[reasoning, …]` line and kept as an `LlmAnnotation`.
-
-The wire format is specified in `docs/llm-response-protocol.md`. The brief
-for the `llm`, `ae`, `dervish` presets and for `run.json` comes from the
-doctrine corpus (§7).
-
-### 4.4 `Commander(Kitchener | Khalifa)` — `src/commanders.rs`
+### 4.3 `Commander(Kitchener | Khalifa)` — `src/commanders.rs`
 
 The two historical commanders, with scenario-adaptive doctrine distilled
-from `docs/strategy/` (no LLM). **Kitchener** (Anglo-Egyptian): massed fire,
+from the strategy corpus in `docs/strategy/` (checked-in tactical advice
+whose § citations `tests/strategy_corpus.rs` validates against
+`docs/traceability.toml`; see `docs/strategy/README.md`). **Kitchener** (Anglo-Egyptian): massed fire,
 brigade integrity, Maxim second fire, counter-battery, hold the wall/gate
 line and the Palace ring in Fall of Khartoum, and the Mahdi's Tomb axis in
 the Campaign. **Khalifa** (Dervish): in Fall of Khartoum a race to kill
@@ -373,14 +313,13 @@ seed (tested).
 GAME LOG — Remember Gordon! (The Battle of Omdurman)
 scenario:        campaign
 seed:            0x7b
-agents:          ae=random dervish=llm(<brief>)
+agents:          ae=random dervish=Khalifa
 
 [0] T1 Setup Dervish  DeployUnit …
 [41] T1 Movement AngloEgyptian  MoveUnit <unit>: (q,r) → (q,r) (1 MP) mp 1/8 via [(q,r) → (q,r)]
 [52] T1 Offensive Fire AngloEgyptian  <fire attack …> [roll 7]
       → UnitEliminated: <unit> <cause> [<VP source>]  [event 52]
-[reasoning, Dervish T2] - 3: <reason> (§9.112)
-[note, T2] plan entry no longer legal in Movement: … -- dropped
+[note, T2] generated illegal pick (MoveUnit) rejected: …; excluded for this phase
 === Turn 1 complete (<time>, Day) — 5 fire, 1 melee, 2 eliminations, 0 advances, 0 retreats, 12 reinforcements; VP AE 4 / Dervish 0 ===
     - <per-turn event record>
 
@@ -401,46 +340,12 @@ victory: AE 12 / Dervish 3
   `Observation`s via `describe_observation`; § citations are the engine's.
 - **Turn boundary**: a count summary with the running VP ledger, then one
   line per turn-event record (`describe_turn_event`).
-- **`[reasoning, …]`** lines appear only for LLM sides; **`[note, …]`** lines
-  are driver annotations (dropped plan entries, rejected picks).
+- **`[note, …]`** lines are driver annotations (generated picks the engine
+  rejected, excluded for the rest of the phase).
 
 ---
 
-## 6. Offline observer — `src/observer.rs`
-
-`review(log, config, completion, crib) -> ObserverReport` feeds the log to the
-LLM **turn by turn**: `chunk_log` splits it at the `=== Turn N complete ===`
-markers, every chunk carries the log header, the crib sheet goes with the
-first chunk only, and a running cache is carried between chunks. Each reply
-is one JSON object (`ReviewResponse`, enforced via `response_format`);
-malformed findings are dropped individually, a failed or malformed chunk
-keeps the previous cache, and findings are de-duplicated on
-`(severity, seq, section)`. `Completion` is a small trait so tests run on a
-canned transport; `ReqwestCompletion` wraps
-`omdurman_net::llm::request_completion`.
-
-`ObserverReport` holds the findings (`Severity` ∈ Critical, Error, Warning,
-Info), the last non-empty summary, `turns_audited` and `events_audited`. The
-full reply contract is in `docs/llm-response-protocol.md`.
-
-The crib sheet `docs/rules_crib_sheet.md` is a checked-in summary of the
-manual. The observer is told to cite only sections it contains, so keep it
-accurate and complete: its errors become the auditor's errors.
-
----
-
-## 7. Doctrine corpus — `src/doctrine.rs` + `docs/strategy/`
-
-`doctrine_brief(player, scenario)` concatenates `common_doctrine.md`, the
-faction file (`anglo_egyptian_doctrine.md` / `dervish_doctrine.md`) and, in
-Fall of Khartoum, `fall_of_khartoum_doctrine.md`. The files are read at run
-time from the source tree (a path baked in at compile time); missing files
-are skipped. Only LLM sides use the brief. See `docs/strategy/README.md` for
-the format and `tests/strategy_corpus.rs` for the citation check.
-
----
-
-## 8. Tactics suite — `omdurman-rules/src/tactics.rs`
+## 6. Tactics suite — `omdurman-rules/src/tactics.rs`
 
 A human-readable regression suite for the rules engine. A **tactics script**
 (`TacticsScript`) is a hand-built `GameState` plus ordered steps:
@@ -498,7 +403,7 @@ as the runner's `"§{}"` format string) is ignored.
 
 ---
 
-## 9. Tests
+## 7. Tests
 
 | Test | Proves |
 |---|---|
@@ -508,28 +413,24 @@ as the runner's `"§{}"` format string) is ignored.
 | `omdurman-bot/tests/termination.rs` | every playthrough ends within the caps |
 | `omdurman-bot/tests/invariants.rs` | proptest: invariants hold after every effect on a replayed trace; `game_over` is monotonic |
 | `omdurman-bot/tests/adversarial.rs` | `apply_effect` rejects illegal effects: directed regressions, a fire-sweep proptest, a mutation fuzzer (reject or keep invariants, never panic) |
-| `omdurman-bot/tests/head_to_head.rs` | both agents play, caches capped, per-side identity, every real effect renders via `describe_effect` |
-| `omdurman-bot/tests/log_format.rs` | header/footer, event lines, observations, turn boundaries, byte-stable log, observer round-trip |
-| `omdurman-bot/tests/observer.rs` | JSON findings parsing, cross-chunk aggregation, malformed-item and no-key degradation |
-| `omdurman-bot/tests/strategy_corpus.rs` | corpus citations map in `traceability.toml`; briefs load per side and scenario; corpus > 10k chars |
+| `omdurman-bot/tests/head_to_head.rs` | both agents play, per-side identity, every real effect renders via `describe_effect` |
+| `omdurman-bot/tests/log_format.rs` | header/footer, event lines, observations, turn boundaries, rendered line counts match the log's counters, byte-stable log |
+| `omdurman-bot/tests/strategy_corpus.rs` | corpus citations map in `traceability.toml`; corpus files present, > 10k chars |
 | `omdurman-bot/tests/playability.rs` | every effect variant the bot emits in Fall of Khartoum has a UI path in the app |
 
 ---
 
-## 10. Design notes
+## 8. Design notes
 
-The three-agent design (two players plus an offline observer) was
-implemented with these deliberate differences from the original plan:
+The two-agent design was implemented with these deliberate differences
+from the original plan:
 
 - **CLI:** positional arguments and a binary named `omdurman-bot-cli`, not
   long flags with `--out-dir`. `run.json` is an input spec, not an output
   manifest.
 - **Replay record:** a JSON `events.jsonl` in the app's record format, not a
   postcard `game.record`.
-- **`review` signature:** `review(log, config, &Completion, crib)` instead of
-  a `ReviewContext`.
 - **Describe coverage** lives in `tests/head_to_head.rs`, not a separate
   `tests/describe.rs`.
-- **Added later:** the doctrine corpus, the scripted briefs, the `Aggressive`
-  and `Commander` strategies, the deterministic `audit` / `audit-record`
-  scanners, and the tactics suite.
+- **Added later:** the `Aggressive` and `Commander` strategies, the
+  deterministic `audit` / `audit-record` scanners, and the tactics suite.

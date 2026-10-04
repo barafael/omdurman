@@ -2,22 +2,22 @@
 //! apply → log, until `game_over` or the anti-stall caps are hit.
 //!
 //! Two agents (one per faction) play head-to-head; each side is independently
-//! [`AgentStrategy::Random`] (fast, broadest raw coverage) or
-//! [`AgentStrategy::LlmAdvised`] (per-turn, narrated, with its own cache). The
+//! [`AgentStrategy::Random`] (fast, broadest raw coverage),
+//! [`AgentStrategy::Aggressive`] or a [`AgentStrategy::Commander`]. The
 //! driver also drains the engine's [`Observation`](omdurman_rules::effects::Observation)s
-//! and turn summaries into a [`GameLog`] that an offline observer later audits.
+//! and turn summaries into a [`GameLog`] that the deterministic
+//! [`audit`](crate::audit) scanners check offline.
 
 use omdurman_net::GameEvent;
 use omdurman_rules::Phase;
 use omdurman_rules::board::BoardInfo;
 use omdurman_rules::board_data::{campaign_map_data, fall_of_khartoum_map_data};
 use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
-use omdurman_types::{HexCoord, Player, Scenario};
+use omdurman_types::{Player, Scenario};
 
 use crate::actions::{legal_actions, legal_actions_deep_setup};
-use crate::agent::{AgentStrategy, Agents};
+use crate::agent::Agents;
 use crate::describe::describe_effect;
-use crate::llm::{LlmAnnotation, LlmCache, advise_turn};
 use crate::log::GameLog;
 use crate::rng::BotRng;
 
@@ -28,42 +28,6 @@ pub struct PlayConfig {
     pub max_actions_per_phase: usize,
     /// Hard cap on total turns before stopping.
     pub max_turns: u8,
-    /// Director-level pacing zone for scripted replays (see [`KeepOutZone`]).
-    /// `None` for unscripted games — this never affects the rules engine,
-    /// only which candidates the bot's strategies are offered.
-    pub keep_out: Option<KeepOutZone>,
-}
-
-/// A replay-directing pacing zone: `player` may not *end* a move within
-/// `radius` hexes of `center` while the current turn is below `until_turn`.
-/// Used by scripted presets (e.g. `laststand`) to force a layered siege to
-/// play out before the final objective is touched. Purely bot-side: the
-/// candidates are filtered before any strategy (LLM plan, heuristic, random)
-/// sees them, and the engine's own legality is untouched.
-#[derive(Clone, Copy, Debug)]
-pub struct KeepOutZone {
-    pub player: Player,
-    pub center: HexCoord,
-    pub radius: u32,
-    pub until_turn: u8,
-}
-
-impl KeepOutZone {
-    /// Whether this zone currently forbids effects for `player` in `turn`.
-    fn in_force(&self, player: Player, turn: u8) -> bool {
-        player == self.player && turn < self.until_turn
-    }
-
-    /// Whether `effect` ends a unit's move inside the zone.
-    fn forbids(&self, effect: &GameEffect) -> bool {
-        let ends = match effect {
-            GameEffect::MoveUnit { to, .. } | GameEffect::AdvanceAfterCombat { to, .. } => {
-                Some(*to)
-            }
-            _ => None,
-        };
-        ends.is_some_and(|to| to.distance(self.center) <= self.radius)
-    }
 }
 
 impl Default for PlayConfig {
@@ -71,7 +35,6 @@ impl Default for PlayConfig {
         Self {
             max_actions_per_phase: 200,
             max_turns: 30,
-            keep_out: None,
         }
     }
 }
@@ -80,8 +43,6 @@ impl Default for PlayConfig {
 pub struct PlayResult {
     /// The complete event trace (natively replayable by the app's timeline).
     pub events: Vec<GameEvent>,
-    /// LLM reasoning notes (empty when both sides are Random).
-    pub llm_annotations: Vec<LlmAnnotation>,
     /// The seed used (for reproducibility).
     pub seed: u64,
     /// The final game state.
@@ -90,11 +51,7 @@ pub struct PlayResult {
     pub variant_coverage: Vec<&'static str>,
     /// Total number of actions applied.
     pub actions_taken: usize,
-    /// The final cache state of the Anglo-Egyptian advisor (None when Random).
-    pub ae_final_cache: Option<String>,
-    /// The final cache state of the Dervish advisor (None when Random).
-    pub dervish_final_cache: Option<String>,
-    /// The observer-ready game log.
+    /// The human-readable game log (input to the `audit` scanners).
     pub log: GameLog,
     /// Number of engine observations drained into the log.
     pub observations_total: usize,
@@ -102,16 +59,7 @@ pub struct PlayResult {
 
 /// Play a full game headlessly from setup to game-over, with two independent
 /// per-faction agents.
-///
-/// In `LlmAdvised` mode this function is `async` (awaits the LLM per turn).
-/// In `Random` mode the LLM is never called but the function is still `async`
-/// for API uniformity — use `block_on` in a sync caller.
-pub async fn playthrough(
-    scenario: Scenario,
-    seed: u64,
-    cfg: PlayConfig,
-    agents: Agents,
-) -> PlayResult {
+pub fn playthrough(scenario: Scenario, seed: u64, cfg: PlayConfig, agents: Agents) -> PlayResult {
     // Build the game state with the compiled board attached.
     let board = board_for_scenario(scenario);
     let mut state = GameState::with_board(scenario, board);
@@ -122,9 +70,6 @@ pub async fn playthrough(
         scenario,
         optional_rules: Vec::new(),
     }];
-    let mut annotations = Vec::new();
-    let mut cache_ae = LlmCache::default();
-    let mut cache_dervish = LlmCache::default();
     let mut log = GameLog::new(scenario, seed, &agents);
     let mut actions_taken = 0usize;
     let mut variant_coverage: Vec<&'static str> = Vec::new();
@@ -135,14 +80,6 @@ pub async fn playthrough(
     // tribe stacking). Filtered out of every candidate list so a bad
     // candidate is never re-picked; cleared when the phase advances.
     let mut rejected_this_phase: Vec<GameEffect> = Vec::new();
-    let mut prev_turn = state.current_turn.value();
-    let mut plan_for: Option<Player> = None;
-    // The advised side's current plan, as resolved *actions* (not indices).
-    // The candidate list is re-enumerated (and re-shuffled) after every
-    // applied action, so plan indices go stale immediately; matching by
-    // intent (see `pick_advised`) keeps the plan meaningful across
-    // enumerations.
-    let mut llm_plan: Vec<GameEffect> = Vec::new();
     let mut prev_summaries = 0usize;
 
     // Defense-in-depth against a stalled Setup phase (e.g. an unresolvable
@@ -169,15 +106,6 @@ pub async fn playthrough(
             legal_actions(&state, &mut rng)
         };
         candidates.retain(|c| !rejected_this_phase.iter().any(|r| same_intent(r, c)));
-        // Scripted-drama pacing: while the keep-out zone is in force, the
-        // scripted side's moves may not end inside it. Applied before the
-        // empty check so a fully-blocked phase falls through to the
-        // AdvancePhase escape below.
-        if let Some(kz) = cfg.keep_out
-            && kz.in_force(state.active_player, state.current_turn.value())
-        {
-            candidates.retain(|c| !kz.forbids(c));
-        }
         if candidates.is_empty() {
             // If mandatory arrivals (PlaceReinforcements / DervishDesertion)
             // keep failing, the AdvancePhase was suppressed by
@@ -191,7 +119,7 @@ pub async fn playthrough(
 
         // §8.2: the first-night-turn desertion roll is not optional -- force
         // it through before any other movement action (the candidate list
-        // offers it, but neither a random pick nor an LLM plan is guaranteed
+        // offers it, but neither a random pick nor a heuristic is guaranteed
         // to choose a mandatory bookkeeping roll).
         if let Some(idx) = candidates
             .iter()
@@ -217,56 +145,6 @@ pub async fn playthrough(
                     &action_text,
                 );
                 continue;
-            }
-        }
-
-        // --- LLM-advised plan refresh at the start of the active side's turn ---
-        let active = state.active_player;
-        // Exactly once per side-turn (a new turn or a side change), NOT when
-        // the plan empties mid-phase: a long movement phase would otherwise
-        // re-query the advisor dozens of times; the aggressive fallback
-        // carries the doctrine for the un-planned remainder of the phase.
-        let refresh = state.phase == Phase::Movement
-            && (plan_for != Some(active) || state.current_turn.value() != prev_turn);
-        if refresh {
-            prev_turn = state.current_turn.value();
-            plan_for = Some(active);
-            if let Some((config, brief)) = agents.llm_config(active) {
-                let turn = state.current_turn.value();
-                let base_idx = events.len();
-                let active_cache = match active {
-                    Player::AngloEgyptian => &mut cache_ae,
-                    Player::Dervish => &mut cache_dervish,
-                };
-                let (plan, notes, ok) =
-                    advise_turn(config, active, brief, &state, &candidates, active_cache).await;
-                if ok {
-                    // Resolve the model's indices against the *plan-time*
-                    // candidate list into concrete actions. Matching at pick
-                    // time is by intent (see `same_intent`), so entries stay
-                    // usable after the enumeration shifts. AdvancePhase is
-                    // dropped: the model tends to slot it mid-plan, and once
-                    // it reaches the head the phase would end with the rest
-                    // of the plan unapplied. The driver ends phases itself
-                    // when the plan and the legal surface are exhausted.
-                    llm_plan = plan
-                        .into_iter()
-                        .filter_map(|idx| candidates.get(idx).cloned())
-                        .filter(|e| !matches!(e, GameEffect::AdvancePhase))
-                        .collect();
-                    for (i, note) in notes.into_iter().enumerate() {
-                        let text = note.text.clone();
-                        log.push_reasoning(active, turn, &text);
-                        annotations.push(LlmAnnotation {
-                            event_idx: base_idx + i,
-                            text,
-                        });
-                    }
-                } else {
-                    llm_plan.clear();
-                }
-            } else {
-                llm_plan.clear();
             }
         }
 
@@ -317,15 +195,6 @@ pub async fn playthrough(
                 );
                 move_memory.record(&state, &pick);
                 pick
-            } else if agents.is_llm(chooser) {
-                pick_advised(
-                    &state,
-                    chooser,
-                    &candidates,
-                    &mut llm_plan,
-                    &mut log,
-                    &mut rng,
-                )
             } else {
                 rng.choose(&candidates)
                     .cloned()
@@ -416,16 +285,7 @@ pub async fn playthrough(
     let observations_total = log.observations_logged();
 
     PlayResult {
-        ae_final_cache: match agents.ae {
-            AgentStrategy::Random | AgentStrategy::Aggressive | AgentStrategy::Commander(_) => None,
-            AgentStrategy::LlmAdvised { .. } => Some(cache_ae.0),
-        },
-        dervish_final_cache: match agents.dervish {
-            AgentStrategy::Random | AgentStrategy::Aggressive | AgentStrategy::Commander(_) => None,
-            AgentStrategy::LlmAdvised { .. } => Some(cache_dervish.0),
-        },
         events,
-        llm_annotations: annotations,
         seed,
         final_state: state,
         variant_coverage,
@@ -467,52 +327,10 @@ pub fn board_for_scenario(scenario: Scenario) -> BoardInfo {
 /// realistic cap.
 const MAX_DRIVER_ITERATIONS: usize = 500_000;
 
-/// Consume an advised side's plan for this pick.
-///
-/// The plan is a list of concrete actions resolved at plan time. The
-/// candidate list is re-enumerated (and, when truncated, re-shuffled) after
-/// every applied action, so the plan is matched by *intent*
-/// ([`same_intent`], ignoring pre-rolled dice) rather than by index: stale
-/// heads are dropped until one matches the current legal surface, and the
-/// matching candidate is taken.
-///
-/// Fallback when no planned action is currently legal: the aggressive
-/// heuristic ([`crate::aggressive::pick`]) — the advisor's doctrine, applied
-/// mechanically to the actions it did not spell out. For the storm brief
-/// that keeps un-listed units marching on the objective instead of wandering
-/// randomly, and (like the plan filter) never ends the phase early: the
-/// driver advances only when the plan and the legal surface are exhausted.
-fn pick_advised(
-    state: &GameState,
-    player: Player,
-    candidates: &[GameEffect],
-    plan: &mut Vec<GameEffect>,
-    log: &mut GameLog,
-    rng: &mut BotRng,
-) -> GameEffect {
-    while let Some(head) = plan.first() {
-        if let Some(idx) = candidates.iter().position(|c| same_intent(c, head)) {
-            let picked = candidates[idx].clone();
-            plan.remove(0);
-            return picked;
-        }
-        let dropped = plan.remove(0);
-        log.push_note(
-            state.current_turn.value(),
-            &format!(
-                "plan entry no longer legal in {}: {:?} -- dropped",
-                state.phase.top_level_name(),
-                std::mem::discriminant(&dropped),
-            ),
-        );
-    }
-    crate::aggressive::pick(state, player, candidates, rng)
-}
-
 /// Intent equality between two effects: same variant and same semantic
-/// subject/target, ignoring pre-rolled dice and cost recomputation. Lets a
-/// plan drafted against one enumeration match the same intent in a later
-/// enumeration.
+/// subject/target, ignoring pre-rolled dice and cost recomputation. Lets an
+/// intent rejected in one enumeration be recognised (and excluded) in a later
+/// enumeration of the same phase.
 fn same_intent(a: &GameEffect, b: &GameEffect) -> bool {
     use GameEffect::*;
     match (a, b) {

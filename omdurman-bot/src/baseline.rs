@@ -712,8 +712,8 @@ fn kitchener_goal(state: &GameState, unit_id: UnitId, player: Player) -> Option<
                 }
             } else {
                 // Campaign: formed line at standoff distance from the enemy
-                // mass; the Tomb axis is handled by the LLM briefs — the
-                // heuristic holds the line and grinds.
+                // mass; the heuristic does not work the Tomb axis — it
+                // holds the line and grinds.
                 let nearest_enemy = nearest_enemy_unit(state, unit.position, enemy);
                 nearest_enemy.map(|e| step_toward(unit.position, e, 3))
             }

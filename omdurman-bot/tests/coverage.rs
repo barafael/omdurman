@@ -13,18 +13,17 @@ use std::collections::{HashMap, HashSet};
 #[test]
 fn fok_batch_covers_core_variants() {
     let cfg = PlayConfig {
-        keep_out: None,
         max_actions_per_phase: 100,
         max_turns: 8,
     };
     let mut all_kinds: HashSet<&str> = HashSet::new();
     for seed in 0..8u64 {
-        let result = futures::executor::block_on(playthrough(
+        let result = playthrough(
             Scenario::FallOfKhartoum,
             seed,
             cfg.clone(),
             Agents::random(),
-        ));
+        );
         for kind in &result.variant_coverage {
             all_kinds.insert(*kind);
         }

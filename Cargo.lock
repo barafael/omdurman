@@ -5904,8 +5904,6 @@ name = "omdurman-bot"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "dotenvy",
- "futures",
  "omdurman-net",
  "omdurman-rules",
  "omdurman-types",
@@ -5913,7 +5911,6 @@ dependencies = [
  "rand 0.10.2",
  "serde",
  "serde_json",
- "tokio",
 ]
 
 [[package]]

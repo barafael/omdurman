@@ -2,9 +2,8 @@
 //! [`GameLog`](crate::log::GameLog), runnable headless via
 //! `omdurman-bot-cli audit <log>`.
 //!
-//! The LLM observer generates hypotheses; these scanners are the
-//! deterministic cross-check (and the standing regression tripwire after any
-//! rules-engine change: regenerate the seed matrix, run the audit, diff
+//! These scanners are the deterministic cross-check on a playthrough (and
+//! the standing regression tripwire after any rules-engine change: regenerate the seed matrix, run the audit, diff
 //! against the known-clean baseline). Every check cites the rulebook section
 //! it audits and classifies findings as:
 //!
