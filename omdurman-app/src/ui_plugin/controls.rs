@@ -371,6 +371,24 @@ fn victory_point_scoreboard(ui: &mut egui::Ui, state: &crate::GameStateResource)
     ui.add_space(4.0);
 }
 
+/// The set-up rail's one-line brief for the local side: in the Campaign
+/// the Anglo-Egyptians set nothing up (§9.113) -- "place your forces" sent
+/// a player hunting for counters that were not there.
+fn setup_heading(
+    gs: &omdurman_rules::effects::GameState,
+    local: Option<omdurman_types::Player>,
+) -> &'static str {
+    match local {
+        Some(side) if gs.setup_target(side) == 0 => {
+            "Nothing to set up: your forces march on as reinforcements. Press Ready."
+        }
+        Some(side) if gs.require_setup_turn(side).is_err() => {
+            "Deployment -- the other side places its forces first."
+        }
+        _ => "Deployment -- place your forces, then Ready.",
+    }
+}
+
 /// The Setup-phase controls: per-faction deployed/target counts and the local
 /// player's one-way "Ready" confirmation. Setup is sequential
 /// (§9.111/§9.211/§9.321): the first side deploys and confirms Ready, which
@@ -390,7 +408,7 @@ fn setup_control_section(
 
     if !peers.is_spectator() {
         ui.label(
-            egui::RichText::new("Deployment -- place your forces, then Ready.")
+            egui::RichText::new(setup_heading(&state.0, peers.local()))
                 .size(12.0)
                 .color(crate::ui::palette::TEXT),
         );
@@ -589,10 +607,12 @@ pub(crate) fn telegram_overlay(
                 ui.set_max_width(460.0);
                 ui.vertical_centered(|ui| {
                     ui.label(
-                        egui::RichText::new("FIELD TELEGRAM")
-                            .size(18.0)
-                            .strong()
-                            .color(crate::ui::palette::BRASS),
+                        egui::RichText::new(
+                            omdurman_rules::press::telegram::filed(&state.0, turn).title(),
+                        )
+                        .size(18.0)
+                        .strong()
+                        .color(crate::ui::palette::BRASS),
                     );
                     let (date, time) = omdurman_rules::press::turn_date(state.0.scenario, turn);
                     ui.label(
@@ -685,5 +705,18 @@ mod tests {
             direct.map_err(|e| e.to_string()),
             projected.map_err(|e| e.to_string())
         );
+    }
+}
+
+#[cfg(test)]
+mod setup_heading_tests {
+    use super::setup_heading;
+    use omdurman_types::{Player, Scenario};
+
+    #[test]
+    fn a_side_with_nothing_to_set_up_is_told_so() {
+        let gs = omdurman_rules::effects::GameState::new(Scenario::Campaign);
+        assert!(setup_heading(&gs, Some(Player::AngloEgyptian)).starts_with("Nothing to set up"));
+        assert!(setup_heading(&gs, Some(Player::Dervish)).contains("place your forces"));
     }
 }
