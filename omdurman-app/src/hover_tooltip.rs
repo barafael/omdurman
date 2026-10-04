@@ -197,13 +197,33 @@ fn draw_hover_tooltip(
                             line
                         });
                         // Legibility hint when a unit is selected.
-                        let hint =
+                        // A selected stack is priced like its representative
+                        // unit at the stack's budget.
+                        let stack_pick = match &*picker {
+                            crate::picker::PickerState::SelectedStack(sel) => sel
+                                .sources
+                                .first()
+                                .and_then(|&s| placed_units.get(s).ok())
+                                .and_then(|(_, p)| p.unit_id)
+                                .map(|id| (id, sel.remaining_mp.iter().copied().max())),
+                            _ => None,
+                        };
+                        let hint = if let Some((unit_id, left)) = stack_pick {
+                            route_hint(
+                                game_state.as_deref(),
+                                &placed_units,
+                                (unit_id, hex, left),
+                                &game_map,
+                                &movement_path,
+                                &mut route_cache,
+                            )
+                        } else {
                             selected_unit_id(&picker, &placed_units).and_then(|(unit_id, _)| {
                                 gs.and_then(|gs| {
                                     route_hint(
                                         game_state.as_deref(),
                                         &placed_units,
-                                        (unit_id, hex),
+                                        (unit_id, hex, None),
                                         &game_map,
                                         &movement_path,
                                         &mut route_cache,
@@ -212,7 +232,8 @@ fn draw_hover_tooltip(
                                         movement_hint(gs, unit_id, hex, &game_map, &movement_path)
                                     })
                                 })
-                            });
+                            })
+                        };
                         main_ref = hint
                             .as_deref()
                             .and_then(first_ref)
@@ -274,7 +295,7 @@ type RouteKey = (
 fn route_hint(
     game_state: Option<&crate::GameStateResource>,
     placed_units: &Query<(Entity, &crate::picker::PlacedUnit)>,
-    (unit_id, hex): (omdurman_rules::UnitId, HexCoord),
+    (unit_id, hex, stack_left): (omdurman_rules::UnitId, HexCoord, Option<i16>),
     game_map: &GameMap,
     movement_path: &crate::picker::MovementPath,
     cache: &mut Option<(RouteKey, Option<String>)>,
@@ -305,9 +326,12 @@ fn route_hint(
         let (_, placed) = placed_units
             .iter()
             .find(|(_, p)| p.unit_id == Some(unit_id))?;
-        let left = gs
-            .remaining_movement(unit_id)
-            .saturating_sub(movement_path.cost_so_far);
+        // A stack moves as far as its fastest unit can (the stack's own
+        // budget, plotted legs already charged); a unit, its engine budget.
+        let left = stack_left.unwrap_or_else(|| {
+            gs.remaining_movement(unit_id)
+                .saturating_sub(movement_path.cost_so_far)
+        });
         let gunboat = crate::picker::GunboatBudget::of(game_state, placed, movement_path);
         let route = crate::picker::cheapest_route(
             game_map,
