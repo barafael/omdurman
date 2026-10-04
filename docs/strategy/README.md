@@ -1,6 +1,7 @@
 # Strategy Doctrine Corpus — Remember Gordon!
 
-Checked-in strategic/tactical doctrine for the `omdurman-bot` LLM agents.
+Checked-in strategic/tactical doctrine for Remember Gordon!, written for
+human readers and as the reference the bot's commanders were tuned against.
 Each file holds standalone advice for one side (or the shared game system),
 and every piece of advice cites the rulebook section(s) it relies on.
 
@@ -22,24 +23,9 @@ citation.
 
 ## How it is used
 
-`omdurman-bot/src/doctrine.rs` reads the files **at run time** with
-`fs::read_to_string`, from `docs/strategy/` located via the crate's
-`CARGO_MANIFEST_DIR` (a path baked in at compile time, so the binary expects
-the source tree). They are not `include_str!`'d, so an edit takes effect on
-the next run without a rebuild. A missing file is skipped.
-
-- `doctrine_brief(player, scenario)` joins `common_doctrine.md`, the
-  faction file and, in Fall of Khartoum, `fall_of_khartoum_doctrine.md`.
-  It is the brief of an `AgentStrategy::LlmAdvised` side (the CLI's `llm`,
-  `ae`, `dervish` presets and `run.json` `llm` sides), prepended to the
-  advisor's system prompt.
-- The scripted briefs in `doctrine.rs` (`storm_brief`, `fortress_brief`,
-  `horde_brief`, `defender_brief`, `besieger_brief`) are the side's
-  `doctrine_brief` plus appended override orders for the `storm`, `siege` and
-  `laststand` presets. Their text lives in the Rust source, not here.
-- Random, Aggressive and Commander agents do not read the corpus. The
-  commanders' scoring (`omdurman-bot/src/commanders.rs`) was distilled from
-  it, so keep the two consistent by hand.
+No code reads the corpus at run time. The commanders' scoring
+(`omdurman-bot/src/commanders.rs`) was distilled from it, so keep the two
+consistent by hand.
 
 ## Validation
 
@@ -50,8 +36,8 @@ this README):
    match is by prefix in either direction, so a mapped `§6.24` satisfies a
    cited `§6.2` and a mapped `§6` satisfies a cited `§6.13`. It proves that a
    cited section exists, not that the advice is right.
-2. Every side/scenario brief loads non-empty through `doctrine_brief`.
-3. The corpus is substantial (more than 10 000 characters).
+2. The corpus files exist and are substantial (more than 10 000 characters
+   in all).
 
 The rules content itself is checked only by review against the manual
 (`Boardgame - Remember_Gordon/Manual/RememberGordonManual.md`) and the
