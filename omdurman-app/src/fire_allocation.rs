@@ -241,6 +241,9 @@ pub fn fire_allocation_review_ui(
 
     let mut remove_self: Option<usize> = None;
     let mut toggle_aim: Option<usize> = None;
+    // A fixed width, inside the window: a combined fire's firer list wraps
+    // in it instead of widening the tray off the screen's edges.
+    let tray_width = (ctx.content_rect().width() - 80.0).clamp(320.0, 760.0);
 
     crate::ui::anchored_card(
         ctx,
@@ -249,6 +252,7 @@ pub fn fire_allocation_review_ui(
         egui::Vec2::new(0.0, -100.0),
         crate::ui::frames::card(crate::ui::palette::CARD_ALLOCATION),
         |ui| {
+            ui.set_width(tray_width);
             ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
 
             ui.horizontal(|ui| {
@@ -437,13 +441,17 @@ fn draw_allocation_row(
             {
                 *remove_self = Some(index);
             }
-            ui.colored_label(
-                crate::ui::palette::PANEL_TEXT,
-                format!(
-                    "{names_c} \u{2192} {}",
-                    target_label(gs, attack.target_hex),
-                    names_c = names.join(" + "),
-                ),
+            // Wraps: a combined fire lists a dozen weapons.
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(format!(
+                        "{names_c} \u{2192} {}",
+                        target_label(gs, attack.target_hex),
+                        names_c = names.join(" + "),
+                    ))
+                    .color(crate::ui::palette::PANEL_TEXT),
+                )
+                .wrap(),
             );
         });
         ui.horizontal(|ui| {
@@ -651,5 +659,82 @@ pub fn reset_fire_allocation_on_phase_change(
             allocation.execute_requested = false;
         }
         *last_phase = Some(phase);
+    }
+}
+
+#[cfg(test)]
+mod tray_layout_tests {
+    use super::*;
+    use omdurman_rules::{FireSubPhase, UnitId, UnitPlacement, UnitState};
+    use omdurman_types::{HexCoord, Player, Scenario};
+
+    /// A combined fire of a dozen weapons wraps inside the tray instead of
+    /// running past its edge (and off the screen).
+    #[test]
+    fn a_long_combined_fire_wraps_inside_the_tray() {
+        let mut gs = omdurman_rules::effects::GameState::new(Scenario::Campaign);
+        gs.phase = Phase::DefensiveFire(FireSubPhase::DirectFire);
+        let firers = [
+            UnitId::BritishArmy_0_0,
+            UnitId::BritishArmy_0_1,
+            UnitId::BritishArmy_1_1,
+            UnitId::BritishArmy_2_1,
+            UnitId::BritishArmy_3_1,
+            UnitId::EgyptianArmy_0_0,
+            UnitId::EgyptianArmy_1_0,
+            UnitId::EgyptianArmy_2_0,
+            UnitId::Kitchener_5_0,
+            UnitId::Kitchener_6_0,
+            UnitId::Kitchener_7_0,
+        ];
+        let target = HexCoord::new(3, 0);
+        for (i, id) in firers.iter().chain([&UnitId::Baggara_0_0]).enumerate() {
+            gs.units.push(UnitPlacement {
+                id: *id,
+                position: if i < firers.len() {
+                    HexCoord::new(0, 0)
+                } else {
+                    target
+                },
+                profile: omdurman_rules::unit_profiles::profile_for_unit(*id).unwrap(),
+                state: UnitState::default(),
+            });
+        }
+        let attack = FireAttack {
+            firing_player: Player::AngloEgyptian,
+            phase: gs.phase,
+            kind: FireKind::Direct,
+            firers: firers.to_vec(),
+            target_hex: target,
+            at_fort: false,
+            factor_row: omdurman_rules::combat_results_table::FireFactorRow::Row41Plus,
+            modifiers: vec![omdurman_rules::FireModifier::AngloEgyptianDirectFire],
+            gunboat_maxims: Vec::new(),
+        };
+        let width = 400.0;
+        let ctx = crate::ui::headless(4, |ctx, _| {
+            crate::ui::anchored_card(
+                ctx,
+                "tray",
+                egui::Align2::CENTER_BOTTOM,
+                egui::vec2(0.0, -100.0),
+                egui::Frame::NONE,
+                |ui| {
+                    ui.set_width(width);
+                    draw_allocation_row(ui, &gs, &attack, &mut None, &mut None, 0);
+                },
+            );
+        });
+        let rect = ctx
+            .memory(|m| m.area_rect(egui::Id::new("tray")))
+            .expect("the tray was shown");
+        assert!(
+            rect.width() <= width + 1.0,
+            "the row widened the tray: {rect:?}"
+        );
+        assert!(
+            rect.min.x >= 0.0 && rect.max.x <= 1200.0,
+            "off screen: {rect:?}"
+        );
     }
 }

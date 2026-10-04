@@ -597,29 +597,36 @@ pub fn section_header(ui: &mut egui::Ui, title: &str) {
     ui.add_space(4.0);
 }
 
+/// Run `frames` egui passes on a 1200x800 screen with no renderer, calling
+/// `draw` with the frame number; returns the context, whose memory holds
+/// each area's laid-out rect (layout tests of the overlays).
+#[cfg(test)]
+pub(crate) fn headless(
+    frames: usize,
+    mut draw: impl FnMut(&egui::Context, usize),
+) -> egui::Context {
+    let ctx = egui::Context::default();
+    for frame in 0..frames {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 800.0),
+            )),
+            ..Default::default()
+        };
+        ctx.begin_pass(input);
+        draw(&ctx, frame);
+        ctx.end_pass().drop_without_applying_deltas();
+    }
+    ctx
+}
+
 #[cfg(test)]
 mod tests {
     use super::CardHold;
     use bevy_egui::egui;
 
-    /// Run `frames` egui passes on a 1200x800 screen, calling `draw` with
-    /// the frame number; returns the context for inspection.
-    fn headless(frames: usize, mut draw: impl FnMut(&egui::Context, usize)) -> egui::Context {
-        let ctx = egui::Context::default();
-        for frame in 0..frames {
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1200.0, 800.0),
-                )),
-                ..Default::default()
-            };
-            ctx.begin_pass(input);
-            draw(&ctx, frame);
-            ctx.end_pass().drop_without_applying_deltas();
-        }
-        ctx
-    }
+    use super::headless;
 
     /// An anchored card whose scrolling column grows (a volley of combat
     /// cards arriving) shows all of it: egui hands an area last frame's size
