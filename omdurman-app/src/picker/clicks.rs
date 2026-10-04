@@ -936,13 +936,20 @@ impl PlacingClick<'_, '_, '_> {
                 // After `remove(unit_idx)` the next unit is now at the same
                 // index (or we've reached the end).  Scan forward for the
                 // next visible unit in the same section.
-                let section = unit.section_name;
+                // The next counter of the same tray group (see
+                // `sidebar::tray_group`), as the tray shows them.
+                let group_of = |u: &PickerUnit| {
+                    unit_id_for_section_pos(u.section_name, u.col as u8, u.row as u8)
+                        .and_then(omdurman_rules::unit_profiles::profile_for_unit)
+                        .map(|p| super::sidebar::tray_group(&p.identity))
+                };
+                let group = group_of(&unit);
                 let next = self
                     .picker
                     .available
                     .iter()
                     .skip(unit_idx)
-                    .position(|u| u.shown() && u.section_name == section)
+                    .position(|u| u.shown() && group.is_some() && group_of(u) == group)
                     .map(|p| unit_idx + p);
                 if let Some(next_idx) = next {
                     *self.state = PickerState::Placing {
@@ -1073,6 +1080,20 @@ fn unroutable_reason(
     });
     match stacking_refusal {
         Some(error) => format!("Cannot end a move on {goal}: {error}."),
+        // Nothing reaches the goal at any price, and it lies against a city
+        // wall: the wall is what stands in the way.
+        None if cheapest.is_none()
+            && gs.is_some_and(|gs| {
+                goal.neighbors().iter().any(|&n| {
+                    gs.hexside_effective_is(goal, n, |k| k == omdurman_types::HexsideKind::Wall)
+                })
+            }) =>
+        {
+            format!(
+                "No route to {goal}: the city wall is in the way. Units cross it only at a \
+                 gate or a breach -- artillery can breach it (§6.63)."
+            )
+        }
         None => {
             let boat = gs.is_some_and(|gs| {
                 movers

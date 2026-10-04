@@ -592,10 +592,12 @@ pub(crate) fn telegram_overlay(
                             .color(crate::ui::palette::TEXT_DIM),
                     );
                     ui.add_space(10.0);
+                    // Keyed as a telegram of the day; records filed
+                    // before the style read the same.
                     ui.label(
-                        egui::RichText::new(text.trim())
+                        egui::RichText::new(omdurman_rules::telegram_prompt::telegraphese(&text))
                             .monospace()
-                            .size(13.0)
+                            .size(14.0)
                             .color(crate::ui::palette::TEXT),
                     );
                     ui.add_space(14.0);

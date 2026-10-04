@@ -36,6 +36,7 @@ impl Plugin for HoverTooltipPlugin {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_hover_tooltip(
     mut contexts: EguiContexts,
     game_map: Res<GameMap>,
@@ -44,6 +45,7 @@ fn draw_hover_tooltip(
     picker: crate::picker::PickerReadState,
     rulebook: ResMut<Rulebook>,
     keys: Res<ButtonInput<KeyCode>>,
+    mut route_cache: Local<Option<(RouteKey, Option<String>)>>,
 ) {
     let crate::picker::PickerReadState {
         picker_state: picker,
@@ -198,7 +200,17 @@ fn draw_hover_tooltip(
                         let hint =
                             selected_unit_id(&picker, &placed_units).and_then(|(unit_id, _)| {
                                 gs.and_then(|gs| {
-                                    movement_hint(gs, unit_id, hex, &game_map, &movement_path)
+                                    route_hint(
+                                        game_state.as_deref(),
+                                        &placed_units,
+                                        (unit_id, hex),
+                                        &game_map,
+                                        &movement_path,
+                                        &mut route_cache,
+                                    )
+                                    .or_else(|| {
+                                        movement_hint(gs, unit_id, hex, &game_map, &movement_path)
+                                    })
                                 })
                             });
                         main_ref = hint
@@ -240,6 +252,98 @@ fn draw_hover_tooltip(
     {
         crate::rulebook::request_open(ctx, &number);
     }
+}
+
+/// What a cached [`route_hint`] was computed for: the mover, the hovered
+/// hex, where the plotted path ends and what it cost, and the engine state
+/// (by unit count and phase -- a cheap proxy that changes with every move).
+type RouteKey = (
+    omdurman_rules::UnitId,
+    HexCoord,
+    HexCoord,
+    i16,
+    usize,
+    Phase,
+);
+
+/// For a hex beyond the next step in a Movement phase: the price of the
+/// route a click would plot there -- the same search
+/// ([`crate::picker::cheapest_route`]), §5.24 gunboat budget included -- or
+/// why it is out of reach. Cached per hovered hex: an out-of-reach search
+/// runs over the whole board.
+fn route_hint(
+    game_state: Option<&crate::GameStateResource>,
+    placed_units: &Query<(Entity, &crate::picker::PlacedUnit)>,
+    (unit_id, hex): (omdurman_rules::UnitId, HexCoord),
+    game_map: &GameMap,
+    movement_path: &crate::picker::MovementPath,
+    cache: &mut Option<(RouteKey, Option<String>)>,
+) -> Option<String> {
+    let gs = &game_state?.0;
+    if gs.phase != Phase::Movement {
+        return None;
+    }
+    let unit = gs.find_unit(unit_id)?;
+    let from = movement_path.current_end().unwrap_or(unit.position);
+    if from == hex || from.neighbors().contains(&hex) {
+        return None; // the step itself: `movement_hint`
+    }
+    let key: RouteKey = (
+        unit_id,
+        hex,
+        from,
+        movement_path.cost_so_far,
+        gs.units.len(),
+        gs.phase,
+    );
+    if let Some((cached, line)) = cache.as_ref()
+        && *cached == key
+    {
+        return line.clone();
+    }
+    let line = (|| {
+        let (_, placed) = placed_units
+            .iter()
+            .find(|(_, p)| p.unit_id == Some(unit_id))?;
+        let left = gs
+            .remaining_movement(unit_id)
+            .saturating_sub(movement_path.cost_so_far);
+        let gunboat = crate::picker::GunboatBudget::of(game_state, placed, movement_path);
+        let route = crate::picker::cheapest_route(
+            game_map,
+            placed_units,
+            placed,
+            from,
+            hex,
+            left,
+            gunboat,
+            game_state,
+        );
+        Some(match route {
+            Some((_, cost)) => format!(
+                "Route here: {cost} MP, {} left after \u{2014} click to plot it (\u{00a7}5.11).",
+                left - cost
+            ),
+            None => match crate::picker::cheapest_route(
+                game_map,
+                placed_units,
+                placed,
+                from,
+                hex,
+                i16::MAX,
+                None,
+                game_state,
+            ) {
+                Some((_, cost)) => format!(
+                    "Out of reach: the cheapest route costs {cost} MP, {left} left (\u{00a7}5.11)."
+                ),
+                None => "No route: zones of control, walls or impassable ground (\u{00a7}5.4)."
+                    .to_string(),
+            },
+        })
+    })();
+    *cache = Some((key, line.clone()));
+    line
 }
 
 /// The first `§N` citation in `text`, if any.

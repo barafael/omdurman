@@ -15,7 +15,7 @@
 
 use bevy::ecs::message::MessageReader;
 use bevy::prelude::*;
-use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
+use bevy_egui::egui;
 
 use crate::events;
 use crate::rulebook::{RefTok, split_refs};
@@ -33,14 +33,32 @@ pub struct Dispatch {
     pub hold: crate::ui::CardHold,
     /// Stable per-slip id (egui click target).
     pub serial: u64,
+    /// Arrival order across the whole event feed (slips and combat cards
+    /// share one column, newest first; see [`feed_seq`]).
+    pub seq: u64,
 }
 
-/// The live dispatch queue. Newest slips stack at the bottom-left; each expires
-/// after [`DISPATCH_TTL`] seconds unless hovered or pinned.
+/// The next arrival number of the event feed, shared by dispatch slips and
+/// combat cards so the one column orders them as they happened.
+pub(crate) fn feed_seq() -> u64 {
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// How many lines the event log keeps.
+const LOG_LINES: usize = 200;
+
+/// The live dispatch queue, shown in the event feed column (top right) with
+/// the combat cards; each slip expires after [`DISPATCH_TTL`] seconds unless
+/// hovered or pinned.
 #[derive(Resource, Default)]
 pub struct Dispatches {
     pub slips: Vec<Dispatch>,
     next_serial: u64,
+    /// Every message of the game session, oldest first, as one line each --
+    /// slips and combat results alike -- for the top bar's Log menu, so a
+    /// faded message can still be read.
+    pub log: std::collections::VecDeque<String>,
 }
 
 impl Dispatches {
@@ -48,12 +66,15 @@ impl Dispatches {
     /// factual message (may contain `§N` references).
     pub fn push(&mut self, header: impl Into<String>, body: impl Into<String>) {
         self.next_serial += 1;
+        let (header, body) = (header.into(), body.into());
+        self.log_line(format!("{header}: {body}"));
         self.slips.push(Dispatch {
-            header: header.into(),
-            body: body.into(),
+            header,
+            body,
             age: 0.0,
             hold: crate::ui::CardHold::default(),
             serial: self.next_serial,
+            seq: feed_seq(),
         });
         // Cap the backlog so a burst can't pile up indefinitely: evict the
         // oldest unpinned slip first.
@@ -63,22 +84,36 @@ impl Dispatches {
             self.slips.remove(victim);
         }
     }
+
+    /// Append one line to the session log (bounded).
+    pub fn log_line(&mut self, line: String) {
+        self.log.push_back(line);
+        while self.log.len() > LOG_LINES {
+            self.log.pop_front();
+        }
+    }
+
+    /// Age the slips by `dt` and drop expired ones (hovered / pinned slips
+    /// hold).
+    pub(crate) fn age(&mut self, dt: f32) {
+        for slip in &mut self.slips {
+            slip.hold
+                .age(&mut slip.age, dt, DISPATCH_TTL, DISPATCH_FADE);
+        }
+        self.slips.retain(|s| s.age < DISPATCH_TTL);
+    }
 }
 
-const DISPATCH_TTL: f32 = 6.0;
-const DISPATCH_FADE: f32 = 1.0;
+pub(crate) const DISPATCH_TTL: f32 = 6.0;
+pub(crate) const DISPATCH_FADE: f32 = 1.0;
 
 pub struct DispatchPlugin;
 
 impl Plugin for DispatchPlugin {
     fn build(&self, app: &mut App) {
+        // The slips are drawn in the event feed column with the combat
+        // cards (`combat_card::combat_card_ui`).
         app.init_resource::<Dispatches>()
-            .add_systems(
-                EguiPrimaryContextPass,
-                draw_dispatches
-                    .run_if(crate::map_view_active)
-                    .after(crate::ui_plugin::LeftRailSet),
-            )
             // Translate engine observations into readable dispatch slips.
             // Combat resolutions (FireResolved / MeleeResolved) are surfaced
             // separately by the Combat Resolution Card; this listener handles
@@ -138,60 +173,13 @@ fn queue_observation_dispatches(
     }
 }
 
-fn draw_dispatches(
-    mut contexts: EguiContexts,
-    mut dispatches: ResMut<Dispatches>,
-    time: Res<Time>,
-    mut rulebook: ResMut<crate::rulebook::Rulebook>,
-    layout: Res<crate::ScreenLayout>,
-) {
-    // Age and expire (hovered / pinned slips hold).
-    let dt = time.delta_secs();
-    for slip in &mut dispatches.slips {
-        slip.hold
-            .age(&mut slip.age, dt, DISPATCH_TTL, DISPATCH_FADE);
-    }
-    dispatches.slips.retain(|s| s.age < DISPATCH_TTL);
-    if dispatches.slips.is_empty() {
-        return;
-    }
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-
-    let mut clicked_section: Option<String> = None;
-
-    crate::ui::anchored_card(
-        ctx,
-        egui::Id::new("dispatch_slips"),
-        egui::Align2::LEFT_BOTTOM,
-        // Clear of the left rail (see `ScreenLayout::left_inset`).
-        egui::vec2(layout.left_inset + 14.0, -48.0),
-        egui::Frame::NONE,
-        |ui| {
-            ui.set_max_width(320.0);
-            // Oldest on top, newest at the bottom (nearest the corner).
-            for slip in &mut dispatches.slips {
-                let fade = ((DISPATCH_TTL - slip.age) / DISPATCH_FADE).clamp(0.0, 1.0);
-                slip.hold
-                    .begin(ui, egui::Id::new(("dispatch_slip", slip.serial)));
-                let (sec, rect) = draw_slip(ui, slip, fade);
-                slip.hold.end(ui, rect);
-                if let Some(sec) = sec {
-                    clicked_section = Some(sec);
-                }
-                ui.add_space(6.0);
-            }
-        },
-    );
-
-    if let Some(sec) = clicked_section {
-        crate::rulebook::request_section(&mut rulebook, &sec);
-    }
-    ctx.request_repaint(); // keep the fade animating
-}
-
 /// Draw one slip; returns a section number if the player clicked a `§` link,
 /// and the slip's rect.
-fn draw_slip(ui: &mut egui::Ui, slip: &Dispatch, fade: f32) -> (Option<String>, egui::Rect) {
+pub(crate) fn draw_slip(
+    ui: &mut egui::Ui,
+    slip: &Dispatch,
+    fade: f32,
+) -> (Option<String>, egui::Rect) {
     let a = |c: egui::Color32| c.gamma_multiply(fade);
     let mut clicked = None;
     let stroke = if slip.hold.pinned { 3.0 } else { 2.0 };
