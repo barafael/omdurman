@@ -8,10 +8,6 @@ use omdurman_rules::effects::GameEffect;
 use omdurman_types::{CommandScope, HexCoord, Player, Scenario, SpriteRef};
 use serde::{Deserialize, Serialize};
 
-/// Shared OpenAI-compatible LLM transport (config + `request_completion`).
-/// Reused by `omdurman-app` (flavour text) and `omdurman-bot` (strategy advisor).
-pub mod llm;
-
 pub const SIGNALING_SERVER: &str = if let Some(s) = option_env!("MATCHBOX_SERVER") {
     s
 } else {
