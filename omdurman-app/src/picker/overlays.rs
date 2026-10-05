@@ -64,6 +64,13 @@ pub(crate) struct PickerReadSelection<'w, 's> {
 #[derive(Component)]
 pub(crate) struct PreviewHexRing;
 
+/// What [`placement_preview_mesh`] last drew: the preview hex and the
+/// validity its ring colour shows. The ring entity is (re)spawned only when
+/// that pair changes -- a same-hex verdict flip swaps the material in place
+/// -- and the "not placing" idle path commands nothing at all once cleared.
+type PreviewCache = (Option<HexCoord>, bool);
+
+#[allow(clippy::too_many_arguments)]
 pub fn placement_preview_mesh(
     mut commands: Commands,
     hex: crate::HexRender,
@@ -72,6 +79,10 @@ pub fn placement_preview_mesh(
     placed_units: Query<&PlacedUnit>,
     existing: Query<Entity, With<PreviewHexRing>>,
     game_state: Option<Res<crate::GameStateResource>>,
+    mut last: Local<Option<PreviewCache>>,
+    placed_changed: Query<(), Changed<PlacedUnit>>,
+    mut placed_removed: RemovedComponents<PlacedUnit>,
+    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
     let crate::HexRender {
         assets,
@@ -83,12 +94,20 @@ pub fn placement_preview_mesh(
         mut state,
         game_map,
     } = picker_state;
-    let existing: Vec<Entity> = existing.iter().collect();
-    crate::ui::despawn_all(&mut commands, &existing);
+    if generation.invalidates(&mut seen_generation) {
+        *last = None;
+    }
 
     // Look before borrowing mutably: a `&mut *state` on every frame would
     // mark `PickerState` changed even while nothing is being placed.
     if !matches!(*state, PickerState::Placing { .. }) {
+        // Despawn the preview ring if one is out; a settled idle frame
+        // commands nothing.
+        if existing.iter().next().is_some() {
+            let old: Vec<Entity> = existing.iter().collect();
+            crate::ui::despawn_all(&mut commands, &old);
+        }
+        *last = None;
         return;
     }
     let PickerState::Placing {
@@ -101,51 +120,92 @@ pub fn placement_preview_mesh(
         return;
     };
 
-    let Some(unit) = picker.available.get(*unit_idx) else {
-        *preview_hex = None;
-        return;
-    };
-
-    let Some(hit) = **ground else {
-        *preview_hex = None;
-        return;
-    };
+    let mut target: Option<(HexCoord, bool)> = None;
     let origin = layout.adjusted_origin(&overlay.params);
-    let coord = hit_to_hex(hit, origin, &overlay.params);
-
-    if !game_map.hexes.contains_key(&coord) {
-        *preview_hex = None;
-        return;
+    'compute: {
+        let Some(unit) = picker.available.get(*unit_idx) else {
+            break 'compute;
+        };
+        let Some(hit) = **ground else {
+            break 'compute;
+        };
+        let coord = hit_to_hex(hit, origin, &overlay.params);
+        if !game_map.hexes.contains_key(&coord) {
+            break 'compute;
+        }
+        // Gate the preview on the same engine predicate the click and the
+        // apply path use (phase + zone + full stacking, §9.2/§9.3), so the
+        // ring never shows green for a hex the engine would reject. Editor /
+        // unbound non-setup placement falls back to passable-and-vacant.
+        // Re-evaluated only when the hovered hex, the engine state, or the
+        // board's counters moved; a settled cursor does not re-run the
+        // deployment check every frame.
+        let verdict_moved = game_state.as_ref().is_some_and(|gs| gs.is_changed())
+            || !placed_changed.is_empty()
+            || placed_removed.read().count() > 0;
+        let valid = if last.as_ref().is_some_and(|(hex, _)| *hex == Some(coord)) && !verdict_moved {
+            // Unchanged hex, unchanged inputs: keep the last verdict.
+            last.map(|(_, valid)| valid).unwrap_or_default()
+        } else {
+            match game_state.as_deref() {
+                Some(gs) if matches!(gs.0.phase, omdurman_rules::Phase::Setup) => {
+                    deploy_candidate(&picker, *unit_idx, coord)
+                        .is_some_and(|candidate| gs.0.can_deploy_unit(&candidate).is_ok())
+                }
+                _ => {
+                    let occupied = placed_units.iter().any(|u| u.coord == coord);
+                    !occupied && coord_passable(&game_map, coord, unit.is_boat)
+                }
+            }
+        };
+        target = Some((coord, valid));
     }
 
-    // Gate the preview on the same engine predicate the click and the apply
-    // path use (phase + zone + full stacking, §9.2/§9.3), so the ring never
-    // shows green for a hex the engine would reject. Editor / unbound non-setup
-    // placement falls back to passable-and-vacant.
-    let valid = match game_state.as_deref() {
-        Some(gs) if matches!(gs.0.phase, omdurman_rules::Phase::Setup) => {
-            deploy_candidate(&picker, *unit_idx, coord)
-                .is_some_and(|candidate| gs.0.can_deploy_unit(&candidate).is_ok())
+    let Some((coord, valid)) = target else {
+        *preview_hex = None;
+        // Despawn the preview ring if one is out.
+        if existing.iter().next().is_some() {
+            let old: Vec<Entity> = existing.iter().collect();
+            crate::ui::despawn_all(&mut commands, &old);
         }
-        _ => {
-            let occupied = placed_units.iter().any(|u| u.coord == coord);
-            !occupied && coord_passable(&game_map, coord, unit.is_boat)
-        }
+        *last = None;
+        return;
     };
+
     *preview_hex = Some(coord);
     *preview_valid = valid;
+    let material = if valid { &assets.green } else { &assets.red };
+    let hex_changed = !last.as_ref().is_some_and(|(hex, _)| *hex == Some(coord));
+    if hex_changed {
+        // The preview moved to another hex: replace the ring.
+        let old: Vec<Entity> = existing.iter().collect();
+        crate::ui::despawn_all(&mut commands, &old);
+        spawn_preview_ring(&mut commands, &assets, &overlay, origin, coord, material);
+    } else if last.map(|(_, last_valid)| last_valid) != Some(valid)
+        && let Some(entity) = existing.iter().next()
+    {
+        // Same hex, verdict flipped: recolour the ring in place instead of
+        // despawning and respawning it every frame.
+        commands
+            .entity(entity)
+            .insert(MeshMaterial3d(material.clone()));
+    }
+    *last = Some((Some(coord), valid));
+}
 
+fn spawn_preview_ring(
+    commands: &mut Commands,
+    assets: &crate::render::HexRingAssets,
+    overlay: &HexOverlay,
+    origin: bevy::prelude::Vec2,
+    coord: HexCoord,
+    material: &Handle<StandardMaterial>,
+) {
     let pos = hex_world_pos(coord, origin, &overlay.params);
-    let material = if valid {
-        assets.green.clone()
-    } else {
-        assets.red.clone()
-    };
-
     commands.spawn((
         PreviewHexRing,
         Mesh3d(assets.mesh.clone()),
-        MeshMaterial3d(material),
+        MeshMaterial3d(material.clone()),
         Transform::from_xyz(pos.x, 1.5, pos.z).with_scale(Vec3::splat(overlay.params.hex_size)),
         Visibility::Visible,
     ));
@@ -184,6 +244,7 @@ pub(crate) fn placement_marker_color(
 /// upstream/downstream direction (§5.24).
 /// Labels are only shown while a path is being built (non-empty
 /// `MovementPath`).
+#[allow(clippy::type_complexity)]
 pub(crate) fn movement_path_labels(
     mut contexts: EguiContexts,
     movement_path: Res<MovementPath>,
@@ -191,6 +252,7 @@ pub(crate) fn movement_path_labels(
     game_state: Option<Res<crate::GameStateResource>>,
     state: Res<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
+    mut last: Local<Option<(Vec<(HexCoord, HexCoord)>, bool, Vec<String>)>>,
 ) {
     let HexMapView {
         layout,
@@ -250,41 +312,63 @@ pub(crate) fn movement_path_labels(
     };
     let board = game_state.as_deref().map(|gs| &gs.0.board);
 
-    for &(from, to) in &movement_path.legs {
+    // Per-leg cost labels are path-static: recomputed only when the plotted
+    // legs, the mover kind, or the engine state changed. Each frame then only
+    // re-projects the existing texts to screen space (the camera may have
+    // moved), instead of re-deriving every leg's terrain cost.
+    let gs_moved = game_state.as_ref().is_some_and(|gs| gs.is_changed());
+    let labels_stale = gs_moved
+        || last.as_ref().is_none_or(|(legs, gunboat, _)| {
+            *gunboat != is_gunboat || legs.as_slice() != movement_path.legs.as_slice()
+        });
+    if labels_stale {
+        let texts = movement_path
+            .legs
+            .iter()
+            .map(|&(from, to)| {
+                game_map
+                    .hexes
+                    .get(&to)
+                    .map(|_| {
+                        // The same step price the plot and the engine use (§5.11).
+                        let cost = floor_movement_cost(
+                            &game_map,
+                            from,
+                            to,
+                            is_gunboat,
+                            game_state.as_deref().map(|gs| &gs.0),
+                        );
+                        // For gunboats, annotate upstream (↑) / downstream (↓)
+                        // direction (§5.24).
+                        let dir = if is_gunboat
+                            && let Some(b) = board
+                            && let Some(dir) = b.step_direction(from, to)
+                        {
+                            match dir {
+                                omdurman_rules::board::StepDirection::Upstream => "↑",
+                                omdurman_rules::board::StepDirection::Downstream => "↓",
+                            }
+                        } else {
+                            ""
+                        };
+                        format!("{dir}{cost}")
+                    })
+                    .unwrap_or_else(|| "?".into())
+            })
+            .collect();
+        *last = Some((movement_path.legs.clone(), is_gunboat, texts));
+    }
+    let Some((_, _, texts)) = last.as_ref() else {
+        return;
+    };
+
+    for (&(_, to), cost_str) in movement_path.legs.iter().zip(texts) {
         let world_pos = hex_world_pos(to, origin, &overlay.params);
         let world_pos_3d = Vec3::new(world_pos.x, 2.0, world_pos.z);
 
         let Ok(screen_pos) = camera.world_to_viewport(camera_transform, world_pos_3d) else {
             continue;
         };
-
-        let cost_str = game_map
-            .hexes
-            .get(&to)
-            .map(|_| {
-                // The same step price the plot and the engine use (§5.11).
-                let cost = floor_movement_cost(
-                    &game_map,
-                    from,
-                    to,
-                    is_gunboat,
-                    game_state.as_deref().map(|gs| &gs.0),
-                );
-                // For gunboats, annotate upstream (↑) / downstream (↓) direction (§5.24).
-                let dir = if is_gunboat
-                    && let Some(b) = board
-                    && let Some(dir) = b.step_direction(from, to)
-                {
-                    match dir {
-                        omdurman_rules::board::StepDirection::Upstream => "↑",
-                        omdurman_rules::board::StepDirection::Downstream => "↓",
-                    }
-                } else {
-                    ""
-                };
-                format!("{dir}{cost}")
-            })
-            .unwrap_or_else(|| "?".into());
 
         egui::Area::new(egui::Id::new(("path_label", to)))
             .fixed_pos(egui::pos2(screen_pos.x - 8.0, screen_pos.y - 16.0))
@@ -698,7 +782,7 @@ pub fn selection_outline_mesh(
         PickerState::SelectedTile(sel) => sel.sources.clone(),
         _ => Vec::new(),
     };
-    if *last_sources == Some(sources.clone()) {
+    if last_sources.as_deref() == Some(sources.as_slice()) {
         return;
     }
     let old: Vec<Entity> = existing.iter().collect();
@@ -747,6 +831,7 @@ pub(crate) struct HoverRing;
 /// click hit-test (`nearest_placed_unit_at`) so hover and click always agree
 /// on which unit is targeted. In a bound game only the local faction's units
 /// are highlighted (those a click could actually select).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn update_hovered_unit(
     ground: Res<crate::picking::PointerGroundHit>,
     layout: Res<HexLayout>,
@@ -754,9 +839,20 @@ pub(crate) fn update_hovered_unit(
     placed_units: Query<(Entity, &PlacedUnit)>,
     peers: crate::peers::Peers,
     mut hovered: ResMut<crate::HoveredUnit>,
+    placed_changed: Query<(), Changed<PlacedUnit>>,
+    mut placed_removed: RemovedComponents<PlacedUnit>,
 ) {
     // `set_if_neq`: the resource reads as changed only when the hovered
-    // counter does.
+    // counter does. The hit-test itself re-runs only when its inputs moved --
+    // the ground point, the board's counters, or the seat binding; a resting
+    // cursor over a settled board re-derives nothing.
+    let inputs_moved = ground.is_changed()
+        || !placed_changed.is_empty()
+        || placed_removed.read().count() > 0
+        || peers.changed();
+    if !inputs_moved {
+        return;
+    }
     let Some(hit) = **ground else {
         hovered.set_if_neq(crate::HoveredUnit(None));
         return;
@@ -802,15 +898,16 @@ pub fn hover_outline_mesh(
     let crate::HexRender {
         assets, overlay, ..
     } = hex;
-    let selected: Vec<Entity> = match &*state {
-        PickerState::Selected { source, .. } => vec![*source],
-        PickerState::SelectedStack(sel) => sel.sources.clone(),
-        PickerState::SelectedTile(sel) => sel.sources.clone(),
-        _ => Vec::new(),
-    };
     // Don't show the hover square on an already-selected unit (a stack
-    // selection marks all of them).
-    let target = hovered.0.filter(|e| !selected.contains(e));
+    // selection marks all of them). Membership is checked without building
+    // the selected set.
+    let selected_contains = |entity: Entity| match &*state {
+        PickerState::Selected { source, .. } => *source == entity,
+        PickerState::SelectedStack(sel) => sel.sources.contains(&entity),
+        PickerState::SelectedTile(sel) => sel.sources.contains(&entity),
+        _ => false,
+    };
+    let target = hovered.0.filter(|e| !selected_contains(*e));
     if *last == target {
         return;
     }

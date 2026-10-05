@@ -36,6 +36,15 @@ pub(crate) fn end_phase_preview(
     })
 }
 
+/// The memoized End-Phase dry run ([`end_phase_button`]): the pending-queue
+/// length it was derived against and the label/refusal it produced.
+/// Invalidate on engine-state change via the caller's `state_moved` flag.
+#[derive(Clone)]
+struct EndPhasePreviewCache {
+    unconfirmed_len: usize,
+    next: Result<String, omdurman_rules::effects::RuleError>,
+}
+
 pub(crate) fn game_control_section(
     ui: &mut egui::Ui,
     state: &crate::GameStateResource,
@@ -43,6 +52,7 @@ pub(crate) fn game_control_section(
     pending: Option<&mut crate::PendingEdits>,
     local_setup_ready: Option<&mut crate::peers::LocalSetupReady>,
     extras: GameControlExtras<'_>,
+    state_moved: bool,
 ) {
     let Some(pending) = pending else {
         return;
@@ -77,7 +87,7 @@ pub(crate) fn game_control_section(
     } else if my_turn {
         // Each player ends their *own* turn: the End Phase button is shown only
         // to whoever controls the active faction.
-        end_phase_button(ui, state, pending, extras.allocation);
+        end_phase_button(ui, state, pending, extras.allocation, state_moved);
     }
 }
 
@@ -119,11 +129,38 @@ fn end_phase_button(
     state: &crate::GameStateResource,
     pending: &mut crate::PendingEdits,
     allocation: Option<&mut crate::fire_allocation::FireAllocationState>,
+    state_moved: bool,
 ) {
-    let unconfirmed: Vec<omdurman_net::GameEvent> =
-        pending.unconfirmed.iter().map(|(_, e)| e.clone()).collect();
+    // The preview dry-runs `AdvancePhase` on a full clone of the engine state
+    // projected over the pending submissions -- far too much work to repeat
+    // every frame for a button label. It is memoized in egui's temp storage:
+    // recomputed when the engine state moved (the caller's change flag) or
+    // the pending queue changed length, reused otherwise.
+    let preview_id = egui::Id::new("end_phase_preview_cache");
+    let unconfirmed_len = pending.unconfirmed.len();
+    let cached = ui
+        .data(|d| d.get_temp::<EndPhasePreviewCache>(preview_id))
+        .filter(|c| !state_moved && c.unconfirmed_len == unconfirmed_len);
+    let next = match cached {
+        Some(cached) => cached.next,
+        None => {
+            let unconfirmed: Vec<omdurman_net::GameEvent> =
+                pending.unconfirmed.iter().map(|(_, e)| e.clone()).collect();
+            let next = end_phase_preview(&state.0, &unconfirmed);
+            ui.data_mut(|d| {
+                d.insert_temp(
+                    preview_id,
+                    EndPhasePreviewCache {
+                        unconfirmed_len,
+                        next: next.clone(),
+                    },
+                )
+            });
+            next
+        }
+    };
     let current = crate::ui_phase_state::UiPhaseState::derive(&state.0).phase_label();
-    let next = match end_phase_preview(&state.0, &unconfirmed) {
+    let next = match next {
         Ok(next) => next,
         Err(reason) => {
             let reason = reason.to_string();

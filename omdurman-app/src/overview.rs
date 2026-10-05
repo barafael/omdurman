@@ -41,9 +41,10 @@ pub fn unit_overview_ui(
     mut pending: Option<ResMut<crate::PendingEdits>>,
     mut local_setup_ready: Option<ResMut<crate::peers::LocalSetupReady>>,
     mut layout: ResMut<crate::ScreenLayout>,
-    (mut victory, mut unit_list): (
+    (mut victory, mut unit_list, mut hints): (
         ResMut<crate::ui_plugin::VictoryModalState>,
         Local<Option<UnitListCache>>,
+        Local<crate::actions_panel::HintsCache>,
     ),
     mut picker_commands: bevy::ecs::message::MessageWriter<crate::hotkeys::PickerCommand>,
 ) {
@@ -107,6 +108,8 @@ pub fn unit_overview_ui(
                             if *app_state.get() == crate::AppState::InGame
                                 && let Some(state) = game_state.as_deref()
                             {
+                                let state_moved =
+                                    game_state.as_ref().is_some_and(|gs| gs.is_changed());
                                 crate::ui_plugin::game_control_section(
                                     ui,
                                     state,
@@ -117,6 +120,7 @@ pub fn unit_overview_ui(
                                         allocation: allocation.as_deref_mut(),
                                         victory: Some(&mut victory),
                                     },
+                                    state_moved,
                                 );
                                 ui.add_space(8.0);
 
@@ -204,6 +208,8 @@ pub fn unit_overview_ui(
                                     local_may_act,
                                     (tray_open, peers.is_spectator()),
                                     &mut commands_out,
+                                    &mut hints,
+                                    state_moved,
                                 );
                                 for cmd in commands_out {
                                     crate::ui_trace::button(cmd.key_label());

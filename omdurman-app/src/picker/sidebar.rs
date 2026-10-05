@@ -664,6 +664,17 @@ pub fn unit_picker_ui(
     // change detection, and the tray reads as changed only when a flag
     // actually flipped (so systems gated on `UnitPicker` changes, e.g.
     // `reconcile_unit_sprites`, stay idle).
+    //
+    // The passes themselves only have to run when one of their *inputs*
+    // moved: the tray content (a counter returned to or left it, its sprite
+    // texture loaded), the engine state (scenario OOB, FoK caps,
+    // eliminations), or the seat bindings (faction / command scope). An idle
+    // setup frame re-derives none of the per-counter profiles.
+    let filter_inputs_moved = game_state.as_ref().is_some_and(|gs| gs.is_changed())
+        || picker_ctx.picker.is_changed()
+        || peers.changed()
+        || images.is_changed()
+        || annotations.as_ref().is_some_and(|a| a.is_changed());
     let flags = |picker: &UnitPicker| -> Vec<(bool, bool, bool, bool)> {
         picker
             .available
@@ -679,7 +690,7 @@ pub fn unit_picker_ui(
             .collect()
     };
     let before = flags(&picker_ctx.picker);
-    {
+    if filter_inputs_moved {
         let picker = picker_ctx.picker.bypass_change_detection();
         // -- cache egui textures & look up is_boat from annotations --
         for unit in &mut picker.available {

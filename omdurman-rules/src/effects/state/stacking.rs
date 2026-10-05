@@ -235,18 +235,27 @@ impl GameState {
     /// not extend across a khor/wall/Zariba hexside, and (except for gunboats)
     /// does not extend into or out of a Nile hex. With no board loaded these
     /// reduce to the plain adjacency rule.
+    ///
+    /// The §5.44 fort exclusion is unit-independent ("not into a fort"), so it
+    /// is computed once for `hex` instead of rescanning the whole board for a
+    /// fort counter per adjacent unit.
     pub fn hex_in_enemy_zoc(
         &self,
         hex: HexCoord,
         mover_player: Player,
         mover_kind: UnitKind,
     ) -> bool {
+        let fort_hex = self.is_fort_hex(hex);
         self.units.iter().any(|u| {
             u.position.neighbors().contains(&hex)
                 && self
                     .unit_projects_zoc(u, mover_player, mover_kind)
                     .is_some()
-                && self.zoc_extends(u, hex)
+                // A gunboat's ZOC lives on the water (§5.41) and never
+                // reaches the fort exclusion at all (`zoc_extends` returns
+                // before it); land units' ZOC does not extend into a fort.
+                && (matches!(u.profile.kind, UnitKind::Gunboat { .. }) || !fort_hex)
+                && self.zoc_extends_across(u, hex)
         })
     }
 
@@ -261,6 +270,23 @@ impl GameState {
     ///   only outward ("out of, but not into, a walled city hex"), across a
     ///   breach both ways.
     pub fn zoc_extends(&self, unit: &UnitPlacement, into: HexCoord) -> bool {
+        let gunboat = matches!(unit.profile.kind, UnitKind::Gunboat { .. });
+        // §5.44: no land ZOC reaches *into* a fort. A gunboat's ZOC lives on
+        // the water (§5.41) and never reaches this exclusion -- see
+        // [`Self::zoc_extends_across`]'s early return.
+        if !gunboat && self.is_fort_hex(into) {
+            return false;
+        }
+        self.zoc_extends_across(unit, into)
+    }
+
+    /// The §5.44 extent rules *without* the fort exclusion: the hexside
+    /// direction rules (khor/wall/gate/Zariba/wall), the Nile exclusion, and
+    /// the hut/building one. Private so callers that have already decided the
+    /// fort question ([`Self::hex_in_enemy_zoc`] and [`Self::zoc_hexes`], each
+    /// of which answers it once for all neighbours instead of per unit) do not
+    /// rescan the board for a fort counter per call.
+    fn zoc_extends_across(&self, unit: &UnitPlacement, into: HexCoord) -> bool {
         use omdurman_types::HexsideKind;
         let from = unit.position;
         let gunboat = matches!(unit.profile.kind, UnitKind::Gunboat { .. });
@@ -284,9 +310,6 @@ impl GameState {
         if gunboat {
             return true; // gunboat-vs-gunboat ZOC lives on the water
         }
-        if self.is_fort_hex(into) {
-            return false;
-        }
         !matches!(
             self.board.terrain_at(into),
             Some(omdurman_types::Terrain::Huts { .. } | omdurman_types::Terrain::Building { .. })
@@ -309,6 +332,10 @@ impl GameState {
     /// side effects. `hex_in_enemy_zoc` checks whether *any* hostile unit's
     /// ZOC covers a given hex; this function returns *which* hexes a
     /// specific unit covers.
+    ///
+    /// The §5.44 fort exclusion is per *destination* hex and unit-independent,
+    /// so the neighbours' fort status is answered in one board scan instead of
+    /// one per neighbour.
     pub fn zoc_hexes(
         &self,
         unit: &UnitPlacement,
@@ -321,10 +348,24 @@ impl GameState {
         {
             return Vec::new();
         }
-        unit.position
-            .neighbors()
+        let adjacent = unit.position.neighbors();
+        // Which neighbours hold a fort counter (§5.44: no land ZOC into a
+        // fort; a gunboat's water ZOC is unaffected -- `zoc_extends_across`
+        // returns before the exclusion would apply).
+        let mut fort = [false; 6];
+        for u in &self.units {
+            if matches!(u.profile.kind, UnitKind::Fort { .. })
+                && let Some(i) = adjacent.iter().position(|&h| h == u.position)
+            {
+                fort[i] = true;
+            }
+        }
+        let gunboat = matches!(unit.profile.kind, UnitKind::Gunboat { .. });
+        adjacent
             .into_iter()
-            .filter(|&adj| self.zoc_extends(unit, adj))
+            .zip(fort)
+            .filter(|&(adj, fort)| (gunboat || !fort) && self.zoc_extends_across(unit, adj))
+            .map(|(adj, _)| adj)
             .collect()
     }
 }

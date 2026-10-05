@@ -22,20 +22,31 @@ impl GameState {
     /// directions" (§9.232). Shared by [`Self::can_fire_at`],
     /// [`Self::can_fire_at_wall`] and the Historical set-up's out-of-sight
     /// rule (§9.212).
+    ///
+    /// The blocking hexes are indexed once, when the closure is built: the
+    /// LOS walk asks for *every intervening hex of every ray*, so a per-call
+    /// scan of all units made one `has_los` query O(ray length × unit count).
+    /// A sorted `Vec` + binary search keeps the index allocation-free to use
+    /// and deterministic (no hasher), like the rest of the engine's lookups.
     pub fn los_unit_blocker(&self) -> impl Fn(HexCoord) -> Option<crate::los_table::LosLevel> + '_ {
+        let mut blockers: Vec<HexCoord> = self
+            .units
+            .iter()
+            .filter(|u| {
+                !matches!(
+                    u.profile.kind,
+                    crate::UnitKind::Gunboat { .. } | crate::UnitKind::Fort { .. }
+                )
+            })
+            .map(|u| u.position)
+            .collect();
+        blockers.sort_unstable();
+        blockers.dedup();
         move |hex| {
-            let has_blocking_unit = self.units.iter().any(|u| {
-                u.position == hex
-                    && !matches!(
-                        u.profile.kind,
-                        crate::UnitKind::Gunboat { .. } | crate::UnitKind::Fort { .. }
-                    )
-            }) && !self.is_zariba_entrenched(hex);
-            if has_blocking_unit {
-                self.board.terrain_at(hex).map(crate::los_table::los_level)
-            } else {
-                None
+            if blockers.binary_search(&hex).is_err() || self.is_zariba_entrenched(hex) {
+                return None;
             }
+            self.board.terrain_at(hex).map(crate::los_table::los_level)
         }
     }
 
@@ -153,17 +164,31 @@ impl GameState {
         // at a fort itself; the units stacked inside a fort may be fired at
         // by anyone (§6.54, at the fort's −3). Check it here so the app
         // pre-blocks the shot rather than the engine rejecting it after the
-        // fact.
-        let enemy = self.player_units_in_hex(target_hex, unit.profile.identity.owner().opponent());
-        let target_units: Vec<UnitId> = enemy.iter().map(|u| u.id).collect();
-        let only_artillery_targets = enemy.iter().all(|u| {
-            matches!(
-                u.profile.kind,
-                UnitKind::Gunboat { .. } | UnitKind::Fort { .. }
-            )
-        });
+        // fact. One pass over the target hex's occupants serves all three
+        // §6 rules that read the same stack: this artillery-only rule, the
+        // §6.15 enemy-occupied gate below, and the target's LOS level
+        // (§6.3 notes b/c — the first unit standing there) further down.
+        let opponent = unit.profile.identity.owner().opponent();
+        let mut has_enemy = false;
+        let mut only_artillery_targets = true;
+        let mut first_kind = None;
+        for u in &self.units {
+            if u.position != target_hex {
+                continue;
+            }
+            if first_kind.is_none() {
+                first_kind = Some(u.profile.kind);
+            }
+            if u.profile.identity.owner() == opponent {
+                has_enemy = true;
+                only_artillery_targets &= matches!(
+                    u.profile.kind,
+                    UnitKind::Gunboat { .. } | UnitKind::Fort { .. }
+                );
+            }
+        }
         if only_artillery_targets
-            && !target_units.is_empty()
+            && has_enemy
             && !matches!(weapon, WeaponClass::Artillery | WeaponClass::Howitzer)
         {
             return Err(RuleError::ArtilleryOnlyVsGunboatOrFort(firer));
@@ -172,7 +197,7 @@ impl GameState {
         // §6.15: fire may only target *enemy-occupied* hexes. Without this
         // gate a click on a friendly or empty hex passes every other check
         // and resolves the CRT against whoever (if anyone) is there.
-        if target_units.is_empty() {
+        if !has_enemy {
             return Err(RuleError::FireTargetNotEnemyOccupied);
         }
 
@@ -227,11 +252,8 @@ impl GameState {
         // (note a).
         let firer_los_level =
             crate::los_table::los_level_for_unit(unit.profile.kind, unit.position, &self.board);
-        let target_los_level = self
-            .units
-            .iter()
-            .find(|u| u.position == target_hex)
-            .map(|u| crate::los_table::los_level_for_unit(u.profile.kind, u.position, &self.board))
+        let target_los_level = first_kind
+            .map(|kind| crate::los_table::los_level_for_unit(kind, target_hex, &self.board))
             .unwrap_or_else(|| {
                 self.board
                     .terrain_at(target_hex)

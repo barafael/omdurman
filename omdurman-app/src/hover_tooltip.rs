@@ -46,6 +46,7 @@ fn draw_hover_tooltip(
     rulebook: ResMut<Rulebook>,
     keys: Res<ButtonInput<KeyCode>>,
     mut route_cache: Local<Option<(RouteKey, Option<String>)>>,
+    mut hint_cache: Local<Option<HintCache>>,
 ) {
     let crate::picker::PickerReadState {
         picker_state: picker,
@@ -233,7 +234,33 @@ fn draw_hover_tooltip(
                                         &mut route_cache,
                                     )
                                     .or_else(|| {
-                                        movement_hint(gs, unit_id, hex, &game_map, &movement_path)
+                                        // The step / set-up hint: expensive
+                                        // engine checks (a set-up hint deep-
+                                        // clones the state for the deploy
+                                        // probe; a movement hint runs ZOC,
+                                        // step and cost queries), memoized
+                                        // against the engine state.
+                                        let gs_moved =
+                                            game_state.as_ref().is_some_and(|gs| gs.is_changed());
+                                        let key = (
+                                            unit_id,
+                                            hex,
+                                            movement_path.current_end(),
+                                            movement_path.cost_so_far,
+                                        );
+                                        let cached = !gs_moved
+                                            && hint_cache.as_ref().is_some_and(|c| c.key == key);
+                                        if !cached {
+                                            let hint = movement_hint(
+                                                gs,
+                                                unit_id,
+                                                hex,
+                                                &game_map,
+                                                &movement_path,
+                                            );
+                                            *hint_cache = Some(HintCache { key, hint });
+                                        }
+                                        hint_cache.as_ref().and_then(|c| c.hint.clone())
                                     })
                                 })
                             })
@@ -389,6 +416,14 @@ fn first_ref(text: &str) -> Option<String> {
             crate::rulebook::RefTok::Ref(n) => Some(n.to_string()),
             crate::rulebook::RefTok::Text(_) => None,
         })
+}
+
+/// The memoized [`movement_hint`] result: the inputs that shape it (selected
+/// unit, hovered hex, plotted path) plus the hint they produced. Reused only
+/// while the engine state has not moved since it was derived.
+struct HintCache {
+    key: (omdurman_rules::UnitId, HexCoord, Option<HexCoord>, i16),
+    hint: Option<String>,
 }
 
 /// Build the per-hex terrain label. The `Terrain` enum's `Display` impl

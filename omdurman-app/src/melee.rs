@@ -69,6 +69,14 @@ fn valid_target_hexes(attacker: UnitId, gs: &GameState) -> Vec<HexCoord> {
 #[derive(Component)]
 pub struct MeleeTargetRing;
 
+/// What [`melee_target_overlay_mesh`] last drew: the representative attacker
+/// and the target hexes the current rings describe. Rebuilt only when the
+/// selection, the engine state, or a counter's placement data changed (or the
+/// overlays were cleared, see [`crate::picker::OverlayGeneration`]) -- not
+/// every frame.
+type MeleeOverlayCache = (UnitId, Vec<HexCoord>);
+
+#[allow(clippy::too_many_arguments)]
 pub fn melee_target_overlay_mesh(
     mut commands: Commands,
     hex: crate::HexRender,
@@ -76,19 +84,44 @@ pub fn melee_target_overlay_mesh(
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
     existing: Query<Entity, With<MeleeTargetRing>>,
+    mut last: Local<Option<MeleeOverlayCache>>,
+    placed_changed: Query<(), Changed<PlacedUnit>>,
+    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
-    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
-    let Some(gs) = game_state else { return };
-    if !matches!(gs.0.phase, Phase::Melee) {
+    let invalidated = generation.invalidates(&mut seen_generation);
+    let inputs_moved = invalidated
+        || game_state.as_ref().is_some_and(|gs| gs.is_changed())
+        || state.is_changed()
+        || !placed_changed.is_empty();
+    if !inputs_moved {
         return;
     }
-    let Some((attacker, _)) = selected_melee_group(&state, &placed_units, &gs.0) else {
+    let drawn = game_state.as_deref().and_then(|gs| {
+        if !matches!(gs.0.phase, Phase::Melee) {
+            return None;
+        }
+        let (attacker, _) = selected_melee_group(&state, &placed_units, &gs.0)?;
+        Some((attacker, valid_target_hexes(attacker, &gs.0)))
+    });
+    let Some(drawn) = drawn else {
+        // Nothing to highlight: clear any rings left over from a selection
+        // that can no longer melee (once, not every frame).
+        if last.is_some() {
+            let old: Vec<Entity> = existing.iter().collect();
+            crate::ui::despawn_all(&mut commands, &old);
+            *last = None;
+        }
         return;
     };
-
-    for target in valid_target_hexes(attacker, &gs.0) {
+    // Same attacker, same targets: leave the existing rings in place.
+    if last.as_ref() == Some(&drawn) {
+        return;
+    }
+    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    for &target in &drawn.1 {
         rings.ring(MeleeTargetRing, target, 1.5, 1.0, &hex.assets.orange);
     }
+    *last = Some(drawn);
 }
 
 /// On left-click of a valid adjacent enemy hex while a melee-capable unit is
@@ -320,6 +353,9 @@ pub(crate) struct MeleeDirectionArrow;
 
 /// Draw a translucent orange arrow from the attacker hex to the hovered valid
 /// melee target hex, giving the player a visual preview of the melee direction.
+/// Rebuilt only when the arrow's endpoints change (selection, hover, engine
+/// state, or the overlays were cleared) -- not every frame.
+#[allow(clippy::too_many_arguments)]
 pub fn melee_direction_arrow(
     mut commands: Commands,
     render: crate::DirectionArrowCtx,
@@ -328,31 +364,38 @@ pub fn melee_direction_arrow(
     game_state: Option<Res<GameStateResource>>,
     hovered: Res<crate::HoveredHex>,
     existing: Query<Entity, With<MeleeDirectionArrow>>,
+    mut last: Local<Option<Option<(HexCoord, HexCoord)>>>,
+    placed_changed: Query<(), Changed<PlacedUnit>>,
+    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
-    let existing: Vec<Entity> = existing.iter().collect();
-    crate::ui::despawn_all(&mut commands, &existing);
-
-    let Some(gs) = game_state else { return };
-    if !matches!(gs.0.phase, Phase::Melee) {
+    let invalidated = generation.invalidates(&mut seen_generation);
+    let inputs_moved = invalidated
+        || game_state.as_ref().is_some_and(|gs| gs.is_changed())
+        || state.is_changed()
+        || hovered.is_changed()
+        || !placed_changed.is_empty();
+    if !inputs_moved {
         return;
     }
-    let Some((attacker, attacker_hex)) = selected_melee_group(&state, &placed_units, &gs.0) else {
-        return;
-    };
-    let Some(target) = hovered.0 else {
-        return;
-    };
-    if gs.0.can_melee(attacker, target).is_err() {
-        return;
+    let arrow = game_state.as_deref().and_then(|gs| {
+        if !matches!(gs.0.phase, Phase::Melee) {
+            return None;
+        }
+        let (attacker, attacker_hex) = selected_melee_group(&state, &placed_units, &gs.0)?;
+        let target = hovered.0?;
+        gs.0.can_melee(attacker, target)
+            .is_ok()
+            .then_some((attacker_hex, target))
+    });
+    if *last == Some(arrow) {
+        return; // unchanged: leave the drawn arrow in place
     }
-
-    crate::combat_ui::direction_arrow(
-        &mut commands,
-        &render,
-        attacker_hex,
-        target,
-        MeleeDirectionArrow,
-    );
+    let old: Vec<Entity> = existing.iter().collect();
+    crate::ui::despawn_all(&mut commands, &old);
+    *last = Some(arrow);
+    if let Some((from, to)) = arrow {
+        crate::combat_ui::direction_arrow(&mut commands, &render, from, to, MeleeDirectionArrow);
+    }
 }
 
 /// Melee combat preview: while a melee-capable unit is selected during the
@@ -572,7 +615,10 @@ pub(crate) struct AdvanceTargetRing;
 /// combat (§6.82, §7.6) during OffensiveFire or Melee phases. The union over
 /// the tile's members — an artillery counter cannot advance, its co-stacked
 /// infantry can — matches what a click accepts (`handle_advance_after_combat`
-/// advances the first member the engine accepts for the clicked hex).
+/// advances the first member the engine accepts for the clicked hex). Rebuilt
+/// only when the selection or the engine state changed (or the overlays were
+/// cleared) -- not every frame.
+#[allow(clippy::too_many_arguments)]
 pub fn advance_target_overlay_mesh(
     mut commands: Commands,
     hex: crate::HexRender,
@@ -580,27 +626,58 @@ pub fn advance_target_overlay_mesh(
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
     existing: Query<Entity, With<AdvanceTargetRing>>,
+    mut last: Local<Option<Vec<HexCoord>>>,
+    placed_changed: Query<(), Changed<PlacedUnit>>,
+    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
-    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
-
-    let Some(gs) = game_state else { return };
-    if !matches!(gs.0.phase, Phase::Melee | Phase::OffensiveFire(_)) {
+    let invalidated = generation.invalidates(&mut seen_generation);
+    let inputs_moved = invalidated
+        || game_state.as_ref().is_some_and(|gs| gs.is_changed())
+        || state.is_changed()
+        || !placed_changed.is_empty();
+    if !inputs_moved {
         return;
     }
-    let candidates = selected_unit_ids(&state, &placed_units);
-    // All members share the origin hex, so the neighbour set is the same;
-    // only per-unit eligibility differs.
-    let Some(any_unit) = candidates.iter().find_map(|&id| gs.0.find_unit(id)) else {
+    let drawn = game_state.as_deref().and_then(|gs| {
+        if !matches!(gs.0.phase, Phase::Melee | Phase::OffensiveFire(_)) {
+            return None;
+        }
+        let candidates = selected_unit_ids(&state, &placed_units);
+        // All members share the origin hex, so the neighbour set is the same;
+        // only per-unit eligibility differs.
+        let any_unit = candidates.iter().find_map(|&id| gs.0.find_unit(id))?;
+        Some(
+            any_unit
+                .position
+                .neighbors()
+                .into_iter()
+                .filter(|&target| {
+                    candidates
+                        .iter()
+                        .any(|&unit_id| gs.0.can_advance_after_combat(unit_id, target).is_ok())
+                })
+                .collect::<Vec<HexCoord>>(),
+        )
+    });
+    let Some(drawn) = drawn else {
+        // Nothing to highlight (no selection / wrong phase): clear any rings
+        // left over, once.
+        if last.is_some() {
+            let old: Vec<Entity> = existing.iter().collect();
+            crate::ui::despawn_all(&mut commands, &old);
+            *last = None;
+        }
         return;
     };
-    for target in any_unit.position.neighbors() {
-        if candidates
-            .iter()
-            .any(|&unit_id| gs.0.can_advance_after_combat(unit_id, target).is_ok())
-        {
-            rings.ring(AdvanceTargetRing, target, 1.5, 1.0, &hex.assets.light_green);
-        }
+    // Same targets: leave the existing rings in place.
+    if last.as_ref() == Some(&drawn) {
+        return;
     }
+    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    for &target in &drawn {
+        rings.ring(AdvanceTargetRing, target, 1.5, 1.0, &hex.assets.light_green);
+    }
+    *last = Some(drawn);
 }
 
 #[cfg(test)]

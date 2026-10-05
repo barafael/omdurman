@@ -423,6 +423,14 @@ impl FireTargetCache {
 #[derive(Component)]
 pub(crate) struct FireTargetRing;
 
+/// What [`fire_target_overlay_mesh`] last drew: the (firer, kind) pairs and
+/// the target hexes the current rings describe. The rings are rebuilt only
+/// when either changes (or the overlays were cleared, see
+/// [`crate::picker::OverlayGeneration`]) -- not every frame, matching the
+/// movement/deployment overlays' rebuild-only-on-change discipline.
+type FireOverlayCache = (Vec<(UnitId, FireKind)>, Vec<HexCoord>);
+
+#[allow(clippy::too_many_arguments)]
 pub fn fire_target_overlay_mesh(
     mut commands: Commands,
     hex: crate::HexRender,
@@ -431,26 +439,62 @@ pub fn fire_target_overlay_mesh(
     game_state: Option<Res<GameStateResource>>,
     existing: Query<Entity, With<FireTargetRing>>,
     mut cache: ResMut<FireTargetCache>,
+    mut last: Local<Option<FireOverlayCache>>,
+    placed_changed: Query<(), Changed<PlacedUnit>>,
+    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
-    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
-    let Some(gs) = game_state else { return };
-    if !matches!(
+    let invalidated = generation.invalidates(&mut seen_generation);
+    // The rings depend on the engine state and the picker selection only; on
+    // a frame where neither moved (nor any counter's placement data did),
+    // what we drew -- or deliberately did not draw -- is still exact.
+    let inputs_moved = invalidated
+        || game_state.as_ref().is_some_and(|gs| gs.is_changed())
+        || state.is_changed()
+        || !placed_changed.is_empty();
+    if !inputs_moved {
+        return;
+    }
+    let Some(gs) = game_state else {
+        *last = None;
+        return;
+    };
+    let drawn = if matches!(
         gs.0.phase,
         Phase::OffensiveFire(_) | Phase::DefensiveFire(_)
     ) {
-        return;
-    }
-    let Some(group) = fire_selection(&state, &placed_units, &gs.0) else {
+        fire_selection(&state, &placed_units, &gs.0)
+            .map(|group| fire_group_kinds(&gs.0, &group))
+            .filter(|kinds| !kinds.is_empty())
+            .map(|kinds| {
+                let targets = cache.valid_targets(&gs.0, &kinds).to_vec();
+                (kinds, targets)
+            })
+    } else {
+        None
+    };
+    let Some((kinds, targets)) = drawn else {
+        // Nothing to highlight: clear any rings left over from a selection
+        // that no longer fires (once, not every frame).
+        if last.is_some() {
+            let old: Vec<Entity> = existing.iter().collect();
+            crate::ui::despawn_all(&mut commands, &old);
+            *last = None;
+        }
         return;
     };
-    let kinds = fire_group_kinds(&gs.0, &group);
-    if kinds.is_empty() {
+    // Same selection, same targets: leave the existing rings in place
+    // (despawning and respawning them would churn archetypes every frame).
+    if last
+        .as_ref()
+        .is_some_and(|(last_kinds, last_targets)| *last_kinds == kinds && *last_targets == targets)
+    {
         return;
     }
-
-    for &target in cache.valid_targets(&gs.0, &kinds) {
+    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    for &target in &targets {
         rings.ring(FireTargetRing, target, 1.5, 1.0, &hex.assets.red);
     }
+    *last = Some((kinds, targets));
 }
 
 // -- Fire direction arrow: orange arrow from firer to hovered target ----------
@@ -461,9 +505,11 @@ pub(crate) struct FireDirectionArrow;
 /// Draw an arrow from the firer hex to the hovered valid target hex, giving
 /// the player a visual preview of the fire direction. Same bold-orange look
 /// as the melee direction arrow (one visual language for combat targeting);
-/// rebuilt each frame while the selection lives, and the selection itself now
-/// survives target allocation, so the arrow keeps previewing further shots
-/// until the player dismisses the tile or executes the allocations.
+/// rebuilt only when the arrow's endpoints (or the overlays) change -- the
+/// selection itself survives target allocation, so the arrow keeps previewing
+/// further shots until the player dismisses the tile or executes the
+/// allocations.
+#[allow(clippy::too_many_arguments)]
 pub fn fire_direction_arrow(
     mut commands: Commands,
     render: crate::DirectionArrowCtx,
@@ -472,44 +518,66 @@ pub fn fire_direction_arrow(
     game_state: Option<Res<GameStateResource>>,
     target: FireArrowTarget,
     peers: Peers,
+    mut last: Local<Option<Option<(HexCoord, HexCoord)>>>,
+    placed_changed: Query<(), Changed<PlacedUnit>>,
+    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
     let FireArrowTarget { hovered, existing } = target;
-    let existing: Vec<Entity> = existing.iter().collect();
-    crate::ui::despawn_all(&mut commands, &existing);
-
-    let Some(gs) = game_state else { return };
-    if !matches!(
-        gs.0.phase,
-        Phase::OffensiveFire(_) | Phase::DefensiveFire(_)
-    ) {
+    let invalidated = generation.invalidates(&mut seen_generation);
+    // The arrow's endpoints depend on the engine state, the selection and the
+    // hovered hex; when none moved, the arrow we drew (or deliberately left
+    // off) is still exact.
+    let inputs_moved = invalidated
+        || game_state.as_ref().is_some_and(|gs| gs.is_changed())
+        || state.is_changed()
+        || hovered.is_changed()
+        || peers.changed()
+        || !placed_changed.is_empty();
+    if !inputs_moved {
         return;
     }
-    let firing_player = gs.0.phase_player();
-    if !peers.may_act(firing_player) {
-        return;
+    let arrow = game_state
+        .as_deref()
+        .filter(|gs| {
+            matches!(
+                gs.0.phase,
+                Phase::OffensiveFire(_) | Phase::DefensiveFire(_)
+            )
+        })
+        .filter(|_| peers.may_act(gs_phase_player(game_state.as_deref())))
+        .and_then(|gs| {
+            let group = fire_selection(&state, &placed_units, &gs.0)?;
+            let kinds = fire_group_kinds(&gs.0, &group);
+            if kinds.is_empty() {
+                return None;
+            }
+            let target = hovered.0?;
+            group_can_fire_at(&gs.0, &kinds, target).then_some((group.firer_hex, target))
+        });
+    if *last == Some(arrow) {
+        return; // unchanged: leave the drawn arrow in place
     }
-    let Some(group) = fire_selection(&state, &placed_units, &gs.0) else {
-        return;
-    };
-    let kinds = fire_group_kinds(&gs.0, &group);
-    if kinds.is_empty() {
-        return;
+    let old: Vec<Entity> = existing.iter().collect();
+    crate::ui::despawn_all(&mut commands, &old);
+    *last = Some(arrow);
+    if let Some((from, to)) = arrow {
+        crate::combat_ui::direction_arrow(&mut commands, &render, from, to, FireDirectionArrow);
     }
-    let Some(target) = hovered.0 else {
-        return;
-    };
-    if !group_can_fire_at(&gs.0, &kinds, target) {
-        return;
-    }
-
-    crate::combat_ui::direction_arrow(
-        &mut commands,
-        &render,
-        group.firer_hex,
-        target,
-        FireDirectionArrow,
-    );
 }
+
+/// The player whose fire phase it is, or Dervish as a phase-neutral fallback
+/// (`may_act` is only consulted inside a fire phase, where the answer is
+/// exact).
+fn gs_phase_player(gs: Option<&GameStateResource>) -> omdurman_types::Player {
+    gs.map(|gs| gs.0.phase_player())
+        .unwrap_or(omdurman_types::Player::Dervish)
+}
+
+/// The memoized hover-preview attack plan ([`fire_combat_preview_ui`]): the
+/// (hovered target, firing group, allocation count) it was derived from plus
+/// the attacks it produced.
+type PlannedPreviewKey = (HexCoord, Vec<UnitId>, usize);
+type PlannedPreviewCache = (PlannedPreviewKey, Vec<FireAttack>);
 
 /// The hex a hover-driven preview card describes: the hovered hex, or --
 /// while the pointer has moved off the board onto one of the card's own
@@ -574,7 +642,9 @@ pub fn fire_combat_preview_ui(
     mut cache: ResMut<FireTargetCache>,
     allocation: Option<Res<crate::fire_allocation::FireAllocationState>>,
     mut sticky: Local<Option<HexCoord>>,
+    mut planned: Local<Option<PlannedPreviewCache>>,
 ) {
+    let gs_moved = game_state.as_ref().is_some_and(|gs| gs.is_changed());
     let Some(gs) = game_state else { return };
     // Once this sub-phase's fire is resolved, nothing more can be allocated
     // (§6.41): no shot to preview.
@@ -638,13 +708,24 @@ pub fn fire_combat_preview_ui(
     }
     // Exactly the shots a click would allocate (a named gunboat's artillery
     // first, its Maxims once that is spent, §2.32), less any weapon already
-    // allocated this sub-phase -- the click would refuse those.
-    let planned = click_attacks(&gs.0, &group, &kinds, target, allocated);
-    let any_planned = !planned.is_empty();
-    let attacks: Vec<FireAttack> = planned
-        .into_iter()
-        .filter(|a| !uses_allocated_weapon(a, allocated))
-        .collect();
+    // allocated this sub-phase -- the click would refuse those. Deriving the
+    // plan runs `can_fire_at` (with its LOS sweep) per firer plus the attack
+    // assembly, so it is memoized: re-derived only when the hovered target,
+    // the selection, the allocation tray, or the engine state moved.
+    let planned_key = (target, group.units.clone(), allocated.len());
+    let planned_stale = gs_moved
+        || state.is_changed()
+        || planned.as_ref().is_none_or(|(key, _)| *key != planned_key);
+    if planned_stale {
+        let planned_attacks = click_attacks(&gs.0, &group, &kinds, target, allocated);
+        let attacks: Vec<FireAttack> = planned_attacks
+            .into_iter()
+            .filter(|a| !uses_allocated_weapon(a, allocated))
+            .collect();
+        *planned = Some((planned_key, attacks));
+    }
+    let attacks = &planned.as_ref().expect("just cached").1;
+    let any_planned = !attacks.is_empty();
     let Some(attack) = attacks.first() else {
         if any_planned && let Ok(ctx) = contexts.ctx_mut() {
             // Their fire is staged against this very hex (the usual case

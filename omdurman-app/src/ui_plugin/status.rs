@@ -18,10 +18,19 @@ pub(crate) fn update_status_text(
     mode: Res<State<crate::AppMode>>,
     room: Res<RoomId>,
     mut query: Query<&mut Text, With<StatusText>>,
+    mut computed: Local<bool>,
 ) {
     let Ok(mut text) = query.single_mut() else {
         return;
     };
+    // The line only changes when one of its inputs does; an idle frame
+    // re-formats nothing (the write below is compare-guarded anyway, but the
+    // `format!` itself is what costs).
+    let inputs_changed = state.is_changed() || mode.is_changed() || room.is_changed();
+    if *computed && !inputs_changed {
+        return;
+    }
+    *computed = true;
     let new = match state.get() {
         // The title screen shows no game yet: no room / turn line under it.
         _ if *mode.get() == crate::AppMode::Menu => Cow::Borrowed(""),
@@ -43,6 +52,11 @@ pub(crate) fn update_hex_coord_display(
     hovered: Res<HoveredHex>,
     mut query: Query<&mut Text, With<HexCoordLabel>>,
 ) {
+    // `HoveredHex` is written with `set_if_neq`, so it reads as changed only
+    // when the hover moved: the label is re-formatted then, not every frame.
+    if !hovered.is_changed() {
+        return;
+    }
     let Ok(mut text) = query.single_mut() else {
         return;
     };

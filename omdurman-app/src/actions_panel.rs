@@ -39,10 +39,27 @@ struct ActionHint {
 /// What [`collect_hints`] needs beyond the engine state: this fire
 /// sub-phase's allocations are resolved (§6.41), how many attacks are
 /// staged, and whether the counter tray offers counters to place.
+#[derive(Clone, Copy, PartialEq)]
 struct HintContext {
     fire_committed: bool,
     staged: usize,
     tray_open: bool,
+}
+
+/// The memoized action list ([`collect_hints`]): the selection/phase/
+/// commitment key the list was derived from, plus the hints it produced.
+/// Rebuilding the list runs engine rule checks (`can_fire_at` sweeps, the
+/// §7.5 retreat candidate scan), so it is re-run only when the key differs or
+/// the engine state moved -- not every frame.
+#[derive(Default)]
+pub struct HintsCache {
+    key: Option<(
+        std::mem::Discriminant<PickerState>,
+        Vec<omdurman_rules::UnitId>,
+        Phase,
+        HintContext,
+    )>,
+    hints: Vec<ActionHint>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -64,6 +81,8 @@ pub fn draw_actions_section(
     local_may_act: bool,
     (tray_open, spectator): (bool, bool),
     commands_out: &mut Vec<PickerCommand>,
+    hints: &mut HintsCache,
+    state_moved: bool,
 ) {
     crate::ui::section_header(ui, "Next step");
 
@@ -123,7 +142,7 @@ pub fn draw_actions_section(
         ui.add_space(4.0);
     }
 
-    let hints = collect_hints(
+    collect_hints(
         &state.0,
         state.0.phase,
         picker,
@@ -134,7 +153,10 @@ pub fn draw_actions_section(
             staged,
             tray_open,
         },
+        hints,
+        state_moved,
     );
+    let hints = &hints.hints;
     if hints.is_empty() {
         ui.colored_label(
             crate::ui::palette::RAIL_DIM,
@@ -156,7 +178,7 @@ pub fn draw_actions_section(
                         .color(crate::ui::palette::RAIL_TEXT)
                         .size(13.0),
                 );
-                if let Some(d) = hint.detail {
+                if let Some(d) = &hint.detail {
                     crate::rulebook::refs_label(
                         ui,
                         &format!("({d})"),
@@ -344,6 +366,12 @@ pub fn draw_actions_section(
 /// What the player can do right now, in plain words -- short, and only what
 /// applies: a phase with nothing to do says so instead of listing moves the
 /// rules allow in principle. The on-map rings name the individual targets.
+///
+/// Memoized into `cache`: rebuilding the list runs engine rule checks
+/// (`can_fire_at` sweeps, the §7.5 retreat candidate scan), so it is
+/// re-derived only when the inputs in `cx`/the selection/the engine state
+/// moved.
+#[allow(clippy::too_many_arguments)]
 fn collect_hints(
     gs: &omdurman_rules::effects::GameState,
     phase: Phase,
@@ -351,12 +379,28 @@ fn collect_hints(
     placed_units: &bevy::ecs::system::Query<(bevy::prelude::Entity, &PlacedUnit)>,
     fire_targets: &mut crate::fire::FireTargetCache,
     cx: HintContext,
-) -> Vec<ActionHint> {
+    cache: &mut HintsCache,
+    state_moved: bool,
+) {
     let hint = |label: &str, detail: Option<String>| ActionHint {
         label: label.to_string(),
         detail,
     };
-    let mut out: Vec<ActionHint> = Vec::new();
+    // The list reads the engine state, the selection (identity + shape: a
+    // lone counter vs. a stack of the same counter answer differently), and
+    // the whole `HintContext` -- re-derived only when one of them moved.
+    let key = (
+        std::mem::discriminant(picker),
+        selected_unit_ids(picker, placed_units),
+        phase,
+        cx,
+    );
+    if !state_moved && cache.key.as_ref() == Some(&key) {
+        return;
+    }
+    cache.key = Some(key);
+    cache.hints.clear();
+    let out = &mut cache.hints;
     let selected = selected_unit_id(picker, placed_units);
     let campaign = gs.scenario == omdurman_types::Scenario::Campaign;
     let ae_moving = gs.active_player == omdurman_types::Player::AngloEgyptian;
@@ -486,7 +530,6 @@ fn collect_hints(
             }
         }
     }
-    out
 }
 
 fn selected_movement_detail(

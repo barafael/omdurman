@@ -200,6 +200,12 @@ pub fn update_acted_markers(
     if generation.invalidates(&mut seen_generation) {
         *last = None;
     }
+    // Rebuilt only when the engine state moved (like `howitzer_impact_markers`)
+    // or the overlays were cleared -- not every frame: an idle board re-runs
+    // neither the per-unit `mp_spent` scan nor the marker comparison.
+    if last.is_some() && !game_state.is_changed() {
+        return;
+    }
     let gs = game_state;
     let marked: Vec<HexCoord> =
         gs.0.units

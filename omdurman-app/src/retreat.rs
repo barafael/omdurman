@@ -76,10 +76,14 @@ fn valid_retreat_hexes(unit: UnitId, gs: &GameState) -> Vec<HexCoord> {
 }
 
 /// Highlight legal retreat destinations (orange) when the defender selects a
-/// threatened cavalry/camel unit during the attacker's Melee phase.
+/// threatened cavalry/camel unit during the attacker's Melee phase. Rebuilt
+/// only when the selection or the engine state changed (or the overlays were
+/// cleared, see [`crate::picker::OverlayGeneration`]) -- not every frame: a
+/// settled selection re-runs no `can_retreat_before_melee` sweeps.
 #[derive(Component)]
 pub struct RetreatTargetRing;
 
+#[allow(clippy::too_many_arguments)]
 pub fn retreat_overlay_mesh(
     mut commands: Commands,
     hex: crate::HexRender,
@@ -87,24 +91,54 @@ pub fn retreat_overlay_mesh(
     game_state: Option<Res<GameStateResource>>,
     peers: Peers,
     existing: Query<Entity, With<RetreatTargetRing>>,
+    mut last: Local<Option<(UnitId, Vec<HexCoord>)>>,
+    placed_changed: Query<(), Changed<PlacedUnit>>,
+    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
-    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    let invalidated = generation.invalidates(&mut seen_generation);
+    let inputs_moved = invalidated
+        || game_state.as_ref().is_some_and(|gs| gs.is_changed())
+        || selection.state.is_changed()
+        || peers.changed()
+        || !placed_changed.is_empty();
+    if !inputs_moved {
+        return;
+    }
     let RetreatSelection {
         state,
         placed_units,
     } = selection;
-    let Some(gs) = game_state else { return };
-    // The defender is the opponent of the active (attacking) player; an
-    // unbound session may act (single-seat play/testing) — `may_act`'s rule.
-    if !matches!(gs.0.phase, Phase::Melee) || !peers.may_act(gs.0.active_player.opponent()) {
-        return;
-    }
-    let Some(unit) = selected_threatened_unit(&state, &placed_units, &gs.0) else {
+    let drawn = game_state.as_deref().and_then(|gs| {
+        // The defender is the opponent of the active (attacking) player; an
+        // unbound session may act (single-seat play/testing) — `may_act`'s rule.
+        if !matches!(gs.0.phase, Phase::Melee) || !peers.may_act(gs.0.active_player.opponent()) {
+            return None;
+        }
+        let unit = selected_threatened_unit(&state, &placed_units, &gs.0)?;
+        Some((unit, valid_retreat_hexes(unit, &gs.0)))
+    });
+    let Some((unit, targets)) = drawn else {
+        // Nothing to highlight: clear any rings left over (once, not every
+        // frame).
+        if last.is_some() {
+            let old: Vec<Entity> = existing.iter().collect();
+            crate::ui::despawn_all(&mut commands, &old);
+            *last = None;
+        }
         return;
     };
-    for target in valid_retreat_hexes(unit, &gs.0) {
-        rings.ring(RetreatTargetRing, target, 1.5, 1.0, &hex.assets.orange);
+    // Same threatened unit, same destinations: leave the rings in place.
+    if last
+        .as_ref()
+        .is_some_and(|(last_unit, last_targets)| *last_unit == unit && *last_targets == targets)
+    {
+        return;
     }
+    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    for target in &targets {
+        rings.ring(RetreatTargetRing, *target, 1.5, 1.0, &hex.assets.orange);
+    }
+    *last = Some((unit, targets));
 }
 
 /// The defender's §7.5 retreat-window click: on the threatened hex it selects

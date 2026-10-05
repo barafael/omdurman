@@ -78,6 +78,15 @@ pub struct BoardInfo {
     /// crossing the Khor Shambat or the Nile. Empty on boards without it.
     #[serde(default)]
     pub south_of_khor_shambat: Set<HexCoord>,
+    /// Per-map-row Nile extent, `(min_q, max_q)` keyed by row `r` (§5.21,
+    /// §9.14): the Nile runs roughly north-south, so a hex's bank is decided
+    /// by comparing its `q` against the Nile hexes of its row. Derived once
+    /// at build time (like `walled_city`); a row holding no Nile hexes
+    /// carries the empty extent `(i32::MAX, i32::MIN)`. Absent on boards
+    /// serialized before this field existed -- `bank_of` falls back to a
+    /// per-call scan there.
+    #[serde(default)]
+    pub nile_by_row: Map<i32, (i32, i32)>,
 }
 
 impl BoardInfo {
@@ -121,6 +130,20 @@ impl BoardInfo {
         board.walled_city = board.compute_walled_city();
         board.zariba = board.compute_zariba();
         board.south_of_khor_shambat = board.compute_south_of_khor_shambat();
+        // Per-row Nile extent for `bank_of` (§5.21): one pass over the
+        // terrain instead of a whole-board scan per bank query. Rows without
+        // Nile hexes keep the empty `(i32::MAX, i32::MIN)` extent, which
+        // `bank_of` reads as "no Nile on this row" (bankless hex).
+        for (&coord, &terrain) in &board.terrain {
+            let extent = board
+                .nile_by_row
+                .entry(coord.r)
+                .or_insert((i32::MAX, i32::MIN));
+            if terrain.is_nile() {
+                extent.0 = extent.0.min(coord.q);
+                extent.1 = extent.1.max(coord.q);
+            }
+        }
         board
     }
 
@@ -399,15 +422,27 @@ impl BoardInfo {
     /// hex(es) on the same map row (`r`); `None` when there is no Nile on that
     /// row to compare against (or no board loaded).
     pub fn bank_of(&self, hex: HexCoord) -> Option<NileBank> {
-        let mut min_nile_q: Option<i32> = None;
-        let mut max_nile_q: Option<i32> = None;
-        for (coord, terrain) in &self.terrain {
-            if coord.r == hex.r && terrain.is_nile() {
-                min_nile_q = Some(min_nile_q.map_or(coord.q, |q: i32| q.min(coord.q)));
-                max_nile_q = Some(max_nile_q.map_or(coord.q, |q: i32| q.max(coord.q)));
+        let (min_q, max_q) = match self.nile_by_row.get(&hex.r) {
+            // Derived board: the row's Nile extent, or the empty sentinel
+            // when the row holds no Nile hexes at all (bankless hex).
+            Some(&(min, max)) if min <= max => (min, max),
+            Some(_) => return None,
+            // Board serialized before the derived extent existed (or built
+            // field-by-field): derive for this row on the fly, as before.
+            None if !self.terrain.is_empty() => {
+                let mut min_nile_q: Option<i32> = None;
+                let mut max_nile_q: Option<i32> = None;
+                for (coord, terrain) in &self.terrain {
+                    if coord.r == hex.r && terrain.is_nile() {
+                        min_nile_q = Some(min_nile_q.map_or(coord.q, |q: i32| q.min(coord.q)));
+                        max_nile_q = Some(max_nile_q.map_or(coord.q, |q: i32| q.max(coord.q)));
+                    }
+                }
+                (min_nile_q?, max_nile_q?)
             }
-        }
-        let (min_q, max_q) = (min_nile_q?, max_nile_q?);
+            // No board loaded: nothing is on a bank.
+            None => return None,
+        };
         if hex.q < min_q {
             Some(NileBank::West)
         } else if hex.q > max_q {
@@ -524,6 +559,48 @@ mod tests {
             Some(Terrain::default())
         );
         assert_eq!(board.terrain_at(HexCoord::new(1, 1)), None);
+    }
+
+    // -- bank_of ----------------------------------------------------------
+
+    /// A Nile hex has neither bank, land west of the row's Nile is the west
+    /// bank, land east of it the east bank, and a row without Nile hexes at
+    /// all is bankless (§5.21).
+    #[test]
+    fn bank_of_reads_the_derived_row_extents() {
+        let map = make_map(vec![
+            ((-2, 0), tile(Terrain::default())),
+            ((0, 0), nile_tile(HexDirection::SouthEast)),
+            ((2, 0), tile(Terrain::default())),
+            // A second row with no Nile at all.
+            ((0, 1), tile(Terrain::default())),
+        ]);
+        let board = BoardInfo::from_map_data(&map);
+        assert_eq!(board.bank_of(HexCoord::new(0, 0)), None); // in the Nile
+        assert_eq!(board.bank_of(HexCoord::new(-2, 0)), Some(NileBank::West));
+        assert_eq!(board.bank_of(HexCoord::new(2, 0)), Some(NileBank::East));
+        assert_eq!(board.bank_of(HexCoord::new(0, 1)), None); // no Nile on row
+        // Rows absent from the board are bankless too.
+        assert_eq!(board.bank_of(HexCoord::new(0, 5)), None);
+    }
+
+    /// A board serialized before the derived row extents existed (empty
+    /// `nile_by_row` but populated terrain) answers `bank_of` identically
+    /// through the per-call fallback scan.
+    #[test]
+    fn bank_of_legacy_board_without_row_extents_agrees() {
+        let map = make_map(vec![
+            ((-2, 0), tile(Terrain::default())),
+            ((0, 0), nile_tile(HexDirection::SouthEast)),
+            ((2, 0), tile(Terrain::default())),
+            ((0, 1), tile(Terrain::default())),
+        ]);
+        let mut board = BoardInfo::from_map_data(&map);
+        board.nile_by_row.clear();
+        assert_eq!(board.bank_of(HexCoord::new(0, 0)), None);
+        assert_eq!(board.bank_of(HexCoord::new(-2, 0)), Some(NileBank::West));
+        assert_eq!(board.bank_of(HexCoord::new(2, 0)), Some(NileBank::East));
+        assert_eq!(board.bank_of(HexCoord::new(0, 1)), None);
     }
 
     #[test]

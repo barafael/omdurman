@@ -85,6 +85,21 @@ pub(crate) fn nearest_placed_unit_at<'a>(
     spread: f32,
     hex_size: f32,
 ) -> Option<(Entity, &'a PlacedUnit)> {
+    // Common case: at most one counter on the hex. A lone counter sits
+    // centred (its rendered position always wins), so no stack needs laying
+    // out and the Vec + sort below are skipped.
+    let mut sole: Option<(Entity, &PlacedUnit)> = None;
+    let mut count = 0usize;
+    for item in units.iter().filter(|(_, u)| u.coord == coord) {
+        count += 1;
+        if count > 1 {
+            break;
+        }
+        sole = Some(item);
+    }
+    if count <= 1 {
+        return sole;
+    }
     let mut stack: Vec<(Entity, &PlacedUnit)> =
         units.iter().filter(|(_, u)| u.coord == coord).collect();
     stack.sort_by_key(|(e, _)| e.to_bits());
@@ -225,8 +240,10 @@ pub fn layout_stacked_units(
     hovered: Res<crate::HoveredHex>,
     mut activity: ResMut<crate::activity::Activity>,
     mut units: Query<(Entity, &PlacedUnit, &mut Transform), Without<MovementAnimation>>,
+    mut grouping: Local<Option<StackGrouping>>,
 ) {
     use std::collections::HashMap;
+    use std::hash::{Hash, Hasher};
 
     let origin = layout.adjusted_origin(&overlay.params);
     let size = overlay.params.hex_size;
@@ -236,16 +253,43 @@ pub fn layout_stacked_units(
     // carries its disruption flag: a hex renders *two* stacks, undisrupted
     // counters in the top half and disrupted (upside-down) ones in the
     // bottom half (§6.22 CRT note).
-    let mut by_hex: HashMap<HexCoord, Vec<(Entity, bool)>> = HashMap::new();
+    //
+    // The grouping only depends on *which* counters stand where and whether
+    // they are disrupted, so it is rebuilt only when that set changes: an
+    // idle board (even one mid-animation) reuses the last grouping instead of
+    // rebuilding the map and re-sorting every stack every frame. The
+    // fingerprint hashes exactly the grouping inputs (entity, hex, flag), so
+    // any spawn, despawn, move, or disruption flip is caught.
+    let mut fingerprint = std::hash::DefaultHasher::new();
     for (entity, placed, _) in &units {
-        by_hex
-            .entry(placed.coord)
-            .or_default()
-            .push((entity, placed.disrupted));
+        entity.to_bits().hash(&mut fingerprint);
+        placed.coord.hash(&mut fingerprint);
+        placed.disrupted.hash(&mut fingerprint);
     }
-    for ents in by_hex.values_mut() {
-        ents.sort_by_key(|(e, _)| e.to_bits());
+    let fingerprint = fingerprint.finish();
+    if grouping
+        .as_ref()
+        .is_none_or(|g| g.fingerprint != fingerprint)
+    {
+        let mut by_hex: HashMap<HexCoord, Vec<(Entity, bool)>> = HashMap::new();
+        for (entity, placed, _) in &units {
+            by_hex
+                .entry(placed.coord)
+                .or_default()
+                .push((entity, placed.disrupted));
+        }
+        for ents in by_hex.values_mut() {
+            ents.sort_by_key(|(e, _)| e.to_bits());
+        }
+        *grouping = Some(StackGrouping {
+            fingerprint,
+            by_hex,
+        });
     }
+    let Some(grouping) = grouping.as_ref() else {
+        return;
+    };
+    let by_hex = &grouping.by_hex;
 
     let lerp = (time.delta_secs() * 12.0).min(1.0);
 
@@ -305,6 +349,15 @@ pub fn layout_stacked_units(
     }
 }
 
+/// The cached stack grouping of [`layout_stacked_units`]: a fingerprint of
+/// its inputs (entity, hex, disrupted) plus the grouping those inputs
+/// produce. The fingerprint makes any change to the inputs detectable
+/// without rebuilding the grouping. The type leaks through the system's
+/// `Local` parameter, hence the visibility.
+pub(crate) struct StackGrouping {
+    fingerprint: u64,
+    by_hex: std::collections::HashMap<HexCoord, Vec<(Entity, bool)>>,
+}
 /// How close (world units) an easing counter must come to its stack slot
 /// before it snaps there and stops being updated.
 pub const SETTLE_EPSILON: f32 = 1e-3;

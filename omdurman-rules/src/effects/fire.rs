@@ -682,7 +682,11 @@ pub fn build_fire_attack(
     if firers.is_empty() {
         return None;
     }
-    build_fire_attack_from(gs, firer_hex, &firers, target, kind)
+    // The filter above just ran the full `can_fire_at` validation (including
+    // the line-of-sight sweep) for every firer; assembling the attack through
+    // `build_fire_attack_from` would re-run all of it, so the validated list
+    // goes straight to the shared assembly.
+    build_attack_from_validated(gs, firers, target, kind)
 }
 
 /// Build a fire attack from an *explicit* firer list (rulebook §6.13, §6.15).
@@ -721,7 +725,21 @@ pub fn build_fire_attack_from(
             return None;
         }
     }
+    build_attack_from_validated(gs, firers, target, kind)
+}
 
+/// Assemble the `FireAttack` for a firer list that the callers have already
+/// validated (co-stacked on one hex, one owner, every unit legal via
+/// [`GameState::can_fire_at`]). Shared by [`build_fire_attack`] (whose filter
+/// just validated the list) and [`build_fire_attack_from`] (which validates
+/// first), so the §6.14 rules live in exactly one place.
+fn build_attack_from_validated(
+    gs: &GameState,
+    firers: Vec<UnitId>,
+    target: HexCoord,
+    kind: FireKind,
+) -> Option<FireAttack> {
+    let owner = gs.find_unit(*firers.first()?)?.profile.identity.owner();
     // §6.24/§5.54/§9.231/§9.232: the engine derives the mandatory modifier
     // set (and rejects any other list), so build the attack with the engine's
     // own helper -- single source of truth with resolution. The terrain
@@ -883,20 +901,21 @@ pub fn mandatory_fire_modifiers(state: &GameState, attack: &FireAttack) -> Vec<F
         // another brigade's stack, a Maxim -- without costing the stack its
         // bonus; it applies once per attack. Only Anglo-Egyptian battalions
         // make a brigade, and battalions only fire direct, so the firers
-        // alone decide it.
-        let firers: Vec<&UnitPlacement> = attack
-            .firers
-            .iter()
-            .filter_map(|id| state.find_unit(*id))
-            .collect();
-        let integrated_stack = firers.iter().any(|u| {
-            let stack: Vec<crate::UnitIdentity> = firers
-                .iter()
-                .filter(|o| o.position == u.position)
-                .map(|o| o.profile.identity)
-                .collect();
+        // alone decide it. A brigade can only be integrated within one hex,
+        // so the firers are grouped per hex in a single pass and each group
+        // checked on its own (no per-firer stack rebuild).
+        let mut by_hex: BTreeMap<HexCoord, Vec<crate::UnitIdentity>> = BTreeMap::new();
+        for id in &attack.firers {
+            if let Some(u) = state.find_unit(*id) {
+                by_hex
+                    .entry(u.position)
+                    .or_default()
+                    .push(u.profile.identity);
+            }
+        }
+        let integrated_stack = by_hex.values().any(|stack| {
             matches!(
-                crate::brigade_integrity(&stack),
+                crate::brigade_integrity(stack),
                 crate::BrigadeIntegrity::Integrated(_)
             )
         });
@@ -911,11 +930,18 @@ pub fn mandatory_fire_modifiers(state: &GameState, attack: &FireAttack) -> Vec<F
     // firer passes a thorn-hedge hexside); the trench protects the units
     // entrenched behind it, whichever way they are fired at.
     if attack.firing_player == Player::Dervish {
-        if attack.all_firing_units().iter().any(|id| {
-            state
-                .find_unit(*id)
-                .is_some_and(|u| fire_crosses_thorn_hedge(state, u.position, attack.target_hex))
-        }) {
+        // The firing units are `firers` plus the gunboats' Maxims
+        // (`all_firing_units`, without needing its dedup for an `any`).
+        if attack
+            .firers
+            .iter()
+            .chain(attack.gunboat_maxims.iter())
+            .any(|id| {
+                state
+                    .find_unit(*id)
+                    .is_some_and(|u| fire_crosses_thorn_hedge(state, u.position, attack.target_hex))
+            })
+        {
             modifiers.push(FireModifier::ZaribaThornHedge);
         }
         if state.is_zariba_entrenched(attack.target_hex) {

@@ -103,6 +103,14 @@ pub struct Peers<'w, 's> {
 }
 
 impl Peers<'_, '_> {
+    /// Whether any input to the `Peers` predicates (`may_act`, `local`,
+    /// `scope_allows`) changed since the last frame. Cheap per-frame gate for
+    /// UI that re-derives a seat decision from the same resources; a `false`
+    /// means every predicate would return what it returned last frame.
+    pub fn changed(&self) -> bool {
+        self.seats.is_changed() || self.key.is_changed() || self.presence.is_changed()
+    }
+
     /// The faction the local player's seat commands, if they hold one.
     pub fn local(&self) -> Option<Player> {
         seats::seat_of(&self.seats.0, self.key.0).map(|(_, s)| s.faction)
