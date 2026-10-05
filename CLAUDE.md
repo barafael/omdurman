@@ -87,7 +87,7 @@ The signalling server URL is bakeable via the `MATCHBOX_SERVER` env var at build
 Seven workspace crates plus the traceability tooling (two tools and a proc-macro), all sharing `edition = "2024"`:
 
 - **`omdurman-types`** — leaf crate, no Bevy. Pure serde types shared by everything else (`HexCoord`,
-  `SectionName` (+ `SHEET_ORDER`, the canonical counter-sheet section order used by the picker), `MapData`, `SpriteAnnotation`, hexside/Nile/overlay types, `Faction`, `Brigade`),
+  `SectionName` (+ `SHEET_ORDER`, the canonical counter-sheet section order used by the picker), `MapData`, hexside/Nile/overlay types, `Faction`, `Brigade`),
   plus the net layer's sequencing primitives (`net_seq`: `RecentUids`, `ReorderBuffer`, here so
   Kani can prove them without Bevy).
   Must stay dependency-light so both the rules engine and the net layer can depend on it.
@@ -114,7 +114,8 @@ Seven workspace crates plus the traceability tooling (two tools and a proc-macro
   (`GameRng`, the local dice source the app and the bot both draw from — the app wraps it in a
   Bevy `Resource` newtype), plus
   presentation-adjacent data used by the app:
-  `newspaper`, `telegram_prompt`, `turn_summary`. The crate-root types are split into private
+  `newspaper`, `press` (the deterministic telegrams and Gazette: `telegram`, `gazette`,
+  `phrases`), `turn_summary`. The crate-root types are split into private
   modules re-exported from `lib.rs` (`scalars`, `turn`, `unit`, `combat`, `transport`, `victory`;
   tests in `tests.rs`, Kani proofs in `verification.rs`), so public paths stay
   `omdurman_rules::X`. Most rulebook constants are `value_enum!` enums (in `scalars.rs`) so
@@ -123,7 +124,7 @@ Seven workspace crates plus the traceability tooling (two tools and a proc-macro
   editor is retired, so the app is its only user): RTS camera, input/raycast helpers, egui
   pointer gating (`EguiPointerOverUi` snapshot + `MapPointerInputSet`), night shading
   (driven by the injected `BoardDayNight` resource), the two-board store + board
-  bootstrap + map plane, and `SpriteAnnotationsResource`. Binaries keep only their small
+  bootstrap + map plane. Binaries keep only their small
   local `Plugin` wiring and app-specific hooks (e.g. the game attaches `BoardInfo` to the
   engine state on every board load).
 - **`omdurman-hexmap`** — Bevy plugin (`HexMapPlugin`) for the hex grid: `GameMap`, `HexLayout`,
@@ -275,11 +276,8 @@ The two boards live as RON data files under `omdurman-app/assets/boards/`
 in git history), embedded at compile time
 by `omdurman-rules/src/board_data.rs` (the single `include_str!` owner), and parsed once on first
 use. The app's `LoadedAnnotations` and the tactics fixtures both consume those accessors.
-Sprite metadata: compiled fallbacks live in `omdurman-rules/src/sprite_data.rs` (keyed by
-`UnitId` position, one global block); editor-authored annotations live in
-`omdurman-app/assets/sprite_annotations.ron` and are loaded at startup into
-`SpriteAnnotationsResource` as an overlay. Cut sprite images live under
-`omdurman-app/assets/sprites/`.
+Sprite metadata lives in `omdurman-rules/src/sprite_data.rs` (compiled, keyed by `UnitId`
+position, one global block). Cut sprite images live under `omdurman-app/assets/sprites/`.
 
 ## Mode switching (UI)
 

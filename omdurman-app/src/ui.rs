@@ -53,12 +53,12 @@ pub mod palette {
     pub const HEADING_DIM: Color32 = Color32::from_rgb(185, 183, 155);
     /// Title of a rail section header ([`super::section_header`]).
     pub const SECTION_TITLE: Color32 = Color32::from_rgb(218, 204, 173);
-    /// Large light title on HUD / modal chrome (phase banner, newspaper
+    /// Large light title on HUD / modal chrome (newspaper
     /// headline, text-selection stroke).
     pub const TITLE: Color32 = Color32::from_rgb(230, 210, 155);
     /// Cool informational text (night rules, AI commanders, moon glyph).
     pub const INFO: Color32 = Color32::from_rgb(160, 180, 220);
-    /// Night-phase accent in the phase banner.
+    /// Night-phase accent in the top bar.
     pub const NIGHT_BLUE: Color32 = Color32::from_rgb(100, 130, 200);
     /// Night badge fill behind [`NIGHT_BLUE`] text.
     pub const NIGHT_BADGE_BG: Color32 = Color32::from_rgba_unmultiplied_const(40, 50, 80, 200);
@@ -127,7 +127,7 @@ pub mod palette {
     pub const TEXT_SOFT: Color32 = Color32::from_gray(180);
     /// Neutral muted text (waiting lines, captions).
     pub const TEXT_MUTED: Color32 = Color32::from_gray(165);
-    /// Neutral dim text (empty-state lines, the waiting phase banner).
+    /// Neutral dim text (empty-state lines, waiting notes).
     pub const TEXT_DIM: Color32 = Color32::from_gray(145);
     /// Neutral faint text (counts, "Loading...", punctuation).
     pub const TEXT_FAINT: Color32 = Color32::from_gray(120);
@@ -182,7 +182,7 @@ pub mod palette {
     /// neutral gray, at the default's luminance, so the chrome sits with the
     /// game's sepia palette without costing contrast.
     pub const RAIL_BG: Color32 = Color32::from_rgb(44, 40, 35);
-    /// HUD strip background (phase banner); also the theme's faint bg.
+    /// HUD background; also the theme's faint bg.
     pub const HUD_BG: Color32 = Color32::from_rgb(35, 30, 25);
     /// Modal background (victory newspaper, "Your turn" popup).
     pub const MODAL_BG: Color32 = Color32::from_rgb(42, 36, 28);
@@ -325,7 +325,7 @@ pub mod frames {
             .inner_margin(egui::Margin::symmetric(10, 6))
     }
 
-    /// The HUD strip (phase banner): dark fill, brass border.
+    /// A HUD card (the pause card): dark fill, brass border.
     pub fn hud() -> egui::Frame {
         egui::Frame::new()
             .fill(palette::HUD_BG)
@@ -508,7 +508,7 @@ pub fn with_room<R>(ui: &mut egui::Ui, contents: impl FnOnce(&mut egui::Ui) -> R
 
 /// Like [`anchored_card`] at `CENTER_TOP`, but anchored at the shared
 /// [`ScreenLayout::center_stack_y`] cursor and advancing it by the card's
-/// height, so simultaneous top-center cards (phase banner, fire/melee
+/// height, so simultaneous top-center cards (fire/melee
 /// previews, prompts, badges) stack downward instead of superimposing.
 pub fn stacked_card<R>(
     ctx: &egui::Context,

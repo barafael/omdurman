@@ -1,12 +1,9 @@
-//! The RTS camera shared by the game and the editor: right-drag pan, arrows,
-//! scroll zoom, Ctrl+scroll / PgUp/PgDn tilt, touch gestures. Previously two
-//! ~300-line copies that had begun to drift (the game's grew night shading
-//! and picking markers, the editor's none).
+//! The RTS camera: right-drag pan, arrows, scroll zoom, Ctrl+scroll /
+//! PgUp/PgDn tilt, touch gestures.
 //!
-//! No `Plugin` is provided on purpose: each binary wires the systems itself
-//! with its own gating (the game adds a run-condition and night shading, the
-//! editor registers them bare) and can swap in its own `spawn_camera` (the
-//! game's adds a picking marker).
+//! No `Plugin` is provided: the app wires the systems itself with its own
+//! gating (a run-condition and night shading) and spawns the camera with
+//! its picking marker.
 
 use bevy::{
     input::{

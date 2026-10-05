@@ -1,5 +1,4 @@
-//! Key/raycast helpers shared by the game and the editor. Byte-identical
-//! copies used to live in both `util.rs` files.
+//! Key/raycast helpers.
 
 use bevy::prelude::*;
 

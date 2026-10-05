@@ -52,8 +52,8 @@ pub struct BoardInfo {
     /// regardless of underlying terrain). Stored as canonical hexside refs.
     #[serde(default)]
     pub roads: Set<HexsideRef>,
-    /// Reinforcement entrance areas (§9.112/§9.113), authored per-hex in the
-    /// map editor via `HexData::named_area`. Empty on boards without entrance
+    /// Reinforcement entrance areas (§9.112/§9.113), tagged per hex in the
+    /// board files via `HexData::named_area`. Empty on boards without entrance
     /// annotations -- callers fall back to geometric approximations.
     #[serde(default)]
     pub entrances: Map<HexCoord, omdurman_types::NamedArea>,
@@ -238,8 +238,7 @@ impl BoardInfo {
     }
 
     /// Flood the walled city's interior from its landmarks, blocked by
-    /// Wall/Gate/Breach hexsides (§5.23). Public so the map editor can
-    /// re-derive the set after wall/gate/breach annotation edits; game-time
+    /// Wall/Gate/Breach hexsides (§5.23). Game-time
     /// `ArtilleryBreachWall` flips keep the set stable (a Breach still bounds
     /// the area -- only passage rules change, §6.63).
     ///

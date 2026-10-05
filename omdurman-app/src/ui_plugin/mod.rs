@@ -14,13 +14,12 @@ use std::borrow::Cow;
 use crate::peers::{LocalPeer, Peers};
 use crate::{AppState, HoveredHex, RoomId, camera::RtsCamera, settings};
 
-// -- Map-input gating (shared with the map editor) ---------------------------
+// -- Map-input gating ----------------------------------------------------------
 //
 // The pointer predicate, its per-frame snapshot, the [`MapPointerInputSet`] /
-// [`PanelUiSet`] sets, and the `ui_wants_pointer` run condition are the app's
-// design, generalized into `omdurman-board-ui::panels` so the editor uses the
-// identical gating. The names are re-exported here so `crate::ui_plugin::*`
-// paths keep working.
+// [`PanelUiSet`] sets, and the `ui_wants_pointer` run condition live in
+// `omdurman-board-ui::panels`; the names are re-exported here so
+// `crate::ui_plugin::*` paths keep working.
 
 pub use omdurman_board_ui::panels::{
     CarryingDragToBoard, EguiPointerOverUi, MapPointerInputSet, PanelUiSet,
@@ -112,7 +111,7 @@ impl Plugin for UiPlugin {
                     // section -- see overview::unit_overview_ui.)
                     // In-game HUD/overlays: only while actually in a game, so
                     // they don't show over the lobby. The top-center cards
-                    // stack below the phase banner (see `stacked_card`), so
+                    // stack below the top bar (see `stacked_card`), so
                     // they chain in that order and must run after it; the
                     // game log reads the left-rail inset, so it runs after
                     // the rail panels.

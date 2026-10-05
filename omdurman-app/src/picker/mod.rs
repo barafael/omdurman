@@ -239,8 +239,7 @@ impl Plugin for GamePlugin {
             )
             // -- Egui UI panels -----------------------------------------
             // These in-game side panels run only while actually in a game, so
-            // they don't linger over the lobby (the EditorMode can still be a
-            // map mode in the lobby, which is an AppState, not a mode).
+            // they don't linger over the lobby.
             .add_systems(
                 EguiPrimaryContextPass,
                 (

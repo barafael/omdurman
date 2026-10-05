@@ -165,7 +165,7 @@ fn fok_turn_track_widget(ui: &mut egui::Ui, current: GameTurnIndex) {
     });
 }
 
-/// Floating GORDON badge anchored top-centre below the phase banner: always
+/// Floating GORDON badge anchored top-centre below the top bar: always
 /// visible during a FoK game so both players can see GORDON's fate at a glance
 /// (§9.346). Suppressed during setup (GORDON is auto-placed, not yet at risk)
 /// and once the victory modal takes over.

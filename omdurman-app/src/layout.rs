@@ -2,7 +2,7 @@
 //!
 //! Every egui surface used to pin itself with hardcoded pixel offsets from
 //! the window edges, so two left panels drew at the same x and the top-center
-//! cards (phase banner, fire/melee previews, prompts, badges) stacked at
+//! cards (fire/melee previews, prompts, badges) stacked at
 //! overlapping y values. This resource is the fix: each frame the chrome
 //! *reserves* its bands and every surface reads the edges instead of
 //! hardcoding.

@@ -2,8 +2,7 @@
 //! — Combat Results, Range Effects, Howitzer Scattergram, Line of Sight —
 //! embedded as Rust `static` constants below, transcribed from the RON
 //! files under `Boardgame - Remember_Gordon/tables/`. Those files are
-//! edited as text (the asset editor that authored them is retired); the `#[cfg(test)]`
-//! parity tests at the bottom of this module parse the RON and fail the
+//! edited as text; the `#[cfg(test)]` parity tests at the bottom of this module parse the RON and fail the
 //! build if it ever drifts from the constants.
 //!
 //! These used to be `include_str!`-embedded RON parsed at runtime behind a
@@ -15,8 +14,8 @@
 //! over the tables' full input domain (see the `verification` modules in
 //! `range_effects`, `combat_results_table`, and `howitzer_scatter`).
 //!
-//! The RON files remain the authoring source of truth: edit them via the
-//! asset editor, then update the constants here to match (the parity tests
+//! The RON files remain the authoring source of truth: edit them, then
+//! update the constants here to match (the parity tests
 //! enforce exactly that, cell by cell).
 
 use crate::howitzer_scatter::ScatterHexDirection;
@@ -472,8 +471,8 @@ pub(crate) static LOS_CELLS: [[&[BlockingRule]; 3]; 3] = [
 // ── RON parity tests ─────────────────────────────────────────────────────
 //
 // The constants above are transcriptions of the authored RON files; these
-// tests parse the RON (the asset editor's output format) and compare cell by
-// cell, so editing a table in the asset editor without updating the constant
+// tests parse the RON and compare cell by cell, so editing a table without
+// updating the constant
 // fails `cargo test` with a precise mismatch. (The RON is *not* parsed by
 // the engine at runtime any more — see the module docs.)
 
@@ -492,7 +491,7 @@ mod ron_parity {
         ron::from_str(text).unwrap_or_else(|e| panic!("failed to parse rules table {file}: {e}"))
     }
 
-    /// The range-effects table as authored by the asset editor.
+    /// The range-effects table as the RON file has it.
     #[derive(serde::Deserialize)]
     struct RangeEffectsRon {
         #[serde(rename = "Dervish")]

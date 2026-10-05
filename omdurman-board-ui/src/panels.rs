@@ -1,5 +1,4 @@
-//! egui pointer-gating shared by the game and the editor. Both binaries
-//! render panels inside hand-built `Ui`s on [`egui::LayerId::background()`],
+//! egui pointer-gating. The app renders panels inside hand-built `Ui`s on [`egui::LayerId::background()`],
 //! where `egui::Context::is_pointer_over_egui()` never fires — this module
 //! provides the working predicate plus the declarative `SystemSet` gate built
 //! on it. (Earlier revisions kept a side-channel panel-rect registry; the

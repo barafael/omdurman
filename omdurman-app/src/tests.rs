@@ -1482,7 +1482,7 @@ mod layout_tests {
 
     /// The top-center stack contract : stacked cards accumulate
     /// downward from below the top bar instead of sharing a fixed y (this
-    /// used to superimpose the phase banner, previews, and prompts).
+    /// used to superimpose previews and prompts).
     #[test]
     fn stacked_cards_accumulate_downward() {
         let ctx = egui::Context::default();

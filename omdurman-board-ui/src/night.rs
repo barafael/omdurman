@@ -1,5 +1,4 @@
-//! Day/night board colour grading (§8.1, §night tint). Moved here from the
-//! game's camera module so the editor could adopt it later if wanted; the
+//! Day/night board colour grading (§8.1, §night tint). The
 //! *source of truth* for the current time of day is injected via the
 //! [`BoardDayNight`] resource, keeping this crate game-agnostic (the game
 //! mirrors `GameState.day_night` into it with a tiny sync system).

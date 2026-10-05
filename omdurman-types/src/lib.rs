@@ -663,7 +663,7 @@ pub enum NamedArea {
 
 impl Location {
     /// Map a board tile's human-readable `name` (e.g. `"North Fort"`) to its
-    /// [`Location`] landmark, if it is one. Names are authored in the map editor
+    /// [`Location`] landmark, if it is one. Names come from the board files
     /// and carry spaces, so the match is on the printed label, case-insensitively.
     /// Returns `None` for ordinary named hexes (villages, etc.) that are not
     /// rules-significant landmarks.
@@ -772,7 +772,7 @@ pub enum DervishTribe {
 /// Each carries the identifying information printed on the counter:
 /// Dervish units have a tribe; Anglo-Egyptian infantry have an optional
 /// brigade designation (`None` = no brigade printed; `Some(BrigadeId::*)`
-/// = the printed designation). For Friendlies, the editor sets
+/// = the printed designation). Friendlies carry
 /// `Some(BrigadeId::friendlies())`.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Faction {
@@ -1072,7 +1072,7 @@ impl BrigadeNationality {
 /// `BrigadeId { number: 3, nationality: Egyptian }` -> the printed `3E`.
 ///
 /// In contexts that distinguish "no brigade" from a specific one (notably the
-/// [`Faction::BritishEgyptian`] field and the editor's brigade picker) the
+/// [`Faction::BritishEgyptian`] field) the
 /// `Option<BrigadeId>` representation is used: `None` carries no brigade
 /// designation, `Some(...)` carries one. "Friendlies" units
 /// ([`BrigadeNationality::Friendlies`]) are modelled with `Some(BrigadeId {
@@ -1089,8 +1089,7 @@ impl BrigadeId {
     /// The six Anglo-Egyptian brigades printed on the counters (rulebook
     /// §5.54): the 1st and 2nd British, and the Egyptian Division's 1st-4th
     /// -- whose 1E and 2E each join one Egyptian battalion to three Sudanese
-    /// ones. Friendlies is intentionally excluded -- it never integrates --
-    /// and is set on the editor dropdown separately.
+    /// ones. Friendlies is intentionally excluded -- it never integrates.
     pub const ALL: [BrigadeId; 6] = [
         BrigadeId::british(1),
         BrigadeId::british(2),
@@ -1364,7 +1363,7 @@ pub struct OverlayParams {
     pub long_rows_even: bool,
     /// Fine rotation of the whole hex grid about its origin, in degrees, to
     /// register the lattice against a slightly-skewed scanned map. Small by
-    /// design (the editor clamps it to +/-4 deg). `#[serde(default)]` (0.0) so older
+    /// design (the calibrated boards stay within +/-4 deg). `#[serde(default)]` (0.0) so older
     /// files load unchanged.
     #[serde(default)]
     pub rotation_deg: f32,
@@ -1446,7 +1445,7 @@ impl OverlayParams {
     /// closed-form scalar quadratic `s^2 - s - (gx*x' + gy*z') = 0`. We take the
     /// root nearest 1 (the branch continuous with the identity). Returns `None`
     /// if the point lies past the gradient's fold (no real forward preimage),
-    /// which the editor's coefficient clamps keep well out of the map.
+    /// which the calibrated coefficients keep well out of the map.
     pub fn unsize_gradient(&self, x: f32, z: f32) -> Option<(f32, f32)> {
         if self.size_grad_x == 0.0 && self.size_grad_y == 0.0 {
             return Some((x, z));
@@ -1470,7 +1469,7 @@ impl OverlayParams {
     }
 
     /// Inverse of [`Self::warp`]. Returns `None` if the matrix is singular
-    /// (determinant ~ 0), which the editor prevents by clamping the params.
+    /// (determinant ~ 0), which no calibrated board comes near.
     pub fn unwarp(&self, x: f32, z: f32) -> Option<(f32, f32)> {
         let det = self.aspect_y - self.shear_x * self.shear_y;
         if det.abs() < 1e-6 {
@@ -2300,8 +2299,7 @@ mod verification {
     /// The Nile flow rotation is rotation arithmetic on a six-sided ring:
     /// rotating by `a` then `b` is rotating by `a+b` (mod 6), a full period
     /// (6) is the identity, and non-Nile terrain passes through untouched.
-    /// The map editor's flow calibration and the gunboat downstream step
-    /// both lean on this.
+    /// The gunboat downstream step leans on this.
     // §5.24
     #[traceability_macro::rulebook("§5.24")]
     #[kani::proof]

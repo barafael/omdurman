@@ -21,10 +21,10 @@ through at all.
 
 | Crate | Bevy? | Responsibility |
 |---|---|---|
-| `omdurman-types` | no | Pure serde leaf types shared by everything (`HexCoord`, `SectionName`, `MapData`, `SpriteAnnotation`, hexside/Nile/overlay types, `Faction`, `Brigade`, `CommandScope`). |
+| `omdurman-types` | no | Pure serde leaf types shared by everything (`HexCoord`, `SectionName`, `MapData`, hexside/Nile/overlay types, `Faction`, `Brigade`, `CommandScope`). |
 | `omdurman-rules` | no | The authoritative rules engine: `GameState`, `GameEffect`, `apply_effect`; the four printed tables as `static` consts (see §3, §9). |
 | `omdurman-hexmap` | yes | `HexMapPlugin`: `GameMap`, `HexLayout`, `MapDims`, world-space conversion, the shared board plane (`MapPlane`, `HexOverlay`). |
-| `omdurman-board-ui` | yes | Board-view plumbing shared by the app and the map editor: RTS camera, input/raycast helpers, egui pointer gating (`MapPointerInputSet`), night shading, the two-board store (`LoadedAnnotations`, `PendingMapLoad`). |
+| `omdurman-board-ui` | yes | Board-view plumbing for the app (split out while the retired map editor shared it): RTS camera, input/raycast helpers, egui pointer gating (`MapPointerInputSet`), night shading, the two-board store (`LoadedAnnotations`, `PendingMapLoad`). |
 | `omdurman-net` | yes | Net glue: `NetMsg`, `GameEvent`, `GameRecord`, `InitialGameState`, `PlayerKey`, `Seat`, `room_id()`. Pulls Bevy for `Resource` derives and the log macros. |
 | `omdurman-app` | yes | The Bevy binary: rendering, input, egui UI, camera, net glue, seats, the in-game AI driver (`bot_player.rs`). |
 | `omdurman-bot` | via net | Headless AI playthrough driver and the in-game AI's decision logic: random, aggressive and Kitchener/Khalifa commander agents, invariant checks, an offline log auditor. |
@@ -233,14 +233,11 @@ every peer — when the send to any one peer fails.
   Behaviour is gated on the active mode, not a build flag.
 - **Dual-map.** `ActiveEditMap` (local) tracks the live board; `PendingMapLoad` defers a (re)load
   to the next frame; `LoadedAnnotations` holds both boards (all three in `omdurman-board-ui`). A
-  play view (Game) follows its scenario's board for the whole session; the map editor's board
-  follows `EditorBoard`.
+  play view (Game) follows its scenario's board for the whole session.
 - **Board + sprite data.** `LoadedAnnotations` is seeded from the board RON files
   (`omdurman-app/assets/boards/`, embedded by the rules crate's `board_data`). **Unit sprite
-  metadata is global, not per-board:** compiled fallbacks in `sprite_data` (keyed by `UnitId`),
-  overlaid at startup by `omdurman-app/assets/sprite_annotations.ron` into
-  `SpriteAnnotationsResource`. The map editor writes the board RON, the sprite annotations and
-  the unit-sheet grids back to disk; the game only reads them.
+  metadata is global, not per-board:** compiled in `sprite_data` (keyed by `UnitId`). The board
+  RON files are edited as text; the game only reads them.
 - **Board input.** Every board click goes through one router: `board_click::route_board_clicks`
   (pointer-gated by `MapPointerInputSet`, so a click over egui never reaches the board) asks the
   pure `click_mode` which `ClickMode` owns the click and emits exactly one mode message per edge

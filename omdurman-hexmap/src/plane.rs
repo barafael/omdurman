@@ -1,10 +1,7 @@
 //! The board plane: the textured ground quad a board's scan is drawn on, the
 //! texture cache that keeps each board image resident across switches, the
-//! adjustable hex-grid [`HexOverlay`] used for calibration, and the shared
-//! terrain-overlay palette.
-//!
-//! Shared by the game app (board bootstrap) and the map editor tool; kept here
-//! so both render boards identically.
+//! hex-grid [`HexOverlay`] calibration the conversions read, and the hex
+//! ring mesh.
 
 use bevy::{
     asset::RenderAssetUsages, mesh::Indices, prelude::*, render::render_resource::PrimitiveTopology,
@@ -76,9 +73,9 @@ pub fn apply_map_data_to_plane(
 
 // -- Hex overlay resource ------------------------------------------------------
 
-/// Adjustable hex grid overlay for layout calibration. The map editor's
-/// overlay tab drives [`OverlayParams`]; every consumer of `HexLayout`'s
-/// warp-aware conversions reads it back.
+/// The active board's hex-grid calibration ([`OverlayParams`], loaded with
+/// the board); every consumer of `HexLayout`'s warp-aware conversions reads
+/// it.
 #[derive(Resource, Default)]
 pub struct HexOverlay {
     pub params: OverlayParams,

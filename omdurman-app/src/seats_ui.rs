@@ -12,7 +12,7 @@ use strum::IntoEnumIterator;
 use crate::seat_arbiter::{RequestStatus, SeatClient};
 use crate::seats::{self, SeatView, human_seats};
 
-/// Top-center card under the phase banner while the game is paused: names
+/// Top-center card under the top bar while the game is paused: names
 /// every absent seat holder and counts down to their seat's abandonment.
 /// Once a seat is abandoned, seated players may propose handing it to the AI.
 pub(crate) fn pause_card_ui(

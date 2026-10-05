@@ -51,8 +51,7 @@ fn hexside_segment(
     )
 }
 
-/// The same per-kind colours the map editor paints with, so an in-game breach
-/// looks exactly like the editor's authoring preview.
+/// Per-kind hexside colours (those of the retired map editor's preview).
 fn hexside_color(kind: HexsideKind) -> Color {
     match kind {
         HexsideKind::Wall => Color::srgb(0.75, 0.75, 0.75),

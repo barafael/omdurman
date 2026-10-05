@@ -1,6 +1,6 @@
 [package]
 name = "omdurman-board-ui"
-description = "Shared board-view plumbing for the game app and the map editor: RTS camera, input helpers, egui panel-rect registry, board bootstrap, night shading"
+description = "Board-view plumbing for the game app: RTS camera, input helpers, egui pointer gating, board bootstrap, night shading"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

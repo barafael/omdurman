@@ -6,4 +6,5 @@ Validate the bijective rulebook-to-code mapping:
 
 Regenerate the PDF report (requires `typst` CLI):
 
-    cargo run -p traceability-typst
+    cargo run -p traceability-typst -- docs/traceability.toml traceability.typ
+    typst compile traceability.typ traceability.pdf

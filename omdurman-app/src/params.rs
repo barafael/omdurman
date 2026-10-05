@@ -26,7 +26,7 @@ pub(crate) struct GameStateParams<'w> {
     /// In-memory two-board annotations file; the `StartGame` handler stores
     /// into it, and `request_map_load` reads from it.
     pub loaded_annotations: ResMut<'w, LoadedAnnotations>,
-    /// Set by the `StartGame` handler (and the editor's map toggle) to ask
+    /// Set by the `StartGame` handler to ask
     /// `apply_map_selection` to (re)load a board on the next frame (§dual-map).
     pub pending_map_load: ResMut<'w, PendingMapLoad>,
     pub pending_observations: ResMut<'w, PendingObservations>,

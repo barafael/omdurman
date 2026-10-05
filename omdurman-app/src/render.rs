@@ -10,7 +10,7 @@ use omdurman_hexmap::{GameMap, HexLayout};
 use omdurman_hexmap::{hex_ring_mesh, hex_world_pos, hit_to_hex};
 
 // Re-exported for the rest of the app (the definitions live in
-// `omdurman-hexmap::plane`, shared with the map editor tool).
+// `omdurman-hexmap::plane`).
 pub use omdurman_hexmap::{HexOverlay, MapTextureCache};
 
 use omdurman_types::HexCoord;
@@ -82,12 +82,12 @@ pub struct HoveredUnit(pub Option<bevy::prelude::Entity>);
 
 // -- Map plane -----------------------------------------------------------------
 
-// The map plane (spawn + both-texture preload) is shared with the map editor;
-// the game adds its mesh-picking marker right after spawning (see
+// The map plane (spawn + both-texture preload) lives in board-ui; the game
+// adds its mesh-picking marker right after spawning (see
 // `add_plane_picking`).
 pub use omdurman_board_ui::board_store::spawn_map_plane;
 
-/// The game's board plane participates in mesh picking; the editor's doesn't.
+/// The board plane participates in mesh picking.
 /// Runs at startup, right after [`spawn_map_plane`].
 pub fn add_plane_picking(
     mut commands: Commands,
