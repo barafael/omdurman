@@ -102,7 +102,16 @@ wheel() {
 }
 
 # Window pixel of hex (q,r) from the probe (window pixels == xdotool pixels).
-hexpos() { awk -v q="$1" -v r="$2" '$1==q && $2==r {print $3, $4}' "$D/probe"; }
+# The window pixel of a hex centre, or nothing when the probe does not know it
+# or it lies outside the window (a click there misses -- it used to surface
+# as "pointer warp ignored").
+hexpos() {
+  local w h
+  eval "$(xdotool getwindowgeometry --shell "$W" 2>/dev/null | grep -E '^(WIDTH|HEIGHT)=')"
+  w=${WIDTH:-99999}; h=${HEIGHT:-99999}
+  awk -v q="$1" -v r="$2" -v w="$w" -v h="$h" \
+    '$1==q && $2==r && $3>=0 && $4>=0 && $3<w && $4<h {print $3, $4}' "$D/probe"
+}
 
 cmd=${1:-help}; shift || true
 case "$cmd" in
