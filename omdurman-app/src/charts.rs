@@ -4,11 +4,8 @@
 //! `egui::Area` that slides over the right edge of the board, so the board never
 //! reflows. When closed a slim "CHARTS" tab peeks at the right edge.
 //!
-//! This module owns the shell (tabs, zoom/pan, hotkey `C`), the spotlight-dim
-//! highlight (§decision 4), the in-app box calibrator on the editor Charts tab,
-//! and the gentle `ChartSheetRequest` staging (§decision 3). The Rulebook tab is
-//! rendered by [`crate::rulebook`]. The docked turn-track strip is still to come
-//! (it needs the timing scan calibrated first).
+//! This module owns the shell (tabs, zoom/pan, hotkey `C`); the Rulebook tab
+//! is rendered by [`crate::rulebook`].
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, EguiUserTextures, egui};
@@ -68,18 +65,6 @@ impl ChartTab {
             _ => true,
         }
     }
-
-    /// Stable id used as the key of the chart-scan table index, or `None`
-    /// for the text rulebook (which has no calibrated boxes).
-    fn band_id(self) -> Option<&'static str> {
-        match self {
-            ChartTab::Crt => Some("crt"),
-            ChartTab::Terrain => Some("terrain"),
-            ChartTab::Timing => Some("timing"),
-            ChartTab::Arrivals => Some("arrivals"),
-            ChartTab::Rulebook => None,
-        }
-    }
 }
 
 /// A loaded scan: the Bevy image handle and, once registered with egui, its
@@ -109,34 +94,6 @@ impl Default for View {
     }
 }
 
-/// A spotlight target within one chart: a table plus an optional row and/or
-/// column to keep bright. When both are set, their intersection cell is the
-/// brightest cut-out (and the full row + full column are also lit); a lone row
-/// or column lights that whole band. Indices are into the table's code-defined
-/// `rows`/`cols`.
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub struct ChartHighlight {
-    pub chart: ChartTab,
-    pub table: usize,
-    pub row: Option<usize>,
-    pub col: Option<usize>,
-}
-
-/// A contextual request to draw attention to a chart region (fire declared,
-/// unit hovered, turn changed, ...). Handling is *gentle* (§decision 3): the
-/// sheet never opens itself. If closed, the peek tab pulses and the tab +
-/// highlight are staged; opening within the staging window lands on that tab
-/// with the highlight applied. If already open, the target tab gets a small
-/// tick instead. Any system may send this; `charts.rs` is the only consumer.
-#[derive(Message, Clone, Copy)]
-pub struct ChartSheetRequest {
-    pub tab: ChartTab,
-    pub highlight: Option<ChartHighlight>,
-}
-
-/// How long a staged request stays live after arriving (§decision 3: ~10 s).
-const STAGE_SECS: f32 = 10.0;
-
 #[derive(Resource)]
 pub struct ChartSheet {
     open: bool,
@@ -144,13 +101,6 @@ pub struct ChartSheet {
     /// Scan textures keyed by tab (rulebook has no entry).
     textures: Vec<(ChartTab, ChartTexture)>,
     views: [(ChartTab, View); 5],
-    /// Active spotlight, if any -- dims the scan except the lit region.
-    highlight: Option<ChartHighlight>,
-    /// A staged contextual request (§decision 3): the tab+highlight to apply
-    /// when the player opens the sheet, and the seconds left before it expires.
-    staged: Option<(ChartTab, Option<ChartHighlight>, f32)>,
-    /// Seconds left on the peek-tab attention pulse (counts down to 0).
-    pulse: f32,
 }
 
 impl ChartSheet {
@@ -174,17 +124,6 @@ impl ChartSheet {
             .expect("every tab has a view")
             .1
     }
-
-    /// Open the sheet, consuming any live staged request so the player lands on
-    /// the staged tab with its highlight already applied (§decision 3).
-    fn open_and_consume_stage(&mut self) {
-        self.open = true;
-        self.pulse = 0.0;
-        if let Some((tab, hl, _)) = self.staged.take() {
-            self.active = tab;
-            self.highlight = hl;
-        }
-    }
 }
 
 pub struct ChartsPlugin;
@@ -192,13 +131,12 @@ pub struct ChartsPlugin;
 impl Plugin for ChartsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<crate::rulebook::Rulebook>()
-            .add_message::<ChartSheetRequest>()
             .add_systems(Startup, load_chart_textures)
             // Texture registration touches `EguiUserTextures`, which the egui
             // context pass also accesses internally -- doing both in one system
             // that holds `EguiContexts` is a conflicting `ResMut` borrow (B0002).
             // Register in a plain `Update` system, render in the egui pass.
-            .add_systems(Update, (register_chart_textures, handle_chart_requests))
+            .add_systems(Update, register_chart_textures)
             .add_systems(
                 EguiPrimaryContextPass,
                 (
@@ -287,27 +225,11 @@ fn load_chart_textures(mut commands: Commands, asset_server: Res<AssetServer>) {
         Some("rulebook") => (true, ChartTab::Rulebook),
         _ => (false, ChartTab::Crt),
     };
-    // Dev: seed a demo spotlight for headless verification
-    // (OMDURMAN_CHARTS_HL=row,col on the active chart's table 0). Inert otherwise.
-    let highlight = std::env::var("OMDURMAN_CHARTS_HL").ok().map(|s| {
-        let mut parts = s.split(',');
-        let row = parts.next().and_then(|p| p.trim().parse::<usize>().ok());
-        let col = parts.next().and_then(|p| p.trim().parse::<usize>().ok());
-        ChartHighlight {
-            chart: active,
-            table: 0,
-            row,
-            col,
-        }
-    });
     commands.insert_resource(ChartSheet {
         open,
         active,
         textures,
         views: ChartTab::ALL.map(|t| (t, View::default())),
-        highlight,
-        staged: None,
-        pulse: 0.0,
     });
 }
 
@@ -333,44 +255,6 @@ fn register_chart_textures(
             tex.egui_id = Some(
                 user_textures.add_image(bevy_egui::EguiTextureHandle::Strong(tex.handle.clone())),
             );
-        }
-    }
-}
-
-/// Consume [`ChartSheetRequest`]s the gentle way (§decision 3). The sheet never
-/// opens itself: if it is closed, the latest request stages its tab+highlight
-/// and starts the peek-tab pulse; if it is already open, the request switches to
-/// that tab and applies the highlight immediately (the player is already
-/// looking). Staged requests and the pulse decay over time.
-fn handle_chart_requests(
-    time: Res<Time>,
-    mut reader: MessageReader<ChartSheetRequest>,
-    sheet: Option<ResMut<ChartSheet>>,
-) {
-    let Some(mut sheet) = sheet else {
-        reader.clear();
-        return;
-    };
-    let dt = time.delta_secs();
-
-    // Decay the pulse and expire a stale staged request.
-    sheet.pulse = (sheet.pulse - dt).max(0.0);
-    if let Some((_, _, ref mut secs)) = sheet.staged {
-        *secs -= dt;
-        if *secs <= 0.0 {
-            sheet.staged = None;
-        }
-    }
-
-    for req in reader.read() {
-        if sheet.open {
-            // Already open: the player is looking, so switch + apply directly.
-            sheet.active = req.tab;
-            sheet.highlight = req.highlight;
-        } else {
-            // Closed: stage it and pulse the peek tab. Don't open.
-            sheet.staged = Some((req.tab, req.highlight, STAGE_SECS));
-            sheet.pulse = 2.4; // ~3 slow pulses (see draw_peek_tab)
         }
     }
 }
@@ -402,8 +286,8 @@ pub(crate) fn chart_sheet_ui(
     } = view;
     let scenario = game_state.as_deref().map(|gs| gs.0.scenario);
     let Some(sheet) = sheet.as_mut() else { return };
-    // A sheet this scenario doesn't use (a staged request, or the tab left
-    // open from another game) falls back to the CRT.
+    // A sheet this scenario doesn't use (the tab left open from another
+    // game) falls back to the CRT.
     if !sheet.active.applies_to(scenario) {
         sheet.active = ChartTab::Crt;
     }
@@ -414,11 +298,7 @@ pub(crate) fn chart_sheet_ui(
     // while a text field has the keyboard.
     let keys_free = !focus.0;
     if keys_free && keys.just_pressed(KeyCode::KeyC) {
-        if sheet.open {
-            sheet.open = false;
-        } else {
-            sheet.open_and_consume_stage();
-        }
+        sheet.open = !sheet.open;
     }
     if keys_free && sheet.open && keys.just_pressed(KeyCode::Escape) {
         sheet.open = false;
@@ -498,22 +378,7 @@ pub(crate) fn chart_sheet_ui(
                     // than the card, clipping the right edge (the close button).
                     ui.set_min_size(card.size() - egui::vec2(2.0 * MARGIN, 2.0 * MARGIN));
                     if sheet.open {
-                        // Resolve the active chart's calibrated boxes up front
-                        // (an owned Vec) so the spotlight can use them without
-                        // contending for `loaded`.
-                        let active_boxes = sheet
-                            .active
-                            .band_id()
-                            .map(resolved_boxes)
-                            .unwrap_or_default();
-                        draw_open_sheet(
-                            ui,
-                            sheet,
-                            &active_boxes,
-                            &mut rulebook,
-                            time.delta_secs(),
-                            scenario,
-                        );
+                        draw_open_sheet(ui, sheet, &mut rulebook, time.delta_secs(), scenario);
                     } else {
                         draw_peek_tab(ui, sheet);
                     }
@@ -550,27 +415,10 @@ fn draw_peek_tab(ui: &mut egui::Ui, sheet: &mut ChartSheet) {
     };
     ui.painter().rect_filled(rect, 0.0, fill);
 
-    // Gentle attention pulse (§decision 3): while `pulse` is live, run a slow
-    // teal edge-stripe in and out (~0.8 s per cycle) so a staged request is
-    // noticeable without opening the sheet. Keep the frame repainting so the
-    // animation actually advances.
-    if sheet.pulse > 0.0 {
-        ui.ctx().request_repaint();
-        let phase = (sheet.pulse * std::f32::consts::TAU / 0.8).sin() * 0.5 + 0.5;
-        let a = (phase * 200.0) as u8;
-        let stripe =
-            egui::Rect::from_min_max(rect.min, egui::pos2(rect.left() + 3.0, rect.bottom()));
-        ui.painter().rect_filled(
-            stripe,
-            0.0,
-            crate::ui::palette::with_alpha(crate::ui::palette::SEARCH_HIT, a),
-        );
-    }
-
     // egui has no vertical text; stack the glyphs down the strip.
     vertical_label(ui, rect.center(), "CHARTS", egui::FontId::monospace(13.0));
     if resp.clicked() {
-        sheet.open_and_consume_stage();
+        sheet.open = true;
     }
 }
 
@@ -578,7 +426,6 @@ fn draw_peek_tab(ui: &mut egui::Ui, sheet: &mut ChartSheet) {
 fn draw_open_sheet(
     ui: &mut egui::Ui,
     sheet: &mut ChartSheet,
-    active_boxes: &[omdurman_types::ChartBox],
     rulebook: &mut crate::rulebook::Rulebook,
     dt: f32,
     scenario: Option<omdurman_types::Scenario>,
@@ -651,246 +498,6 @@ fn draw_open_sheet(
     let top_left = rect.min + view.pan;
     let image_rect = egui::Rect::from_min_size(top_left, draw_size);
     egui::Image::new(egui::load::SizedTexture::new(tex_id, draw_size)).paint_at(ui, image_rect);
-
-    if let Some(hl) = sheet.highlight {
-        // Play: spotlight-dim the active region if the highlight targets this
-        // chart (§decision 4 -- dim everything else, no coloured boxes).
-        if hl.chart == active
-            && let Some(band_id) = active.band_id()
-        {
-            draw_spotlight(ui, image_rect, band_id, hl, active_boxes);
-        }
-    }
-}
-
-/// Spotlight-dim: darken the whole scan with a translucent ink scrim, leaving
-/// the highlighted row / column / cell at full brightness. egui has no even-odd
-/// fill, so the scrim is tiled as rects *around* the lit cut-out rather than
-/// punched through (§decision 4). The intersection cell of a row+col highlight
-/// gets no extra tint; the surrounding row and column are lit a touch dimmer.
-fn draw_spotlight(
-    ui: &egui::Ui,
-    image_rect: egui::Rect,
-    chart: &str,
-    hl: ChartHighlight,
-    boxes: &[omdurman_types::ChartBox],
-) {
-    let layout = chart_layout(chart);
-    let (Some(t), Some(b)) = (layout.get(hl.table), boxes.get(hl.table)) else {
-        return;
-    };
-    let grid = box_grid_rect(box_outer_rect(image_rect, b), b);
-    let (nr, nc) = (t.rows.len().max(1), t.cols.len().max(1));
-
-    // The lit region: the union of the highlighted row band and column band,
-    // clipped to the grid. With both set, that is a plus-shape (full row + full
-    // column); with one set, the whole band; with neither, nothing to light.
-    let row_band = hl.row.map(|r| {
-        egui::Rect::from_min_max(
-            egui::pos2(grid.left(), cell_rect(grid, nr, nc, r, 0).top()),
-            egui::pos2(grid.right(), cell_rect(grid, nr, nc, r, 0).bottom()),
-        )
-    });
-    let col_band = hl.col.map(|c| {
-        egui::Rect::from_min_max(
-            egui::pos2(cell_rect(grid, nr, nc, 0, c).left(), grid.top()),
-            egui::pos2(cell_rect(grid, nr, nc, 0, c).right(), grid.bottom()),
-        )
-    });
-
-    let scrim = crate::ui::palette::IMAGE_SCRIM;
-    let painter = ui.painter_at(image_rect);
-
-    // Paint the scrim everywhere, then "erase" the lit bands by leaving them
-    // uncovered: tile up to four scrim rects around the union bounding rect and,
-    // when both bands are present, re-cover the two off-axis corners so only the
-    // plus-shape stays bright.
-    let lit = match (row_band, col_band) {
-        (Some(r), Some(c)) => r.union(c),
-        (Some(r), None) => r,
-        (None, Some(c)) => c,
-        (None, None) => {
-            // No cell resolved -- just leave the scan untinted.
-            return;
-        }
-    };
-    // Four bands around `lit` (relative to the whole image, so off-table area
-    // dims too).
-    let full = image_rect;
-    for r in [
-        egui::Rect::from_min_max(full.min, egui::pos2(full.right(), lit.top())), // above
-        egui::Rect::from_min_max(egui::pos2(full.left(), lit.bottom()), full.max), // below
-        egui::Rect::from_min_max(
-            egui::pos2(full.left(), lit.top()),
-            egui::pos2(lit.left(), lit.bottom()),
-        ), // left
-        egui::Rect::from_min_max(
-            egui::pos2(lit.right(), lit.top()),
-            egui::pos2(full.right(), lit.bottom()),
-        ), // right
-    ] {
-        if r.width() > 0.0 && r.height() > 0.0 {
-            painter.rect_filled(r, 0.0, scrim);
-        }
-    }
-    // With both a row and a column, `lit` is their bounding rect (a filled
-    // square), but only the plus-shape should stay bright. Re-cover the four
-    // off-axis quadrants left inside `lit`.
-    if let (Some(rb), Some(cb)) = (row_band, col_band) {
-        for r in [
-            egui::Rect::from_min_max(lit.min, egui::pos2(cb.left(), rb.top())), // TL
-            egui::Rect::from_min_max(
-                egui::pos2(cb.right(), lit.top()),
-                egui::pos2(lit.right(), rb.top()),
-            ), // TR
-            egui::Rect::from_min_max(
-                egui::pos2(lit.left(), rb.bottom()),
-                egui::pos2(cb.left(), lit.bottom()),
-            ), // BL
-            egui::Rect::from_min_max(egui::pos2(cb.right(), rb.bottom()), lit.max), // BR
-        ] {
-            if r.width() > 0.0 && r.height() > 0.0 {
-                painter.rect_filled(r, 0.0, scrim);
-            }
-        }
-    }
-}
-
-/// The fixed structure of one table on a chart scan, inferred from the printed
-/// scan: its display name, the cell labels down its rows and across its columns
-/// (which also give the grid dimensions), and a rough default box so it starts
-/// roughly in place. Only the *box* is calibrated/persisted; this structure is
-/// code.
-#[derive(Clone, Copy)]
-struct TableLayout {
-    rows: &'static [&'static str],
-    cols: &'static [&'static str],
-    default_box: omdurman_types::ChartBox,
-}
-
-const fn rough(
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-    label_w: f32,
-    header_h: f32,
-) -> omdurman_types::ChartBox {
-    omdurman_types::ChartBox {
-        x,
-        y,
-        w,
-        h,
-        label_w,
-        header_h,
-    }
-}
-
-/// The fixed table layouts per chart, read off the printed scans. The calibrator
-/// only nudges each table's box to line up with the scan; the counts and labels
-/// never change, so the user never adds or removes tables.
-///
-/// Every field is `'static` (string literals + plain `f32`s via `const fn`
-/// `rough`), so the layouts live in `static` arrays and `chart_layout` hands
-/// out `'static` slices -- no heap allocation per chart lookup.
-static CRT_LAYOUT: [TableLayout; 3] = [
-    TableLayout {
-        rows: &[
-            "1-5", "6-10", "11-15", "16-20", "21-25", "26-30", "31-35", "36-40", "41+",
-        ],
-        cols: &["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
-        // Lower-left block, with a left label column + header rows.
-        default_box: rough(0.02, 0.55, 0.60, 0.42, 0.10, 0.16),
-    },
-    TableLayout {
-        rows: &["Spears", "Rifles", "Artillery"],
-        cols: &["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
-        default_box: rough(0.20, 0.02, 0.78, 0.22, 0.16, 0.30),
-    },
-    TableLayout {
-        rows: &["Rifles", "Maxims", "Artillery", "Howitzer"],
-        cols: &["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
-        default_box: rough(0.20, 0.24, 0.78, 0.28, 0.16, 0.0),
-    },
-];
-
-static TERRAIN_LAYOUT: [TableLayout; 1] = [TableLayout {
-    rows: &["Move cost", "Combat"],
-    cols: &[
-        "Clear",
-        "Rough",
-        "Trees",
-        "Swamp",
-        "Nile",
-        "Hilltop",
-        "Huts",
-        "Building",
-        "Road",
-        "Khor",
-        "Crest",
-        "City Wall",
-        "Zariba",
-    ],
-    default_box: rough(0.0, 0.0, 1.0, 1.0, 0.14, 0.40),
-}];
-
-fn chart_layout(chart: &str) -> &'static [TableLayout] {
-    match chart {
-        "crt" => &CRT_LAYOUT,
-        "terrain" => &TERRAIN_LAYOUT,
-        // "timing" intentionally has no tables here: the turn track is already
-        // calibrated on the campaign map (CampaignTurnTrack, the Timing editor
-        // tab), and it does not apply to the Fall-of-Khartoum board. Re-doing it
-        // in the chart calibrator would duplicate that existing annotation.
-        //
-        // "arrivals" intentionally has no tables here: the order-of-appearance
-        // scan is shown as a static reference image. Reinforcement arrival is
-        // enforced by `apply_place_reinforcements` (§9.112/§9.113) keyed on
-        // `Turn`/`Scenario`, not by spotlighting a sub-table during play.
-        _ => &[],
-    }
-}
-
-/// Resolve the boxes to draw for `chart`: the fixed `default_box` from each
-/// `TableLayout`. With the on-disk calibrator dissolved, the printed-scan
-/// geometry *is* the only geometry.
-fn resolved_boxes(chart: &str) -> Vec<omdurman_types::ChartBox> {
-    chart_layout(chart).iter().map(|t| t.default_box).collect()
-}
-
-/// The outer box rect for `b` mapped into `image_rect` (whole-scan space).
-fn box_outer_rect(image_rect: egui::Rect, b: &omdurman_types::ChartBox) -> egui::Rect {
-    egui::Rect::from_min_size(
-        egui::pos2(
-            image_rect.left() + b.x * image_rect.width(),
-            image_rect.top() + b.y * image_rect.height(),
-        ),
-        egui::vec2(b.w * image_rect.width(), b.h * image_rect.height()),
-    )
-}
-
-/// The data-grid rect (box minus its label column and header rows).
-fn box_grid_rect(outer: egui::Rect, b: &omdurman_types::ChartBox) -> egui::Rect {
-    egui::Rect::from_min_size(
-        egui::pos2(
-            outer.left() + b.label_w * outer.width(),
-            outer.top() + b.header_h * outer.height(),
-        ),
-        egui::vec2(
-            outer.width() * (1.0 - b.label_w),
-            outer.height() * (1.0 - b.header_h),
-        ),
-    )
-}
-
-/// The rect of data cell `(r, c)` within an evenly-divided `rows`×`cols` grid.
-fn cell_rect(grid: egui::Rect, rows: usize, cols: usize, r: usize, c: usize) -> egui::Rect {
-    let cw = grid.width() / cols.max(1) as f32;
-    let ch = grid.height() / rows.max(1) as f32;
-    egui::Rect::from_min_size(
-        egui::pos2(grid.left() + c as f32 * cw, grid.top() + r as f32 * ch),
-        egui::vec2(cw, ch),
-    )
 }
 
 #[cfg(test)]

@@ -9,7 +9,7 @@
 use bevy::{
     asset::RenderAssetUsages, mesh::Indices, prelude::*, render::render_resource::PrimitiveTopology,
 };
-use omdurman_types::{OverlayParams, Terrain};
+use omdurman_types::OverlayParams;
 
 // -- Map plane -----------------------------------------------------------------
 
@@ -82,56 +82,6 @@ pub fn apply_map_data_to_plane(
 #[derive(Resource, Default)]
 pub struct HexOverlay {
     pub params: OverlayParams,
-}
-
-// -- Terrain overlay colour ----------------------------------------------------
-
-/// Named palette colour for a terrain-type overlay. A typed enum (rather than
-/// strum string props) so the terrain->colour mapping is total and checked.
-/// Palette inspired by the Sudanese landscape (sand, Nile, khaki, earth).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum TerrainColor {
-    Sandy,
-    DarkGreen,
-    Blue,
-    TanBrown,
-    Brown,
-    Tan,
-    StoneGray,
-    SwampGreen,
-}
-
-impl TerrainColor {
-    fn rgba(self) -> [f32; 4] {
-        match self {
-            TerrainColor::Sandy => [0.90, 0.78, 0.40, 0.75],
-            TerrainColor::DarkGreen => [0.28, 0.55, 0.15, 0.75],
-            TerrainColor::Blue => [0.18, 0.55, 0.68, 0.75],
-            TerrainColor::TanBrown => [0.72, 0.58, 0.38, 0.75],
-            TerrainColor::Brown => [0.55, 0.40, 0.24, 0.75],
-            TerrainColor::Tan => [0.82, 0.71, 0.52, 0.75],
-            TerrainColor::StoneGray => [0.58, 0.58, 0.55, 0.75],
-            TerrainColor::SwampGreen => [0.30, 0.42, 0.30, 0.75],
-        }
-    }
-}
-
-fn terrain_color(terrain: Terrain) -> TerrainColor {
-    match terrain {
-        Terrain::Clear { .. } => TerrainColor::Sandy,
-        Terrain::Rough { .. } => TerrainColor::TanBrown,
-        Terrain::Trees { .. } => TerrainColor::DarkGreen,
-        Terrain::Swamp { .. } => TerrainColor::SwampGreen,
-        Terrain::Nile { .. } => TerrainColor::Blue,
-        Terrain::Hilltop { .. } => TerrainColor::Brown,
-        Terrain::Huts { .. } => TerrainColor::Tan,
-        Terrain::Building { .. } => TerrainColor::StoneGray,
-    }
-}
-
-/// Return an RGBA colour suitable for a terrain-type overlay.
-pub fn terrain_overlay_color(terrain: Terrain) -> [f32; 4] {
-    terrain_color(terrain).rgba()
 }
 
 // -- Hex ring mesh -------------------------------------------------------------

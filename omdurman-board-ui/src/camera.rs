@@ -9,13 +9,11 @@
 //! game's adds a picking marker).
 
 use bevy::{
-    core_pipeline::tonemapping::Tonemapping,
     input::{
         mouse::{MouseScrollUnit, MouseWheel},
         touch::Touches,
     },
     prelude::*,
-    render::view::ColorGrading,
 };
 use bevy_egui::{EguiContexts, egui};
 use std::f32::consts::PI;
@@ -116,20 +114,6 @@ impl Default for CameraSettings {
             smoothing: 6.0,
         }
     }
-}
-
-/// Spawn a plain RTS camera. Binaries that need extra components on the
-/// camera (e.g. the game's mesh-picking marker) provide their own spawn
-/// system instead.
-pub fn spawn_camera(mut commands: Commands) {
-    commands.spawn((
-        RtsCamera,
-        RtsCameraState::default(),
-        Camera3d::default(),
-        Projection::Perspective(PerspectiveProjection::default()),
-        Tonemapping::None,
-        ColorGrading::default(),
-    ));
 }
 
 fn camera_basis(yaw: f32) -> (Vec3, Vec3) {

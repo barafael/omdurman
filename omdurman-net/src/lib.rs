@@ -546,10 +546,6 @@ impl RoomId {
     pub fn as_str(&self) -> &str {
         &self.0
     }
-
-    pub fn into_inner(self) -> String {
-        self.0
-    }
 }
 
 /// Build a `MatchboxSocket` for the given room. Used both at startup and when

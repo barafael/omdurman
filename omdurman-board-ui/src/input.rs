@@ -11,11 +11,6 @@ pub fn ctrl_held(keys: &ButtonInput<KeyCode>) -> bool {
     keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight)
 }
 
-/// Whether Shift is held (either side).
-pub fn shift_held(keys: &ButtonInput<KeyCode>) -> bool {
-    keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight)
-}
-
 pub fn raycast_ground(
     windows: &Query<&Window>,
     cameras: &Query<(&Camera, &GlobalTransform), With<RtsCamera>>,

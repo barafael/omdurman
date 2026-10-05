@@ -5,18 +5,16 @@ pub mod world;
 
 // Explicit re-exports: only items actually consumed by other workspace crates.
 // layout.rs
-pub use layout::{
-    CalibrationAnchor, HexLayout, IMG_H, IMG_W, MapDims, SQRT_3, pixel_to_world_dims,
-};
+pub use layout::{CalibrationAnchor, HexLayout, IMG_H, IMG_W, MapDims, pixel_to_world_dims};
 // map.rs
-pub use map::{GameMap, clip_hexes_to_overlay, load_map_data};
+pub use map::{GameMap, load_map_data};
 // plane.rs
 pub use plane::{
     HexOverlay, MapPlane, MapTextureCache, PlaneTextureStores, apply_map_data_to_plane,
-    hex_ring_mesh, terrain_overlay_color,
+    hex_ring_mesh,
 };
 // world.rs
-pub use world::{hex_local_pos, hex_world_pos, hit_to_hex, local_to_world};
+pub use world::{hex_world_pos, hit_to_hex};
 
 use bevy::prelude::*;
 

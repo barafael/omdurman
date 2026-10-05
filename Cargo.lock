@@ -5862,7 +5862,6 @@ dependencies = [
  "omdurman-hexmap",
  "omdurman-rules",
  "omdurman-types",
- "ron",
 ]
 
 [[package]]

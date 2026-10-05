@@ -207,8 +207,6 @@ pub mod palette {
     pub const NEUTRAL_BORDER_ACTIVE: Color32 = Color32::from_gray(180);
     /// Translucent black behind small HUD labels over the board.
     pub const HUD_SCRIM: Color32 = Color32::from_black_alpha(180);
-    /// Scrim over a chart image around a highlighted cell.
-    pub const IMAGE_SCRIM: Color32 = Color32::from_black_alpha(150);
     /// Drop shadow under floating cards.
     pub const DROP_SHADOW: Color32 = Color32::from_black_alpha(46);
     /// Tint of the drag ghost (sprite at reduced opacity; premultiplied

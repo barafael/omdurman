@@ -493,7 +493,10 @@ fn setup_control_section(
                 // deploys first; its counters appear as it places them.
                 ui.add_enabled(false, egui::Button::new("Ready"))
                     .on_disabled_hover_text(wait.to_string());
-                ui.colored_label(crate::ui::palette::CAUTION, capitalize(&wait.to_string()));
+                ui.colored_label(
+                    crate::ui::palette::CAUTION,
+                    omdurman_rules::press::capitalize(&wait.to_string()),
+                );
             } else if !state.0.setup_target_met(player) {
                 let reason = "Deploy your forces before confirming ready.";
                 ui.add_enabled(false, egui::Button::new("Ready"))
@@ -683,16 +686,6 @@ pub(crate) fn telegram_overlay(
     if dismiss {
         log.acknowledged += 1;
     }
-}
-
-/// `text` with its first letter upper-cased (engine reasons are phrased as
-/// clauses).
-fn capitalize(text: &str) -> String {
-    let mut chars = text.chars();
-    chars
-        .next()
-        .map(|c| c.to_uppercase().chain(chars).collect())
-        .unwrap_or_default()
 }
 
 #[cfg(test)]

@@ -13,12 +13,6 @@ use omdurman_hexmap::{
 };
 use omdurman_types::{HexCoord, MapData, MapKind};
 
-/// Where the board RON data files live (inside the game's assets dir, so the
-/// tool edits the canonical files the game loads).
-pub fn boards_dir() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../omdurman-app/assets/boards")
-}
-
 /// The full two-board annotations store, kept in memory so edits, saves, and
 /// replay re-seeds can address either board without re-reading from disk
 /// (§dual-map). Seeded from the RON data files at startup.
@@ -33,13 +27,6 @@ impl LoadedAnnotations {
         match kind {
             MapKind::FallOfKhartoum => &self.fall_of_khartoum,
             MapKind::Campaign => &self.campaign,
-        }
-    }
-
-    pub fn map_mut(&mut self, kind: MapKind) -> &mut MapData {
-        match kind {
-            MapKind::FallOfKhartoum => &mut self.fall_of_khartoum,
-            MapKind::Campaign => &mut self.campaign,
         }
     }
 
@@ -187,32 +174,6 @@ pub fn load_board(
     info!(%kind, img_w = map.img_w, img_h = map.img_h, "loaded board");
 }
 
-/// Serialize both boards to the RON data files under
-/// `omdurman-app/assets/boards/` -- the tool's save path, and the files the
-/// game embeds. Returns a status note for the caller to display.
-pub fn save_boards_to_ron(loaded: &LoadedAnnotations) -> String {
-    let pretty = ron::ser::PrettyConfig::default();
-    let mut note = String::new();
-    for (name, board) in [
-        ("campaign", &loaded.campaign),
-        ("fall_of_khartoum", &loaded.fall_of_khartoum),
-    ] {
-        let path = boards_dir().join(format!("{name}.ron"));
-        match ron::ser::to_string_pretty(board, pretty.clone()) {
-            Ok(text) => match std::fs::write(&path, &text) {
-                Ok(()) => note.push_str(&format!(
-                    "wrote {} bytes to {}\n",
-                    text.len(),
-                    path.display()
-                )),
-                Err(e) => note.push_str(&format!("write {} failed: {e}\n", path.display())),
-            },
-            Err(e) => note.push_str(&format!("serialize {name} failed: {e}\n",)),
-        }
-    }
-    note.trim().to_string()
-}
-
 /// Spawn the ground plane the board scan is drawn on, preloading both boards'
 /// textures so later switches are instant.
 pub fn spawn_map_plane(
@@ -242,26 +203,5 @@ pub fn spawn_map_plane(
             ..default()
         })),
         Transform::from_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
-    ));
-}
-
-/// Key + fill lights for the board view. No standalone `AmbientLight`: since
-/// Bevy 0.19 it `#[require(Camera)]`, so a lone ambient entity spawns a
-/// phantom camera that never renders — and bevy_egui's auto primary-context
-/// system may attach the UI context to it, making the whole UI invisible.
-pub fn spawn_lights(mut commands: Commands) {
-    commands.spawn((
-        Name::new("Light"),
-        DirectionalLight {
-            illuminance: 9000.0,
-            ..default()
-        },
-    ));
-    commands.spawn((
-        Name::new("FillLight"),
-        DirectionalLight {
-            illuminance: 260.0,
-            ..default()
-        },
     ));
 }

@@ -11,4 +11,3 @@ bevy_egui = { workspace = true }
 omdurman-hexmap = { path = "../omdurman-hexmap" }
 omdurman-types = { path = "../omdurman-types" }
 omdurman-rules = { path = "../omdurman-rules" }
-ron = { workspace = true }

@@ -1,28 +1,7 @@
 use bevy::prelude::*;
 use omdurman_types::{HexCoord, OverlayParams};
 
-use crate::layout::{HexLayout, rotate_xz};
-
-/// The local lattice position of a hex centre (pre-warp, relative to the
-/// origin). Add corner offsets to this before calling [`local_to_world`] to draw
-/// warped hex outlines.
-pub fn hex_local_pos(coord: HexCoord, overlay: &OverlayParams) -> Vec3 {
-    let layout = HexLayout::from_overlay(overlay);
-    let stagger = overlay.offset_variant.stagger();
-    let phase = overlay.offset_variant.phase();
-    layout.hex_to_world_offset(coord, stagger, phase)
-}
-
-/// Push a point in local lattice space (pre-warp, relative to the origin)
-/// through the full registration pipeline: keystone size-gradient, affine warp,
-/// rotation, then translation by `origin`. Hex *corners* (not just centres) can
-/// be mapped this way, so overlay rendering shows the same warp the grid uses.
-pub fn local_to_world(local_x: f32, local_z: f32, origin: Vec2, overlay: &OverlayParams) -> Vec3 {
-    let (gx, gz) = overlay.size_gradient(local_x, local_z);
-    let (wx, wz) = overlay.warp(gx, gz);
-    let (rx, rz) = rotate_xz(wx, wz, overlay.rotation_deg.to_radians());
-    Vec3::new(origin.x + rx, 0.0, origin.y + rz)
-}
+use crate::layout::HexLayout;
 
 /// Convert an axial hex coordinate to a 3D world position using overlay params.
 ///

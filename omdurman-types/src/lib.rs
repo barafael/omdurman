@@ -19,29 +19,6 @@ pub struct CampaignTurnTrack {
     pub h: f32,
 }
 
-/// The calibrated placement of one chart table on its scan: a bounding box plus
-/// the left label-column width and top header-row height that are excluded from
-/// the even data grid. All coordinates are fractions of the scan's width/height
-/// in `[0, 1]`, so they survive the scan being rescaled.
-///
-/// This is *only* the geometry. The set of tables per chart, their row/column
-/// counts, and their cell labels are fixed in code (inferred from the printed
-/// scans -- see `charts::chart_layout`); a `ChartBox` is index-aligned with that
-/// code list. Calibrated in-app via the editor's Charts tab.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
-pub struct ChartBox {
-    pub x: f32,
-    pub y: f32,
-    pub w: f32,
-    pub h: f32,
-    /// Left label-column width, fraction of `w`, excluded from the data grid.
-    #[serde(default)]
-    pub label_w: f32,
-    /// Top header-row height, fraction of `h`, excluded from the data grid.
-    #[serde(default)]
-    pub header_h: f32,
-}
-
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct SpriteRef {
     pub section_name: SectionName,
