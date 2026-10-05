@@ -521,6 +521,8 @@ mod verification {
             },
             attacker_roll: any_die_roll(),
             defender_roll: any_die_roll(),
+            // The resolution is stubbed / never reached: the draw is inert.
+            disruption: crate::DisruptionDraw::default(),
         });
         assert_atomic(&mut state, apply_resolve_melee);
         state.kani_discard();
@@ -566,6 +568,8 @@ mod verification {
             },
             attacker_roll: any_die_roll(),
             defender_roll: any_die_roll(),
+            // The resolution is stubbed / never reached: the draw is inert.
+            disruption: crate::DisruptionDraw::default(),
         });
         state
             .vacated_by_combat
