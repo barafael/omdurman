@@ -158,9 +158,21 @@ pub(crate) fn night_capped_distance(
 /// runs *before* any mutation: on `Err` the state must be byte-identical, or a
 /// peer that rejects the effect diverges from one that accepts it.
 ///
-/// Maxim guns and gunboats are the §6.14 parenthetical exceptions to
-/// "may only be fired at once", so they are never added to the fired-at set.
-fn commit_fired_markers(state: &mut GameState, attack: &FireAttack, target_units: &[UnitId]) {
+/// §6.14's parenthetical "(exceptions: Maxim guns and gunboats -- see 6.4)"
+/// is about *firing*: they fire again in the second subphase (§6.42). Every
+/// unit, a Maxim or a gunboat included, is fired at once per subphase.
+///
+/// §6.42: a howitzer shell that lands in the hex it was aimed at marks its
+/// targets as *shelled* only, so the Maxims' second fire may still be laid
+/// on them ("Howitzer fire may be combined with Maxim fire, but only if the
+/// howitzer fire impacts in the intended hex"); a shell that scatters is an
+/// ordinary fire attack on whoever it lands on.
+fn commit_fired_markers(
+    state: &mut GameState,
+    attack: &FireAttack,
+    target_units: &[UnitId],
+    on_target_shell: bool,
+) {
     for shot in attack.shots() {
         match shot.mount {
             FireMount::Main => state.units_fired_this_phase.push(shot.unit),
@@ -168,10 +180,10 @@ fn commit_fired_markers(state: &mut GameState, attack: &FireAttack, target_units
         }
     }
     for &tid in target_units {
-        let excepted = state
-            .find_unit(tid)
-            .is_some_and(|u| fired_at_excepted(u.profile.kind));
-        if !excepted {
+        if attack.kind == FireKind::Howitzer {
+            state.units_shelled_this_phase.push(tid);
+        }
+        if !on_target_shell {
             state.units_fired_at_this_phase.push(tid);
         }
     }
@@ -261,16 +273,21 @@ fn validate_fire_resolution(state: &GameState, attack: &FireAttack) -> Result<()
         return Err(RuleError::FortStandsEmpty(attack.target_hex));
     }
     let target_units = fire_target_units(state, attack, attack.target_hex);
-    // §6.14: "a combat unit may only fire once and may only be fired at once
-    // (exceptions: Maxim guns and gunboats)". Any non-excepted target unit
-    // already fired at this phase makes the attack illegal -- two attacks on
-    // the same hex (or its survivors) in one phase fire at the same units.
+    // §6.14: "a combat unit may only fire once and may only be fired at
+    // once" (the Maxim and gunboat exceptions are to firing once, §6.42).
+    // Any target unit already fired at this phase makes the attack illegal
+    // -- two attacks on the same hex (or its survivors) in one phase fire at
+    // the same units.
+    // §6.42: howitzer fire "may be combined with Maxim fire" on its intended
+    // hex -- the shell answers to the shelled list, every other fire to the
+    // fired-at list, so one of each may strike the same units.
+    let fired_at = if attack.kind == FireKind::Howitzer {
+        &state.units_shelled_this_phase
+    } else {
+        &state.units_fired_at_this_phase
+    };
     for &tid in &target_units {
-        let already = state.units_fired_at_this_phase.contains(&tid);
-        let excepted = state
-            .find_unit(tid)
-            .is_some_and(|u| fired_at_excepted(u.profile.kind));
-        if already && !excepted {
+        if fired_at.contains(&tid) {
             return Err(RuleError::AlreadyFiredAt(tid));
         }
     }
@@ -347,7 +364,8 @@ fn commit_fire_attack(
             .find_unit(*id)
             .is_some_and(|u| u.profile.identity.owner() == opponent)
     });
-    commit_fired_markers(state, attack, target_units);
+    let on_target_shell = attack.kind == FireKind::Howitzer && target_hex == attack.target_hex;
+    commit_fired_markers(state, attack, target_units, on_target_shell);
 
     if let Some((special_id, special_kind, needed)) = special {
         let destroyed = matches!(result, CombatResult::Eliminate(n) if n >= needed);
@@ -469,12 +487,6 @@ fn commit_fire_attack(
     }
 }
 
-/// §6.14's fired-at exception: Maxim guns and gunboats may be fired at more
-/// than once per fire phase.
-pub(crate) fn fired_at_excepted(kind: UnitKind) -> bool {
-    matches!(kind, UnitKind::Gunboat { .. } | UnitKind::Maxim { .. })
-}
-
 /// Rulebook paragraphs that authorise a fire resolution, for the UI's
 /// combat-resolution card. The set depends on the kind of fire (direct vs
 /// howitzer vs Maxim second) and on whether a special target (gunboat/fort)
@@ -525,10 +537,13 @@ pub(crate) fn breach_victim(
 /// The Terrain Effects Chart's hexside fire effect on an attack (§6.23):
 /// fire that enters the target hex across a Crest (-1) or City Wall (-4,
 /// "but see LOS notes": only walls the LOS table lets fire cross) hexside.
-/// The side crossed is the last step of each firer's line of fire; when a
-/// combined attack's firers come in over different hexsides, the most
-/// protective one applies to the single die roll. Howitzer shells (§6.64)
-/// are lobbed from 4-10 hexes and ignore LOS, so they cross no hexside.
+/// The side crossed is the last step of each firer's line of sight -- where
+/// the fire runs along hexsides, of the side it is clear on (a ray blocked
+/// at the wall but open through the gate beside it crosses the gate). When
+/// a combined attack's firers come in over different hexsides, or one
+/// firer's ray is clear on both sides of a hexside, the most protective one
+/// applies to the single die roll. Howitzer shells (§6.64) are lobbed from
+/// 4-10 hexes and ignore LOS, so they cross no hexside.
 pub fn target_hexside_fire_modifier(
     state: &GameState,
     attack: &FireAttack,
@@ -542,11 +557,25 @@ pub fn target_hexside_fire_modifier(
         .iter()
         .filter_map(|id| state.find_unit(*id))
         .filter(|u| u.position != target_hex)
-        .map(|u| {
-            let entry = omdurman_types::HexLine::new(u.position, target_hex, 1)
-                .last()
-                .unwrap_or(u.position);
-            crate::terrain_chart::hexside_fire_modifier(state.hexside_effective(entry, target_hex))
+        .filter_map(|u| {
+            let mut entries = state.fire_entry_hexes(u, target_hex);
+            if entries.is_empty() {
+                // No line of sight (a preview of an illegal shot): the
+                // straight line's last step.
+                entries.push(
+                    omdurman_types::HexLine::new(u.position, target_hex, 1)
+                        .last()
+                        .unwrap_or(u.position),
+                );
+            }
+            entries
+                .into_iter()
+                .map(|entry| {
+                    crate::terrain_chart::hexside_fire_modifier(
+                        state.hexside_effective(entry, target_hex),
+                    )
+                })
+                .min()
         })
         .min()
         .unwrap_or(0)
@@ -605,9 +634,10 @@ pub fn firer_contributions(state: &GameState, attack: &FireAttack) -> Vec<FirerC
 }
 
 /// The defensive die-roll modifier of fire at `target_hex` on `target_units`
-/// beyond the mandatory list: the target hex's terrain (§6.23), the crest or
-/// wall hexside the fire enters it across (Terrain Effects Chart), and the
-/// fort's −3 when the units inside a fort are fired at (§6.54). Shared by
+/// beyond the mandatory list: the target hex's terrain (§6.23) -- or the
+/// fort's −3 when the units inside a fort are fired at (§6.54), whichever
+/// protects more -- and the crest or wall hexside the fire enters it across
+/// (Terrain Effects Chart). Shared by
 /// resolution and the app's fire preview.
 pub fn target_defence_modifier(
     state: &GameState,
@@ -631,9 +661,17 @@ pub fn target_defence_modifier(
                 .is_some_and(|u| matches!(u.profile.kind, UnitKind::Fort { .. }))
         })
         && state.is_fort_hex(target_hex);
-    crate::terrain_chart::defense_modifier(terrain)
-        + target_hexside_fire_modifier(state, attack, target_hex)
-        + if fort_defends { FORT_DEFENCE } else { 0 }
+    // The fort's -3 is the fort's own protection, not a bonus on top of the
+    // hex it stands in: where the printed hex is itself the work (Forts
+    // Makran and Buri and the North Fort are Building hexes, -3) the two
+    // are one and the same, so the better of the two applies, not their sum.
+    let hex_mod = crate::terrain_chart::defense_modifier(terrain);
+    let cover = if fort_defends {
+        hex_mod.min(FORT_DEFENCE)
+    } else {
+        hex_mod
+    };
+    cover + target_hexside_fire_modifier(state, attack, target_hex)
 }
 
 /// The printed "−3" on a fort counter (§6.54).

@@ -684,11 +684,13 @@ title = "ZOC limitations (walls, khor, fort, Nile, Zariba)"
 status = "implemented"
 clause = "ZOCs do extend out of a fort (even if unoccupied), and from a walled city hex into an adjacent non-walled-city hex across a wall hexside. ZOCs also extend out of (but not into) a walled city hex across a gate hexside."
 witness = "omdurman-rules::src::effects::tests::zoc_crosses_walls_and_gates_only_outward"
-note = "Implemented in GameState::zoc_extends: ZOCs do not cross a khor, do not extend into or out of a Nile hex (gunboat-vs-gunboat exception preserved), and do not extend into a fort, though they extend out of one even unoccupied. They cross a wall only from a walled-city hex outward, a gate only outward, and a breach both ways; they extend out of but not into a hut or building hex, and out of but not into the Zariba across a Zariba hexside (a built one in the Campaign). Open question: where the hut/building clause and the breach/wall clauses meet (a building hex just inside the wall), the hut/building clause wins."
+note = "Implemented in GameState::zoc_extends: ZOCs do not cross a khor, do not extend into or out of a Nile hex (gunboat-vs-gunboat exception preserved), and do not extend into a fort, though they extend out of one even unoccupied. They cross a wall only from a walled-city hex outward, a gate only outward, and a breach both ways; they extend out of but not into a hut or building hex, and out of but not into the Zariba across a Zariba hexside (a built one in the Campaign). Khartoum's rampart encloses no area (part of it is washed away, §2.1), so there the city side of each wall or gate hexside is the hex reached from the Palace without crossing the wall in fewer steps (BoardInfo::palace_steps). Open question: where the hut/building clause and the breach/wall clauses meet (a building hex just inside the wall), the hut/building clause wins."
 tests = [
         "omdurman-rules::src::effects::tests::zoc_extends_out_of_but_not_into_the_zariba",
     "omdurman-rules::src::effects::tests::zoc_extends_out_of_but_not_into_buildings_and_forts",
     "omdurman-rules::src::effects::tests::zoc_crosses_walls_and_gates_only_outward",
+    "omdurman-rules::src::effects::tests::khartoum_rampart_projects_zoc_outward_only",
+    "omdurman-rules::src::board_data::every_khartoum_wall_hexside_has_one_city_side",
     "omdurman-rules::src::effects::tests::zoc_hexes_excludes_nile",
     "omdurman-rules::src::effects::tests::zoc_hexes_excludes_khor",
     "omdurman-rules::src::effects::tests::zoc_hexes_normal_unit_projects_six_adjacent_minus_exclusions",
@@ -743,8 +745,9 @@ title = "Stacking limit (4 units + leaders, gunboats isolated)"
 status = "implemented"
 clause = "No more than four units may occupy a hex, with the exception of leaders and gunboats."
 witness = "omdurman-rules::src::effects::stacking_rule_limit_is_four_counted_units"
-approximation = "Stacking is checked at the end of every move and reinforcement entry, not only at the end of the movement phase, so a hex may never hold more than four units even for a moment (two full stacks cannot swap units)."
+approximation = "Stacking is checked at the end of every move and reinforcement entry, not only at the end of the movement phase, so a hex may never hold more than four units even for a moment (two full stacks cannot swap units). A hex holds only one fort (StackingError::FortStack): the manual does not say, but a fort is a work on the ground, not a counter to pile up."
 tests = [
+    "omdurman-rules::src::effects::tests::a_fort_is_one_work_with_one_minus_three",
     "omdurman-app::src::melee::one_click_advances_the_stack_up_to_the_stacking_limit",
     "omdurman-rules::src::effects::tests::stacking_over_limit_rejected",
     "omdurman-rules::src::effects::tests::mid_move_stacking_allows_pass_through",
@@ -933,7 +936,7 @@ tests = [
         "omdurman-rules::src::effects::tests::brigade_integrity_survives_combined_fire",
     "omdurman-rules::src::effects::tests::dead_units_are_pruned_from_every_tracker",
     "omdurman-rules::src::effects::tests::unit_may_only_be_fired_at_once_per_phase",
-    "omdurman-rules::src::effects::tests::gunboat_and_maxim_may_be_fired_at_repeatedly",
+    "omdurman-rules::src::effects::tests::a_gunboat_is_fired_at_once_per_phase",
     "omdurman-rules::src::effects::tests::rejected_fire_attack_does_not_mark_firers_as_fired",
     "omdurman-rules::src::effects::tests::single_unit_fires_alone_from_a_stack",
     "omdurman-rules::src::effects::tests::infantry_may_fire_only_once_per_subphase",
@@ -1078,6 +1081,7 @@ proofs = [
 tests = [
     "omdurman-rules::src::terrain_chart::engine_matches_the_transcribed_terrain_effects_chart",
     "omdurman-rules::src::effects::tests::fire_across_a_crest_or_wall_is_penalised",
+    "omdurman-rules::src::effects::tests::fire_through_a_gate_beside_a_wall_is_not_charged_the_wall",
     "omdurman-rules::src::terrain_chart::clear_terrain_no_bonus",
     "omdurman-rules::src::terrain_chart::building_gives_minus_3",
     "omdurman-rules::src::terrain_chart::trees_cost_one_and_give_no_defense",
@@ -1281,11 +1285,13 @@ title = "Maxim Second Fire and Howitzer Fire Subphase"
 status = "implemented"
 clause = "Anglo-Egyptian named gunboats may now fire their artillery factor as howitzer fire (see 6.64) and all Maxim guns may fire a second time."
 witness = "omdurman-rules::src::effects::tests::maxim_may_fire_twice_per_turn"
+approximation = "\"Howitzer fire may be combined with Maxim fire, but only if the howitzer fire impacts in the intended hex\" is not resolved as one attack on one die roll: a shell that lands in the hex it was aimed at and the Maxims' second fire may both be laid on that hex in the subphase, each as its own attack (in either order). A shell that scatters is an ordinary attack on whoever it lands on."
 proofs = [
     "omdurman-types::src::lib::unit_kind_fire_and_movement_capability_law_is_exact",
 ]
 tests = [
     "omdurman-rules::src::effects::tests::a_named_gunboat_fires_its_maxims_twice_beside_its_artillery",
+    "omdurman-rules::src::effects::tests::howitzer_on_target_combines_with_maxim_second_fire",
     "omdurman-rules::src::effects::tests::fall_of_khartoum_has_no_maxim_howitzer_subphase",
     "omdurman-rules::src::howitzer_scatter::howitzer_on_target_7_to_10",
     "omdurman-rules::src::howitzer_scatter::howitzer_scatters_below_7",
@@ -1418,9 +1424,11 @@ title = "Forts"
 status = "implemented"
 clause = "The −3 defensive value is deducted from the die roll of enemy fire attacks on friendly units stacked inside the fort."
 witness = "omdurman-rules::src::effects::tests::the_units_inside_a_fort_are_fired_at_with_its_minus_three"
+approximation = "The fort's −3 does not add to the terrain modifier of the hex it stands in: the more protective of the two applies (the printed Forts Makran and Buri and the North Fort are Building hexes, −3, and their garrisons are fired at with −3, not −6)."
 note = "Implemented: forts may not be occupied or advanced into by the enemy, may not melee attack, exert a ZOC even when unoccupied, may fire their artillery factor unstacked. Fire at a fort hex is either aimed at the fort itself (FireAttack::at_fort; artillery only, §6.62) or at the units stacked inside it, by any weapon, with the fort's −3 (target_defence_modifier). Forts are destroyed by artillery (§6.62), an infantry melee attack (§7.6; cavalry, camels or leaders alone cannot take one) or the Royal Engineers (§6.53, taking one occupant with them)."
 tests = [
     "omdurman-rules::src::effects::tests::printed_fok_forts_are_british_forts",
+    "omdurman-rules::src::effects::tests::a_fort_is_one_work_with_one_minus_three",
     "omdurman-rules::src::effects::tests::only_dervish_foot_destroys_a_fort_in_melee",
     "omdurman-rules::src::board_data::fok_forts_are_not_walled_in","omdurman-rules::src::effects::tests::retreat_before_melee_may_not_land_on_enemy_fort",
     "omdurman-rules::src::effects::tests::mandatory_advance_stops_at_an_enemy_fort",
@@ -2557,6 +2565,7 @@ witness = "omdurman-rules::src::effects::tests::fok_gunboat_crosses_between_nile
 note = "The off-board crossing costs six upstream movement points (CROSS_NILE_MP), charged as the move's cost. The listed test pins crossing legality, not the charged amount."
 tests = [
     "omdurman-rules::src::effects::tests::fok_gunboat_crosses_between_nile_mouths",
+    "omdurman-rules::src::effects::tests::nile_mouths_are_where_the_rivers_leave_the_map",
 ]
 
 [[mapping.impl]]

@@ -96,10 +96,14 @@ fn fok_setup_completes_with_sprite_backed_counters() {
                 continue;
             }
             let occupants: Vec<_> = state.units.iter().filter(|u| u.position == hex).collect();
-            // §5.51: the four-unit limit; gunboats never share a hex at all.
+            // §5.51: the four-unit limit; gunboats never share a hex at all,
+            // and a hex holds one fort.
             // §5.52: one Dervish tribe per hex (approximated by the FoK cap
             // group, which the picker mirrors).
+            let is_fort =
+                |k: omdurman_types::UnitKind| matches!(k, omdurman_types::UnitKind::Fort { .. });
             if occupants.len() >= 4
+                || (is_fort(profile.kind) && occupants.iter().any(|u| is_fort(u.profile.kind)))
                 || (is_boat && !occupants.is_empty())
                 || occupants.iter().any(|u| u.profile.kind.is_boat())
                 || occupants

@@ -760,10 +760,11 @@ fn draw_side(
     } else {
         format!(" {:+}", side.net_modifier)
     };
-    // §6.51: a side with no melee factor (Anglo-Egyptian leaders alone)
-    // makes no roll -- the engine resolves it as no effect.
+    // A side with no melee factor makes no roll -- the engine resolves it
+    // as no effect: Anglo-Egyptian leaders alone (§6.51), or units that are
+    // all disrupted ("may not melee", the Disrupted Units note).
     let summary = if side.factor == 0 {
-        "no melee factor — no roll (§6.51)".to_string()
+        "no roll — leaders alone (§6.51) or disrupted units do not melee".to_string()
     } else {
         format!(
             "factor {} (row {}) — rolled {}{} = {}  →  {}",

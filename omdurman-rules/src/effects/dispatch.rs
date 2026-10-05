@@ -286,6 +286,7 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
                 state.units_fired_this_phase.clear();
                 state.gunboat_maxims_fired_this_phase.clear();
                 state.units_fired_at_this_phase.clear();
+                state.units_shelled_this_phase.clear();
             }
         }
         Phase::DefensiveFire(FireSubPhase::MaximSecondAndHowitzer) => {
@@ -298,6 +299,7 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
                 state.units_fired_this_phase.clear();
                 state.gunboat_maxims_fired_this_phase.clear();
                 state.units_fired_at_this_phase.clear();
+                state.units_shelled_this_phase.clear();
             } else {
                 state.phase = Phase::Melee;
             }
@@ -458,6 +460,7 @@ fn clear_per_turn_tracking(state: &mut GameState) {
     state.units_fired_this_phase.clear();
     state.gunboat_maxims_fired_this_phase.clear();
     state.units_fired_at_this_phase.clear();
+    state.units_shelled_this_phase.clear();
     state.mp_spent_this_turn.clear();
     // §5.24: the sticky upstream cap only lasts for the turn.
     state.gunboats_upstream_this_turn.clear();
@@ -484,6 +487,7 @@ fn prune_dead_trackers(state: &mut GameState) {
     if state.units_fired_this_phase.is_empty()
         && state.gunboat_maxims_fired_this_phase.is_empty()
         && state.units_fired_at_this_phase.is_empty()
+        && state.units_shelled_this_phase.is_empty()
         && state.zoc_stopped_this_turn.is_empty()
         && state.mp_spent_this_turn.is_empty()
         && state.vacated_by_combat.is_empty()
@@ -498,6 +502,9 @@ fn prune_dead_trackers(state: &mut GameState) {
         .retain(|id| state.units.iter().any(|u| &u.id == id));
     state
         .units_fired_at_this_phase
+        .retain(|id| state.units.iter().any(|u| &u.id == id));
+    state
+        .units_shelled_this_phase
         .retain(|id| state.units.iter().any(|u| &u.id == id));
     state
         .zoc_stopped_this_turn

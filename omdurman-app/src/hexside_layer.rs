@@ -24,6 +24,10 @@ struct HexsideBar;
 struct HexsideBars {
     mesh: Option<Handle<Mesh>>,
     pool: Vec<Entity>,
+    /// Bars were spawned last run: they only exist for the queries from the
+    /// next frame on, so the layout runs once more to place them (a fresh
+    /// breach otherwise stayed invisible until the game state next changed).
+    placing: bool,
 }
 
 /// Bar width as a fraction of hex size — chunky enough to be obvious.
@@ -51,12 +55,17 @@ fn hexside_segment(
     )
 }
 
+/// A breach's pale band and red core, as multiples of a hexside bar's width.
+const BREACH_HALO: f32 = 2.6;
+const BREACH_CORE: f32 = 1.3;
+const BREACH_HALO_COLOR: Color = Color::srgb(1.0, 0.95, 0.8);
+
 /// Per-kind hexside colours (those of the retired map editor's preview).
 fn hexside_color(kind: HexsideKind) -> Color {
     match kind {
         HexsideKind::Wall => Color::srgb(0.75, 0.75, 0.75),
         HexsideKind::Gate => Color::srgb(0.9, 0.8, 0.2),
-        HexsideKind::Breach => Color::srgb(0.9, 0.4, 0.1),
+        HexsideKind::Breach => Color::srgb(0.85, 0.1, 0.05),
         HexsideKind::Khor => Color::srgb(0.4, 0.3, 0.15),
         HexsideKind::Crest => Color::srgb(0.6, 0.45, 0.3),
         HexsideKind::ZaribaThornHedge => Color::srgb(0.3, 0.55, 0.2),
@@ -114,12 +123,13 @@ fn update_dynamic_hexside_bars(
     >,
 ) {
     let Some(gs) = game_state else { return };
-    if !gs.is_changed() {
+    if !gs.is_changed() && !pool.placing {
         return;
     }
     let Some(game_map) = game_map else { return };
 
-    let mut bars: Vec<(Vec3, Vec3, f32, Color)> = Vec::new();
+    // (ends, width, height above the board, colour)
+    let mut bars: Vec<(Vec3, Vec3, f32, f32, Color)> = Vec::new();
     for edge in gs.0.board.hexsides.keys() {
         // Effective kind: a §6.53/§6.63 breach overrides an authored Wall;
         // an unbuilt Campaign Zariba is clear ground (§2.1).
@@ -133,12 +143,23 @@ fn update_dynamic_hexside_bars(
             continue; // unchanged — the authored map texture already shows it
         }
         let (p0, p1) = hexside_segment(edge, layout.adjusted_origin(&overlay.params), &overlay);
-        bars.push((
-            p0,
-            p1,
-            overlay.params.hex_size * HEXSIDE_WIDTH_FRAC,
-            hexside_color(kind),
-        ));
+        let width = overlay.params.hex_size * HEXSIDE_WIDTH_FRAC;
+        if kind == HexsideKind::Breach {
+            // The manual marks a breach with a counter beside the wall
+            // (§6.63). Here it is a gap blown in the printed black wall:
+            // a wide pale band with a red core, readable at any zoom (a
+            // thin orange bar on the black wall was all but invisible).
+            bars.push((p0, p1, width * BREACH_HALO, HEXSIDE_Y, BREACH_HALO_COLOR));
+            bars.push((
+                p0,
+                p1,
+                width * BREACH_CORE,
+                HEXSIDE_Y + 0.05,
+                hexside_color(kind),
+            ));
+        } else {
+            bars.push((p0, p1, width, HEXSIDE_Y, hexside_color(kind)));
+        }
     }
 
     let mesh = pool
@@ -147,6 +168,7 @@ fn update_dynamic_hexside_bars(
         .clone();
 
     // Grow the pool to fit.
+    pool.placing = pool.pool.len() < bars.len();
     while pool.pool.len() < bars.len() {
         let material = materials.add(StandardMaterial {
             base_color: Color::WHITE,
@@ -170,17 +192,9 @@ fn update_dynamic_hexside_bars(
         let Ok((_, mut transform, mut visibility, mat_handle)) = bars_q.get_mut(*entity) else {
             continue;
         };
-        if let Some(&(p0, p1, width, color)) = bars.get(i) {
+        if let Some(&(p0, p1, width, y, color)) = bars.get(i) {
             if let Some(mut material) = materials.get_mut(&mat_handle.0) {
-                place_hexside_quad(
-                    &mut transform,
-                    &mut material,
-                    p0,
-                    p1,
-                    width,
-                    HEXSIDE_Y,
-                    color,
-                );
+                place_hexside_quad(&mut transform, &mut material, p0, p1, width, y, color);
             }
             *visibility = Visibility::Visible;
         } else {

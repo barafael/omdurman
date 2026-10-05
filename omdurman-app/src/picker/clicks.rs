@@ -540,6 +540,19 @@ fn select_single_unit(
     ) else {
         return false;
     };
+    // §5.21: a "Friendlies" unit aboard a gunboat moves only with her, and
+    // the two counters share the hex -- in the Movement phase a click that
+    // lands on the passenger takes the gunboat (the disembarkation is
+    // offered on its own card, whichever is selected).
+    let (entity, placed) = game_state
+        .filter(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Movement))
+        .and_then(|gs| gs.0.find_unit(placed.unit_id?)?.state.loaded_on)
+        .and_then(|carrier| {
+            placed_units
+                .iter()
+                .find(|(_, p)| p.unit_id == Some(carrier))
+        })
+        .unwrap_or((entity, placed));
 
     if let Some(faction) = restrict_to
         && omdurman_rules::unit_profiles::section_owner(placed.section_name) != Some(faction)
@@ -991,7 +1004,8 @@ fn no_route_reason(goal: HexCoord, budget: i16, cheapest: Option<i16>, boat: boo
     let why = if boat {
         "going upstream a gunboat has its smaller upstream allowance, §5.24"
     } else {
-        "Rough and Swamp cost 3 MP a hex, §5.11"
+        "Rough and Swamp cost 3 MP a hex, a khor +5, and no route passes through an \
+         enemy zone of control: §5.11, §5.43"
     };
     match cheapest {
         Some(cost) => format!(
@@ -1213,6 +1227,33 @@ impl SelectedClick<'_> {
         // the counter to the picker). There's no movement during deployment, so
         // don't build path legs -- bail without changing state.
         if game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup)) {
+            return Ok(());
+        }
+        // §9.345 (FALL OF KHARTOUM): a gunboat lying on one Nile mouth
+        // crosses to the other off the board, as a move of its own -- the
+        // engine takes it as the single step of a move, so it is only
+        // offered before any other leg is plotted, and ends the move.
+        if let (Some(gs), Some(uid)) = (game_state, placed.unit_id)
+            && placed.is_boat
+            && gs.0.is_nile_mouth_crossing(start_coord, coord)
+        {
+            if !self.movement_path.legs.is_empty() {
+                return Err(format!(
+                    "The off-board crossing to {coord} is a move of its own (§9.345): \
+                     undo the plotted steps first."
+                ));
+            }
+            let cost = omdurman_rules::effects::NILE_MOUTH_CROSSING_MP;
+            gs.0.can_move_gunboat(uid, coord, &[coord], MovementPoints::new(cost))
+                .map_err(|error| format!("Cannot cross to {coord} (§9.345): {error}"))?;
+            self.movement_path.legs.push((start_coord, coord));
+            self.movement_path.cost_so_far += cost;
+            *self.state = PickerState::Selected {
+                source,
+                start_coord: coord,
+                remaining_mp: 0,
+                forced_stop: true,
+            };
             return Ok(());
         }
         // A distant hex -- or a neighbour behind a wall -- plot the cheapest

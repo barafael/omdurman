@@ -64,6 +64,14 @@ fn usual(hexes: &[HexCoord]) -> Option<HexCoord> {
     counts.into_iter().max_by_key(|&(_, n)| n).map(|(h, _)| h)
 }
 
+/// Where most of `hexes` are -- the place a count of losses may be pinned
+/// to: the commonest hex when more than half of them lie there, else none
+/// ("fire destroyed six bands", not "six bands at the gate" for two of six).
+fn mostly(hexes: &[HexCoord]) -> Option<HexCoord> {
+    let at = usual(hexes)?;
+    (2 * hexes.iter().filter(|&&h| h == at).count() > hexes.len()).then_some(at)
+}
+
 /// Our lost units as the clerk keys a list: "3E First Btn and battery", or
 /// "five units including 3E First Btn and battery".
 fn wire_list(units: &[UnitId], scenario: Scenario) -> String {
@@ -263,7 +271,7 @@ fn event_facts(state: &GameState, summary: &TurnSummary) -> Vec<Fact> {
         facts.push(
             Fact::new(2, 10, T.our_losses)
                 .with("units", wire_list(&our_lost, scenario))
-                .with("place", place(usual(&at))),
+                .with("place", place(mostly(&at))),
         );
     }
     // Bands are the tribes; the enemy's forts, guns and steamers are named
@@ -304,7 +312,7 @@ fn event_facts(state: &GameState, summary: &TurnSummary) -> Vec<Fact> {
             Fact::new(3, kind, bank)
                 .with("n", number_word(lost.len()))
                 .with("tribes", wire_and(&tribes))
-                .with("place", place(usual(&at))),
+                .with("place", place(mostly(&at))),
         );
     }
     if deserted > 0 {

@@ -480,9 +480,23 @@ pub fn whereabouts(scenario: Scenario, hex: HexCoord) -> String {
         return "in the field".into();
     };
     let miles = ((hex.distance(*centre) + 2) / 4).max(1) as usize;
-    let dq = (hex.q - centre.q) as f32 + (hex.r - centre.r) as f32 / 2.0;
+    let point = compass_point(*centre, hex);
+    let miles_word = if miles == 1 {
+        "a mile".to_string()
+    } else {
+        format!("{} miles", number_word(miles))
+    };
+    format!("{miles_word} {point} of {city}")
+}
+
+/// The compass point of `hex` as seen from `centre`, on the map's own
+/// north (rows run north to south).
+fn compass_point(centre: HexCoord, hex: HexCoord) -> &'static str {
+    // East of the centre, in hex widths: a row down sits half a hex to the
+    // west (`HexCoord::neighbors`: `(q, r + 1)` is the south-west neighbour).
+    let dq = (hex.q - centre.q) as f32 - (hex.r - centre.r) as f32 / 2.0;
     let dr = (hex.r - centre.r) as f32;
-    // Bearing clockwise from north (rows run north to south).
+    // Bearing clockwise from north.
     let bearing = (dq * 0.866)
         .atan2(-dr * 0.75)
         .to_degrees()
@@ -497,13 +511,7 @@ pub fn whereabouts(scenario: Scenario, hex: HexCoord) -> String {
         "west",
         "north-west",
     ];
-    let point = POINTS[((bearing + 22.5) / 45.0) as usize % 8];
-    let miles_word = if miles == 1 {
-        "a mile".to_string()
-    } else {
-        format!("{} miles", number_word(miles))
-    };
-    format!("{miles_word} {point} of {city}")
+    POINTS[((bearing + 22.5) / 45.0) as usize % 8]
 }
 
 /// The date of a turn as the press prints it: "September 2" and the hour
@@ -627,6 +635,25 @@ mod tests {
             far.ends_with("of Omdurman") || far.starts_with("near"),
             "{far}"
         );
+    }
+
+    /// The compass point follows the map: six rows straight down the board
+    /// is `(q + 3, r + 6)` (each row sits half a hex west of the last), and
+    /// that is due south -- not south-east.
+    #[test]
+    fn bearings_follow_the_map() {
+        let c = HexCoord::new(30, 30);
+        let at = |dq: i32, dr: i32| compass_point(c, HexCoord::new(c.q + dq, c.r + dr));
+        assert_eq!(at(3, 6), "south");
+        assert_eq!(at(-3, -6), "north");
+        assert_eq!(at(6, 0), "east");
+        assert_eq!(at(-6, 0), "west");
+        // Along the hex grain: (q, r + 1) is the south-west neighbour,
+        // (q + 1, r + 1) the south-east one.
+        assert_eq!(at(0, 6), "south-west");
+        assert_eq!(at(6, 6), "south-east");
+        assert_eq!(at(0, -6), "north-east");
+        assert_eq!(at(-6, -6), "north-west");
     }
 
     #[test]

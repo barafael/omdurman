@@ -5,7 +5,7 @@ use crate::peers::Peers;
 use crate::picker::{PickerState, PlacedUnit};
 use crate::{GameRng, GameStateResource};
 use bevy::prelude::*;
-use bevy_egui::{EguiContexts, egui};
+use bevy_egui::egui;
 use omdurman_net::GameEvent;
 use omdurman_rules::effects::GameEffect;
 use omdurman_rules::{FireAttack, FireKind, Phase};
@@ -208,133 +208,57 @@ pub(crate) fn target_label(
     format!("{what} ({}, {})", hex.q, hex.r)
 }
 
-/// egui panel showing the current allocation list with remove buttons and
-/// a "Fire" button. Each attack is one row (scrollable when the list
-/// is long) with per-firer factors and the specific die modifiers (§6.24,
-/// §5.54, §6.23, §9.231/§9.232) that attack carries.
-pub fn fire_allocation_review_ui(
-    mut contexts: EguiContexts,
-    mode: Res<State<crate::AppMode>>,
-    game_state: Option<Res<GameStateResource>>,
-    mut allocation: ResMut<FireAllocationState>,
-    peers: Peers,
+/// The staged attacks, drawn in the command rail under the "Next step"
+/// heading: one row per attack with a remove button, per-firer factors and
+/// the specific die modifiers (§6.24, §5.54, §6.23, §9.231/§9.232) it
+/// carries, then the "Resolve" button. In the rail, not on a card floating
+/// over the board: a card there covered the fight it listed and swallowed
+/// the clicks meant for the hexes under it.
+pub(crate) fn draw_staged_attacks(
+    ui: &mut egui::Ui,
+    gs: &omdurman_rules::effects::GameState,
+    allocation: &mut FireAllocationState,
 ) {
-    if !mode.is_play() {
-        return;
-    }
-    if !allocation.panel_open || allocation.committed {
-        return;
-    }
-    let Some(gs) = game_state else { return };
-    if !matches!(
-        gs.0.phase,
-        Phase::OffensiveFire(_) | Phase::DefensiveFire(_)
-    ) {
-        return;
-    }
-    let firing_player = gs.0.phase_player();
-    if !peers.may_act(firing_player) {
-        return;
-    }
-
-    let Ok(ctx) = contexts.ctx_mut() else { return };
-
     let mut remove_self: Option<usize> = None;
     let mut toggle_aim: Option<usize> = None;
-    // A fixed width, inside the window: a combined fire's firer list wraps
-    // in it instead of widening the tray off the screen's edges.
-    let tray_width = (ctx.content_rect().width() - 80.0).clamp(320.0, 760.0);
-
-    crate::ui::anchored_card(
-        ctx,
-        egui::Id::new("fire_allocation_panel"),
-        egui::Align2::CENTER_BOTTOM,
-        egui::Vec2::new(0.0, -100.0),
-        crate::ui::frames::card(crate::ui::palette::CARD_ALLOCATION),
-        |ui| {
-            ui.set_width(tray_width);
-            ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
-
-            ui.horizontal(|ui| {
-                ui.colored_label(
-                    crate::ui::palette::CARD_TITLE_TAN,
-                    format!(
-                        "Fire combat resolutions  ({} pending)",
-                        allocation.attacks.len()
-                    ),
-                );
-                if ui
-                    .add(egui::Button::new("✕").min_size(egui::Vec2::splat(16.0)))
-                    .clicked()
-                {
-                    allocation.panel_open = false;
-                }
-            });
-
+    ui.scope(|ui| {
+        ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
+        for (i, attack) in allocation.attacks.iter().enumerate() {
+            draw_allocation_row(ui, gs, attack, &mut remove_self, &mut toggle_aim, i);
             ui.add_space(4.0);
-
-            if allocation.attacks.is_empty() {
-                ui.colored_label(
-                    crate::ui::palette::TEXT_DIM,
-                    "No fires allocated yet — select a unit or double-click a hex, then click a red-ringed target.",
+        }
+        // §6.41: the sub-phase's fire resolves together -- a player who
+        // resolved one attack to see how it went found the rest refused.
+        ui.label(crate::ui::text::note(
+            "All of this sub-phase's fire resolves at once: stage every attack first.",
+        ));
+        if ui
+            .add(
+                egui::Button::new(format!(
+                    "Resolve {} attack{} (Enter)",
+                    allocation.attacks.len(),
+                    if allocation.attacks.len() == 1 {
+                        ""
+                    } else {
+                        "s"
+                    }
+                ))
+                .fill(crate::ui::palette::BTN_GO)
+                .min_size(egui::Vec2::new(120.0, 28.0)),
+            )
+            .on_hover_ui(|ui| {
+                crate::rulebook::refs_label(
+                    ui,
+                    "Roll and resolve every allocated attack (§6.41)",
+                    ui.visuals().text_color(),
+                    12.0,
                 );
-            } else {
-                egui::ScrollArea::vertical()
-                    .max_height(320.0)
-                    .auto_shrink([false, true])
-                    .show(ui, |ui| {
-                        for (i, attack) in allocation.attacks.iter().enumerate() {
-                            draw_allocation_row(
-                                ui,
-                                &gs.0,
-                                attack,
-                                &mut remove_self,
-                                &mut toggle_aim,
-                                i,
-                            );
-                            ui.add_space(4.0);
-                        }
-                    });
-            }
-
-            ui.add_space(6.0);
-            // §6.41: the sub-phase's fire resolves together -- a player who
-            // resolved one attack to see how it went found the rest refused.
-            if !allocation.attacks.is_empty() {
-                ui.label(crate::ui::text::note(
-                    "All of this sub-phase's fire resolves at once: stage every attack first.",
-                ));
-            }
-
-            if !allocation.attacks.is_empty()
-                && ui
-                    .add(
-                        egui::Button::new(format!(
-                            "Resolve {} attack{} (Enter)",
-                            allocation.attacks.len(),
-                            if allocation.attacks.len() == 1 {
-                                ""
-                            } else {
-                                "s"
-                            }
-                        ))
-                        .fill(crate::ui::palette::BTN_GO)
-                        .min_size(egui::Vec2::new(120.0, 28.0)),
-                    )
-                    .on_hover_ui(|ui| {
-                        crate::rulebook::refs_label(
-                            ui,
-                            "Roll and resolve every allocated attack (§6.41)",
-                            ui.visuals().text_color(),
-                            12.0,
-                        );
-                    })
-                    .clicked()
-            {
-                allocation.execute_requested = true;
-            }
-        },
-    );
+            })
+            .clicked()
+        {
+            allocation.execute_requested = true;
+        }
+    });
 
     if let Some(idx) = remove_self {
         allocation.attacks.remove(idx);
@@ -345,7 +269,7 @@ pub fn fire_allocation_review_ui(
         // at the units inside it.
         if attack.at_fort {
             attack.at_fort = false;
-        } else if let Some(aimed) = omdurman_rules::effects::aim_at_fort(&gs.0, attack) {
+        } else if let Some(aimed) = omdurman_rules::effects::aim_at_fort(gs, attack) {
             *attack = aimed;
         }
     }
@@ -454,7 +378,7 @@ fn draw_allocation_row(
                 .wrap(),
             );
         });
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.label(
                 egui::RichText::new(format!("  {kind}  ·  range {range_text}"))
                     .color(crate::ui::palette::TEXT_SOFT)

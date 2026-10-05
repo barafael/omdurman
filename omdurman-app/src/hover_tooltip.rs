@@ -308,15 +308,27 @@ fn draw_hover_tooltip(
 
 /// What a cached [`route_hint`] was computed for: the mover, the hovered
 /// hex, where the plotted path ends and what it cost, and the engine state
-/// (by unit count and phase -- a cheap proxy that changes with every move).
-type RouteKey = (
-    omdurman_rules::UnitId,
-    HexCoord,
-    HexCoord,
-    i16,
-    usize,
-    Phase,
-);
+/// the route was searched in ([`route_stamp`]).
+type RouteKey = (omdurman_rules::UnitId, HexCoord, HexCoord, i16, u64);
+
+/// A stamp of everything in the engine state a route search reads: the
+/// turn and phase, where every unit stands, and what the mover has spent.
+/// (Unit count and phase alone went stale: the same hex hovered a turn
+/// later still showed last turn's movement points.)
+fn route_stamp(gs: &omdurman_rules::effects::GameState, mover: omdurman_rules::UnitId) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::hash::DefaultHasher::new();
+    gs.current_turn.value().hash(&mut h);
+    gs.phase.hash(&mut h);
+    gs.active_player.hash(&mut h);
+    gs.mp_spent(mover).hash(&mut h);
+    for u in &gs.units {
+        u.id.hash(&mut h);
+        u.position.hash(&mut h);
+        u.state.disrupted.hash(&mut h);
+    }
+    h.finish()
+}
 
 /// For a hex beyond the next step in a Movement phase: the price of the
 /// route a click would plot there -- the same search
@@ -345,8 +357,7 @@ fn route_hint(
         hex,
         from,
         movement_path.cost_so_far,
-        gs.units.len(),
-        gs.phase,
+        route_stamp(gs, unit_id),
     );
     if let Some((cached, line)) = cache.as_ref()
         && *cached == key

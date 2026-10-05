@@ -310,6 +310,7 @@ fn fire_target_stamp(gs: &GameState) -> u64 {
     }
     gs.units_fired_this_phase.hash(&mut h);
     gs.units_fired_at_this_phase.hash(&mut h);
+    gs.units_shelled_this_phase.hash(&mut h);
     // Wall breaches (§6.63) are game state and change LOS (§6.3 Wall row).
     gs.breaches.hash(&mut h);
     h.finish()

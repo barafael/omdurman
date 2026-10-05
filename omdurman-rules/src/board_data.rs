@@ -43,6 +43,42 @@ mod wall_ring_tests {
     use crate::board::BoardInfo;
     use omdurman_types::{HexCoord, HexsideKind, HexsideRef, Location, Terrain};
 
+    /// §5.44 / §6.3 note b: Khartoum's rampart is open (§2.1), so the city
+    /// side of each wall and gate hexside is derived per hexside -- exactly
+    /// one of its two hexes is inside, including on the bastions, where the
+    /// straight-line distance to the Palace ties or points the wrong way.
+    #[traceability_macro::rulebook("§5.44")]
+    #[test]
+    fn every_khartoum_wall_hexside_has_one_city_side() {
+        let board = BoardInfo::from_map_data(&fall_of_khartoum_map_data());
+        let mut walls = 0;
+        for (side, kind) in &board.hexsides {
+            if !matches!(kind, HexsideKind::Wall | HexsideKind::Gate) {
+                continue;
+            }
+            walls += 1;
+            assert_ne!(
+                board.is_inside_of_wall(side.a, side.b),
+                board.is_inside_of_wall(side.b, side.a),
+                "{:?}-{:?}",
+                side.a,
+                side.b
+            );
+        }
+        assert!(walls > 30);
+        // The Kalakla bastion juts out of the wall: it is inside against
+        // both re-entrant hexes beside it.
+        let bastion = HexCoord::new(13, 12);
+        assert!(board.is_inside_of_wall(bastion, HexCoord::new(14, 12)));
+        assert!(board.is_inside_of_wall(bastion, HexCoord::new(12, 12)));
+        // Omdurman's wall encloses its city: no per-hexside table there.
+        assert!(
+            BoardInfo::from_map_data(&campaign_map_data())
+                .palace_steps
+                .is_empty()
+        );
+    }
+
     /// §5.23: the walled city must be the area *enclosed* by the annotated
     /// Wall/Gate/Breach ring, anchored at the Palace (and the Mahdi's Tomb on
     /// the Omdurman board). These tests pin the compiled boards' derivations.

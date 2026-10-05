@@ -125,7 +125,7 @@ pub fn draw_actions_section(
             )
         } else {
             (
-                format!("Resolve {staged} staged attack{s}\u{2026}"),
+                format!("Show {staged} staged attack{s}\u{2026}"),
                 crate::ui::palette::BTN_COMBAT,
             )
         };
@@ -140,6 +140,11 @@ pub fn draw_actions_section(
             allocation.panel_open = !open;
         }
         ui.add_space(4.0);
+        // The staged list lives here in the rail, clear of the board.
+        if allocation.panel_open {
+            crate::fire_allocation::draw_staged_attacks(ui, &state.0, allocation);
+            ui.add_space(6.0);
+        }
     }
 
     collect_hints(

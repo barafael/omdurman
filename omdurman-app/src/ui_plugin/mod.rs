@@ -106,7 +106,11 @@ impl Plugin for UiPlugin {
                 EguiPrimaryContextPass,
                 (
                     mode_toolbar_ui.run_if(not(bevy::prelude::in_state(crate::AppMode::Menu))),
-                    cursor_overlay_ui.run_if(crate::map_view_active),
+                    // After the rail: it draws only on the board the rail
+                    // leaves free (`ScreenLayout::left_inset`).
+                    cursor_overlay_ui
+                        .run_if(crate::map_view_active)
+                        .after(LeftRailSet),
                     // (ZOC/LOS toggles live in the left rail's Overlays
                     // section -- see overview::unit_overview_ui.)
                     // In-game HUD/overlays: only while actually in a game, so

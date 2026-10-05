@@ -101,15 +101,24 @@ pub(crate) fn special_actions_ui(
     mut layout: ResMut<crate::ScreenLayout>,
 ) {
     let Some(gs) = game_state else { return };
-    let Some((uid, _)) = crate::picker::selected_unit_id(&state, &placed_units) else {
+    // Any selection shape: a single counter or a whole stack (a brigade is
+    // usually moved, and so selected, as one). The demolition is the Royal
+    // Engineers' alone, so they stand for the selection when they are in it.
+    let ids = crate::picker::selected_unit_ids(&state, &placed_units);
+    let Some(uid) = ids
+        .iter()
+        .copied()
+        .find(|id| {
+            gs.0.find_unit(*id)
+                .is_some_and(|u| u.profile.identity == omdurman_rules::UnitIdentity::RoyalEngineers)
+        })
+        .or(ids.first().copied())
+    else {
         return;
     };
     let Some(unit) = gs.0.find_unit(uid) else {
         return;
     };
-    if unit.state.disrupted {
-        return;
-    }
 
     // Only the active player may take special actions.
     let local = peers.local();
@@ -127,15 +136,20 @@ pub(crate) fn special_actions_ui(
 
     // Zariba construction (§5.3): any Anglo-Egyptian infantry inside the
     // printed Zariba, next to printed Zariba hexsides it may build -- the
-    // engine's own check decides.
-    let unit_hex = unit.position;
-    let buildable: Vec<omdurman_types::HexsideRef> = unit_hex
-        .neighbors()
-        .into_iter()
-        .map(|n| omdurman_types::HexsideRef::new(unit_hex, n))
-        .filter(|side| gs.0.can_construct_zariba(&[uid], *side).is_ok())
+    // engine's own check decides, unit by unit, so a selected stack sends
+    // exactly the battalions that may build.
+    let builders: Vec<(omdurman_rules::UnitId, omdurman_types::HexsideRef)> = ids
+        .iter()
+        .filter_map(|&id| {
+            let hex = gs.0.find_unit(id)?.position;
+            hex.neighbors()
+                .into_iter()
+                .map(|n| omdurman_types::HexsideRef::new(hex, n))
+                .find(|side| gs.0.can_construct_zariba(&[id], *side).is_ok())
+                .map(|side| (id, side))
+        })
         .collect();
-    let has_construct_button = !buildable.is_empty();
+    let has_construct_button = !builders.is_empty();
     let has_demolish_button = can_demolish && gs.0.can_demolition(uid).is_ok();
 
     // Adjacent demolition targets (§6.53), discovered by the rules engine.
@@ -180,21 +194,40 @@ pub(crate) fn special_actions_ui(
                     crate::ui::palette::CARD_TITLE_TAN,
                     13.0,
                 );
-                ui.label(crate::ui::text::note(
+                ui.label(crate::ui::text::note(if builders.len() == 1 {
                     "Hold this battalion here all turn: at the end of the turn it has built \
                      every printed Zariba hexside it stands beside. It may not move, fire \
-                     offensively or melee this turn.",
-                ));
-                if ui.small_button("Build the Zariba here").clicked() {
-                    submit.submit(
-                        &gs.0,
-                        omdurman_net::GameEvent::Effect(
-                            omdurman_rules::effects::GameEffect::ConstructZariba {
-                                unit_ids: vec![uid],
-                                hexside: buildable[0],
-                            },
-                        ),
-                    );
+                     offensively or melee this turn."
+                } else {
+                    "Hold these battalions here all turn: at the end of the turn they have \
+                     built every printed Zariba hexside they stand beside. They may not \
+                     move, fire offensively or melee this turn."
+                }));
+                let label = if builders.len() == 1 {
+                    "Build the Zariba here".to_string()
+                } else {
+                    format!("Build the Zariba here ({} battalions)", builders.len())
+                };
+                if ui.small_button(label).clicked() {
+                    // One effect per hexside named (a stack shares one).
+                    let mut sides: Vec<omdurman_types::HexsideRef> =
+                        builders.iter().map(|&(_, side)| side).collect();
+                    sides.dedup();
+                    for side in sides {
+                        submit.submit(
+                            &gs.0,
+                            omdurman_net::GameEvent::Effect(
+                                omdurman_rules::effects::GameEffect::ConstructZariba {
+                                    unit_ids: builders
+                                        .iter()
+                                        .filter(|&&(_, s)| s == side)
+                                        .map(|&(id, _)| id)
+                                        .collect(),
+                                    hexside: side,
+                                },
+                            ),
+                        );
+                    }
                 }
             }
 

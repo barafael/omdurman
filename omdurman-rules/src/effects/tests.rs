@@ -5401,6 +5401,62 @@ mod tests {
     }
 
     // §6.54: "The −3 defensive value is deducted from the die roll of enemy
+    // fire attacks on friendly units stacked inside the fort" -- that -3 is
+    // the fort's own, not a bonus on top of the hex: Fort Buri is printed as
+    // a Building hex (-3 on the Terrain Effects Chart) and its garrison is
+    // fired at with -3, not -6. And a hex holds one fort.
+    #[rulebook("§6.54", "§5.51")]
+    #[test]
+    fn a_fort_is_one_work_with_one_minus_three() {
+        let board =
+            crate::board::BoardInfo::from_map_data(&crate::board_data::fall_of_khartoum_map_data());
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        state.board = Arc::new(board);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::Dervish;
+        state.day_night = DayNight::Day;
+        let buri = HexCoord::new(20, 9);
+        assert!(matches!(
+            state.board.terrain_at(buri),
+            Some(omdurman_types::Terrain::Building { .. })
+        ));
+        let fort = make_unit(
+            &mut state,
+            buri,
+            UnitKind::Fort { fire: 4, melee: 1 },
+            UnitIdentity::AngloEgyptianFort,
+            WeaponClass::Artillery,
+            UnitMovement::Immobile,
+        );
+        let garrison = make_ae_infantry(&mut state, buri);
+        let band = make_dervish_tribal(&mut state, HexCoord::new(21, 9));
+        let attack = direct_attack(Player::Dervish, vec![band], buri);
+        assert_eq!(
+            target_defence_modifier(&state, &attack, buri, &[garrison]),
+            -3
+        );
+
+        // The fort and its garrison are a legal stack ...
+        let held = *state.find_unit(garrison).unwrap();
+        assert_eq!(state.check_stacking(&held, buri), Ok(()));
+        // ... a second fort may not stand in the hex.
+        let second = make_unit(
+            &mut state,
+            HexCoord::new(19, 9),
+            UnitKind::Fort { fire: 4, melee: 1 },
+            UnitIdentity::AngloEgyptianFort,
+            WeaponClass::Artillery,
+            UnitMovement::Immobile,
+        );
+        let second = *state.find_unit(second).unwrap();
+        assert_eq!(
+            state.check_stacking(&second, buri),
+            Err(crate::StackingError::FortStack)
+        );
+        let _ = fort;
+    }
+
+    // §6.54: "The −3 defensive value is deducted from the die roll of enemy
     // fire attacks on friendly units stacked inside the fort" -- anyone may
     // fire at the garrison; only the fort itself is the artillery's (§6.62).
     #[rulebook("§6.54", "§6.62")]
@@ -6735,6 +6791,46 @@ mod tests {
         )
     }
 
+    // §9.345 on the printed map: the White Nile leaves the north edge at
+    // (1,0), the Blue Nile at (5,0)/(6,0) and, round Tuti island, at
+    // (14,0)/(15,0). A gunboat lying on
+    // either river's exit hex crosses to the other's; no hex inside the
+    // map takes part.
+    #[rulebook("§9.345")]
+    #[test]
+    fn nile_mouths_are_where_the_rivers_leave_the_map() {
+        let board =
+            crate::board::BoardInfo::from_map_data(&crate::board_data::fall_of_khartoum_map_data());
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        state.board = Arc::new(board);
+        state.phase = Phase::Movement;
+        state.active_player = Player::AngloEgyptian;
+        state.day_night = DayNight::Day;
+        let white = HexCoord::new(1, 0);
+        let mut blue = state.nile_mouth_crossings(white);
+        blue.sort();
+        assert_eq!(
+            blue,
+            [(5, 0), (6, 0), (14, 0), (15, 0)].map(|(q, r)| HexCoord::new(q, r))
+        );
+        for hex in blue.iter().chain([&white]) {
+            assert!(state.board.is_nile(*hex));
+            assert!(
+                state
+                    .board
+                    .terrain_at(HexCoord::new(hex.q, hex.r - 1))
+                    .is_none(),
+                "{hex} is on the north edge"
+            );
+        }
+        assert_eq!(state.nile_mouth_crossings(blue[0]), vec![white]);
+        assert!(state.nile_mouth_crossings(HexCoord::new(16, 1)).is_empty());
+        let boat = make_old_gunboat(&mut state, blue[1]);
+        let plan = state.validate_move(boat, white, &[white]).unwrap();
+        assert_eq!(plan.cost, MovementPoints::new(6));
+        assert!(plan.went_upstream);
+    }
+
     #[rulebook("§9.345")]
     #[test]
     fn fok_gunboat_crosses_between_nile_mouths() {
@@ -7689,6 +7785,84 @@ mod tests {
         ));
     }
 
+    /// §6.42: "Howitzer fire may be combined with Maxim fire, but only if the
+    /// howitzer fire impacts in the intended hex." A shell that lands where
+    /// it was aimed and the Maxims' second fire may both strike one hex, in
+    /// either order; a second shell may not (§6.14), and a shell that
+    /// scatters is an ordinary attack on whoever it lands on.
+    #[rulebook("§6.42")]
+    #[test]
+    fn howitzer_on_target_combines_with_maxim_second_fire() {
+        let at = HexCoord::new(0, 0);
+        let target = HexCoord::new(5, 0);
+        let set_up = || {
+            let mut state = playing(Scenario::Campaign);
+            state.phase = Phase::OffensiveFire(FireSubPhase::MaximSecondAndHowitzer);
+            state.active_player = Player::AngloEgyptian;
+            let gb = make_named_gunboat(&mut state, at);
+            make_dervish_tribal(&mut state, target);
+            (state, gb)
+        };
+        let shell = |state: &mut GameState, gb: UnitId, impact_roll: DieRoll| {
+            let from = state.find_unit(gb).unwrap().position;
+            let attack =
+                build_fire_attack_from(state, from, &[gb], target, FireKind::Howitzer).unwrap();
+            apply_effect(
+                state,
+                &GameEffect::HowitzerFire {
+                    attack,
+                    combat_results_table_roll: DieRoll::One,
+                    impact_roll,
+                    disruption: DisruptionDraw::default(),
+                },
+            )
+        };
+        let maxims = |state: &mut GameState, gb: UnitId| {
+            let attack = build_gunboat_maxim_attack(state, gb, target, FireKind::MaximSecondFire)
+                .ok_or(RuleError::NoFirers)?;
+            apply_effect(
+                state,
+                &GameEffect::FireCombat {
+                    attack,
+                    roll: DieRoll::One,
+                    disruption: DisruptionDraw::default(),
+                },
+            )
+        };
+
+        // The shell lands on its hex, then the Maxims fire at it.
+        let (mut state, gb) = set_up();
+        shell(&mut state, gb, DieRoll::Ten).unwrap();
+        maxims(&mut state, gb).unwrap();
+
+        // The other order.
+        let (mut state, gb) = set_up();
+        maxims(&mut state, gb).unwrap();
+        shell(&mut state, gb, DieRoll::Ten).unwrap();
+
+        // A second shell on the same units is fire at them twice (§6.14).
+        let (mut state, gb) = set_up();
+        let other = make_named_gunboat(&mut state, HexCoord::new(1, -1));
+        shell(&mut state, gb, DieRoll::Ten).unwrap();
+        assert!(matches!(
+            shell(&mut state, other, DieRoll::Ten),
+            Err(RuleError::AlreadyFiredAt(_))
+        ));
+
+        // A shell that scatters onto other units is not combined fire: the
+        // Maxims may not fire at those units again.
+        let (mut state, gb) = set_up();
+        let stray = crate::howitzer_scatter::scatter_impact_hex(
+            target,
+            crate::howitzer_scatter::howitzer_scatter(DieRoll::One),
+        );
+        assert_ne!(stray, target);
+        let bystander = make_dervish_tribal(&mut state, stray);
+        shell(&mut state, gb, DieRoll::One).unwrap();
+        assert!(state.units_fired_at_this_phase.contains(&bystander));
+        maxims(&mut state, gb).unwrap();
+    }
+
     /// §2.32/§6.14: a named gunboat's Maxims join other fire at one hex as a
     /// weapon of their own -- the combined attack keeps every weapon from
     /// both sides, and its printed factor row sums them (4 + 6).
@@ -8170,26 +8344,47 @@ mod tests {
         );
     }
 
-    // §6.14's exception: gunboats and Maxims may be fired at repeatedly.
+    // §6.14: "a combat unit ... may only be fired at once (exceptions: Maxim
+    // guns and gunboats -- see 6.4)". The exceptions are the units that
+    // *fire* twice (§6.42); a gunboat is fired at once per subphase like
+    // anyone else, so two forts that want to engage it combine their fire.
     #[rulebook("§6.14")]
     #[test]
-    fn gunboat_and_maxim_may_be_fired_at_repeatedly() {
-        assert!(fired_at_excepted(UnitKind::Gunboat {
-            fire: 0,
-            upstream: 0,
-            downstream: 0
-        }));
-        assert!(fired_at_excepted(UnitKind::Maxim {
-            fire: 0,
-            melee: 0,
-            movement: 0
-        }));
-        assert!(!fired_at_excepted(UnitKind::Infantry {
-            fire: 0,
-            melee: 0,
-            movement: 0
-        }));
-        assert!(!fired_at_excepted(UnitKind::Fort { fire: 0, melee: 0 }));
+    fn a_gunboat_is_fired_at_once_per_phase() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::DefensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::AngloEgyptian;
+        let boat = HexCoord::new(0, 0);
+        make_named_gunboat(&mut state, boat);
+        let fort = |state: &mut GameState, hex| {
+            make_unit(
+                state,
+                hex,
+                UnitKind::Fort { fire: 4, melee: 1 },
+                UnitIdentity::DervishFort,
+                WeaponClass::Artillery,
+                UnitMovement::Immobile,
+            )
+        };
+        let first = fort(&mut state, HexCoord::new(1, 0));
+        let second = fort(&mut state, HexCoord::new(-1, 0));
+        let fire = |state: &mut GameState, from, id| {
+            let attack = build_fire_attack_from(state, from, &[id], boat, FireKind::Direct)
+                .ok_or(RuleError::NoFirers)?;
+            apply_effect(
+                state,
+                &GameEffect::FireCombat {
+                    attack,
+                    roll: DieRoll::One,
+                    disruption: DisruptionDraw::default(),
+                },
+            )
+        };
+        fire(&mut state, HexCoord::new(1, 0), first).unwrap();
+        assert!(matches!(
+            fire(&mut state, HexCoord::new(-1, 0), second),
+            Err(RuleError::AlreadyFiredAt(_))
+        ));
     }
 
     // §9.111: only the Dervish initial force deploys at Campaign setup --
@@ -10482,6 +10677,80 @@ mod tests {
                 .unwrap_or_else(|e| panic!("wall {bastion}-{other}: {e}"));
             assert_eq!(range.value(), 1, "wall {bastion}-{other}");
         }
+    }
+
+    // §5.44 in FALL OF KHARTOUM: the rampart is open at the washed-away
+    // stretch (§2.1), so it encloses no "walled city" area -- yet a garrison
+    // unit on it still exerts its ZOC outward across a wall or gate hexside,
+    // and the besiegers' ZOC still stops at the wall. (Seen in play: a
+    // Mulazmin band walked along the foot of a manned wall and in through
+    // the Kalakla gate in one move.)
+    #[rulebook("§5.44")]
+    #[test]
+    fn khartoum_rampart_projects_zoc_outward_only() {
+        let board =
+            crate::board::BoardInfo::from_map_data(&crate::board_data::fall_of_khartoum_map_data());
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        state.board = Arc::new(board);
+        state.phase = Phase::Movement;
+        state.active_player = Player::Dervish;
+        let rampart = HexCoord::new(17, 11);
+        let gate_inside = HexCoord::new(16, 11);
+        let foot = HexCoord::new(17, 12); // wall to (17,11), gate to (16,11)
+        let infantry = UnitKind::Infantry {
+            fire: 0,
+            melee: 0,
+            movement: 0,
+        };
+        // Nobody on the rampart: the foot of the wall is free ground.
+        assert!(!state.hex_in_enemy_zoc(foot, Player::Dervish, infantry));
+        // A battalion on the rampart reaches down across the wall ...
+        let garrison = make_ae_infantry(&mut state, rampart);
+        assert!(state.hex_in_enemy_zoc(foot, Player::Dervish, infantry));
+        assert!(state.hex_in_enemy_zoc(HexCoord::new(18, 12), Player::Dervish, infantry));
+        // ... and one behind the gate out through it.
+        state.units.retain(|u| u.id != garrison);
+        make_ae_infantry(&mut state, gate_inside);
+        assert!(state.hex_in_enemy_zoc(foot, Player::Dervish, infantry));
+        // The besiegers' ZOC does not cross the wall or the gate inward.
+        state.units.clear();
+        make_dervish_tribal(&mut state, foot);
+        assert!(!state.hex_in_enemy_zoc(rampart, Player::AngloEgyptian, infantry));
+        assert!(!state.hex_in_enemy_zoc(gate_inside, Player::AngloEgyptian, infantry));
+    }
+
+    // §6.23 / §6.3: Fort Buri's garrison fires at a band at the Buri gate,
+    // two hexes off along a hexside: one side of the ray crosses the wall
+    // (blocked for ground-level firers), the other the gate (clear). The
+    // fire that gets through came by the gate, so the City Wall's -4 does
+    // not apply to it. (Seen in play: line of sight granted, -4 charged.)
+    #[rulebook("§6.23")]
+    #[test]
+    fn fire_through_a_gate_beside_a_wall_is_not_charged_the_wall() {
+        let board =
+            crate::board::BoardInfo::from_map_data(&crate::board_data::fall_of_khartoum_map_data());
+        let mut state = GameState::new(Scenario::FallOfKhartoum);
+        state.board = Arc::new(board);
+        state.phase = Phase::DefensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::Dervish;
+        state.day_night = DayNight::Day;
+        let (buri, gate_outside) = (HexCoord::new(20, 9), HexCoord::new(22, 10));
+        let firer = make_ae_infantry(&mut state, buri);
+        make_dervish_tribal(&mut state, gate_outside);
+        state
+            .can_fire_at(firer, gate_outside, FireKind::Direct)
+            .expect("the gate side of the ray is clear");
+        let unit = state.find_unit(firer).unwrap();
+        assert_eq!(
+            state.fire_entry_hexes(unit, gate_outside),
+            vec![HexCoord::new(21, 9)],
+            "only the hex behind the gate sees out"
+        );
+        let attack = direct_attack(Player::AngloEgyptian, vec![firer], gate_outside);
+        assert_eq!(
+            target_hexside_fire_modifier(&state, &attack, gate_outside),
+            0
+        );
     }
 
     #[rulebook("§6.64")]

@@ -87,6 +87,15 @@ pub struct BoardInfo {
     /// per-call scan there.
     #[serde(default)]
     pub nile_by_row: Map<i32, (i32, i32)>,
+    /// Steps from the Palace to each land hex without crossing a city-wall
+    /// hexside (wall, gate or breach), on a board whose rampart encloses no
+    /// area -- Khartoum, where part of the wall is washed away (§2.1). The
+    /// hex of a wall hexside reached in fewer steps is the one inside the
+    /// city: the other is only reached round the end of the wall
+    /// (see [`Self::is_inside_of_wall`]). Empty on the Omdurman board, whose
+    /// walled city is an enclosed area ([`Self::walled_city`]).
+    #[serde(default)]
+    pub palace_steps: Map<HexCoord, u32>,
 }
 
 impl BoardInfo {
@@ -128,6 +137,7 @@ impl BoardInfo {
         // §5.23: derive the walled-city hexes as the area enclosed by the
         // annotated Wall/Gate/Breach ring (see `walled_city`).
         board.walled_city = board.compute_walled_city();
+        board.palace_steps = board.compute_palace_steps();
         board.zariba = board.compute_zariba();
         board.south_of_khor_shambat = board.compute_south_of_khor_shambat();
         // Per-row Nile extent for `bank_of` (§5.21): one pass over the
@@ -290,12 +300,44 @@ impl BoardInfo {
         city
     }
 
+    /// The [`Self::palace_steps`] of a board whose rampart is open
+    /// (Khartoum): a breadth-first walk from the Palace over land, stopped
+    /// by city-wall hexsides. Empty where the Mahdi's Tomb marks Omdurman.
+    pub fn compute_palace_steps(&self) -> Map<HexCoord, u32> {
+        let mut steps: Map<HexCoord, u32> = Default::default();
+        let Some(palace) = self.hex_of_location(Location::Palace) else {
+            return steps;
+        };
+        if self.hex_of_location(Location::MahdisTomb).is_some() {
+            return steps;
+        }
+        steps.insert(palace, 0);
+        let mut queue = std::collections::VecDeque::from([(palace, 0u32)]);
+        while let Some((hex, n)) = queue.pop_front() {
+            for next in hex.neighbors() {
+                if steps.contains_key(&next)
+                    || matches!(self.terrain_at(next), Some(Terrain::Nile { .. }) | None)
+                    || matches!(
+                        self.hexside_between(hex, next),
+                        Some(HexsideKind::Wall | HexsideKind::Gate | HexsideKind::Breach)
+                    )
+                {
+                    continue;
+                }
+                steps.insert(next, n + 1);
+                queue.push_back((next, n + 1));
+            }
+        }
+        steps
+    }
+
     /// Whether `hex` stands on the city side of a city-wall hexside
     /// (wall, gate or breach) it shares with `across` -- on the ramparts
-    /// (§6.3 note b). Omdurman's walled city is the enclosed area
+    /// (§6.3 note b, §5.44). Omdurman's walled city is the enclosed area
     /// ([`Self::walled_city`]); Khartoum's rampart encloses no computable
-    /// area (§2.1: part of it is washed away), so there the side nearer the
-    /// Palace is the inside.
+    /// area (§2.1: part of it is washed away), so there the inside is the
+    /// hex reached from the Palace without crossing the wall in fewer steps
+    /// ([`Self::palace_steps`]).
     pub fn is_inside_of_wall(&self, hex: HexCoord, across: HexCoord) -> bool {
         if !matches!(
             self.hexside_between(hex, across),
@@ -306,6 +348,11 @@ impl BoardInfo {
         match (self.is_walled_city(hex), self.is_walled_city(across)) {
             (true, false) => true,
             (false, true) => false,
+            _ if !self.palace_steps.is_empty() => {
+                let steps = |h| self.palace_steps.get(&h).copied().unwrap_or(u32::MAX);
+                steps(hex) < steps(across)
+            }
+            // A board serialized before `palace_steps` existed.
             _ => self
                 .hex_of_location(omdurman_types::Location::Palace)
                 .is_some_and(|palace| hex.distance(palace) < across.distance(palace)),

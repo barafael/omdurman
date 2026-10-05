@@ -530,6 +530,7 @@ fn same_rule_state(a: &GameState, b: &GameState) -> bool {
         && a.next_alloc_index == b.next_alloc_index
         && a.units_fired_this_phase == b.units_fired_this_phase
         && a.units_fired_at_this_phase == b.units_fired_at_this_phase
+        && a.units_shelled_this_phase == b.units_shelled_this_phase
         && a.mp_spent_this_turn == b.mp_spent_this_turn
         && a.gunboats_upstream_this_turn == b.gunboats_upstream_this_turn
         && a.zoc_stopped_this_turn == b.zoc_stopped_this_turn
@@ -577,6 +578,7 @@ fn invariants_hold(state: &GameState) -> bool {
         && state.eliminated.iter().all(|id| !on_board(id))
         && state.units_fired_this_phase.iter().all(on_board)
         && state.units_fired_at_this_phase.iter().all(on_board)
+        && state.units_shelled_this_phase.iter().all(on_board)
         && state.zoc_stopped_this_turn.iter().all(on_board)
         && state.mp_spent_this_turn.keys().all(on_board)
         && state

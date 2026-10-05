@@ -106,6 +106,7 @@
             terrain: Nile(
                 direction: NorthWest,
             ),
+            name: Some("Blue Nile Mouth"),
         )),
         ((5, 1), (
             terrain: Clear(
@@ -156,6 +157,7 @@
             terrain: Nile(
                 direction: NorthWest,
             ),
+            name: Some("Blue Nile Mouth"),
         )),
         ((6, 1), (
             terrain: Nile(
@@ -784,6 +786,7 @@
             terrain: Nile(
                 direction: NorthWest,
             ),
+            name: Some("Blue Nile Mouth"),
         )),
         ((14, 1), (
             terrain: Clear(
@@ -866,6 +869,7 @@
             terrain: Nile(
                 direction: NorthWest,
             ),
+            name: Some("Blue Nile Mouth"),
         )),
         ((15, 1), (
             terrain: Nile(
@@ -951,7 +955,6 @@
             terrain: Nile(
                 direction: NorthWest,
             ),
-            name: Some("Blue Nile Mouth"),
         )),
         ((16, 2), (
             terrain: Nile(

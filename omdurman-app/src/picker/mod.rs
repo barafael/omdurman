@@ -248,7 +248,6 @@ impl Plugin for GamePlugin {
                     unit_picker_ui
                         .in_set(crate::ui_plugin::PanelUiSet)
                         .after(crate::ui_plugin::mode_toolbar_ui),
-                    crate::fire_allocation::fire_allocation_review_ui,
                     crate::fire_allocation::resolve_fire_on_enter,
                     crate::melee::melee_reaction_ui,
                     crate::overview::unit_overview_ui

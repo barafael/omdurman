@@ -889,22 +889,21 @@ fn gunboat_moves(state: &GameState, unit_id: UnitId, out: &mut Vec<GameEffect>) 
                 unit_id,
                 to: dest,
                 cost,
-                path: path.clone(),
+                path,
             });
         }
-        // §9.345 Nile-mouth crossing (6 flat MP) — try with the higher cost.
-        if state.scenario == Scenario::FallOfKhartoum
-            && state.is_nile_mouth_crossing(unit.position, dest)
-        {
-            let cross_cost = MovementPoints::new(6);
-            if state
-                .can_move_gunboat(unit_id, dest, &path, cross_cost)
-                .is_ok()
-            {
+    }
+    // §9.345: from a hex where one Nile leaves the map, the off-board
+    // crossing to the other river's mouth hexes (a move of its own).
+    if state.scenario == Scenario::FallOfKhartoum {
+        let cost = MovementPoints::new(omdurman_rules::effects::NILE_MOUTH_CROSSING_MP);
+        for dest in state.nile_mouth_crossings(unit.position) {
+            let path = vec![dest];
+            if state.can_move_gunboat(unit_id, dest, &path, cost).is_ok() {
                 out.push(GameEffect::MoveUnit {
                     unit_id,
                     to: dest,
-                    cost: cross_cost,
+                    cost,
                     path,
                 });
             }
@@ -978,17 +977,13 @@ fn fire_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>) 
     sort_dedup_hexes(&mut firer_hexes);
 
     // Enumerate enemy-occupied hexes as candidate targets. §6.14: a combat
-    // unit may only be fired at once per phase (Maxims/gunboats excepted).
-    // An attack on a hex targets *all* its occupants, so a hex holding any
-    // already-fired-at non-excepted unit is not a legal target again this
-    // phase.
+    // unit may only be fired at once per phase. An attack on a hex targets
+    // *all* its occupants, so a hex holding any already-fired-at unit is not
+    // a legal target again this phase.
     let enemy = firer_player.opponent();
     let fired_at = |u: &omdurman_rules::UnitPlacement| {
-        let excepted = matches!(
-            u.profile.kind,
-            UnitKind::Gunboat { .. } | UnitKind::Maxim { .. }
-        );
-        !excepted && state.units_fired_at_this_phase.contains(&u.id)
+        state.units_fired_at_this_phase.contains(&u.id)
+            || state.units_shelled_this_phase.contains(&u.id)
     };
     let mut target_hexes: Vec<HexCoord> = state
         .units

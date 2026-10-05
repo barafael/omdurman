@@ -659,6 +659,45 @@ fn los_rays(
     if second.1.is_none() { second } else { first }
 }
 
+/// The hexes a clear line of sight from `from` enters `to` out of (§6.3):
+/// the last hex before `to` on each candidate ray that is not blocked --
+/// `from` itself for an adjacent target. A ray along hexsides has two
+/// candidate paths ([`los_rays`]); fire that is only clear on one of them
+/// enters the target hex across that path's hexside, not the other's
+/// (Terrain Effects Chart: the crest or wall the fire crosses). Empty when
+/// no ray is clear.
+pub fn los_entry_hexes(
+    board: &crate::board::BoardInfo,
+    from: HexCoord,
+    to: HexCoord,
+    firer_level: LosLevel,
+    target_level: LosLevel,
+    unit_level_at: impl Fn(HexCoord) -> Option<LosLevel>,
+    breached: impl Fn(HexCoord, HexCoord) -> bool,
+) -> Vec<HexCoord> {
+    let mut entries: Vec<HexCoord> = Vec::new();
+    for line in [from.line_between(to), from.line_between_other_side(to)] {
+        let entry = line.last().copied().unwrap_or(from);
+        if entries.contains(&entry) {
+            continue;
+        }
+        let (_, block) = los_walk(
+            board,
+            from,
+            to,
+            line,
+            firer_level,
+            target_level,
+            &unit_level_at,
+            &breached,
+        );
+        if block.is_none() {
+            entries.push(entry);
+        }
+    }
+    entries
+}
+
 // ─── los_path_analysis ──────────────────────────────────────────────────
 
 /// Annotate every step of the LOS ray from `from` to `to` (§6.21, §6.3).

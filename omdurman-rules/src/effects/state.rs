@@ -11,7 +11,7 @@ mod movement;
 mod setup;
 mod stacking;
 
-pub use movement::{MAX_MOVE_PATH_LEN, MovePlan};
+pub use movement::{MAX_MOVE_PATH_LEN, MovePlan, NILE_MOUTH_CROSSING_MP};
 pub use setup::{
     FokCapGroup, HISTORICAL_KERRERI_UNITS, MAX_CHAIN_HEXES, MAX_MINES, campaign_counter_in_play,
     entrance_area_for, fok_cap_group, historical_counter_in_play, historical_in_play,
@@ -39,11 +39,19 @@ pub struct GameState {
     pub next_alloc_index: usize,
     pub units_fired_this_phase: Vec<UnitId>,
     /// Units that have been fired at this fire phase (§6.14: "a combat unit
-    /// may only fire once and may only be fired at once"). Exceptions per
-    /// §6.14 parenthetical: Maxim guns and gunboats. Cleared with `units_fired_this_phase`
-    /// at each phase change and turn end.
+    /// may only fire once and may only be fired at once" -- its Maxim and
+    /// gunboat exceptions are to firing once, §6.42). Cleared with
+    /// `units_fired_this_phase` at each phase change and turn end.
     #[serde(default)]
     pub units_fired_at_this_phase: Vec<UnitId>,
+    /// Units a howitzer shell has struck in the hex it was aimed at this
+    /// fire subphase (§6.42: "Howitzer fire may be combined with Maxim
+    /// fire, but only if the howitzer fire impacts in the intended hex").
+    /// Kept apart from `units_fired_at_this_phase` so the shell and the
+    /// Maxims' second fire may both land on one hex; a second shell may
+    /// not. Cleared with it.
+    #[serde(default)]
+    pub units_shelled_this_phase: Vec<UnitId>,
     /// Named gunboats whose Maxim guns have fired this fire subphase (§6.42:
     /// they fire once in each subphase, independently of the gunboat's
     /// artillery, which `units_fired_this_phase` tracks). Cleared with it.
@@ -232,6 +240,7 @@ impl GameState {
             units_fired_this_phase: Vec::new(),
             gunboat_maxims_fired_this_phase: Vec::new(),
             units_fired_at_this_phase: Vec::new(),
+            units_shelled_this_phase: Vec::new(),
             mp_spent_this_turn: BTreeMap::new(),
             gunboats_upstream_this_turn: Vec::new(),
             zoc_stopped_this_turn: Vec::new(),
@@ -424,20 +433,29 @@ impl GameState {
     }
 
     /// Whether moving from `from` to `to` is the §9.345 off-board crossing
-    /// between the two Nile-branch mouths (in either direction). Both mouths
-    /// must be named on the board, else this is `false` and the move falls
-    /// through to the ordinary contiguous-Nile rules.
+    /// "from the White Nile to the Blue Nile and vice-versa": from a hex
+    /// where one river leaves the map to a hex where the other does (the
+    /// board names them -- a river may leave by more than one hex). `false`
+    /// on a board that names none, and the move falls through to the
+    /// ordinary contiguous-Nile rules.
     pub fn is_nile_mouth_crossing(&self, from: HexCoord, to: HexCoord) -> bool {
-        let white = self
-            .board
-            .hex_of_location(omdurman_types::Location::WhiteNileMouth);
-        let blue = self
-            .board
-            .hex_of_location(omdurman_types::Location::BlueNileMouth);
-        match (white, blue) {
-            (Some(w), Some(b)) => (from == w && to == b) || (from == b && to == w),
-            _ => false,
-        }
+        use omdurman_types::Location::{BlueNileMouth, WhiteNileMouth};
+        matches!(
+            (self.board.location_at(from), self.board.location_at(to)),
+            (Some(WhiteNileMouth), Some(BlueNileMouth))
+                | (Some(BlueNileMouth), Some(WhiteNileMouth))
+        )
+    }
+
+    /// The hexes a gunboat on `from` may cross to off the board (§9.345):
+    /// the other river's mouth hexes. Empty unless `from` is a mouth hex.
+    pub fn nile_mouth_crossings(&self, from: HexCoord) -> Vec<HexCoord> {
+        self.board
+            .locations
+            .keys()
+            .copied()
+            .filter(|&to| self.is_nile_mouth_crossing(from, to))
+            .collect()
     }
 
     /// Whether `hex` holds a fort owned by `mover`'s enemy. Per §6.54 a player
@@ -496,6 +514,7 @@ impl GameState {
             units_fired_this_phase: Vec::new(),
             gunboat_maxims_fired_this_phase: Vec::new(),
             units_fired_at_this_phase: Vec::new(),
+            units_shelled_this_phase: Vec::new(),
             mp_spent_this_turn: BTreeMap::new(),
             gunboats_upstream_this_turn: Vec::new(),
             zoc_stopped_this_turn: Vec::new(),

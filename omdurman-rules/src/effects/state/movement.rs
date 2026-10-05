@@ -7,6 +7,11 @@ use super::*;
 /// (the largest is 18, §5.11/§5.24), so it only bounds hostile input.
 pub const MAX_MOVE_PATH_LEN: usize = 64;
 
+/// The "off-board movement cost of six 'upstream' movement points" of a
+/// gunboat crossing between the White and the Blue Nile in FALL OF KHARTOUM
+/// (§9.345).
+pub const NILE_MOUTH_CROSSING_MP: i16 = 6;
+
 /// An engine-validated move (see [`GameState::validate_move`]): the
 /// movement points it costs, computed from the board (§5.11/§5.24), and
 /// whether a gunboat took an upstream step (§5.24's sticky cap).
@@ -463,7 +468,7 @@ impl GameState {
             && steps.len() == 1
             && self.is_nile_mouth_crossing(unit.position, to)
         {
-            const CROSS_NILE_MP: i32 = 6;
+            const CROSS_NILE_MP: i32 = NILE_MOUTH_CROSSING_MP as i32;
             let owner = unit.profile.identity.owner();
             if self.hex_has_enemy_fort(to, owner)
                 || self

@@ -15,6 +15,7 @@ use super::*;
 ///   melee is for (§7.1). The lone exception is an Anglo-Egyptian leader,
 ///   who never blocks an enemy stack (§6.51: a Dervish unit occupying his
 ///   hex eliminates him; §9.346 makes this how GORDON dies).
+///   A hex holds only one fort.
 /// * §5.52: Dervish units of different stacking groups (tribes, plus the
 ///   artillery as its own group) may not share a hex.
 /// * §5.53: a Dervish leader stacks only with units of its command.
@@ -49,6 +50,17 @@ pub fn stacking_rule(occupants: &[&UnitPlacement]) -> Result<(), crate::Stacking
                 .any(|u| !is_gunboat(u) && u.state.loaded_on.is_none()))
     {
         return Err(StackingError::GunboatStack);
+    }
+
+    // One fort to a hex: forts are fortifications placed on the map
+    // (§5.25, §9.111), each on ground of its own.
+    if occupants
+        .iter()
+        .filter(|u| matches!(u.profile.kind, UnitKind::Fort { .. }))
+        .count()
+        > 1
+    {
+        return Err(StackingError::FortStack);
     }
 
     // §5.51: the four-unit limit counts neither leaders nor gunboats.
@@ -293,7 +305,11 @@ impl GameState {
         if !gunboat && (self.board.is_nile(from) || self.board.is_nile(into)) {
             return false;
         }
-        let city_outward = self.board.is_walled_city(from) && !self.board.is_walled_city(into);
+        // Khartoum's rampart encloses no area (§2.1: part of it is washed
+        // away), so there the wall hexside itself says which side is the
+        // city's (`BoardInfo::palace_steps`).
+        let city_outward = (self.board.is_walled_city(from) && !self.board.is_walled_city(into))
+            || (!self.board.palace_steps.is_empty() && self.board.is_inside_of_wall(from, into));
         let zariba_outward = self.board.is_zariba(from) && !self.board.is_zariba(into);
         match self.hexside_effective(from, into) {
             Some(HexsideKind::Wall | HexsideKind::Gate) if !city_outward => return false,

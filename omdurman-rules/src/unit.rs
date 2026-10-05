@@ -668,8 +668,12 @@ pub enum StackingError {
     #[error("hex stack exceeds the four-unit limit [§5.51]")]
     OverLimit,
     /// "Gunboats may not stack with any other unit" (§5.51, exception §5.21).
-    #[error("gunboats may not stack with non-gunboat units [§5.51]")]
+    #[error("gunboats may not stack with any other unit [§5.51]")]
     GunboatStack,
+    /// A hex holds one fort: a fort is a work on the ground, placed on a
+    /// hex of its own (§5.25, §9.111 "17 forts"), not a counter to pile up.
+    #[error("a hex holds only one fort [§5.51]")]
+    FortStack,
     /// "Units of different Dervish tribes may not stack together" (§5.52).
     /// The Dervish artillery (§9.322's three guns) is not a tribe but is not
     /// any tribe's unit either: it forms its own stacking group (see

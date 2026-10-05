@@ -159,9 +159,6 @@ pub mod palette {
     pub const CARD_MELEE_DECLARED: Color32 = Color32::from_rgba_unmultiplied_const(40, 30, 30, 248);
     /// Melee preview card.
     pub const CARD_MELEE: Color32 = Color32::from_rgba_unmultiplied_const(50, 30, 10, 245);
-    /// Fire-allocation tray (long rows of firers and modifiers over the
-    /// board: kept near-opaque, see `CARD_MELEE_DECLARED`).
-    pub const CARD_ALLOCATION: Color32 = Color32::from_rgba_unmultiplied_const(30, 30, 40, 245);
     // The cards below carry rules text to read over the map: 210 blended in
     // linear light came out at about 60% (the Zariba card's text was lost
     // in the scan behind it), so they are near-opaque like the rest.
