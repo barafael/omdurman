@@ -31,3 +31,5 @@ todo.md
 
 # run-kani.sh clone, when run from the repo root
 /omdurman-kani/
+
+*.png
