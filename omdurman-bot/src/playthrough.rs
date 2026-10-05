@@ -2,10 +2,10 @@
 //! apply → log, until `game_over` or the anti-stall caps are hit.
 //!
 //! Two agents (one per faction) play head-to-head; each side is independently
-//! [`AgentStrategy::Random`] (fast, broadest raw coverage),
-//! [`AgentStrategy::Aggressive`] or a [`AgentStrategy::Commander`]. The
+//! [`crate::agent::AgentStrategy::Random`] (fast, broadest raw coverage),
+//! [`crate::agent::AgentStrategy::Aggressive`] or a [`crate::agent::AgentStrategy::Commander`]. The
 //! driver also drains the engine's [`Observation`](omdurman_rules::effects::Observation)s
-//! and turn summaries into a [`GameLog`] that the deterministic
+//! and turn summaries into a [`crate::log::GameLog`] that the deterministic
 //! [`audit`](crate::audit) scanners check offline.
 
 use omdurman_net::GameEvent;
