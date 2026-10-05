@@ -111,7 +111,11 @@ struct Record {
     khalifa_at: Option<Option<HexCoord>>,
     deserted: usize,
     ours_lost: Vec<UnitId>,
+    /// Every enemy loss (leaders, bands, works); `bands` counts the tribes.
     theirs_lost: Vec<UnitId>,
+    bands: usize,
+    /// The enemy's forts, guns and steamers destroyed.
+    works: Vec<UnitId>,
 }
 
 fn identity(id: UnitId) -> Option<UnitIdentity> {
@@ -167,10 +171,15 @@ fn read_record(state: &GameState) -> Record {
                     rec.theirs_lost.push(unit);
                 }
                 Some(i) if i.owner() == Player::AngloEgyptian => rec.ours_lost.push(unit),
-                Some(_) => {
+                Some(UnitIdentity::DervishTribal { .. }) => {
                     rec.theirs_lost.push(unit);
+                    rec.bands += 1;
                     theirs_this_turn += 1;
                     their_places.extend(at);
+                }
+                Some(_) => {
+                    rec.theirs_lost.push(unit);
+                    rec.works.push(unit);
                 }
                 None => {}
             }
@@ -185,6 +194,46 @@ fn read_record(state: &GameState) -> Record {
         }
     }
     rec
+}
+
+/// The enemy's lost forts, guns and steamers in prose: "a fort, two
+/// batteries and a steamer".
+fn works_prose(works: &[UnitId]) -> String {
+    let count = |pick: fn(&UnitIdentity) -> bool| {
+        works
+            .iter()
+            .filter(|&&u| identity(u).is_some_and(|i| pick(&i)))
+            .count()
+    };
+    let kinds = [
+        (
+            count(|i| matches!(i, UnitIdentity::DervishFort)),
+            "a fort",
+            "forts",
+        ),
+        (
+            count(|i| matches!(i, UnitIdentity::DervishArtillery)),
+            "a battery",
+            "batteries",
+        ),
+        (
+            count(|i| matches!(i, UnitIdentity::DervishGunboat(_))),
+            "a steamer",
+            "steamers",
+        ),
+    ];
+    let parts: Vec<String> = kinds
+        .iter()
+        .filter(|(n, _, _)| *n > 0)
+        .map(|&(n, one, many)| {
+            if n == 1 {
+                one.to_string()
+            } else {
+                format!("{} {many}", number_word(n))
+            }
+        })
+        .collect();
+    and_list(&parts)
 }
 
 /// The day-of-week of a Gregorian date (Zeller's congruence).
@@ -363,12 +412,19 @@ pub fn front_page(state: &GameState, telegrams: &[(u8, String)]) -> FrontPage {
         s if s >= 0.15 => L.enemy_losses_moderate,
         _ => L.enemy_losses_light,
     };
-    if !rec.theirs_lost.is_empty() {
+    if rec.bands > 0 {
         losses.push(capitalize(&say(
             their_bank,
             10,
-            &[("n", &number_word(rec.theirs_lost.len()))],
+            &[("n", &number_word(rec.bands))],
         )));
+    }
+    if !rec.works.is_empty() {
+        losses.push(say(
+            L.enemy_works,
+            19,
+            &[("works", &works_prose(&rec.works))],
+        ));
     }
     let leaders: Vec<String> = rec
         .ours_lost
@@ -442,7 +498,7 @@ pub fn front_page(state: &GameState, telegrams: &[(u8, String)]) -> FrontPage {
         L.deck_losses,
         15,
         &[
-            ("theirs", &deck_number(rec.theirs_lost.len())),
+            ("theirs", &deck_number(rec.bands)),
             ("ours", &deck_number(rec.ours_lost.len())),
         ],
     );
@@ -705,6 +761,41 @@ mod tests {
         assert_eq!(
             page.roll_of_honour,
             ["Two battalions of the First Egyptian Brigade"]
+        );
+    }
+
+    /// Forts, guns and steamers are not "bands": the deck counts the tribes,
+    /// and the works get a sentence of their own.
+    #[test]
+    fn forts_guns_and_steamers_are_named_as_such() {
+        let mut events = shelled(UnitId::Baggara_0_0, HexCoord::new(25, 7));
+        for unit in [
+            UnitId::HadendowaForts_0_0,
+            UnitId::Hadendowa_7_1,
+            UnitId::KhalifaAbdullah_0_1,
+            UnitId::KhalifaAbdullah_1_0,
+        ] {
+            events.extend(shelled(unit, HexCoord::new(25, 7)));
+        }
+        let state = finished(
+            Scenario::Campaign,
+            GameResult::Campaign(crate::CampaignVictoryLevel::Draw),
+            events,
+        );
+        let page = front_page(&state, &[]);
+        let text = page.lead.paragraphs.join(" ");
+        assert!(
+            text.contains("two forts, a battery and a steamer"),
+            "{text}"
+        );
+        assert!(
+            !text.contains("five bands") && !text.contains("Five bands"),
+            "{text}"
+        );
+        assert!(
+            page.lead.decks.iter().any(|d| d.contains("One")),
+            "{:?}",
+            page.lead.decks
         );
     }
 

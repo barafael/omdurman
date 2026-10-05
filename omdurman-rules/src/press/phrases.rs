@@ -30,7 +30,12 @@ pub struct TelegramBanks {
     pub gunboat_sunk: Bank,
     pub melee: Bank,
     pub our_losses: Bank,
+    /// Tribal bands only; the enemy's forts, guns and steamers have their
+    /// own banks.
     pub enemy_losses: Bank,
+    pub enemy_forts: Bank,
+    pub enemy_guns: Bank,
+    pub enemy_steamers: Bank,
     pub enemy_shaken: Bank,
     pub desertion: Bank,
     pub our_arrivals: Bank,
@@ -111,6 +116,18 @@ pub static TELEGRAM: TelegramBanks = TelegramBanks {
         "Enemy lost {n} bands {place}",
         "{tribes} broken {place}",
         "Fire destroyed {n} enemy bands {place}",
+    ],
+    enemy_forts: &[
+        "{n} enemy forts destroyed {place}",
+        "Our guns destroyed {n} enemy forts {place}",
+    ],
+    enemy_guns: &[
+        "{n} enemy guns destroyed {place}",
+        "Enemy lost {n} guns {place}",
+    ],
+    enemy_steamers: &[
+        "{n} enemy steamers sunk {place}",
+        "Our fire sank {n} enemy steamers {place}",
     ],
     enemy_shaken: &[
         "{n} enemy bands shaken by fire",
@@ -207,6 +224,8 @@ pub struct LeadBanks {
     pub enemy_losses_heavy: Bank,
     pub enemy_losses_moderate: Bank,
     pub enemy_losses_light: Bank,
+    /// The enemy's forts, batteries and steamers destroyed (not bands).
+    pub enemy_works: Bank,
     pub our_losses_heavy: Bank,
     pub our_losses_moderate: Bank,
     pub our_losses_light: Bank,
@@ -339,6 +358,10 @@ pub static LEAD: LeadBanks = LeadBanks {
     enemy_losses_light: &[
         "The enemy's losses were light: {n} bands in all.",
         "Few of the enemy fell; {n} bands are reported destroyed.",
+    ],
+    enemy_works: &[
+        "The enemy also lost {works}.",
+        "Our fire destroyed besides {works} of the enemy's.",
     ],
     our_losses_heavy: &[
         "Our own losses are severe. {n} of our units were lost, among them {units}.",

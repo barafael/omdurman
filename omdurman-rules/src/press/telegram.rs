@@ -266,12 +266,43 @@ fn event_facts(state: &GameState, summary: &TurnSummary) -> Vec<Fact> {
                 .with("place", place(usual(&at))),
         );
     }
-    if !their_lost.is_empty() {
-        let tribes = distinct(their_lost.iter().map(|&u| name(u)), 2);
-        let at: Vec<HexCoord> = their_lost.iter().filter_map(|&u| death_place(u)).collect();
+    // Bands are the tribes; the enemy's forts, guns and steamers are named
+    // as what they are ("Dervish Fort broken", "three bands" for two forts
+    // and a steamer, read wrong).
+    let lost_as = |pick: fn(&UnitIdentity) -> bool| -> Vec<UnitId> {
+        their_lost
+            .iter()
+            .copied()
+            .filter(|&u| identity(u).is_some_and(|i| pick(&i)))
+            .collect()
+    };
+    let bands = lost_as(|i| matches!(i, UnitIdentity::DervishTribal { .. }));
+    for (kind, lost, bank) in [
+        (11, bands, T.enemy_losses),
+        (
+            30,
+            lost_as(|i| matches!(i, UnitIdentity::DervishFort)),
+            T.enemy_forts,
+        ),
+        (
+            31,
+            lost_as(|i| matches!(i, UnitIdentity::DervishArtillery)),
+            T.enemy_guns,
+        ),
+        (
+            32,
+            lost_as(|i| matches!(i, UnitIdentity::DervishGunboat(_))),
+            T.enemy_steamers,
+        ),
+    ] {
+        if lost.is_empty() {
+            continue;
+        }
+        let tribes = distinct(lost.iter().map(|&u| name(u)), 2);
+        let at: Vec<HexCoord> = lost.iter().filter_map(|&u| death_place(u)).collect();
         facts.push(
-            Fact::new(3, 11, T.enemy_losses)
-                .with("n", number_word(their_lost.len()))
+            Fact::new(3, kind, bank)
+                .with("n", number_word(lost.len()))
                 .with("tribes", wire_and(&tribes))
                 .with("place", place(usual(&at))),
         );
@@ -731,6 +762,31 @@ mod tests {
         assert!(
             !said[1].contains(&abu_alim) && said[1].contains("there"),
             "{said:?}"
+        );
+    }
+
+    /// The enemy's forts and steamers are not "bands", nor "broken" like a
+    /// tribe.
+    #[test]
+    fn forts_and_steamers_are_not_bands() {
+        let state = campaign();
+        let lost = |unit| TurnEventRecord::UnitEliminated {
+            unit,
+            cause: ElimCause::Combat,
+        };
+        let text = telegram(
+            &state,
+            &summary(vec![
+                lost(UnitId::HadendowaForts_0_0),
+                lost(UnitId::Hadendowa_7_1),
+                lost(UnitId::KhalifaAbdullah_1_0),
+            ]),
+        );
+        assert!(text.contains("TWO ENEMY FORTS"), "{text}");
+        assert!(text.contains("ONE ENEMY STEAMER S"), "{text}");
+        assert!(
+            !text.contains("BANDS") && !text.contains("BROKEN"),
+            "{text}"
         );
     }
 

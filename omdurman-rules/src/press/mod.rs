@@ -136,6 +136,9 @@ pub fn agree(text: &str) -> String {
     let mut out = text.to_string();
     for (plural, singular) in [
         ("bands", "band"),
+        ("forts", "fort"),
+        ("guns", "gun"),
+        ("steamers", "steamer"),
         ("miles", "mile"),
         ("units", "unit"),
         ("hours", "hour"),
@@ -172,6 +175,7 @@ pub fn wire_name(id: crate::UnitId, scenario: Scenario) -> String {
         U::AngloEgyptianCamelCorps => "camel company".into(),
         U::RoyalEngineers => "Engineers".into(),
         U::AngloEgyptianInfantry { .. } if identity.is_friendlies() => "Friendlies".into(),
+        U::AngloEgyptianFort => "fort".into(),
         // 1885: Gordon's garrison, Egyptian and Sudanese -- no British
         // brigades in Khartoum, whatever the counters print.
         U::AngloEgyptianInfantry { .. } if scenario == Scenario::FallOfKhartoum => {
