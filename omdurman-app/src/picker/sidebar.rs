@@ -22,7 +22,7 @@ fn bucket_section(
 }
 
 pub fn spawn_picker_assets(mut picker: ResMut<UnitPicker>, asset_server: Res<AssetServer>) {
-    let order = section_order();
+    let order = &SectionName::SHEET_ORDER;
 
     let mut section_sprites: Vec<Vec<PickerUnit>> = order.iter().map(|_| Vec::new()).collect();
 
@@ -151,7 +151,6 @@ struct UnitAnnotations<'a> {
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct PickerAssetCtx<'w> {
     pub images: Res<'w, Assets<Image>>,
-    pub annotations: Option<Res<'w, SpriteAnnotationsResource>>,
 }
 
 fn render_faction_units(
@@ -626,10 +625,7 @@ pub fn unit_picker_ui(
     game_state: Option<Res<crate::GameStateResource>>,
     mut offer_cache: Local<Option<(usize, Vec<bool>)>>,
 ) {
-    let PickerAssetCtx {
-        images,
-        annotations,
-    } = assets;
+    let PickerAssetCtx { images } = assets;
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if !mode.is_play() {
         return;
@@ -673,8 +669,7 @@ pub fn unit_picker_ui(
     let filter_inputs_moved = game_state.as_ref().is_some_and(|gs| gs.is_changed())
         || picker_ctx.picker.is_changed()
         || peers.changed()
-        || images.is_changed()
-        || annotations.as_ref().is_some_and(|a| a.is_changed());
+        || images.is_changed();
     let flags = |picker: &UnitPicker| -> Vec<(bool, bool, bool, bool)> {
         picker
             .available
@@ -701,24 +696,7 @@ pub fn unit_picker_ui(
                 unit.egui_texture = load_egui_texture(ctx, image, &label);
             }
             if !unit.annotations_loaded {
-                if (!unit.is_boat || unit.visible)
-                    && let Some(ref ann) = annotations
-                {
-                    let entry = ann
-                        .0
-                        .get(&unit.section_name)
-                        .and_then(|m| m.get(&(unit.col, unit.row)));
-                    if let Some(a) = entry {
-                        if a.is_boat() {
-                            unit.is_boat = true;
-                        }
-                        if !a.is_unit() {
-                            unit.visible = false;
-                        }
-                    }
-                }
-                // Fallback to compiled sprite data when no annotation entry exists
-                // for this position. Hide non-placeable cells -- turn counters,
+                // Hide non-placeable cells -- turn counters,
                 // section labels, §6.63 wall-breach markers, bare colour counters
                 // -- so they never appear in the picker (and especially not during
                 // setup). A cell is placeable iff it resolves to a unit profile;
@@ -1009,7 +987,7 @@ mod tests {
 
     #[test]
     fn fort_sprites_belong_to_hadendowa_forts() {
-        let order = section_order();
+        let order = &SectionName::SHEET_ORDER;
         assert_eq!(
             bucket_section(order, "Hadendowa_Forts_0_0", 0, 0),
             Some(SectionName::HadendowaForts)

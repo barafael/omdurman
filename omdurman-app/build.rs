@@ -9,5 +9,4 @@ fn main() {
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let sprite_dir = manifest.join("assets").join("sprites");
     omdurman_types::build_support::generate_sprite_index(&sprite_dir);
-    // unit_grids.ron is tracked automatically via include_str!
 }

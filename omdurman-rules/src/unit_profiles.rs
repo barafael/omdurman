@@ -7,9 +7,10 @@
 //!   Khalifa, a British brigade battalion, a gunboat). This is not printed on
 //!   the counter in a machine-readable way, so it is mapped from the section
 //!   name via `identity_for_section`.
-//! * **Numeric factors** -- fire / melee / movement. These *are* authored, in
-//!   the [`omdurman_types::SpriteAnnotation`] the Units-mode editor writes. We read them from
-//!   there rather than inventing them.
+//! * **Numeric factors** -- fire / melee / movement. These are printed on the
+//!   counter and transcribed in the compiled sprite data
+//!   ([`crate::sprite_data`]); we read them from there rather than inventing
+//!   them.
 //!
 //! A counter with no annotation, or whose section name we don't recognise,
 //! yields `None` -- callers must cope with that rather than receiving a

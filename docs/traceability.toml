@@ -128,10 +128,6 @@ symbol = "UnitProfile"
 file = "omdurman-rules/src/lib.rs"
 symbol = "BrigadeId"
 
-[[mapping.impl]]
-file = "omdurman-types/src/lib.rs"
-symbol = "SpriteAnnotation"
-
 [[mapping]]
 section = "§2.31"
 title = "Dervish weapon types"

@@ -1,44 +1,23 @@
 //! Game-side board bootstrap (§dual-map).
 //!
 //! The two-board store, the deferred load request, and the shared loading
-//! flow live in `omdurman-board-ui::board_store`; this module keeps the game-specific hooks: seeding
-//! the engine's `BoardInfo` on every board load, and loading the
-//! sprite-annotation file (`assets/sprite_annotations.ron`).
+//! flow live in `omdurman-board-ui::board_store`; this module keeps the
+//! game-specific hook: seeding the engine's `BoardInfo` on every board load.
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
-use omdurman_hexmap::{GameMap, HexOverlay};
 
-use crate::{GameStateResource, sprites::SpriteAnnotationsResource};
+use crate::GameStateResource;
 
 pub use omdurman_board_ui::board_store::{
     ActiveEditMap, LoadedAnnotations, MapLoadContext, PendingMapLoad,
 };
 
-/// Startup: the shared board seeding plus the sprite-annotation file load
-/// (an empty or missing entry simply means the picker falls back to the
-/// compiled sprite data).
-pub(crate) fn load_annotations_with_sprites(
-    mut commands: Commands,
-    game_map: ResMut<GameMap>,
-    overlay: ResMut<HexOverlay>,
-    loaded: ResMut<LoadedAnnotations>,
-) {
-    let annotations: omdurman_types::SpriteAnnotations =
-        ron::de::from_str(include_str!("../assets/sprite_annotations.ron")).unwrap_or_else(|e| {
-            bevy::log::error!("failed to parse sprite_annotations.ron: {e}");
-            Default::default()
-        });
-    commands.insert_resource(SpriteAnnotationsResource(annotations));
-    omdurman_board_ui::board_store::load_annotations(commands, game_map, overlay, loaded);
-}
-
-/// The shared load context plus the game's engine state and annotations.
+/// The shared load context plus the game's engine state.
 #[derive(SystemParam)]
 pub(crate) struct GameMapLoadContext<'w> {
     pub shared: MapLoadContext<'w>,
     pub game_state: ResMut<'w, GameStateResource>,
-    pub annotations: Option<ResMut<'w, SpriteAnnotationsResource>>,
 }
 
 /// The game's `apply_map_selection`: attach the engine's view of the board
@@ -49,7 +28,6 @@ pub(crate) struct GameMapLoadContext<'w> {
 /// loading flow.
 pub(crate) fn apply_map_selection(
     mut ctx: GameMapLoadContext,
-    mut commands: Commands,
     plane: Query<
         (&Mesh3d, &MeshMaterial3d<bevy::pbr::StandardMaterial>),
         With<omdurman_hexmap::MapPlane>,
@@ -64,9 +42,6 @@ pub(crate) fn apply_map_selection(
     let map = ctx.shared.loaded.map(kind);
     ctx.game_state.0.board =
         std::sync::Arc::new(omdurman_rules::board::BoardInfo::from_map_data(map));
-    if ctx.annotations.is_none() {
-        commands.insert_resource(SpriteAnnotationsResource::default());
-    }
     omdurman_board_ui::board_store::load_board(
         &mut ctx.shared,
         kind,
@@ -104,7 +79,7 @@ pub struct BoardStatePlugin;
 
 impl Plugin for BoardStatePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, load_annotations_with_sprites)
+        app.add_systems(Startup, omdurman_board_ui::board_store::load_annotations)
             .add_systems(
                 Update,
                 (

@@ -54,7 +54,6 @@ mod seats;
 mod seats_ui;
 mod settings;
 mod splash;
-mod sprites;
 mod state;
 mod telegram;
 #[cfg(test)]

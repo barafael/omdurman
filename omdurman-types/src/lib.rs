@@ -735,59 +735,6 @@ impl HexData {
     }
 }
 
-#[derive(
-    Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::Display, strum::EnumIter,
-)]
-pub enum SpriteColor {
-    BlackWhite,
-    GreenRed,
-    RedBlack,
-    GrayBlack,
-    WhiteBlack,
-    GrayRed,
-    SandBlack,
-    BlueBlack,
-    BlueRed,
-    GreenBlack,
-    SandRed,
-    SandGreen,
-    WhiteSand,
-}
-
-/// Editor-authored sprite annotation: the metadata painted onto one cut
-/// counter cell (section, col, row). Persisted in
-/// `sprite_annotations.ron`; the game's unit picker consumes it
-/// as an optional overlay over the compiled `sprite_data` fallback.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct SpriteAnnotation {
-    pub color: SpriteColor,
-    pub faction: Option<Faction>,
-    pub text: String,
-    pub kind: Option<UnitKind>,
-}
-
-impl SpriteAnnotation {
-    /// Re-derive the `is_boat` flag from the kind.
-    pub fn is_boat(&self) -> bool {
-        self.kind.as_ref().is_some_and(|k| k.is_boat())
-    }
-
-    /// Whether this annotation represents a real playable unit (not a marker,
-    /// breach marker, bare counter, or unclassified).
-    pub fn is_unit(&self) -> bool {
-        self.kind.as_ref().is_some_and(|k| {
-            !matches!(
-                k,
-                UnitKind::Marker | UnitKind::Breech | UnitKind::BareCounter
-            )
-        })
-    }
-}
-
-/// Map from section-name + grid position to its [`SpriteAnnotation`].
-pub type SpriteAnnotations =
-    std::collections::HashMap<SectionName, std::collections::HashMap<(u32, u32), SpriteAnnotation>>;
-
 /// Dervish tribal/sub-faction identity. Drives the colour-based stacking
 /// restriction (§5.52) and the leader->troops command match (§5.53).
 #[derive(
@@ -968,9 +915,9 @@ const fn default_true() -> bool {
 /// branch in the rules. Each variant carries the stat fields that are printed
 /// directly on the counter for that unit type (§6.11, §7.1, §5.11, §5.24).
 ///
-/// Used directly as the `SpriteAnnotation::kind` value for a real unit
-/// (`Some(UnitKind::...)`); a non-unit marker counter carries
-/// `Some(UnitKind::Marker)` or `None`.
+/// The compiled sprite data (`omdurman_rules::sprite_data`) carries it per
+/// counter cell: `Some(UnitKind::...)` for a real unit; a non-unit marker
+/// counter carries `Some(UnitKind::Marker)` or `None`.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, strum::Display)]
 pub enum UnitKind {
     /// Foot infantry (§2.3): fire / melee / movement.

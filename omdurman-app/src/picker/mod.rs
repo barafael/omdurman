@@ -22,7 +22,6 @@ use crate::AppState;
 use crate::camera::RtsCamera;
 use crate::events;
 use crate::render::{HexOverlay, HexRingAssets};
-use crate::sprites::{SpriteAnnotationsResource, section_order};
 use omdurman_hexmap::{hex_world_pos, hit_to_hex};
 use omdurman_net::GameEvent;
 use omdurman_rules::effects::FokCapGroup;
