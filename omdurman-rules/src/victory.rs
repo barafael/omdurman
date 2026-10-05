@@ -460,21 +460,4 @@ impl GameResult {
             GameResult::FoK(level) => level.to_string(),
         }
     }
-
-    /// The newspaper's date line: FALL OF KHARTOUM is January 1885, the
-    /// Omdurman scenarios September 1898.
-    pub fn date_line(self) -> &'static str {
-        match self {
-            GameResult::FoK(_) => "January 1885",
-            GameResult::Campaign(_) | GameResult::Historical { .. } => "September 1898",
-        }
-    }
-
-    /// The battle the newspaper reports on.
-    pub fn battle_name(self) -> &'static str {
-        match self {
-            GameResult::FoK(_) => "the fall of Khartoum",
-            GameResult::Campaign(_) | GameResult::Historical { .. } => "the Battle of Omdurman",
-        }
-    }
 }

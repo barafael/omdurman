@@ -21,9 +21,8 @@ they constrain, plus the crate-level `omdurman-rules/src/verification.rs`.
 Today the everyday suite runs 90 harnesses (23 in `omdurman-types`, 67 in
 `omdurman-rules`, counting the `prove_value_enum!` template in
 `verification.rs` as the five harnesses it expands to), all of which verify
-on a big machine. The four in `quantifier_experiment.rs` sit behind the
-`kani-quantifiers` feature that the script never enables, and the expensive
-tier (below) adds 51 more behind `kani-expensive`.
+on a big machine. The expensive tier (below) adds 51 more behind
+`kani-expensive`.
 
 ## Running it
 

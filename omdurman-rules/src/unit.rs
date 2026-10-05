@@ -418,15 +418,6 @@ impl UnitIdentity {
         }
     }
 
-    /// The Dervish tribe this unit belongs to, if any. Used to enforce §5.52
-    /// (different Dervish tribes may not stack together).
-    pub fn dervish_tribe(&self) -> Option<DervishTribe> {
-        match self {
-            UnitIdentity::DervishTribal { tribe } => Some(*tribe),
-            _ => None,
-        }
-    }
-
     /// The §5.52 stacking group this Dervish unit belongs to, if any: tribal
     /// units group by tribe, and the Dervish artillery (§9.322's three guns)
     /// groups as its own "tribe" -- a gun is not a Hadendowa (or Kehena, or

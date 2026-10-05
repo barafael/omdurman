@@ -295,9 +295,6 @@ pub enum RuleError {
     )]
     UnitDidNotParticipate(UnitId, HexCoord),
 
-    #[error("unit {0} is not disrupted")]
-    NotDisrupted(UnitId),
-
     #[error("Friendlies transport requires Isa Zachneih to be eliminated first (§5.21)")]
     FriendliesIsaZachneihAlive,
 
@@ -350,14 +347,8 @@ pub enum RuleError {
     )]
     TransportLoadingTurn(UnitId),
 
-    #[error("gunboat {0} engines are not lost; cannot drift")]
-    GunboatEnginesNotLost(UnitId),
-
     #[error("no untriggered river mine in hex {0} (§10.13)")]
     NoUntriggeredMine(HexCoord),
-
-    #[error("river chain is already sunk")]
-    ChainAlreadySunk,
 
     #[error("no river chain has been placed")]
     NoChainPlaced,

@@ -383,12 +383,6 @@ impl GameState {
         false
     }
 
-    /// The mine in `hex`, if any (§10.11). The world lens for river rules:
-    /// mines are game state with a lifecycle (`triggered`), not map data.
-    pub fn mine_at(&self, hex: HexCoord) -> Option<&MinePlacement> {
-        self.mines.iter().find(|m| m.hex == hex)
-    }
-
     /// Whether the (unsunk) river chain spans `hex` (§10.21/§10.22).
     pub fn chain_covers(&self, hex: HexCoord) -> bool {
         self.chain

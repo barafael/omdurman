@@ -60,18 +60,6 @@ pub fn defense_modifier(terrain: Terrain) -> i16 {
     terrain_effects_chart(terrain).defense_modifier
 }
 
-/// Look up the defense modifier for a hex on the board (§6.23, Terrain Effects Chart).
-///
-/// Returns `0` if the hex has no terrain annotation (same as Clear).
-/// Useful for the fire visualiser and hover tooltip: point at a hex and
-/// get the defence modifier directly without calling the full chart.
-pub fn defense_modifier_at(board: &crate::board::BoardInfo, hex: omdurman_types::HexCoord) -> i16 {
-    board
-        .terrain_at(hex)
-        .map(|t| terrain_effects_chart(t).defense_modifier)
-        .unwrap_or(0)
-}
-
 /// Convenience: get the movement cost for a terrain type (rulebook §5.11, Terrain Effects Chart).
 /// Returns `None` for impassable terrain (Nile).
 pub fn movement_cost(terrain: Terrain) -> Option<MovementAllowance> {
@@ -437,13 +425,9 @@ mod tests {
 /// way the `value_enum!` proofs pick up new variants.
 #[cfg(kani)]
 mod verification {
-    use super::{
-        defense_modifier, defense_modifier_at, movement_cost, movement_cost_with_road,
-        terrain_effects_chart,
-    };
+    use super::{defense_modifier, movement_cost, movement_cost_with_road, terrain_effects_chart};
     use crate::MovementAllowance;
-    use crate::board::BoardInfo;
-    use omdurman_types::{GroundKind, HexCoord, HexDirection, Road, Terrain};
+    use omdurman_types::{GroundKind, HexDirection, Road, Terrain};
 
     /// A symbolic ground kind (index layout follows `GroundKind`'s
     /// declaration order).
@@ -521,12 +505,6 @@ mod verification {
             direction: HexDirection::East,
         };
         assert!(defense_modifier(nile) == 0);
-        // An unloaded (rule-neutral) board defends like Clear everywhere.
-        let q: i32 = kani::any();
-        let r: i32 = kani::any();
-        kani::assume(q >= -2 && q <= 2);
-        kani::assume(r >= -2 && r <= 2);
-        assert!(defense_modifier_at(&BoardInfo::default(), HexCoord::new(q, r)) == 0);
         // And the chart entry itself is the only source of the modifier.
         let entry = terrain_effects_chart(terrain);
         assert!(entry.defense_modifier == modifier);

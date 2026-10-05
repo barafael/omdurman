@@ -500,10 +500,8 @@ mod tests {
                     terrain: Terrain::Clear {
                         road: Default::default(),
                     },
-                    location: None,
                     name: None,
                     setup_letter: None,
-                    is_scattergram: false,
                     named_area: None,
                 },
             );

@@ -709,40 +709,27 @@ pub enum SetupLetter {
 /// Per-hex map data (rulebook mapsheet, §5.11, §6.23, §6.3).
 ///
 /// Road state lives on the [`Terrain`] variant; this struct adds only the
-/// display name, location landmark, setup letter, scattergram flag, and named
+/// display name (the landmark lookups read it), setup letter and named
 /// area.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct HexData {
     pub terrain: Terrain,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub location: Option<Location>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub setup_letter: Option<SetupLetter>,
-    /// Whether this hex is one of the seven printed Howitzer Fire Scattergram
-    /// reference hexes (rulebook §6.64). Purely a visual annotation -- all
-    /// scattergram hexes are regular playable hexes.
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub is_scattergram: bool,
     /// The rules-significant named area this hex belongs to, if any
     /// (e.g. the Anglo-Egyptian entrance area, rulebook §9.113).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub named_area: Option<NamedArea>,
 }
 
-fn is_false(b: &bool) -> bool {
-    !b
-}
-
 impl HexData {
     pub fn new(terrain: Terrain, name: Option<String>) -> Self {
         Self {
             terrain,
-            location: None,
             name,
             setup_letter: None,
-            is_scattergram: false,
             named_area: None,
         }
     }
@@ -846,7 +833,7 @@ pub enum Faction {
         tribe: DervishTribe,
     },
     BritishEgyptian {
-        #[serde(default, deserialize_with = "deserialize_brigade_option")]
+        #[serde(default)]
         brigade: Option<BrigadeId>,
     },
 }
@@ -1331,89 +1318,6 @@ pub struct Command {
     pub scope: CommandScope,
 }
 
-/// Deserialize an `Option<BrigadeId>` accepting both the current
-/// `None` / `Some(BrigadeId { .. })` representation and the legacy flat
-/// `Brigade` enum variants (`None`, `B1`-`B4`, `E1`-`E4`, `S1`-`S4`) used by
-/// pre-migration `.ron` files. Old `"None"` and new `None` both yield `None`.
-pub fn deserialize_brigade_option<'de, D>(deserializer: D) -> Result<Option<BrigadeId>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    use serde::de::{EnumAccess, VariantAccess, Visitor};
-
-    struct BrigadeOptionVisitor;
-
-    impl<'de> Visitor<'de> for BrigadeOptionVisitor {
-        type Value = Option<BrigadeId>;
-
-        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.write_str(
-                "None, Some(BrigadeId { .. }), or a legacy brigade tag \
-                 (None, B1..B4, E1..E4, S1..S4)",
-            )
-        }
-
-        fn visit_none<E: serde::de::Error>(self) -> Result<Self::Value, E> {
-            Ok(None)
-        }
-
-        fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
-            Ok(None)
-        }
-
-        fn visit_some<D2: serde::Deserializer<'de>>(
-            self,
-            deserializer: D2,
-        ) -> Result<Self::Value, D2::Error> {
-            BrigadeId::deserialize(deserializer).map(Some)
-        }
-
-        fn visit_enum<A: EnumAccess<'de>>(self, data: A) -> Result<Self::Value, A::Error> {
-            #[derive(Deserialize)]
-            enum LegacyBrigade {
-                None,
-                B1,
-                B2,
-                B3,
-                B4,
-                E1,
-                E2,
-                E3,
-                E4,
-                S1,
-                S2,
-                S3,
-                S4,
-            }
-
-            let (variant, access) = data.variant::<LegacyBrigade>()?;
-            // Every legacy variant is a unit variant; consume its (empty) body.
-            access.unit_variant()?;
-            Ok(match variant {
-                LegacyBrigade::None => None,
-                LegacyBrigade::B1 => Some(BrigadeId::british(1)),
-                LegacyBrigade::B2 => Some(BrigadeId::british(2)),
-                LegacyBrigade::B3 => Some(BrigadeId::british(3)),
-                LegacyBrigade::B4 => Some(BrigadeId::british(4)),
-                LegacyBrigade::E1 => Some(BrigadeId::egyptian(1)),
-                LegacyBrigade::E2 => Some(BrigadeId::egyptian(2)),
-                LegacyBrigade::E3 => Some(BrigadeId::egyptian(3)),
-                LegacyBrigade::E4 => Some(BrigadeId::egyptian(4)),
-                LegacyBrigade::S1 => Some(BrigadeId::sudanese(1)),
-                LegacyBrigade::S2 => Some(BrigadeId::sudanese(2)),
-                LegacyBrigade::S3 => Some(BrigadeId::sudanese(3)),
-                LegacyBrigade::S4 => Some(BrigadeId::sudanese(4)),
-            })
-        }
-    }
-
-    // `deserialize_any` lets the underlying format dispatch the visitor by
-    // token kind: RON/JSON will call `visit_none`/`visit_some`/`visit_enum`
-    // depending on whether the value is `None`, `Some(...)`, or a bare
-    // identifier (`B1`, `E3`, ...).
-    deserializer.deserialize_any(BrigadeOptionVisitor)
-}
-
 /// Hex orientation: [diamond] pointy-top (vertices up/down) or [hexagon] flat-top (vertices left/right).
 ///
 /// Affects pixel-hex conversion formulas and which axis is staggered.
@@ -1641,17 +1545,7 @@ impl OverlayParams {
 /// dependency on the rules crate; the app maps `Scenario -> MapKind`
 /// (`Campaign -> Campaign`, everything else -> `FallOfKhartoum`).
 #[derive(
-    Serialize,
-    Deserialize,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    Debug,
-    Default,
-    strum::Display,
-    strum::EnumString,
+    Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, Default, strum::Display,
 )]
 pub enum MapKind {
     #[default]

@@ -5815,8 +5815,8 @@ mod tests {
             hex: HexCoord::new(7, 0),
             triggered: false,
         });
-        assert!(state.mine_at(HexCoord::new(7, 0)).is_some());
-        assert!(state.mine_at(HexCoord::new(8, 0)).is_none());
+        assert!(state.mines.iter().any(|m| m.hex == HexCoord::new(7, 0)));
+        assert!(!state.mines.iter().any(|m| m.hex == HexCoord::new(8, 0)));
         state.chain = Some(crate::ChainPlacement {
             hexes: vec![HexCoord::new(9, 0)],
             sunk: false,

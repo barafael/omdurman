@@ -1,6 +1,6 @@
 //! Architecture guard: inside the engine's `effects/` module, the mutable
 //! world is read through the `GameState` lens — `hexside_effective`,
-//! `mine_at`, `chain_covers`, `is_zariba_entrenched`,
+//! `chain_covers`, `is_zariba_entrenched`,
 //! `has_zariba_thorn_hedge` — never straight off the static `BoardInfo`.
 //!
 //! Terrain, landmark and Nile reads are exempt: that data is immutable

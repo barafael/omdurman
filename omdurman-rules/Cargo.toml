@@ -23,10 +23,6 @@ kani = []
 # postcard for the wire-format proofs (the peers' encoding).
 kani-expensive = ["dep:postcard"]
 
-# Experimental quantifier-harness prototype (src/quantifier_experiment.rs).
-# Never part of the suite or CI; pair with cargo-kani's `-Z quantifiers`.
-kani-quantifiers = []
-
 [dependencies]
 omdurman-types = { path = "../omdurman-types" }
 ron = { workspace = true }
