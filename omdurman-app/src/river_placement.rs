@@ -44,7 +44,7 @@ pub(crate) fn handle_optional_rule_click(
         hexes.push(hex);
         // A refused hex says why (not adjacent to the line, not Nile, north
         // of the khor's mouth), like a refused mine.
-        if let Err(error) = gs.0.can_place_chain(&hexes) {
+        if let Err(error) = gs.0.can_plot_chain(&hexes) {
             if let Some(dispatches) = submit.dispatches.as_deref_mut() {
                 dispatches.push(crate::submit::REFUSED_HEADER, error.to_string());
             }

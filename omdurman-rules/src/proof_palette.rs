@@ -184,7 +184,7 @@ pub(crate) const PALETTE: [(UnitId, UnitProfile); PALETTE_LEN] = [
                 upstream: 0,
                 downstream: 0,
             },
-            identity: UnitIdentity::AngloEgyptianGunboat(GunboatId::Named(NamedGunboat::Naser)),
+            identity: UnitIdentity::AngloEgyptianGunboat(GunboatId::Named(NamedGunboat::AbuKlea)),
             weapon: WeaponClass::Artillery,
             fire: Some(FireFactor::Five),
             melee: None,

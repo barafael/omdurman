@@ -37,10 +37,26 @@ pub fn apply_move_unit(
             .position(|h| state.mines.iter().any(|m| m.hex == *h && !m.triggered))
     })
     .flatten();
-    let (to, entered, plan) = match struck {
+    // §10.22: "When a British gunboat enters a 'chained' river hex it must
+    // stop and may move no further that turn" -- likewise unknown to it.
+    let chained = (mover_owner == Player::AngloEgyptian
+        && matches!(mover_kind, UnitKind::Gunboat { .. }))
+    .then(|| entered.iter().position(|h| state.chain_covers(*h)))
+    .flatten();
+    // The move ends at whichever comes first.
+    let stop = match (struck, chained) {
+        (Some(m), Some(c)) => Some(m.min(c)),
+        (m, c) => m.or(c),
+    };
+    let struck = struck.filter(|m| Some(*m) == stop);
+    let chained = chained.filter(|c| Some(*c) == stop);
+    let came_from = unit.position;
+    let (to, entered, plan) = match stop {
         Some(i) if i + 1 < entered.len() => {
             let cut = entered[..=i].to_vec();
             let plan = state.validate_move(unit_id, cut[i], &cut)?;
+            // §5.51: the move now ends here, beside whoever lies here.
+            state.check_stacking(unit, cut[i])?;
             (cut[i], cut, plan)
         }
         _ => (to, entered, plan),
@@ -77,6 +93,23 @@ pub fn apply_move_unit(
     }
     if struck.is_some() {
         super::river::strikes_mine(state, unit_id, to);
+    }
+    match chained {
+        Some(i) => {
+            let from = if i == 0 { came_from } else { entered[i - 1] };
+            state.gunboats_at_chain.insert(unit_id, from);
+            if !state.gunboats_stopped_this_turn.contains(&unit_id) {
+                state.gunboats_stopped_this_turn.push(unit_id);
+            }
+            state.observations.push(Observation::ChainStopsGunboat {
+                gunboat: unit_id,
+                hex: to,
+            });
+        }
+        // Clear of the chain again.
+        None => {
+            state.gunboats_at_chain.remove(&unit_id);
+        }
     }
 
     // §5.26/§5.43: the unit has stopped if its destination lies in an enemy

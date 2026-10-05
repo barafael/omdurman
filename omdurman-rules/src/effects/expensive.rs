@@ -546,6 +546,7 @@ fn same_rule_state(a: &GameState, b: &GameState) -> bool {
         && chain(a) == chain(b)
         && a.pending_mine == b.pending_mine
         && a.gunboats_stopped_this_turn == b.gunboats_stopped_this_turn
+        && a.gunboats_at_chain == b.gunboats_at_chain
         && std::sync::Arc::ptr_eq(&a.board, &b.board)
         && a.breaches == b.breaches
         && a.dervish_deserted == b.dervish_deserted

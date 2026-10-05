@@ -119,7 +119,7 @@ pub static TELEGRAM: TelegramBanks = TelegramBanks {
     ],
     enemy_forts: &[
         "{n} enemy forts destroyed {place}",
-        "Our guns destroyed {n} enemy forts {place}",
+        "We have destroyed {n} enemy forts {place}",
     ],
     enemy_guns: &[
         "{n} enemy guns destroyed {place}",

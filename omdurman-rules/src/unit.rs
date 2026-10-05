@@ -172,10 +172,8 @@ pub enum NamedGunboat {
     Melik,
     Sheik,
     Fateh,
-    /// The counter printed "Abu Klea". (The variant keeps its old name:
-    /// it is serialised in records.)
     #[strum(serialize = "Abu Klea")]
-    Naser,
+    AbuKlea,
 }
 
 /// Old-style gunboat -- no howitzer fire (rulebook §2.32).
@@ -186,10 +184,9 @@ pub enum NamedGunboat {
 pub enum OldGunboat {
     /// The four old boats are printed only "GUNBOAT"; they carry the names
     /// of the 1898 flotilla's older boats not on a named counter: El Teb,
-    /// Tamai, Metemmeh and Naser. (Variant names are serialised in records;
-    /// new variants are appended.)
+    /// Tamai, Metemmeh and Naser.
     #[strum(serialize = "El Teb")]
-    LordKitchener,
+    ElTeb,
     Tamai,
     Metemmeh,
     Naser,
@@ -470,7 +467,7 @@ impl UnitIdentity {
                 if scenario == omdurman_types::Scenario::FallOfKhartoum =>
             {
                 let steamer = match boat {
-                    OldGunboat::LordKitchener => "Bordein",
+                    OldGunboat::ElTeb => "Bordein",
                     OldGunboat::Tamai => "Talahawiyeh",
                     OldGunboat::Metemmeh => "Safia",
                     OldGunboat::Naser => "Mansura",

@@ -1,7 +1,7 @@
 //! Architecture guard: inside the engine's `effects/` module, the mutable
 //! world is read through the `GameState` lens — `hexside_effective`,
-//! `chain_covers`, `is_zariba_entrenched`,
-//! `has_zariba_thorn_hedge` — never straight off the static `BoardInfo`.
+//! `chain_covers`, `is_zariba_entrenched` — never straight off the static
+//! `BoardInfo`.
 //!
 //! Terrain, landmark and Nile reads are exempt: that data is immutable
 //! scenario input. Hexsides are not: wall breaches (§6.53/§6.63) and

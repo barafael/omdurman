@@ -410,6 +410,13 @@ pub fn describe_observation(obs: &Observation) -> String {
             roll.value(),
             if *sunk { ", chain sunk" } else { "" }
         ),
+        Observation::ChainStopsGunboat { gunboat, hex } => {
+            format!(
+                "ChainStopsGunboat: {} at {} [§10.22]",
+                unit_name(*gunboat),
+                hex
+            )
+        }
         Observation::ChainSunkFromTheBank => {
             "ChainSunkFromTheBank: a unit held the bank a full turn [§10.23]".to_string()
         }

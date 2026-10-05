@@ -135,7 +135,12 @@ impl GameState {
             return Err(RuleError::EnginesLost(unit.id));
         }
         if self.gunboats_stopped_this_turn.contains(&unit.id) {
-            return Err(RuleError::StruckMine(unit.id));
+            // §10.22: stopped by the chain; §10.12: by a mine.
+            return Err(if self.chain_covers(unit.position) {
+                RuleError::StoppedByChain(unit.id)
+            } else {
+                RuleError::StruckMine(unit.id)
+            });
         }
         // §5.21: a "Friendlies" unit aboard a gunboat moves only with it.
         if unit.state.loaded_on.is_some() {
@@ -502,8 +507,22 @@ impl GameState {
             if !self.board.terrain.is_empty() && !self.board.is_nile(next) {
                 return Err(RuleError::GunboatOffNile(next));
             }
-            // §10.22: a chained Nile hex stops the gunboat.
-            if self.chain_covers(next) {
+            // §10.22/§10.23: "No gunboats (British or Dervish) may cross
+            // the chain until it has been sunk". A British gunboat that
+            // enters a chained hex stops there (the move is cut short on
+            // apply -- it does not know where the chain lies), and from it
+            // may only go back the way it came; a Dervish gunboat, which
+            // knows, may not enter one at all. (A gunboat the chain was
+            // strung under in setup came from nowhere: it may leave.)
+            if i == 0 && self.chain_covers(prev) {
+                let back = self
+                    .gunboats_at_chain
+                    .get(&unit.id)
+                    .is_none_or(|&from| next == from || next.is_adjacent_to(from));
+                if !back || self.chain_covers(next) {
+                    return Err(RuleError::BlockedByChain(next));
+                }
+            } else if self.chain_covers(next) && owner != Player::AngloEgyptian {
                 return Err(RuleError::BlockedByChain(next));
             }
             self.check_move_step(unit, prev, next)?;
@@ -612,7 +631,16 @@ impl GameState {
         }
         match action {
             FriendliesAction::Load { unit, gunboat } => {
-                if !self.isa_zachneih_eliminated {
+                // "after, and only after, the Dervish east bank unit (Isa
+                // Zachneih) has been eliminated" -- or has deserted (§8.2):
+                // either way it no longer holds the east bank.
+                let isa_on_the_map = self.units.iter().any(|u| {
+                    u.profile.identity
+                        == crate::UnitIdentity::DervishTribal {
+                            tribe: crate::DervishTribe::IsaZachneih,
+                        }
+                });
+                if !self.isa_zachneih_eliminated && isa_on_the_map {
                     return Err(RuleError::FriendliesIsaZachneihAlive);
                 }
                 if self.friendlies_transport.is_some() {

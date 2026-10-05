@@ -305,7 +305,7 @@ mod tests {
                 upstream: 15,
                 downstream: 16,
             },
-            identity: UnitIdentity::AngloEgyptianGunboat(GunboatId::Old(OldGunboat::LordKitchener)),
+            identity: UnitIdentity::AngloEgyptianGunboat(GunboatId::Old(OldGunboat::ElTeb)),
             weapon: WeaponClass::Artillery,
             fire: None,
             melee: None,
@@ -1538,7 +1538,7 @@ mod tests {
                 upstream: 0,
                 downstream: 0,
             },
-            UnitIdentity::AngloEgyptianGunboat(GunboatId::Old(crate::OldGunboat::LordKitchener)),
+            UnitIdentity::AngloEgyptianGunboat(GunboatId::Old(crate::OldGunboat::ElTeb)),
             WeaponClass::Artillery,
             UnitMovement::Gunboat(crate::GunboatMovement {
                 upstream: crate::MovementAllowance::Ten,
@@ -5557,11 +5557,11 @@ mod tests {
         // The counters print Abu Klea and four plain "GUNBOAT"s; 1898 names
         // them after Kitchener's flotilla, 1885 after Gordon's steamers.
         let abu_klea = crate::UnitIdentity::AngloEgyptianGunboat(crate::GunboatId::Named(
-            crate::NamedGunboat::Naser,
+            crate::NamedGunboat::AbuKlea,
         ));
         assert_eq!(abu_klea.short_label(), "Gunboat Abu Klea");
         let old = crate::UnitIdentity::AngloEgyptianGunboat(crate::GunboatId::Old(
-            crate::OldGunboat::LordKitchener,
+            crate::OldGunboat::ElTeb,
         ));
         assert_eq!(old.label_in(Scenario::Campaign), "Gunboat El Teb");
         assert_eq!(old.label_in(Scenario::FallOfKhartoum), "Steamer Bordein");
@@ -6481,6 +6481,15 @@ mod tests {
             state.can_move_gunboat(gb, chained, &path, MovementPoints::new(1)),
             Err(RuleError::BlockedByChain(_))
         ));
+        // A gunboat the chain was strung under in setup is not held by it.
+        let moored = make_dervish_gunboat(&mut state, chained);
+        let away = HexCoord::new(3, 0);
+        assert!(
+            state
+                .can_move_gunboat(moored, away, &[away], MovementPoints::new(1))
+                .is_ok()
+        );
+        state.units.retain(|u| u.id != moored);
         // §10.23: once sunk, the chain no longer stops the gunboat.
         state.chain.as_mut().unwrap().sunk = true;
         assert!(
@@ -6488,6 +6497,134 @@ mod tests {
                 .can_move_gunboat(gb, chained, &path, MovementPoints::new(1))
                 .is_ok()
         );
+    }
+
+    // §10.22: "When a British gunboat enters a 'chained' river hex it must
+    // stop and may move no further that turn." She does not know where the
+    // chain lies: a move plotted past it ends on it. §10.23: from there she
+    // may only go back until the chain is sunk.
+    #[rulebook("§10.22", "§10.23")]
+    #[test]
+    fn a_british_gunboat_runs_onto_the_chain_and_may_only_go_back() {
+        let mut state = GameState::new(Scenario::Campaign);
+        state.board = Arc::new(nile_board_row0(0, 6, HexDirection::West));
+        state.phase = Phase::Movement;
+        state.active_player = Player::AngloEgyptian;
+        let chained = HexCoord::new(3, 0);
+        state.chain = Some(crate::ChainPlacement {
+            hexes: vec![chained],
+            sunk: false,
+        });
+        let gb = make_profiled_unit(&mut state, HexCoord::new(1, 0), ae_gunboat_profile());
+        let hexes =
+            |qs: &[i32]| -> Vec<HexCoord> { qs.iter().map(|&q| HexCoord::new(q, 0)).collect() };
+        let sail = |state: &mut GameState, qs: &[i32]| {
+            let path = hexes(qs);
+            apply_effect(
+                state,
+                &GameEffect::MoveUnit {
+                    unit_id: gb,
+                    to: *path.last().unwrap(),
+                    cost: MovementPoints::new(path.len() as i16),
+                    path,
+                },
+            )
+        };
+        // Plotted to (5,0): stopped on the chain at (3,0), two MP spent.
+        sail(&mut state, &[2, 3, 4, 5]).unwrap();
+        assert_eq!(state.find_unit(gb).unwrap().position, chained);
+        assert_eq!(state.mp_spent(gb), 2);
+        assert_eq!(
+            state.gunboats_at_chain.get(&gb),
+            Some(&HexCoord::new(2, 0)),
+            "the hex she steamed in from"
+        );
+        assert!(matches!(
+            state.drain_observations().last(),
+            Some(Observation::ChainStopsGunboat { .. })
+        ));
+        // No further that turn.
+        assert!(matches!(
+            sail(&mut state, &[2]),
+            Err(RuleError::StoppedByChain(_))
+        ));
+        // §5.51: a second gunboat plotted past the chain would end beside
+        // her; gunboats do not stack, so the move is refused whole.
+        let other = make_profiled_unit(&mut state, HexCoord::new(0, 0), ae_gunboat_profile());
+        let through = hexes(&[1, 2, 3, 4]);
+        assert!(matches!(
+            apply_effect(
+                &mut state,
+                &GameEffect::MoveUnit {
+                    unit_id: other,
+                    to: HexCoord::new(4, 0),
+                    cost: MovementPoints::new(4),
+                    path: through,
+                },
+            ),
+            Err(RuleError::Stacking(_))
+        ));
+        assert_eq!(
+            state.find_unit(other).unwrap().position,
+            HexCoord::new(0, 0)
+        );
+        state.units.retain(|u| u.id != other);
+        // Next turn: not across, only back.
+        state.gunboats_stopped_this_turn.clear();
+        state.mp_spent_this_turn.clear();
+        assert!(matches!(
+            sail(&mut state, &[4]),
+            Err(RuleError::BlockedByChain(_))
+        ));
+        sail(&mut state, &[2]).unwrap();
+        assert!(state.gunboats_at_chain.is_empty());
+        // Onto it again in a single step: she came from where she lay.
+        sail(&mut state, &[3]).unwrap();
+        assert_eq!(state.gunboats_at_chain.get(&gb), Some(&HexCoord::new(2, 0)));
+        state.gunboats_stopped_this_turn.clear();
+        state.mp_spent_this_turn.clear();
+        sail(&mut state, &[2]).unwrap();
+        state.mp_spent_this_turn.clear();
+        // A mine short of the chain stops her first, and only the mine.
+        state.mines.push(crate::MinePlacement {
+            hex: HexCoord::new(2, 0),
+            triggered: false,
+        });
+        state.find_unit_mut(gb).unwrap().position = HexCoord::new(1, 0);
+        sail(&mut state, &[2, 3, 4]).unwrap();
+        assert_eq!(state.find_unit(gb).unwrap().position, HexCoord::new(2, 0));
+        assert!(state.pending_mine.is_some());
+        assert!(state.gunboats_at_chain.is_empty());
+        state.pending_mine = None;
+        state.mines.clear();
+        state.gunboats_stopped_this_turn.clear();
+        state.mp_spent_this_turn.clear();
+        // The chain is a gunboat's obstacle: troops are not held by it.
+        let mut dry = GameState::new(Scenario::Campaign);
+        dry.phase = Phase::Movement;
+        dry.active_player = Player::AngloEgyptian;
+        dry.chain = Some(crate::ChainPlacement {
+            hexes: vec![HexCoord::new(11, 10)],
+            sunk: false,
+        });
+        let foot = make_ae_infantry(&mut dry, HexCoord::new(10, 10));
+        let march = vec![HexCoord::new(11, 10), HexCoord::new(12, 10)];
+        apply_effect(
+            &mut dry,
+            &GameEffect::MoveUnit {
+                unit_id: foot,
+                to: HexCoord::new(12, 10),
+                cost: MovementPoints::new(2),
+                path: march,
+            },
+        )
+        .unwrap();
+        assert_eq!(dry.find_unit(foot).unwrap().position, HexCoord::new(12, 10));
+        // Sunk, the chain lets her through.
+        state.chain.as_mut().unwrap().sunk = true;
+        state.mp_spent_this_turn.clear();
+        sail(&mut state, &[3, 4, 5]).unwrap();
+        assert_eq!(state.find_unit(gb).unwrap().position, HexCoord::new(5, 0));
     }
 
     // ----- Part E: Mahdi's Tomb --------------------------------------------
@@ -6782,7 +6919,7 @@ mod tests {
                 upstream: 0,
                 downstream: 0,
             },
-            UnitIdentity::AngloEgyptianGunboat(GunboatId::Old(crate::OldGunboat::LordKitchener)),
+            UnitIdentity::AngloEgyptianGunboat(GunboatId::Old(crate::OldGunboat::ElTeb)),
             WeaponClass::Artillery,
             UnitMovement::Gunboat(crate::GunboatMovement {
                 upstream: crate::MovementAllowance::Ten,
@@ -7982,7 +8119,7 @@ mod tests {
     #[rulebook("§2.32")]
     #[test]
     fn old_gunboat_lacks_howitzer() {
-        assert!(!GunboatId::Old(crate::OldGunboat::LordKitchener).has_howitzer());
+        assert!(!GunboatId::Old(crate::OldGunboat::ElTeb).has_howitzer());
         assert!(!GunboatId::Old(crate::OldGunboat::Tamai).has_howitzer());
     }
 
@@ -8799,7 +8936,7 @@ mod tests {
                         downstream: 16,
                     },
                     identity: UnitIdentity::AngloEgyptianGunboat(crate::GunboatId::Old(
-                        crate::OldGunboat::LordKitchener,
+                        crate::OldGunboat::ElTeb,
                     )),
                     weapon: WeaponClass::Artillery,
                     fire: None,
@@ -8965,7 +9102,7 @@ mod tests {
                 downstream: 16,
             },
             identity: UnitIdentity::AngloEgyptianGunboat(crate::GunboatId::Old(
-                crate::OldGunboat::LordKitchener,
+                crate::OldGunboat::ElTeb,
             )),
             weapon: WeaponClass::Artillery,
             fire: None,
@@ -9346,7 +9483,7 @@ mod tests {
                 upstream: 15,
                 downstream: 16,
             },
-            UnitIdentity::AngloEgyptianGunboat(GunboatId::Old(OldGunboat::LordKitchener)),
+            UnitIdentity::AngloEgyptianGunboat(GunboatId::Old(OldGunboat::ElTeb)),
             WeaponClass::Artillery,
             UnitMovement::Gunboat(crate::GunboatMovement {
                 upstream: crate::MovementAllowance::Fifteen,
@@ -9375,14 +9512,22 @@ mod tests {
         assert!(state.friendlies_transport_offers(Some(british)).is_empty());
 
         // Friendlies adjacent to a gunboat, but the Isa Zachneih still stands.
+        let isa = make_profiled_unit(
+            &mut state,
+            HexCoord::new(25, 14),
+            dervish_tribal_profile_with(DervishTribe::IsaZachneih),
+        );
         assert!(
             state
                 .friendlies_transport_offers(Some(friendlies))
                 .is_empty()
         );
 
-        // Once the Isa Zachneih is eliminated the load is offered...
-        state.isa_zachneih_eliminated = true;
+        // Once the Isa Zachneih is gone -- eliminated, or deserted in the
+        // night (§8.2), which sets no elimination flag -- the load is
+        // offered...
+        state.units.retain(|u| u.id != isa);
+        assert!(!state.isa_zachneih_eliminated);
         assert_eq!(
             state.friendlies_transport_offers(Some(friendlies)),
             vec![FriendliesAction::Load {
@@ -11766,9 +11911,40 @@ mod tests {
             state.can_place_mine(HexCoord::new(20, 20)).is_err(),
             "dry land"
         );
-        let across = [south, south.neighbors()[0]];
-        assert!(state.can_place_chain(&across).is_ok());
-        let gap = [south, HexCoord::new(south.q + 2, south.r)];
+        // §10.21: the chain is strung *across* the river, bank to bank (an
+        // island is a bank). Just south of the khor the Nile is eight hexes
+        // wide: a chain in mid-stream holds on to nothing. Three rows on
+        // it narrows to four.
+        let row_of = |state: &GameState, r: i32| {
+            let mut row: Vec<HexCoord> = state
+                .board
+                .terrain
+                .keys()
+                .copied()
+                .filter(|h| h.r == r && state.board.is_nile(*h))
+                .collect();
+            row.sort_by_key(|h| h.q);
+            row
+        };
+        let wide = row_of(&state, row + 1);
+        assert!(wide.len() > 4);
+        assert!(state.can_place_chain(&wide[1..5]).is_err());
+        let narrows = row_of(&state, row + 3);
+        assert_eq!(narrows.len(), 4);
+        assert!(state.can_place_chain(&narrows).is_ok());
+        assert!(
+            state.can_place_chain(&narrows[..3]).is_err(),
+            "one hex short of the far bank"
+        );
+        // Both ends on the one bank: along it, or a lone hex in a bight.
+        let bight = HexCoord::new(34, 42);
+        assert!(state.can_place_chain(&[bight]).is_err());
+        assert!(
+            state
+                .can_place_chain(&[bight, HexCoord::new(35, 42)])
+                .is_err()
+        );
+        let gap = [narrows[0], narrows[2]];
         assert!(state.can_place_chain(&gap).is_err());
     }
 

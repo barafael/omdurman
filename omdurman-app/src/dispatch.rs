@@ -394,6 +394,17 @@ fn format_observation(
                 }
             ),
         )),
+        Observation::ChainStopsGunboat { gunboat, hex } => Some((
+            "River Chain".into(),
+            format!(
+                "{} has run onto a chain strung across the river at ({},{}) and is stopped. \
+                 No gunboat may cross until it is sunk: artillery fire, or troops a full \
+                 turn on the bank beside it (§10.22, §10.23).",
+                unit_label(*gunboat),
+                hex.q,
+                hex.r
+            ),
+        )),
         Observation::ChainSunkFromTheBank => Some((
             "River Chain".into(),
             "Troops holding the bank have sunk the chain (§10.23).".into(),

@@ -200,4 +200,6 @@ pub enum Observation {
     /// A British unit spent a complete turn on the bank beside the chain and
     /// sank it (§10.23 a).
     ChainSunkFromTheBank,
+    /// A British gunboat ran onto the river chain and stopped (§10.22).
+    ChainStopsGunboat { gunboat: UnitId, hex: HexCoord },
 }

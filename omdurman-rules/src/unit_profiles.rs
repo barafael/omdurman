@@ -552,15 +552,15 @@ fn british_boats(col: u32, row: u32) -> Option<Classification> {
             weapon: WeaponClass::Melee,
         }),
         // Named new-type gunboats (§6.64). The sheet's fifth boat is printed
-        // "Abu Klea" (the `NamedGunboat::Naser` variant, shown as Abu Klea).
+        // "Abu Klea".
         (4, 0) => gunboat(GunboatId::Named(NamedGunboat::Sultan)),
         (5, 0) => gunboat(GunboatId::Named(NamedGunboat::Sheik)),
         (6, 0) => gunboat(GunboatId::Named(NamedGunboat::Fateh)),
         (7, 0) => gunboat(GunboatId::Named(NamedGunboat::Melik)),
-        (3, 0) => gunboat(GunboatId::Named(NamedGunboat::Naser)),
+        (3, 0) => gunboat(GunboatId::Named(NamedGunboat::AbuKlea)),
         // Old-style gunboats (§2.32) -- no howitzer; printed "GUNBOAT", named
         // after the flotilla's older boats (El Teb, Tamai, Metemmeh, Naser).
-        (4, 1) => gunboat(GunboatId::Old(OldGunboat::LordKitchener)),
+        (4, 1) => gunboat(GunboatId::Old(OldGunboat::ElTeb)),
         (5, 1) => gunboat(GunboatId::Old(OldGunboat::Tamai)),
         (6, 1) => gunboat(GunboatId::Old(OldGunboat::Metemmeh)),
         (7, 1) => gunboat(GunboatId::Old(OldGunboat::Naser)),

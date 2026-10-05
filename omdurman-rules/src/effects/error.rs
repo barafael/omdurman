@@ -160,7 +160,9 @@ pub enum RuleError {
         allowance: MovementAllowance,
     },
 
-    #[error("gunboat entered a chained Nile hex {0} and must stop (§10.22)")]
+    #[error(
+        "the river chain bars the way to {0}: no gunboat may cross it until it is sunk (§10.23)"
+    )]
     BlockedByChain(HexCoord),
 
     #[error("illegal stack: {0}")]
@@ -324,6 +326,9 @@ pub enum RuleError {
 
     #[error("gunboat {0} struck a mine and stops for the turn (§10.12)")]
     StruckMine(UnitId),
+
+    #[error("gunboat {0} lies against the river chain and may move no further this turn (§10.22)")]
+    StoppedByChain(UnitId),
 
     #[error(
         "{0} is not in the first wave: three gunboats, the \"Friendlies\", the Egyptian Cavalry, the Horse Artillery and two Egyptian Division brigades (§9.113)"

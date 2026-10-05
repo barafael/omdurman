@@ -2300,10 +2300,6 @@ file = "omdurman-types/src/lib.rs"
 symbol = "ZaribaThornHedge"
 
 [[mapping.impl]]
-file = "omdurman-rules/src/effects/state.rs"
-symbol = "has_zariba_thorn_hedge"
-
-[[mapping.impl]]
 file = "omdurman-rules/src/effects/fire.rs"
 symbol = "mandatory_fire_modifiers"
 
@@ -2737,7 +2733,7 @@ title = "Secretly record chain hexes"
 status = "implemented"
 clause = "Prior to the commencement of play the Dervish player secretly records a line of river hexes (not exceeding four hexes long) across which the chain is strung."
 witness = "omdurman-rules::src::effects::tests::mine_and_chain_limits_enforced_in_setup"
-approximation = "The chain is checked only as a line of one to four adjacent Nile hexes (that it runs across the river is not checked), and it is hidden on the Anglo-Egyptian seat's board but carried in the recorded event log."
+approximation = "\"Across\" is checked as: the line's two end hexes touch different land (the two banks, or a bank and an island) -- a chain to an island leaves the other channel open. The chain is hidden on the Anglo-Egyptian seat's board but carried in the recorded event log."
 note = "Digital replacement for the paper scratchpad: the chain is recorded in `GameState.chain` and rendered only to the Dervish seat. Enforced: Campaign only, optional-rule gated, setup-only, one to four Nile hexes in a line of adjacent hexes, south of the Khor Shambat's mouth row."
 tests = [
     "omdurman-rules::src::effects::tests::mine_and_chain_limits_enforced_in_setup",
@@ -2761,16 +2757,20 @@ section = "§10.22"
 title = "Gunboat stops on chained hex"
 status = "implemented"
 clause = "When a British gunboat enters a \"chained\" river hex it must stop and may move no further that turn."
-witness = "omdurman-rules::src::effects::tests::chain_stops_gunboat_until_sunk"
-approximation = "An unsunk chain refuses gunboat entry into the chained hex (BlockedByChain) instead of letting a British gunboat enter it and stop there."
-note = "The unsunk chain blocks gunboat movement by refusing entry (rather than letting the boat enter and stop on the hex) -- no gunboat can cross it either way (§10.23); drifting gunboats stop short of it. Sinking the chain unblocks it."
+witness = "omdurman-rules::src::effects::tests::a_british_gunboat_runs_onto_the_chain_and_may_only_go_back"
+note = "A British gunboat whose move enters a chained hex ends it there (the move is cut short on apply, like a mine strike: she does not know where the chain lies) and may move no further that turn; from the chained hex she may only go back the way she came until the chain is sunk (§10.23). A Dervish gunboat, which knows where it is, may not enter a chained hex; drifting gunboats stop short of it."
 tests = [
     "omdurman-rules::src::effects::tests::chain_stops_gunboat_until_sunk",
+    "omdurman-rules::src::effects::tests::a_british_gunboat_runs_onto_the_chain_and_may_only_go_back",
 ]
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state/movement.rs"
 symbol = "can_move_gunboat"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/movement.rs"
+symbol = "apply_move_unit"
 
 [[mapping]]
 section = "§10.23"
@@ -2780,6 +2780,7 @@ clause = "No gunboats (British or Dervish) may cross the chain until it has been
 witness = "omdurman-rules::src::effects::tests::chain_stops_gunboat_until_sunk"
 note = "Implemented: (a) at the end of the Anglo-Egyptian player turn, an undisrupted Anglo-Egyptian infantry or cavalry unit on land next to a chained hex that has not moved all turn sinks the chain; (b) SinkChain: British artillery in the Direct Fire subphase, each in range and sight of a chained hex (can_fire_at_chain), a Combat Results Table result of 3 or more (with the §6.24 +1) sinks it."
 tests = [
+    "omdurman-rules::src::effects::tests::a_british_gunboat_runs_onto_the_chain_and_may_only_go_back",
     "omdurman-rules::src::effects::tests::chain_stops_gunboat_until_sunk",
     "omdurman-rules::src::effects::tests::a_battalion_on_the_bank_sinks_the_chain",
     "omdurman-rules::src::effects::tests::artillery_sinks_the_chain_on_three_or_more",

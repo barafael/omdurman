@@ -1146,7 +1146,7 @@ mod tests {
     use omdurman_rules::{FireSubPhase, UnitPlacement, UnitState};
     use omdurman_types::{Player, Scenario};
 
-    /// A board-less Direct Fire sub-phase with the named gunboat Naser at
+    /// A board-less Direct Fire sub-phase with the named gunboat Abu Klea at
     /// (0,0) and a Taiasha stack three hexes off.
     fn naser_in_direct_fire() -> (GameState, FireGroupSelection, HexCoord) {
         let mut gs = GameState::new(Scenario::Campaign);

@@ -501,7 +501,10 @@ pub fn front_page(state: &GameState, telegrams: &[(u8, String)]) -> FrontPage {
             ("theirs", &deck_number(rec.bands)),
             ("ours", &deck_number(rec.ours_lost.len())),
         ],
-    );
+    )
+    // "None" stands alone ("Our Loss None"); before its noun it is "No".
+    .replace("None Dervish Bands", "No Dervish Bands")
+    .replace("Loses None Bands", "Loses No Bands");
     let lead = Article {
         head: battle_head(scenario).to_string(),
         decks: vec![template.subhead.to_string(), deck],

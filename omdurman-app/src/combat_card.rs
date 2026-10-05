@@ -396,9 +396,23 @@ fn build_melee_card(
     let paragraphs = paragraphs.to_vec();
     // §7.6: a Dervish melee that clears the hex carries a *mandatory*
     // advance, which the engine has already made -- say so on the card.
+    // §6.51(a): leaders alone do not hold a hex -- they fall to the
+    // attackers who enter it, whatever the dice said.
+    let leaders_alone = !attack.defenders.is_empty()
+        && attack.defenders.iter().all(|id| {
+            omdurman_rules::unit_profiles::profile_for_unit(*id)
+                .is_some_and(|p| matches!(p.kind, omdurman_types::UnitKind::BritishLeader { .. }))
+        });
     let note = mandatory_advance.map(|n| {
         let units = if n == 1 { "unit" } else { "units" };
-        format!("{n} surviving attacking {units} advanced into the hex (mandatory, §7.6).")
+        if leaders_alone {
+            format!(
+                "A leader alone does not hold a hex: {n} attacking {units} entered it and he \
+                 fell, whatever the dice (§6.51)."
+            )
+        } else {
+            format!("{n} surviving attacking {units} advanced into the hex (mandatory, §7.6).")
+        }
     });
     CombatCardEntry {
         kind: CombatKind::Melee,

@@ -115,3 +115,14 @@ Checks: fmt, clippy -D warnings, 858 tests, traceability, mutation gate on the d
 - U5: staging one battalion and then double-clicking its stack at the same target was refused whole ("already allocated"); the rest of the stack now joins.
 - §9.24: both games ended after the noon turn with the right levels (A-E Draw / Dervish Marginal → net Draw; then Draw/Draw); Gazette totals right.
 - Dervish may walk into an empty Zariba hex through the southern entrance (+2 MP) on turn 1 — legal (§9.233); Osman Digna did, alone, and was shot.
+- Campaign with the river chain (two instances, me on both sides), played to the end of turn 22:
+  - **C1 (§10.22)**: a British gunboat was *refused* entry to a chained hex with the text "entered a chained hex and must stop". Manual: she enters, stops, and may not cross. Now: a move plotted past the chain ends on it (she does not know where it lies), no further that turn, and from the chain only back the way she came until it is sunk. Seen in play: slip "has run onto a chain … at (41,36)", onward step refused, back step accepted.
+  - **C2 (§10.21)**: a 4-hex chain could be laid in mid-stream where the Nile is 8 wide (bars nothing). Now it must run bank to bank (an island counts). The click-by-click placement checks the partial line without the far bank (my first version of the check broke it — caught in play).
+  - §10.23: artillery at the chain, 15 factors: rolls 7 and 6 → E2, "it holds" (needs 3); infantry (the Royal Engineers) a full unmoved turn on the bank → "Troops holding the bank have sunk the chain". OK.
+  - §8.1 night (turns 9–10): A-E movement halved (RE 4 MP, gunboat 9 downstream refused at 10), artillery range capped, "no howitzer fire at night". OK.
+  - §8.2 desertion: roll 1 → 2 units; list offers only eligible units (no Khalifa, guns, forts, boats); End Phase blocked until done; no VP. OK.
+  - **C3 (§5.21 × §8.2)**: the Isa Zachneih *deserted* — the Friendlies' transport then never unlocks (the flag is set only on elimination). Now unlocked whenever the Isa Zachneih is no longer on the map.
+  - §6.53: Royal Engineers beside fort (39,34): commit in Movement, may not move, may not fire at the fort ("only artillery"), fort removed at the end of the A-E turn; no VP for it. OK.
+  - §9.12/§9.14: game ends after turn 22; A-E 0 – 25 Dervish (tomb) → Dervish Tactical. OK.
+  - Gazette: "THE ENEMY LOSES NONE BANDS" → "No Bands"; "Our guns destroyed one enemy fort" for an engineers' demolition → "We have destroyed…".
+- Small leftovers: melee card on a lone leader now says he fell to the attackers entering the hex whatever the dice (§6.51) — the engine always did that; gunboat identities renamed to their counters (`AbuKlea`, `ElTeb`).

@@ -125,6 +125,11 @@ pub struct GameState {
     /// (§10.12). Cleared in `clear_per_turn_tracking`.
     #[serde(default)]
     pub gunboats_stopped_this_turn: Vec<UnitId>,
+    /// British gunboats lying in a chained Nile hex (§10.22), each with the
+    /// hex it steamed in from: until the chain is sunk it may only go back
+    /// the way it came ("No gunboats ... may cross the chain", §10.23).
+    #[serde(default)]
+    pub gunboats_at_chain: BTreeMap<UnitId, HexCoord>,
     /// Static per-board map facts (hexsides, terrain, Nile current, landmarks)
     /// the engine consults to enforce map-dependent rules (§5.11, §5.24, §5.44,
     /// §6.6x, §9.14, §10). Empty until the app attaches the active board at game
@@ -256,6 +261,7 @@ impl GameState {
             chain: None,
             pending_mine: None,
             gunboats_stopped_this_turn: Vec::new(),
+            gunboats_at_chain: BTreeMap::new(),
             board: Arc::new(BoardInfo::default()),
             breaches: BTreeSet::new(),
             dervish_deserted: false,
@@ -377,19 +383,6 @@ impl GameState {
                 .neighbors()
                 .into_iter()
                 .any(|n| self.hexside_effective_is(hex, n, HexsideKind::is_zariba_trench))
-    }
-
-    /// Whether `hex` has a zariba thorn hedge on its perimeter (§9.231: −2
-    /// fire modifier against units in a zariba-defended hex). Reads
-    /// *effective* hexsides, so constructed (§5.3) and authored hedges both
-    /// count.
-    pub fn has_zariba_thorn_hedge(&self, hex: HexCoord) -> bool {
-        for n in hex.neighbors() {
-            if self.hexside_effective_is(hex, n, HexsideKind::is_zariba_thorn_hedge) {
-                return true;
-            }
-        }
-        false
     }
 
     /// Whether the (unsunk) river chain spans `hex` (§10.21/§10.22).
@@ -530,6 +523,7 @@ impl GameState {
             chain: None,
             pending_mine: None,
             gunboats_stopped_this_turn: Vec::new(),
+            gunboats_at_chain: BTreeMap::new(),
             board: Arc::new(BoardInfo::default()),
             breaches: BTreeSet::new(),
             dervish_deserted: false,

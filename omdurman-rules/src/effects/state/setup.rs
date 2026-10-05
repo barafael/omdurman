@@ -832,9 +832,42 @@ impl GameState {
         Ok(())
     }
 
-    /// Read-only check of a river-chain placement in setup (§10.21): Setup phase
-    /// and at most [`MAX_CHAIN_HEXES`] hexes.
+    /// Read-only check of a river-chain placement in setup (§10.21): Setup phase,
+    /// at most [`MAX_CHAIN_HEXES`] hexes in a line, strung from bank to bank.
     pub fn can_place_chain(&self, hexes: &[HexCoord]) -> Result<(), RuleError> {
+        self.can_plot_chain(hexes)?;
+        // "a line of river hexes ... across which the chain is strung": it
+        // runs from bank to bank (an island is a bank), or it bars nothing
+        // and "no gunboats may cross the chain" (§10.23) would mean little.
+        // Its two ends must touch different land: not one bank twice.
+        if !self.board.terrain.is_empty() {
+            let is_land =
+                |hex: HexCoord| self.board.terrain_at(hex).is_some() && !self.board.is_nile(hex);
+            let banks = |hex: HexCoord| hex.neighbors().into_iter().filter(|n| is_land(*n));
+            // All the land joined to the first end's bank.
+            let mut near: BTreeSet<HexCoord> = banks(hexes[0]).collect();
+            let mut frontier: Vec<HexCoord> = near.iter().copied().collect();
+            while let Some(hex) = frontier.pop() {
+                for next in banks(hex) {
+                    if near.insert(next) {
+                        frontier.push(next);
+                    }
+                }
+            }
+            let spans =
+                !near.is_empty() && banks(hexes[hexes.len() - 1]).any(|far| !near.contains(&far));
+            if !spans {
+                return Err(RuleError::SetupLimit(
+                    "the chain is strung across the river, from one bank to the other (§10.21)",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// [`Self::can_place_chain`] for a chain still being laid out hex by hex:
+    /// everything but the far bank, which only the finished line reaches.
+    pub fn can_plot_chain(&self, hexes: &[HexCoord]) -> Result<(), RuleError> {
         self.require_setup_phase()?;
         // §10: "Optional Rules (Campaign game only)".
         if self.scenario != Scenario::Campaign {
