@@ -69,6 +69,15 @@ pub(crate) struct HexRender<'w> {
     pub overlay: Res<'w, HexOverlay>,
 }
 
+impl HexRender<'_> {
+    /// Whether the board geometry (layout or overlay calibration) changed
+    /// since the calling system last ran -- a board was loaded, so every
+    /// cached hex position is stale.
+    pub(crate) fn geometry_changed(&self) -> bool {
+        self.layout.is_changed() || self.overlay.is_changed()
+    }
+}
+
 /// Bundle of the hex-layout + overlay calibration pair — everything needed to
 /// convert between hex coordinates and world space (adjusted origin + hex
 /// size).
@@ -85,4 +94,34 @@ pub(crate) struct BoardGeometry<'w> {
 pub(crate) struct DirectionArrowCtx<'w> {
     pub arrow_assets: Res<'w, crate::render::MovementArrowAssets>,
     pub hex: HexRender<'w>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Resource, Default)]
+    struct Seen(Vec<bool>);
+
+    /// A board load (the overlay calibration rewritten) reports the geometry
+    /// changed to the caching ring systems, once; quiet frames do not. The
+    /// deployment rings used to stay drawn with the default board's
+    /// calibration after the Campaign board had loaded.
+    #[test]
+    fn a_board_load_marks_the_hex_geometry_changed() {
+        let mut app = App::new();
+        app.insert_resource(crate::render::HexRingAssets::default())
+            .insert_resource(omdurman_board_ui::board_store::default_layout())
+            .insert_resource(HexOverlay::default())
+            .init_resource::<Seen>()
+            .add_systems(Update, |hex: HexRender, mut seen: ResMut<Seen>| {
+                seen.0.push(hex.geometry_changed());
+            });
+        app.update();
+        app.update();
+        app.world_mut().resource_mut::<HexOverlay>().params.hex_size = 53.35;
+        app.update();
+        app.update();
+        assert_eq!(app.world().resource::<Seen>().0, [true, false, true, false]);
+    }
 }

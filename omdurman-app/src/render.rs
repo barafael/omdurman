@@ -241,6 +241,7 @@ pub fn update_acted_markers(
 
 /// Shared mesh + colored materials for hex ring outlines.
 #[derive(Resource)]
+#[cfg_attr(test, derive(Default))]
 pub struct HexRingAssets {
     pub mesh: Handle<Mesh>,
     /// A unit (1×1) square quad, scaled at spawn to outline a unit counter.

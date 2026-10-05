@@ -84,6 +84,8 @@ pub fn placement_preview_mesh(
     mut placed_removed: RemovedComponents<PlacedUnit>,
     (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
+    // A board load moves every hex (see `deployment_zone_overlay_mesh`).
+    let geometry_changed = hex.geometry_changed();
     let crate::HexRender {
         assets,
         layout,
@@ -94,7 +96,7 @@ pub fn placement_preview_mesh(
         mut state,
         game_map,
     } = picker_state;
-    if generation.invalidates(&mut seen_generation) {
+    if generation.invalidates(&mut seen_generation) || geometry_changed {
         *last = None;
     }
 
@@ -419,7 +421,10 @@ pub fn movement_overlay_mesh(
     mut last_key: Local<Option<MovementOverlayKey>>,
     (generation, mut seen_generation): (Res<OverlayGeneration>, Local<u32>),
 ) {
-    if generation.invalidates(&mut seen_generation) {
+    // A board load moves every hex: rebuild even though the key is the same.
+    // (The rings were cached while the default board's calibration was still
+    // live and stayed misplaced for the whole set-up.)
+    if generation.invalidates(&mut seen_generation) || hex.geometry_changed() {
         *last_key = None;
     }
     let MovementOverlayCtx {
@@ -648,7 +653,10 @@ pub fn deployment_zone_overlay_mesh(
     (generation, mut seen_generation): (Res<OverlayGeneration>, Local<u32>),
     (picker_state, tray): (Res<PickerState>, Res<UnitPicker>),
 ) {
-    if generation.invalidates(&mut seen_generation) {
+    // A board load moves every hex: rebuild even though the key is the same.
+    // (The rings were cached while the default board's calibration was still
+    // live and stayed misplaced for the whole set-up.)
+    if generation.invalidates(&mut seen_generation) || hex.geometry_changed() {
         *last_key = None;
     }
     let crate::HexRender {
