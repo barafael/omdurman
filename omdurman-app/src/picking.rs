@@ -31,8 +31,10 @@ use omdurman_hexmap::MapPlane;
 /// World-space point where the local pointer's ray last hit the board plane,
 /// or `None` when the pointer is over UI, off the board, or no camera sees
 /// the hit. Written once per frame in `PreUpdate` (after picking's hover
-/// systems); every `Update` consumer reads it without further ordering.
-#[derive(Resource, Default, Deref, DerefMut)]
+/// systems), marked changed only when the hit actually moves (the system
+/// runs every frame, and a plain write would flip the change flag each
+/// time); every `Update` consumer reads it without further ordering.
+#[derive(Resource, Default, Deref, DerefMut, PartialEq, Clone, Debug)]
 pub struct PointerGroundHit(pub Option<Vec3>);
 
 pub struct BoardPickingPlugin;
@@ -107,40 +109,46 @@ pub fn update_pointer_ground_hit(
     over_ui: Res<crate::ui_plugin::EguiPointerOverUi>,
     mut hit: ResMut<PointerGroundHit>,
 ) {
-    hit.0 = None;
+    // The computed hit, assigned once at the end via `set_if_neq`: the
+    // resource reads as changed only when the pointer's ground point really
+    // moved, so consumers gated on it (the hover hit-test) stay idle while
+    // the cursor rests.
+    let mut computed = None;
     // Egui owns the pointer (widgets, panel blockers, overlays): every
     // consumer sees `None` without having to know why.
-    if over_ui.0 {
-        return;
-    }
-    let Ok((plane, plane_transform)) = plane.single() else {
-        return;
-    };
-    if let Some(data) = hover_map
-        .get(&PointerId::Mouse)
-        .and_then(|hits| hits.get(&plane))
+    if !over_ui.0
+        && let Ok((plane, plane_transform)) = plane.single()
     {
-        hit.0 = data.position;
-        return;
-    }
-    // §9.342: "All hexes are playable, including hexes showing up half or
-    // less." A rim hex whose centre lies past the edge of the map image has
-    // no plane under the pointer to pick: intersect the view ray with the
-    // plane's ground level instead (the caller keeps only real map hexes).
-    let Some(cursor) = windows.single().ok().and_then(Window::cursor_position) else {
-        return;
-    };
-    for (camera, camera_transform) in &cameras {
-        let Ok(ray) = camera.viewport_to_world(camera_transform, cursor) else {
-            continue;
-        };
-        if let Some(distance) =
-            ray.intersect_plane(plane_transform.translation(), InfinitePlane3d::new(Vec3::Y))
+        if let Some(data) = hover_map
+            .get(&PointerId::Mouse)
+            .and_then(|hits| hits.get(&plane))
         {
-            hit.0 = Some(ray.get_point(distance));
-            return;
+            computed = data.position;
+        } else {
+            // §9.342: "All hexes are playable, including hexes showing up
+            // half or less." A rim hex whose centre lies past the edge of
+            // the map image has no plane under the pointer to pick:
+            // intersect the view ray with the plane's ground level instead
+            // (the caller keeps only real map hexes).
+            if let Ok(cursor) = windows.single().map(Window::cursor_position)
+                && let Some(cursor) = cursor
+            {
+                for (camera, camera_transform) in &cameras {
+                    let Ok(ray) = camera.viewport_to_world(camera_transform, cursor) else {
+                        continue;
+                    };
+                    if let Some(distance) = ray.intersect_plane(
+                        plane_transform.translation(),
+                        InfinitePlane3d::new(Vec3::Y),
+                    ) {
+                        computed = Some(ray.get_point(distance));
+                        break;
+                    }
+                }
+            }
         }
     }
+    hit.set_if_neq(PointerGroundHit(computed));
 }
 
 /// Marker pair inserted on the board plane and the RTS camera so the

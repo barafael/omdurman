@@ -89,6 +89,12 @@ pub fn melee_target_overlay_mesh(
     (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
     let invalidated = generation.invalidates(&mut seen_generation);
+    if invalidated {
+        // The overlays were cleared (`clear_gameplay_overlays`): forget what
+        // we last drew so the "unchanged" checks below rebuild the rings
+        // instead of silently leaving them despawned.
+        *last = None;
+    }
     let inputs_moved = invalidated
         || game_state.as_ref().is_some_and(|gs| gs.is_changed())
         || state.is_changed()
@@ -369,6 +375,12 @@ pub fn melee_direction_arrow(
     (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
     let invalidated = generation.invalidates(&mut seen_generation);
+    if invalidated {
+        // The overlays were cleared (`clear_gameplay_overlays`): forget the
+        // arrow we last drew so the "unchanged" check below respawns it
+        // instead of silently leaving it despawned.
+        *last = None;
+    }
     let inputs_moved = invalidated
         || game_state.as_ref().is_some_and(|gs| gs.is_changed())
         || state.is_changed()
@@ -631,6 +643,12 @@ pub fn advance_target_overlay_mesh(
     (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
     let invalidated = generation.invalidates(&mut seen_generation);
+    if invalidated {
+        // The overlays were cleared (`clear_gameplay_overlays`): forget what
+        // we last drew so the "unchanged" checks below rebuild the rings
+        // instead of silently leaving them despawned.
+        *last = None;
+    }
     let inputs_moved = invalidated
         || game_state.as_ref().is_some_and(|gs| gs.is_changed())
         || state.is_changed()
@@ -683,8 +701,137 @@ pub fn advance_target_overlay_mesh(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::picker::{OverlayGeneration, TileSelection};
+    use crate::render::{HexOverlay, HexRingAssets};
     use omdurman_rules::{FireSubPhase, UnitPlacement};
-    use omdurman_types::{Player, Scenario};
+    use omdurman_types::{Player, Scenario, SectionName};
+
+    /// Overlay caches must treat an [`crate::picker::OverlayGeneration`] bump
+    /// as "the rings you drew are gone": after `clear_gameplay_overlays`
+    /// despawns them (a round trip through the menu) and bumps the
+    /// generation, an *unchanged* selection still has to respawn them --
+    /// not quietly keep the cache that says they already exist.
+    #[test]
+    fn advance_rings_respawn_after_an_overlay_generation_bump() {
+        // The same board state as the stack-advance test below: five
+        // Mulazmin counters, two hexes from a combat-vacated hex, in the
+        // offensive-fire phase that permits advancing (§6.82).
+        let mut gs = GameState::new(Scenario::Campaign);
+        gs.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        gs.active_player = Player::Dervish;
+        let to = HexCoord::new(5, 5);
+        let firers = [
+            (UnitId::MulazminI_0_0, HexCoord::new(4, 5)),
+            (UnitId::MulazminI_0_1, HexCoord::new(4, 5)),
+            (UnitId::MulazminI_1_0, HexCoord::new(4, 5)),
+            (UnitId::MulazminI_1_1, HexCoord::new(6, 5)),
+            (UnitId::MulazminI_2_0, HexCoord::new(6, 5)),
+        ];
+        for (id, position) in firers {
+            gs.units.push(UnitPlacement {
+                id,
+                position,
+                profile: omdurman_rules::unit_profiles::profile_for_unit(id).unwrap(),
+                state: Default::default(),
+            });
+        }
+        let ids: Vec<UnitId> = firers.iter().map(|(id, _)| *id).collect();
+        gs.vacated_by_combat.insert(to, ids.clone());
+
+        let mut app = App::new();
+        app.add_plugins(bevy::time::TimePlugin)
+            .insert_resource(HexOverlay::default())
+            .insert_resource(omdurman_board_ui::board_store::default_layout())
+            .insert_resource(hex_ring_assets())
+            .insert_resource(GameStateResource(gs))
+            .insert_resource(OverlayGeneration::default())
+            .add_systems(Update, advance_target_overlay_mesh);
+
+        // The selection's counters, as `reconcile_unit_sprites` would spawn
+        // them.
+        let mut sources = Vec::new();
+        for (id, coord) in firers {
+            let entity = app
+                .world_mut()
+                .spawn((PlacedUnit {
+                    coord,
+                    section_name: SectionName::MulazminI,
+                    col: 0,
+                    row: 0,
+                    is_boat: false,
+                    unit_id: Some(id),
+                    disrupted: false,
+                },))
+                .id();
+            sources.push(entity);
+        }
+        app.world_mut()
+            .insert_resource(PickerState::SelectedTile(TileSelection {
+                sources,
+                start_coord: HexCoord::new(4, 5),
+            }));
+
+        let ring_count = |world: &mut World| {
+            world
+                .query_filtered::<Entity, With<AdvanceTargetRing>>()
+                .iter(world)
+                .count()
+        };
+
+        // First run: the rings are drawn.
+        app.update();
+        assert!(ring_count(app.world_mut()) > 0, "rings are drawn");
+
+        // `clear_gameplay_overlays`: the rings despawn and the generation
+        // moves. Nothing else changes -- same selection, same engine state.
+        for entity in ring_entities(app.world_mut()) {
+            app.world_mut().despawn(entity);
+        }
+        app.world_mut().resource_mut::<OverlayGeneration>().0 = app
+            .world()
+            .resource::<OverlayGeneration>()
+            .0
+            .wrapping_add(1);
+
+        // The rings must come back.
+        app.update();
+        assert!(
+            ring_count(app.world_mut()) > 0,
+            "rings respawn after the overlays were cleared, despite the \
+             unchanged selection"
+        );
+    }
+
+    fn ring_entities(world: &mut World) -> Vec<Entity> {
+        world
+            .query_filtered::<Entity, With<AdvanceTargetRing>>()
+            .iter(world)
+            .collect()
+    }
+
+    /// `HexRingAssets` with placeholder handles: the overlay systems only
+    /// clone and pass them on; nothing resolves them headless.
+    fn hex_ring_assets() -> HexRingAssets {
+        HexRingAssets {
+            mesh: default(),
+            unit_square: default(),
+            red: default(),
+            green: default(),
+            light_green: default(),
+            orange: default(),
+            blue: default(),
+            hover: default(),
+            marker_green: default(),
+            marker_red: default(),
+            gray: default(),
+            reach: default(),
+            yellow: default(),
+            path_shadow: default(),
+            fire_arrow: default(),
+            melee_red: default(),
+            acted: default(),
+        }
+    }
 
     /// §6.82/§7.6: one click advances the whole selected stack into the
     /// vacated hex, up to the four-unit limit (§5.51) -- not just its first

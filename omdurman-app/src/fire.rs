@@ -444,6 +444,12 @@ pub fn fire_target_overlay_mesh(
     (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
     let invalidated = generation.invalidates(&mut seen_generation);
+    if invalidated {
+        // The overlays were cleared (`clear_gameplay_overlays`): forget what
+        // we last drew so the "unchanged" checks below rebuild the rings
+        // instead of silently leaving them despawned.
+        *last = None;
+    }
     // The rings depend on the engine state and the picker selection only; on
     // a frame where neither moved (nor any counter's placement data did),
     // what we drew -- or deliberately did not draw -- is still exact.
@@ -524,6 +530,12 @@ pub fn fire_direction_arrow(
 ) {
     let FireArrowTarget { hovered, existing } = target;
     let invalidated = generation.invalidates(&mut seen_generation);
+    if invalidated {
+        // The overlays were cleared (`clear_gameplay_overlays`): forget the
+        // arrow we last drew so the "unchanged" check below respawns it
+        // instead of silently leaving it despawned.
+        *last = None;
+    }
     // The arrow's endpoints depend on the engine state, the selection and the
     // hovered hex; when none moved, the arrow we drew (or deliberately left
     // off) is still exact.

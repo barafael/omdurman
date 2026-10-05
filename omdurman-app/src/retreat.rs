@@ -96,6 +96,12 @@ pub fn retreat_overlay_mesh(
     (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
     let invalidated = generation.invalidates(&mut seen_generation);
+    if invalidated {
+        // The overlays were cleared (`clear_gameplay_overlays`): forget what
+        // we last drew so the "unchanged" checks below rebuild the rings
+        // instead of silently leaving them despawned.
+        *last = None;
+    }
     let inputs_moved = invalidated
         || game_state.as_ref().is_some_and(|gs| gs.is_changed())
         || selection.state.is_changed()

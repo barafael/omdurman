@@ -682,6 +682,12 @@ pub fn build_fire_attack(
     if firers.is_empty() {
         return None;
     }
+    // Canonical order (ascending `UnitId`), as `build_fire_attack_from`
+    // produces: the filter above yields board order, and the serialized
+    // attack should not depend on the board's unit ordering.
+    let mut firers = firers;
+    firers.sort_unstable();
+    firers.dedup();
     // The filter above just ran the full `can_fire_at` validation (including
     // the line-of-sight sweep) for every firer; assembling the attack through
     // `build_fire_attack_from` would re-run all of it, so the validated list
