@@ -1003,8 +1003,9 @@ fn fire_crosses_thorn_hedge(state: &GameState, from: HexCoord, to: HexCoord) -> 
     let mut prev = from;
     for hex in omdurman_types::HexLine::new(from, to, 1).chain(std::iter::once(to)) {
         if hex != prev
-            && state.hexside_effective(prev, hex)
-                == Some(omdurman_types::HexsideKind::ZaribaThornHedge)
+            && state
+                .hexside_effective(prev, hex)
+                .is_some_and(omdurman_types::HexsideKind::is_zariba_thorn_hedge)
         {
             return true;
         }

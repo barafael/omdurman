@@ -9728,7 +9728,7 @@
                 q: 33,
                 r: 11,
             ),
-        ), ZaribaTrenchEndA),
+        ), ZaribaTrenchEnd),
         ((
             a: (
                 q: 32,
@@ -9738,7 +9738,7 @@
                 q: 33,
                 r: 11,
             ),
-        ), ZaribaThornHedge),
+        ), ZaribaTrench),
         ((
             a: (
                 q: 32,
@@ -9748,7 +9748,7 @@
                 q: 33,
                 r: 12,
             ),
-        ), ZaribaThornHedge),
+        ), ZaribaTrench),
         ((
             a: (
                 q: 32,
@@ -9758,7 +9758,7 @@
                 q: 33,
                 r: 12,
             ),
-        ), ZaribaThornHedge),
+        ), ZaribaTrench),
         ((
             a: (
                 q: 32,
@@ -9768,7 +9768,7 @@
                 q: 33,
                 r: 13,
             ),
-        ), ZaribaThornHedge),
+        ), ZaribaTrench),
         ((
             a: (
                 q: 32,
@@ -9778,7 +9778,7 @@
                 q: 33,
                 r: 13,
             ),
-        ), ZaribaThornHedge),
+        ), ZaribaTrench),
         ((
             a: (
                 q: 32,
@@ -9788,7 +9788,7 @@
                 q: 33,
                 r: 14,
             ),
-        ), ZaribaThornHedge),
+        ), ZaribaTrench),
         ((
             a: (
                 q: 32,
@@ -9798,7 +9798,7 @@
                 q: 33,
                 r: 14,
             ),
-        ), ZaribaThornHedge),
+        ), ZaribaTrench),
         ((
             a: (
                 q: 32,
@@ -9928,7 +9928,7 @@
                 q: 33,
                 r: 15,
             ),
-        ), ZaribaThornHedge),
+        ), ZaribaTrench),
         ((
             a: (
                 q: 33,
@@ -9938,7 +9938,7 @@
                 q: 34,
                 r: 15,
             ),
-        ), ZaribaTrench),
+        ), ZaribaThornHedge),
         ((
             a: (
                 q: 33,
@@ -10028,7 +10028,7 @@
                 q: 34,
                 r: 16,
             ),
-        ), ZaribaTrench),
+        ), ZaribaThornHedge),
         ((
             a: (
                 q: 34,
@@ -10038,7 +10038,7 @@
                 q: 35,
                 r: 16,
             ),
-        ), ZaribaTrench),
+        ), ZaribaThornHedge),
         ((
             a: (
                 q: 34,
@@ -10158,7 +10158,7 @@
                 q: 35,
                 r: 17,
             ),
-        ), ZaribaTrench),
+        ), ZaribaThornHedge),
         ((
             a: (
                 q: 35,
@@ -10168,7 +10168,7 @@
                 q: 36,
                 r: 17,
             ),
-        ), ZaribaTrench),
+        ), ZaribaThornHedge),
         ((
             a: (
                 q: 35,
@@ -10258,7 +10258,7 @@
                 q: 36,
                 r: 18,
             ),
-        ), ZaribaTrench),
+        ), ZaribaThornHedge),
         ((
             a: (
                 q: 36,
@@ -10268,7 +10268,7 @@
                 q: 37,
                 r: 18,
             ),
-        ), ZaribaTrench),
+        ), ZaribaThornHedge),
         ((
             a: (
                 q: 36,
@@ -10318,7 +10318,7 @@
                 q: 37,
                 r: 19,
             ),
-        ), ZaribaTrenchEndB),
+        ), ZaribaThornHedgeEnd),
         ((
             a: (
                 q: 37,

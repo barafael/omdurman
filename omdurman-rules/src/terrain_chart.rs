@@ -84,14 +84,14 @@ pub fn movement_cost_with_road(terrain: Terrain, along_road: bool) -> Option<Mov
 /// Chart hexside columns), `None` where a land unit may not cross at all:
 /// Khor "+5", Crest "+1", City Wall "+1: may only cross at gate or breech"
 /// (a Gate or Breach costs +1; the Wall itself is closed), and the §9.233
-/// +2 MP Zariba trench ends (the rest of the Zariba is closed, §9.23).
+/// +2 MP Zariba ends (the rest of the Zariba is closed, §9.23).
 pub fn hexside_movement_surcharge(hexside: Option<HexsideKind>) -> Option<i16> {
     use HexsideKind::*;
     match hexside {
         None => Some(0),
         Some(Khor | KhorShambat) => Some(5),
         Some(Crest | Gate | Breach) => Some(1),
-        Some(ZaribaTrenchEndA | ZaribaTrenchEndB) => Some(2),
+        Some(ZaribaTrenchEnd | ZaribaThornHedgeEnd) => Some(2),
         Some(Wall | ZaribaThornHedge | ZaribaTrench) => None,
     }
 }

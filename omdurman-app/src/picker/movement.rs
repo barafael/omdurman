@@ -524,7 +524,7 @@ mod tests {
     fn trench_end_crossing_costs_two_extra_mp() {
         let a = HexCoord::new(0, 0);
         let b = HexCoord::new(1, 0);
-        let map = two_hex_map(Some(omdurman_types::HexsideKind::ZaribaTrenchEndA));
+        let map = two_hex_map(Some(omdurman_types::HexsideKind::ZaribaTrenchEnd));
         assert_eq!(
             floor_movement_cost(&map, a, b, false, None),
             3,

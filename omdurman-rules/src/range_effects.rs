@@ -776,7 +776,13 @@ mod verification {
         } else {
             dervish_range_effects(weapon, dist)
         };
-        assert!(at_max.in_range());
+        // A line the faction's printed table does not carry (no Dervish
+        // Maxims or Howitzer, no Anglo-Egyptian spears) is out of range at
+        // every distance: its "max" is the floor of 1 and nothing fires.
+        if !at_max.in_range() {
+            assert!(max == 1);
+            return;
+        }
         if max < 10 {
             let beyond = HexDistance::new(max + 1);
             let past = if ae {

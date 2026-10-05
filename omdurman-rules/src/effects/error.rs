@@ -459,7 +459,7 @@ pub enum DesertionError {
 /// §9.231, Terrain Effects Chart).
 fn melee_block_reason(kind: HexsideKind) -> &'static str {
     match kind {
-        HexsideKind::ZaribaThornHedge => {
+        HexsideKind::ZaribaThornHedge | HexsideKind::ZaribaThornHedgeEnd => {
             "the Zariba's thorn hedge, closed to melee both ways (§9.231)"
         }
         HexsideKind::Khor | HexsideKind::KhorShambat => {

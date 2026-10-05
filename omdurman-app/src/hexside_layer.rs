@@ -70,8 +70,8 @@ fn hexside_color(kind: HexsideKind) -> Color {
         HexsideKind::Crest => Color::srgb(0.6, 0.45, 0.3),
         HexsideKind::ZaribaThornHedge => Color::srgb(0.3, 0.55, 0.2),
         HexsideKind::ZaribaTrench => Color::srgb(0.5, 0.5, 0.6),
-        HexsideKind::ZaribaTrenchEndA => Color::srgb(0.6, 0.6, 0.7),
-        HexsideKind::ZaribaTrenchEndB => Color::srgb(0.6, 0.6, 0.7),
+        HexsideKind::ZaribaTrenchEnd => Color::srgb(0.6, 0.6, 0.7),
+        HexsideKind::ZaribaThornHedgeEnd => Color::srgb(0.6, 0.6, 0.7),
         HexsideKind::KhorShambat => Color::srgb(0.2, 0.45, 0.55),
     }
 }

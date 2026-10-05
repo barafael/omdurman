@@ -7576,7 +7576,7 @@ mod tests {
         let b = HexCoord::new(1, 0);
         board_mut(&mut state).hexsides.insert(
             omdurman_types::HexsideRef::new(a, b),
-            HexsideKind::ZaribaTrenchEndA,
+            HexsideKind::ZaribaTrenchEnd,
         );
         // Seed terrain so movement_cost_for doesn't short-circuit on empty board.
         board_mut(&mut state).terrain.insert(a, Terrain::default());

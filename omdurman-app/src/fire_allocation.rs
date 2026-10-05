@@ -128,13 +128,42 @@ pub fn handle_fire_allocation_click(
     for attack in &attacks {
         // §6.13/§6.14: a unit fires once per phase -- refuse a group any of
         // whose units is already allocated.
-        if crate::fire::uses_allocated_weapon(attack, &allocation.attacks) {
-            dispatches.push(
-                "Fire Allocation",
-                "These units have already allocated their fire.",
-            );
-            continue;
-        }
+        // A stack one of whose units is already allocated sends the rest
+        // (§6.15: a stack may be divided, so the player may stage one
+        // battalion and then decide the others join it).
+        let rest;
+        let attack = if crate::fire::uses_allocated_weapon(attack, &allocation.attacks) {
+            let free: Vec<omdurman_rules::UnitId> = attack
+                .firers
+                .iter()
+                .copied()
+                .filter(|f| !allocation.attacks.iter().any(|a| a.firers.contains(f)))
+                .collect();
+            let rebuilt = free
+                .first()
+                .and_then(|f| gs.0.find_unit(*f))
+                .filter(|_| attack.gunboat_maxims.is_empty())
+                .and_then(|u| {
+                    omdurman_rules::effects::build_fire_attack_from(
+                        &gs.0,
+                        u.position,
+                        &free,
+                        attack.target_hex,
+                        attack.kind,
+                    )
+                });
+            let Some(rebuilt) = rebuilt else {
+                dispatches.push(
+                    "Fire Allocation",
+                    "These units have already allocated their fire.",
+                );
+                continue;
+            };
+            rest = rebuilt;
+            &rest
+        } else {
+            attack
+        };
         // §6.14: a hex is fired at once per phase, so fire at an already
         // targeted hex joins that attack instead of opening a second one
         // (which the engine would refuse at resolution).

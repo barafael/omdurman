@@ -2286,6 +2286,7 @@ status = "implemented"
 clause = "−2 to die roll on all Dervish fire attacks"
 witness = "omdurman-rules::src::effects::tests::zariba_fire_penalties_apply_to_dervish_fire_only"
 tests = [
+    "omdurman-rules::src::board_data::the_zariba_is_trench_in_the_north_and_hedge_in_the_south",
     "omdurman-rules::src::effects::tests::zariba_fire_penalties_apply_to_dervish_fire_only",
     "omdurman-rules::src::effects::tests::the_hedge_penalises_fire_across_it_only",
     "omdurman-rules::src::effects::tests::an_advance_may_cross_a_trench_but_not_a_thorn_hedge",
@@ -2316,6 +2317,7 @@ proofs = [
     "omdurman-rules::src::verification::melee_modifier_keeps_roll_legal",
 ]
 tests = [
+    "omdurman-rules::src::board_data::the_zariba_is_trench_in_the_north_and_hedge_in_the_south",
     "omdurman-rules::src::effects::tests::trench_entrenched_units_take_trench_modifiers",
     "omdurman-rules::src::effects::tests::entrenched_units_do_not_block_line_of_sight",
 ]
@@ -2343,9 +2345,10 @@ status = "implemented"
 clause = "Units may only enter and/or leave the Zariba via the two end hexsides that connect to the Nile River, paying +2 movement points to cross"
 witness = "omdurman-rules::src::effects::tests::zariba_end_hexside_costs_extra_mp"
 proofs = [
-    "omdurman-types::src::lib::zariba_trench_ends_differ_only_in_the_entry_rule",
+    "omdurman-types::src::lib::zariba_ends_differ_only_in_the_entry_rule",
 ]
 tests = [
+    "omdurman-rules::src::board_data::the_zariba_is_trench_in_the_north_and_hedge_in_the_south",
     "omdurman-rules::src::effects::tests::zariba_end_hexside_costs_extra_mp",
     "omdurman-rules::src::effects::tests::zariba_thorn_hedge_blocks_movement",
     "omdurman-app::src::picker::movement::trench_end_crossing_costs_two_extra_mp",

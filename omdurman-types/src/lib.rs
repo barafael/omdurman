@@ -257,15 +257,16 @@ pub enum HexsideKind {
     ZaribaThornHedge,
     /// Historical-scenario trench segment of the Zariba (§9.232).
     ZaribaTrench,
-    /// One of the two end hexsides of a Zariba trench segment that connect to
-    /// the Nile River (§9.233).  Units may only enter/leave the Zariba via
-    /// these end hexsides (paying +2 MP).  Behaviour is identical to
-    /// [`ZaribaTrench`](HexsideKind::ZaribaTrench) for all classifiers except
-    /// [`is_zariba_trench_end`](HexsideKind::is_zariba_trench_end).
-    ZaribaTrenchEndA,
-    /// The other end hexside of a Zariba trench segment (§9.233).
-    /// See [`ZaribaTrenchEndA`](HexsideKind::ZaribaTrenchEndA).
-    ZaribaTrenchEndB,
+    /// The Zariba's northern end hexside, where the trench meets the Nile
+    /// (§9.233): one of "the two end hexsides that connect to the Nile
+    /// River", the only ways in and out of the Zariba (+2 MP). A
+    /// [`ZaribaTrench`](HexsideKind::ZaribaTrench) in every other respect.
+    ZaribaTrenchEnd,
+    /// The Zariba's southern end hexside, where the thorn hedge meets the
+    /// Nile (§9.233): the other way in and out (+2 MP). A
+    /// [`ZaribaThornHedge`](HexsideKind::ZaribaThornHedge) in every other
+    /// respect (§9.231: no melee and no advance after combat across it).
+    ZaribaThornHedgeEnd,
     /// Khor Shambat -- the specific named khor that empties into the Nile (a
     /// scenario landmark; used as a setup/reinforcement boundary). Same blocking
     /// rules as a generic [`Khor`](HexsideKind::Khor), but distinctly named so it
@@ -288,30 +289,24 @@ impl HexsideKind {
     pub fn blocks_melee(self) -> bool {
         matches!(
             self,
-            HexsideKind::Wall
-                | HexsideKind::ZaribaThornHedge
-                | HexsideKind::Khor
-                | HexsideKind::KhorShambat
-        )
+            HexsideKind::Wall | HexsideKind::Khor | HexsideKind::KhorShambat
+        ) || self.is_zariba_thorn_hedge()
     }
 
     /// Whether advance-after-combat may *not* cross this side (§6.82, §7.6).
     pub fn blocks_advance_after_combat(self) -> bool {
         matches!(
             self,
-            HexsideKind::Wall
-                | HexsideKind::Khor
-                | HexsideKind::KhorShambat
-                | HexsideKind::ZaribaThornHedge
-        )
+            HexsideKind::Wall | HexsideKind::Khor | HexsideKind::KhorShambat
+        ) || self.is_zariba_thorn_hedge()
     }
 
     /// Whether land movement may *not* cross this side (§5.23, §9.233). Walls
     /// block movement except at gates/breaches. The non-end Zariba hexsides
     /// (thorn hedge and trench) enclose the compound, so the only way in or out
-    /// is via a [`ZaribaTrenchEndA`]/[`ZaribaTrenchEndB`] hexside -- which is
+    /// is via a [`ZaribaTrenchEnd`]/[`ZaribaThornHedgeEnd`] hexside -- which is
     /// passable but costs +2 MP (see `terrain_chart::hexside_movement_surcharge` in
-    /// `omdurman-rules`). The trench *end* variants are therefore intentionally
+    /// `omdurman-rules`). The two *end* variants are therefore intentionally
     /// not blocking.
     pub fn blocks_movement(self) -> bool {
         matches!(
@@ -338,26 +333,38 @@ impl HexsideKind {
         ) || self.is_zariba()
     }
 
-    /// Whether this hexside is one of the two Zariba trench ends that connect
-    /// to the Nile River (§9.233).  Units may only enter/leave the Zariba via
+    /// Whether this hexside is one of the Zariba's two ends that connect to
+    /// the Nile River (§9.233).  Units may only enter/leave the Zariba via
     /// these end hexsides.
-    pub fn is_zariba_trench_end(self) -> bool {
+    pub fn is_zariba_end(self) -> bool {
         matches!(
             self,
-            HexsideKind::ZaribaTrenchEndA | HexsideKind::ZaribaTrenchEndB
+            HexsideKind::ZaribaTrenchEnd | HexsideKind::ZaribaThornHedgeEnd
         )
     }
 
     /// Whether this is a trench hexside of the Zariba, its ends included
     /// (§9.232: units behind it are entrenched).
     pub fn is_zariba_trench(self) -> bool {
-        self == HexsideKind::ZaribaTrench || self.is_zariba_trench_end()
+        matches!(
+            self,
+            HexsideKind::ZaribaTrench | HexsideKind::ZaribaTrenchEnd
+        )
+    }
+
+    /// Whether this is a thorn-hedge hexside of the Zariba, its end included
+    /// (§9.231).
+    pub fn is_zariba_thorn_hedge(self) -> bool {
+        matches!(
+            self,
+            HexsideKind::ZaribaThornHedge | HexsideKind::ZaribaThornHedgeEnd
+        )
     }
 
     /// Whether this is one of the Zariba's hexsides, hedge or trench
     /// (§9.231-§9.233).
     pub fn is_zariba(self) -> bool {
-        self == HexsideKind::ZaribaThornHedge || self.is_zariba_trench()
+        self.is_zariba_thorn_hedge() || self.is_zariba_trench()
     }
 }
 
@@ -1986,8 +1993,8 @@ mod verification {
         super::HexsideKind::Crest,
         super::HexsideKind::ZaribaThornHedge,
         super::HexsideKind::ZaribaTrench,
-        super::HexsideKind::ZaribaTrenchEndA,
-        super::HexsideKind::ZaribaTrenchEndB,
+        super::HexsideKind::ZaribaTrenchEnd,
+        super::HexsideKind::ZaribaThornHedgeEnd,
         super::HexsideKind::KhorShambat,
     ];
 
@@ -2071,10 +2078,7 @@ mod verification {
             assert!(k.blocks_zoc());
             assert!(k.blocks_advance_after_combat());
         }
-        if k == super::HexsideKind::ZaribaTrench
-            || k == super::HexsideKind::ZaribaTrenchEndA
-            || k == super::HexsideKind::ZaribaTrenchEndB
-        {
+        if k == super::HexsideKind::ZaribaTrench || k == super::HexsideKind::ZaribaTrenchEnd {
             assert!(!k.blocks_los());
             assert!(!k.blocks_melee());
             assert!(k.blocks_movement() == (k == super::HexsideKind::ZaribaTrench));
@@ -2083,12 +2087,12 @@ mod verification {
         }
     }
 
-    /// The two Zariba trench-end hexsides are the printed entry/exit gaps
-    /// of the Zariba: like an ordinary trench segment they are
-    /// LOS-transparent, melee-transparent, ZOC-blocking and
-    /// advance-transparent -- but UNLIKE the trench they do not block
-    /// movement, because units may enter/leave through exactly these two
-    /// hexsides (paying the +2 MP surcharge that
+    /// The two Zariba end hexsides are the printed ways in and out of the
+    /// Zariba: each is its own kind of hexside (the trench in the north, the
+    /// thorn hedge in the south) for every classifier -- line of sight,
+    /// melee, ZOC, advance after combat -- but UNLIKE the rest of the line
+    /// it does not block movement, because units may enter/leave through
+    /// exactly these two hexsides (paying the +2 MP surcharge that
     /// `terrain_chart::hexside_movement_surcharge` models). If an end ever
     /// re-classified as movement-blocking, the Zariba would have no
     /// entrance at all; if it ever lost its ZOC block, the enclosure would
@@ -2096,30 +2100,36 @@ mod verification {
     // §9.233
     #[traceability_macro::rulebook("§9.233")]
     #[kani::proof]
-    fn zariba_trench_ends_differ_only_in_the_entry_rule() {
+    fn zariba_ends_differ_only_in_the_entry_rule() {
         let i: usize = kani::any();
         kani::assume(i < ALL_HEXSIDE_KINDS.len());
         let k = ALL_HEXSIDE_KINDS[i];
         // Exactly the two end variants carry the marker.
         assert!(
-            k.is_zariba_trench_end()
+            k.is_zariba_end()
                 == matches!(
                     k,
-                    super::HexsideKind::ZaribaTrenchEndA | super::HexsideKind::ZaribaTrenchEndB
+                    super::HexsideKind::ZaribaTrenchEnd | super::HexsideKind::ZaribaThornHedgeEnd
                 )
         );
-        let trench = super::HexsideKind::ZaribaTrench;
-        if k.is_zariba_trench_end() {
-            // The printed entrance: passable where the trench is not.
+        if k.is_zariba_end() {
+            let line = if k == super::HexsideKind::ZaribaTrenchEnd {
+                super::HexsideKind::ZaribaTrench
+            } else {
+                super::HexsideKind::ZaribaThornHedge
+            };
+            // The printed entrance: passable where the line is not.
             assert!(!k.blocks_movement());
-            // Identical to the trench for every other classifier.
-            assert!(k.blocks_los() == trench.blocks_los());
-            assert!(k.blocks_melee() == trench.blocks_melee());
-            assert!(k.blocks_zoc() == trench.blocks_zoc());
-            assert!(k.blocks_advance_after_combat() == trench.blocks_advance_after_combat());
+            assert!(line.blocks_movement());
+            // Identical to its line for every other classifier.
+            assert!(k.blocks_los() == line.blocks_los());
+            assert!(k.blocks_melee() == line.blocks_melee());
+            assert!(k.blocks_zoc() == line.blocks_zoc());
+            assert!(k.blocks_advance_after_combat() == line.blocks_advance_after_combat());
+            assert!(k.is_zariba_trench() == line.is_zariba_trench());
+            assert!(k.is_zariba_thorn_hedge() == line.is_zariba_thorn_hedge());
+            assert!(!line.is_zariba_end());
         }
-        // An ordinary trench segment is never an entry hexside.
-        assert!(!trench.is_zariba_trench_end());
     }
 
     // -- UnitKind capability predicates (§7.1, §7.4, §7.5, §6.42, §5.24) ----

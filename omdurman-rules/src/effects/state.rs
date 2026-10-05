@@ -385,7 +385,7 @@ impl GameState {
     /// count.
     pub fn has_zariba_thorn_hedge(&self, hex: HexCoord) -> bool {
         for n in hex.neighbors() {
-            if self.hexside_effective_is(hex, n, |k| k == HexsideKind::ZaribaThornHedge) {
+            if self.hexside_effective_is(hex, n, HexsideKind::is_zariba_thorn_hedge) {
                 return true;
             }
         }

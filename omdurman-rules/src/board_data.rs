@@ -43,6 +43,45 @@ mod wall_ring_tests {
     use crate::board::BoardInfo;
     use omdurman_types::{HexCoord, HexsideKind, HexsideRef, Location, Terrain};
 
+    /// §9.231/§9.232 on the printed map (Terrain Effects Chart legend: the
+    /// trench is the solid line with a dashed parapet, the thorn hedge the
+    /// line of crosses): the Zariba's northern stretch, from the Nile down
+    /// past the "The Zariba" label, is the trench; the southern stretch down
+    /// to the river is the thorn hedge. Each end where the line meets the
+    /// Nile is an entrance (§9.233) of its own stretch's kind.
+    #[traceability_macro::rulebook("§9.231", "§9.232", "§9.233")]
+    #[test]
+    fn the_zariba_is_trench_in_the_north_and_hedge_in_the_south() {
+        let board = BoardInfo::from_map_data(&campaign_map_data());
+        let side = |a: (i32, i32), b: (i32, i32)| {
+            board.hexside_between(HexCoord::new(a.0, a.1), HexCoord::new(b.0, b.1))
+        };
+        assert_eq!(side((32, 10), (33, 11)), Some(HexsideKind::ZaribaTrenchEnd));
+        assert_eq!(side((32, 11), (33, 11)), Some(HexsideKind::ZaribaTrench));
+        assert_eq!(side((33, 14), (33, 15)), Some(HexsideKind::ZaribaTrench));
+        assert_eq!(
+            side((33, 15), (34, 15)),
+            Some(HexsideKind::ZaribaThornHedge)
+        );
+        assert_eq!(
+            side((36, 18), (37, 18)),
+            Some(HexsideKind::ZaribaThornHedge)
+        );
+        assert_eq!(
+            side((37, 18), (37, 19)),
+            Some(HexsideKind::ZaribaThornHedgeEnd)
+        );
+        let count =
+            |want: fn(HexsideKind) -> bool| board.hexsides.values().filter(|k| want(**k)).count();
+        assert_eq!(count(HexsideKind::is_zariba_trench), 9);
+        assert_eq!(count(HexsideKind::is_zariba_thorn_hedge), 8);
+        assert_eq!(
+            board.zariba.len(),
+            13,
+            "the 13 hexes of the Zariba (§9.211)"
+        );
+    }
+
     /// §5.44 / §6.3 note b: Khartoum's rampart is open (§2.1), so the city
     /// side of each wall and gate hexside is derived per hexside -- exactly
     /// one of its two hexes is inside, including on the bastions, where the
