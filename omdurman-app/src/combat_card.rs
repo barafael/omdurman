@@ -145,6 +145,9 @@ struct CombatCardEntry {
     /// What the result opens up: the §7.6 mandatory Dervish advance (already
     /// made), or who may advance into the vacated hex (§6.82/§7.6).
     note: Option<String>,
+    /// The hexes the combat concerns (firers or attackers, the target,
+    /// where a shell landed): ringed on the board while the card is hovered.
+    focus: Vec<HexCoord>,
     /// Seconds shown; frozen while hovered or pinned.
     age: f32,
     /// Hover / click-to-pin state (see [`crate::ui::CardHold`]).
@@ -228,6 +231,9 @@ fn drain_combat_observations(
                 // §6.64: where the shell landed, and on what roll.
                 if let Some((impact_roll, landed)) = impact {
                     card.note = Some(impact_note(*impact_roll, *landed, attack.target_hex, gs));
+                    if !card.focus.contains(landed) {
+                        card.focus.push(*landed);
+                    }
                 }
                 card
             }
@@ -326,6 +332,14 @@ fn build_fire_card(
         losses: list_unit_names(eliminations, gs),
     };
     let hex_label = target_hex_label(attack.target_hex, gs);
+    // Fire moves no firer: where they stand now is where they fired from.
+    let mut focus: Vec<HexCoord> = attack
+        .all_firing_units()
+        .iter()
+        .filter_map(|id| gs.and_then(|gs| gs.find_unit(*id)).map(|u| u.position))
+        .collect();
+    focus.push(attack.target_hex);
+    focus.dedup();
     CombatCardEntry {
         kind: CombatKind::Fire,
         target_hex: attack.target_hex,
@@ -334,6 +348,7 @@ fn build_fire_card(
         defender: None,
         paragraphs: paragraphs.to_vec(),
         note: None,
+        focus,
         age: 0.0,
         hold: crate::ui::CardHold::default(),
         serial: 0,
@@ -422,6 +437,7 @@ fn build_melee_card(
         defender: Some(defender),
         paragraphs,
         note,
+        focus: vec![attack.attacker_hex, attack.defender_hex],
         age: 0.0,
         hold: crate::ui::CardHold::default(),
         serial: 0,
@@ -558,12 +574,22 @@ fn combat_card_ui(
     time: Res<Time>,
     mut rulebook: ResMut<Rulebook>,
     layout: Res<crate::ScreenLayout>,
+    mut card_focus: ResMut<crate::fx::CardFocus>,
 ) {
     let dt = time.delta_secs();
     for entry in &mut queue.entries {
         entry.hold.age(&mut entry.age, dt, CARD_TTL, CARD_FADE);
     }
     queue.entries.retain(|e| e.age < CARD_TTL);
+    // The hovered card's hexes are ringed on the board (last frame's hover:
+    // the card is drawn below).
+    let focus = queue
+        .entries
+        .iter()
+        .find(|e| e.hold.hovered)
+        .map(|e| e.focus.clone())
+        .unwrap_or_default();
+    card_focus.set_if_neq(crate::fx::CardFocus(focus));
     dispatches.age(dt);
     if queue.entries.is_empty() && dispatches.slips.is_empty() {
         return;

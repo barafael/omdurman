@@ -43,8 +43,17 @@ pub(crate) fn friendlies_transport_ui(
             );
             for action in offers {
                 let label = match action {
-                    omdurman_rules::FriendliesAction::Load { .. } => {
-                        "Load onto Gunboat".to_string()
+                    // Name her: two gunboats may lie alongside.
+                    omdurman_rules::FriendliesAction::Load { gunboat, .. } => {
+                        let name = gs.0.find_unit(gunboat).map_or_else(
+                            || "the gunboat".to_string(),
+                            |g| g.profile.identity.short_label(),
+                        );
+                        format!(
+                            "Load onto {name} at {}",
+                            gs.0.find_unit(gunboat)
+                                .map_or_else(String::new, |g| g.position.to_string())
+                        )
                     }
                     omdurman_rules::FriendliesAction::Disembark { to, .. } => {
                         format!("Disembark to ({}, {})", to.q, to.r)

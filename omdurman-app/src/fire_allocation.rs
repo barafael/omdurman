@@ -357,14 +357,14 @@ fn draw_allocation_row(
             .iter()
             .map(|m| {
                 let line = crate::combat_ui::describe_fire_modifier(*m);
-                format!("{} (§{})", line.label, line.paragraph)
+                format!("{} §{}", line.label, line.paragraph)
             })
             .collect();
         if terrain_mod != 0 {
-            parts.push(format!("{terrain_mod:+} terrain defence (§6.23)"));
+            parts.push(format!("{terrain_mod:+} terrain defence §6.23"));
         }
         if hexside_mod != 0 {
-            parts.push(format!("{hexside_mod:+} hexside (§6.23)"));
+            parts.push(format!("{hexside_mod:+} hexside §6.23"));
         }
         let text = if parts.is_empty() {
             "no modifiers".to_string()

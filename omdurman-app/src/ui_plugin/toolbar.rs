@@ -19,9 +19,10 @@ pub(crate) fn mode_toolbar_ui(
         ResMut<crate::los::LosOverlay>,
         Res<RoomId>,
     ),
-    (telegrams, dispatches): (
+    (telegrams, dispatches, mut motion): (
         Option<Res<crate::telegram::TelegramLog>>,
         Option<Res<crate::dispatch::Dispatches>>,
+        ResMut<crate::fx::MotionSettings>,
     ),
 ) {
     let game_in_progress = crate::game_in_progress(&progress.0, &progress.1);
@@ -97,6 +98,9 @@ pub(crate) fn mode_toolbar_ui(
                                     }
                                 });
                         });
+                        // How much the board animates (and whether the
+                        // camera follows the opponent).
+                        ui.menu_button("Motion", |ui| crate::fx::motion_menu(ui, &mut motion));
 
                         // Every message of the session, newest first: what
                         // the event feed showed, after it faded.

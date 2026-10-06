@@ -44,6 +44,10 @@ pub(crate) struct GameStateParams<'w> {
     pub unit_paths: ResMut<'w, UnitPaths>,
     /// The telegrams and Gazette, filed from recorded press events.
     pub press: ResMut<'w, crate::telegram::TelegramLog>,
+    /// What each *live* event did to the counters, for the board effects
+    /// (never written by a rebuild). Optional: headless harnesses run the
+    /// receive path without the effects plugin.
+    pub live_applied: Option<ResMut<'w, crate::fx::LiveApplied>>,
 }
 
 impl GameStateParams<'_> {

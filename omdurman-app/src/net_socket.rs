@@ -489,9 +489,31 @@ fn apply_sequenced(env: &mut ApplyEnv<'_, '_>, delivery: SequencedDelivery) {
     info!(seq, uid, "applied sequenced event");
     // Our own submission made it through the host: stop retransmitting it.
     env.pending.confirm(uid);
+    // What the event does to the counters, for the board effects: diffed
+    // around the apply, live only (a rebuild never comes through here).
+    let before = (env.gsp.live_applied.is_some()
+        && matches!(
+            ev,
+            GameEvent::Effect(_)
+                | GameEvent::PlaceUnit { .. }
+                | GameEvent::MoveUnit { .. }
+                | GameEvent::RemoveUnit { .. }
+        ))
+    .then(|| crate::fx::LiveChange::snapshot(&env.gsp.game_state.0));
+    let setup = env.gsp.game_state.0.phase == omdurman_rules::Phase::Setup;
     // The one application path (shared with replay): every variant reaches
     // the engine synchronously, in seq order.
-    game_apply::apply_game_event(&ev, &mut env.gsp.sinks());
+    let accepted = game_apply::apply_game_event(&ev, &mut env.gsp.sinks());
+    if accepted
+        && let Some(before) = before
+    {
+        let change = crate::fx::LiveChange::between(&before, &env.gsp.game_state.0, setup);
+        if let Some(live) = env.gsp.live_applied.as_mut()
+            && !change.is_empty()
+        {
+            live.0.push(change);
+        }
+    }
     env.gsp
         .pending_observations
         .0
@@ -1014,6 +1036,9 @@ pub(crate) fn handle_socket(
                     };
                     rebuild_state_to(&record, None, &mut state);
                 }
+                // The installed line replaces ours in one jump: the counters
+                // snap to it instead of playing out the difference.
+                commands.insert_resource(crate::fx::SnapSprites);
                 // A mid-game reconnect lands in the Lobby (handle_reconnect
                 // reset the app state); the rebuilt record proves the game had
                 // started, so return straight to the board instead of leaving

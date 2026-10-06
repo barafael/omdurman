@@ -89,15 +89,20 @@ impl Plugin for ActivityPlugin {
 /// by held keys or a drag): keep running while it says it is settling. The
 /// flag is consumed here; `camera_control` raises it again each frame it
 /// still moves, so a camera that stops being updated (another mode) cannot
-/// leave it stuck.
+/// leave it stuck. The day/night grading fades the same way: keep running
+/// until it has settled.
 pub fn camera_activity(
     settling: Option<ResMut<crate::camera::CameraSettling>>,
+    night: Option<Res<omdurman_board_ui::night::NightFading>>,
     mut activity: ResMut<Activity>,
 ) {
     if let Some(mut settling) = settling
         && settling.0
     {
         settling.0 = false;
+        activity.keep_running();
+    }
+    if night.is_some_and(|fading| fading.0) {
         activity.keep_running();
     }
 }

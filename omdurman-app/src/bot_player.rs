@@ -79,8 +79,10 @@ impl BotDriver {
     }
 }
 
-/// Seconds between AI actions. Purely presentational pacing: fast enough to
-/// finish a game in minutes, slow enough to watch the assault develop.
+/// Seconds between AI actions, counted once the board has finished showing
+/// the last one ([`crate::fx::BoardBusy`]). Purely presentational pacing:
+/// fast enough to finish a game in minutes, slow enough to watch the assault
+/// develop.
 const ACT_COOLDOWN_SECS: f32 = 0.4;
 
 /// The host plays the AI factions' turns: enumerate legal actions, take the
@@ -98,6 +100,7 @@ pub fn bot_player_act(
     offline: Option<Res<net_plugin::OfflineMode>>,
     telegrams: Option<Res<crate::telegram::TelegramLog>>,
     mut activity: ResMut<crate::activity::Activity>,
+    board: crate::fx::BoardBusy,
 ) {
     let ai = crate::seats::ai_factions(&seats.seats.0);
     // Paused waiting for an absent seat holder: the AI waits too.
@@ -131,6 +134,12 @@ pub fn bot_player_act(
         return;
     }
 
+    // Let the board finish showing the last action (a glide, a shot, a
+    // ghost) before the next: the cooldown only runs on a quiet board, so
+    // the AI's turn reads one action at a time instead of overlapping.
+    if board.busy() {
+        return;
+    }
     driver.cooldown -= time.delta_secs();
     if driver.cooldown > 0.0 {
         return;

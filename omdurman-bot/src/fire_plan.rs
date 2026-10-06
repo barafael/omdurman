@@ -186,8 +186,9 @@ type GroupKey = (HexCoord, FireKind, bool);
 /// to the target where it adds the most expected value. The resulting groups
 /// are returned as fire candidates (the dice of each group's first
 /// candidate, in enumeration order); every other candidate passes through
-/// unchanged. A group worth nothing is dropped -- such a shot would only
-/// spend the firers.
+/// unchanged. A source worth nothing alone still joins a target the massed
+/// fire of all would be worth firing at; a group that ends up worth nothing
+/// is dropped -- such a shot would only spend the firers.
 pub fn plan_fire(state: &GameState, candidates: &[GameEffect]) -> Vec<GameEffect> {
     let mut others: Vec<GameEffect> = Vec::new();
     // (source, key, candidate, standalone value)
@@ -222,6 +223,32 @@ pub fn plan_fire(state: &GameState, candidates: &[GameEffect]) -> Vec<GameEffect
     }
     sources.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
+    // What a target is worth to *everything* that can fire at it together:
+    // weapons each too weak to matter alone (a fort's four factors against a
+    // gunboat, which only a "3" sinks, §6.61) may still be worth massing.
+    let mut massed: Vec<(GroupKey, FireAttack)> = Vec::new();
+    for (_, key, cand, _) in &options {
+        let attack = attack_of(cand).expect("fire candidate");
+        match massed.iter_mut().find(|(k, _)| k == key) {
+            Some((_, all)) => {
+                if let Some(m) = combine_fire_attacks(state, all, attack) {
+                    *all = m;
+                }
+            }
+            None => massed.push((*key, attack.clone())),
+        }
+    }
+    let promise: Vec<(GroupKey, f64)> = massed
+        .iter()
+        .map(|(k, a)| (*k, fire_value(state, a)))
+        .collect();
+    let promise_of = |key: &GroupKey| {
+        promise
+            .iter()
+            .find(|(k, _)| k == key)
+            .map_or(0.0, |(_, v)| *v)
+    };
+
     // Groups: key -> (combined candidate, value).
     let mut groups: Vec<(GroupKey, GameEffect, f64)> = Vec::new();
     for (source, _) in &sources {
@@ -242,14 +269,20 @@ pub fn plan_fire(state: &GameState, candidates: &[GameEffect]) -> Vec<GameEffect
                 }
                 None => (attack.clone(), *alone, None),
             };
-            if best.as_ref().is_none_or(|b| gain > b.3) {
+            // The most gained now; between equals, the target that promises
+            // the most once the others have joined.
+            let better = best.as_ref().is_none_or(|b| {
+                gain > b.3 || (gain == b.3 && promise_of(key) > promise_of(&options[b.0].1))
+            });
+            if better {
                 best = Some((i, gi, merged, gain));
             }
         }
         let Some((i, gi, merged, gain)) = best else {
             continue;
         };
-        if gain <= 0.0 {
+        // Nothing gained yet, and nothing to hope for from massing either.
+        if gain < 0.0 || (gain == 0.0 && promise_of(&options[i].1) <= 0.02) {
             continue;
         }
         let key = options[i].1;
@@ -318,4 +351,80 @@ pub fn melee_value(state: &GameState, attack: &omdurman_rules::MeleeAttack) -> f
         &att_values,
     );
     gain - loss
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use omdurman_rules::unit_profiles::profile_for_unit;
+    use omdurman_rules::{FireSubPhase, Phase, UnitId};
+
+    /// §6.14: a gunboat, like any unit, is fired at once per fire phase --
+    /// so two forts that both bear on her fire as one combined attack (a
+    /// higher Combat Results Table row, and the 3+ that sinks her, §6.61)
+    /// instead of two separate ones, the second of which would be refused.
+    #[test]
+    fn forts_combine_their_fire_on_a_gunboat() {
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::DefensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::AngloEgyptian;
+        let place =
+            |state: &mut GameState, want: fn(&UnitIdentity) -> bool, at: HexCoord, skip: usize| {
+                let id = UnitId::ALL
+                    .iter()
+                    .copied()
+                    .filter(|id| profile_for_unit(*id).is_some_and(|p| want(&p.identity)))
+                    .nth(skip)
+                    .expect("counter");
+                state.units.push(UnitPlacement {
+                    id,
+                    position: at,
+                    profile: profile_for_unit(id).unwrap(),
+                    state: Default::default(),
+                });
+                id
+            };
+        let boat = HexCoord::new(0, 0);
+        place(
+            &mut state,
+            |i| matches!(i, UnitIdentity::AngloEgyptianGunboat(g) if g.has_howitzer()),
+            boat,
+            0,
+        );
+        let fort = |i: &UnitIdentity| matches!(i, UnitIdentity::DervishFort);
+        // Adjacent, the fort guns are doubled (§6.22): 8 + 8 = 16 factors,
+        // the 16-20 row, where a 9 or 10 is the "3" that sinks her. Either
+        // fort alone (8 factors, at best a "2") could never do it -- and is
+        // not worth the shot.
+        let a = place(&mut state, fort, HexCoord::new(1, 0), 0);
+        let b = place(&mut state, fort, HexCoord::new(-1, 0), 1);
+        let mut probe = crate::rng::BotRng::from_seed(1);
+        let alone: Vec<GameEffect> = crate::actions::legal_actions(&state, &mut probe)
+            .into_iter()
+            .filter(|e| attack_of(e).is_some_and(|x| x.firers == vec![a]))
+            .collect();
+        assert_eq!(alone.len(), 1);
+        assert!(
+            plan_fire(&state, &alone)
+                .iter()
+                .all(|e| attack_of(e).is_none())
+        );
+
+        let mut rng = crate::rng::BotRng::from_seed(7);
+        let candidates = crate::actions::legal_actions(&state, &mut rng);
+        let planned = plan_fire(&state, &candidates);
+        let shots: Vec<&FireAttack> = planned.iter().filter_map(attack_of).collect();
+        assert_eq!(shots.len(), 1, "one attack on the gunboat's hex");
+        assert_eq!(shots[0].target_hex, boat);
+        assert!(shots[0].firers.contains(&a) && shots[0].firers.contains(&b));
+        // And it resolves; nothing is left to fire at her afterwards.
+        let effect = planned
+            .iter()
+            .find(|e| attack_of(e).is_some())
+            .unwrap()
+            .clone();
+        omdurman_rules::effects::apply_effect(&mut state, &effect).unwrap();
+        let again = crate::actions::legal_actions(&state, &mut rng);
+        assert!(again.iter().all(|e| attack_of(e).is_none()));
+    }
 }

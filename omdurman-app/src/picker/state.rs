@@ -260,6 +260,9 @@ impl ActiveSelection {
 pub struct MovementPath {
     pub legs: Vec<(HexCoord, HexCoord)>,
     pub cost_so_far: i16,
+    /// The hex of a leg the picker just refused (taken by
+    /// `fx::flash_refused_legs`, which flashes it).
+    pub refused: Option<HexCoord>,
 }
 
 impl MovementPath {

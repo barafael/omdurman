@@ -19,6 +19,7 @@ mod events;
 mod fire;
 mod fire_allocation;
 mod fok_panel;
+mod fx;
 mod game_apply;
 mod game_record;
 mod hexside_layer;
@@ -145,6 +146,7 @@ fn add_game(app: &mut App, room: String) {
         .add_plugins(charts::ChartsPlugin)
         .add_plugins(dispatch::DispatchPlugin)
         .add_plugins(combat_card::CombatCardPlugin)
+        .add_plugins(fx::FxPlugin)
         .add_plugins(hover_tooltip::HoverTooltipPlugin)
         .add_plugins(debug_capture::DebugCapturePlugin)
         .add_plugins(debug_capture::HexProbePlugin)

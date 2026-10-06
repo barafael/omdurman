@@ -180,6 +180,8 @@ impl Plugin for GamePlugin {
                     // A selection is phase-shaped; never carry it across a
                     // phase boundary (see `select_combat_tile`).
                     reset_selection_on_phase_change.in_set(crate::GameSet),
+                    // Counters turning over / popping in (any board view).
+                    animate_counter_changes.after(reconcile_unit_sprites),
                 ),
             )
             // -- Execute fire allocations (separate block to stay under Bevy's

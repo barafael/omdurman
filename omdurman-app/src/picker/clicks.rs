@@ -60,6 +60,7 @@ pub fn handle_picker_clicks(
     time: Res<Time>,
     // Carries the engine's reason when a placement click is refused.
     mut dispatches: Option<ResMut<crate::dispatch::Dispatches>>,
+    mut fx: MessageWriter<crate::fx::FxRequest>,
     mut last_click: Local<Option<(f64, HexCoord)>>,
 ) {
     let game_state = game_state.as_deref();
@@ -73,8 +74,12 @@ pub fn handle_picker_clicks(
             now,
             &mut last_click,
         );
-        if let (Some(reason), Some(dispatches)) = (refusal, dispatches.as_deref_mut()) {
-            dispatches.push(crate::submit::REFUSED_HEADER, reason);
+        if let Some(reason) = refusal {
+            // The reason goes to the feed; the flash says where.
+            fx.write(crate::fx::FxRequest::Refused { hex: click.hex });
+            if let Some(dispatches) = dispatches.as_deref_mut() {
+                dispatches.push(crate::submit::REFUSED_HEADER, reason);
+            }
         }
     }
 }
@@ -1318,6 +1323,7 @@ impl SelectedClick<'_> {
                 remaining_mp = self.remaining_mp,
                 "path leg rejected",
             );
+            self.movement_path.refused = Some(coord);
             // A rejected click does not discard the work already plotted: the
             // selection and the accumulated legs stay, so the player can click
             // a legal continuation, Backspace-undo a leg, Enter-confirm, or
@@ -1602,6 +1608,7 @@ impl SelectedStackClick<'_, '_, '_> {
                 cost = leg.cost,
                 "stack path leg rejected",
             );
+            self.movement_path.refused = Some(coord);
             // Keep the group and the plotted path: a rejected click (an
             // over-cap friendly pass-through hex per §5.51, a non-adjacent or
             // out-of-budget hex, or a post-ZOC stop) must not discard the route
@@ -2099,6 +2106,7 @@ mod tests {
         world.insert_resource(MovementPath {
             legs: vec![(first, HexCoord::new(12, 21))],
             cost_so_far: 3,
+            ..Default::default()
         });
         world
             .run_system_once(

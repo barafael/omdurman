@@ -396,6 +396,94 @@ fn smoothstep(t: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
+/// Seconds a counter takes to turn over (disruption, rally).
+const TURN_SECS: f32 = 0.35;
+/// Seconds a counter entering the board takes to pop in.
+const POP_SECS: f32 = 0.3;
+
+/// A counter turning over in place (disrupted, or rallied back): it spins
+/// from one face-up to the other, lifting a little mid-turn, while its tint
+/// follows. Purely visual -- [`PlacedUnit::disrupted`] already holds the
+/// engine flag.
+#[derive(Component)]
+pub struct CounterTurn {
+    from: Quat,
+    to: Quat,
+    from_tint: Color,
+    to_tint: Color,
+    progress: f32,
+}
+
+/// A counter that just entered the board (a reinforcement, a deployment)
+/// grows into place instead of appearing in one frame.
+#[derive(Component, Default)]
+pub struct CounterPop {
+    progress: f32,
+}
+
+/// Ease-out with a slight overshoot: 0 at t=0, 1 at t=1, peaking just over 1.
+fn ease_out_back(t: f32) -> f32 {
+    const C1: f32 = 1.2;
+    const C3: f32 = C1 + 1.0;
+    let u = t - 1.0;
+    1.0 + C3 * u * u * u + C1 * u * u
+}
+
+/// Play [`CounterTurn`]s and [`CounterPop`]s forward; each removes itself
+/// when done.
+pub fn animate_counter_changes(
+    time: Res<Time>,
+    mut turns: Query<
+        (
+            Entity,
+            &mut Transform,
+            &mut CounterTurn,
+            &MeshMaterial3d<StandardMaterial>,
+        ),
+        Without<CounterPop>,
+    >,
+    mut pops: Query<(Entity, &mut Transform, &mut CounterPop), Without<CounterTurn>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut commands: Commands,
+    mut activity: ResMut<crate::activity::Activity>,
+) {
+    use bevy::color::Mix;
+    let dt = time.delta_secs();
+    for (entity, mut transform, mut turn, material) in &mut turns {
+        activity.keep_running();
+        turn.progress = (turn.progress + dt / TURN_SECS).min(1.0);
+        let e = smoothstep(turn.progress);
+        transform.rotation = turn.from.slerp(turn.to, e);
+        transform.scale = Vec3::splat(1.0 + 0.18 * (std::f32::consts::PI * e).sin());
+        if let Some(mut mat) = materials.get_mut(&material.0) {
+            mat.base_color = turn.from_tint.mix(&turn.to_tint, e);
+        }
+        if turn.progress >= 1.0 {
+            transform.rotation = turn.to;
+            transform.scale = Vec3::ONE;
+            commands.entity(entity).remove::<CounterTurn>();
+        }
+    }
+    for (entity, mut transform, mut pop) in &mut pops {
+        activity.keep_running();
+        pop.progress = (pop.progress + dt / POP_SECS).min(1.0);
+        transform.scale = Vec3::splat(ease_out_back(pop.progress).max(0.001));
+        if pop.progress >= 1.0 {
+            transform.scale = Vec3::ONE;
+            commands.entity(entity).remove::<CounterPop>();
+        }
+    }
+}
+
+/// The tint of a counter face: dimmed when disrupted.
+fn counter_tint(disrupted: bool) -> Color {
+    if disrupted {
+        crate::render::overlay_palette::COUNTER_DISRUPTED
+    } else {
+        Color::WHITE
+    }
+}
+
 // -- Disruption visuals: inverted + dimmed counter ------------------------------
 
 /// Lay a counter quad flat on the ground, optionally *inverted* (turned over)
@@ -438,6 +526,7 @@ type SpriteReconcileItem = (
     &'static mut PlacedUnit,
     &'static mut Transform,
     &'static MeshMaterial3d<StandardMaterial>,
+    &'static Mesh3d,
     &'static mut Visibility,
     Option<&'static mut PendingPlacement>,
 );
@@ -457,6 +546,10 @@ pub struct SpriteReconcileCtx<'w> {
     picker: ResMut<'w, UnitPicker>,
     picker_state: ResMut<'w, PickerState>,
     activity: ResMut<'w, crate::activity::Activity>,
+    /// Present for one reconcile after the state jumped (rebuild): snap.
+    snap: Option<Res<'w, crate::fx::SnapSprites>>,
+    motion: Res<'w, crate::fx::MotionSettings>,
+    fx: MessageWriter<'w, crate::fx::FxRequest>,
 }
 
 /// The board's counters are a *projection* of the rules engine state: this
@@ -468,20 +561,26 @@ pub struct SpriteReconcileCtx<'w> {
 /// * despawns sprites whose unit left the engine (eliminated by fire/melee
 ///   §6/§7, desertion §8.2, GORDON's fall §9.346, a setup pickup §9.2/§9.3, or
 ///   a rebuild to an earlier timeline position);
+/// * leaves a fading ghost where an eliminated counter stood;
 /// * moves displaced sprites -- gliding along the route recorded in
 ///   [`UnitPaths`] (or a single adjacent hop), snapping otherwise so a scrub
 ///   jump never slides a counter straight across walls and foreign stacks;
 ///   a "Friendlies" counter loaded on a gunboat (§5.21) rides at the boat's
 ///   hex;
 /// * mirrors disruption: a disrupted counter is shown inverted and dimmed
-///   (rulebook Combat Results Table note; §5.41);
+///   (rulebook Combat Results Table note; §5.41), turning over in place;
 /// * spawns sprites for engine units that have none (remote placements, AI
 ///   deployments, replayed records -- texture from the picker's
-///   `sprites/{section}_{col}_{row}.webp` naming);
+///   `sprites/{section}_{col}_{row}.webp` naming), popping in when they
+///   enter in play;
 /// * keeps the picker tray equal to "every counter not on the board".
 ///
 /// Counters are hidden outside the Game view (menu / lobby), so returning
 /// to the board needs no snapshot: the sprites are re-derived here.
+///
+/// After a jump ([`crate::fx::SnapSprites`]: a history install, a timeline
+/// seek) every change lands at once, as with reduced motion
+/// ([`crate::fx::MotionSettings`]); the ghosts stay off with effects off.
 ///
 /// It runs only when one of its inputs moved -- the engine state, the
 /// recorded routes, the app mode, the picker (its sprite handles load
@@ -506,6 +605,9 @@ pub fn reconcile_unit_sprites(
         mut picker,
         mut picker_state,
         mut activity,
+        snap,
+        motion,
+        mut fx,
     } = ctx;
     // One look over the counters (`iter_mut` without writing marks nothing
     // changed): any spawned since the last run, any awaiting its echo.
@@ -521,10 +623,21 @@ pub fn reconcile_unit_sprites(
         || picker.is_changed()
         || fresh
         || despawned
-        || awaiting_echo)
+        || awaiting_echo
+        || snap.is_some())
     {
         return;
     }
+    // A jump lands at once; so does everything with reduced motion. The
+    // ghosts are fades, so they only need effects on.
+    let jumped = snap.is_some();
+    if jumped {
+        commands.remove_resource::<crate::fx::SnapSprites>();
+    }
+    let animate = !jumped && motion.motion();
+    let ghosts = !jumped && motion.effects() && **mode == crate::AppMode::Game;
+    // Entering the board view re-derives every counter: no pop-ins then.
+    let pop_in = animate && !mode.is_changed();
     if awaiting_echo {
         // The grace period counts frames: keep them coming.
         activity.keep_running();
@@ -547,7 +660,7 @@ pub fn reconcile_unit_sprites(
     let mut seen: std::collections::HashSet<UnitId> = std::collections::HashSet::new();
     let mut on_board: std::collections::HashSet<SpriteKey> = std::collections::HashSet::new();
 
-    for (entity, mut placed, mut transform, material, mut visibility, pending_placement) in
+    for (entity, mut placed, mut transform, material, mesh, mut visibility, pending_placement) in
         query.iter_mut()
     {
         let key = (placed.section_name, placed.col, placed.row);
@@ -589,7 +702,21 @@ pub fn reconcile_unit_sprites(
             }
         };
         let Some(unit) = by_id.get(&uid).copied().filter(|_| !seen.contains(&uid)) else {
-            // Gone from the engine (or a duplicate sprite): drop it.
+            // Gone from the engine (or a duplicate sprite): drop it. A unit
+            // that left the engine fades out where it stood, so the eye
+            // catches *which* counter went.
+            if ghosts && !by_id.contains_key(&uid) && *visibility != Visibility::Hidden {
+                let (texture, tint) = materials
+                    .get(&material.0)
+                    .map(|m| (m.base_color_texture.clone(), m.base_color))
+                    .unwrap_or((None, Color::WHITE));
+                fx.write(crate::fx::FxRequest::Ghost {
+                    transform: *transform,
+                    mesh: mesh.0.clone(),
+                    texture,
+                    tint,
+                });
+            }
             commands.entity(entity).despawn();
             continue;
         };
@@ -608,7 +735,8 @@ pub fn reconcile_unit_sprites(
                     Some(p[start + 1..].to_vec())
                 })
                 .filter(|steps| !steps.is_empty() && steps.len() <= MAX_GLIDE_STEPS)
-                .or_else(|| (placed.coord.distance(hex) == 1).then(|| vec![hex]));
+                .or_else(|| (placed.coord.distance(hex) == 1).then(|| vec![hex]))
+                .filter(|_| animate);
             match route {
                 Some(steps) => {
                     // Glide along the real route. Inserting over an in-flight
@@ -635,13 +763,22 @@ pub fn reconcile_unit_sprites(
         let disrupted = unit.state.disrupted;
         if disrupted != placed.disrupted {
             placed.disrupted = disrupted;
-            transform.rotation = counter_rotation(disrupted);
-            if let Some(mut mat) = materials.get_mut(&material.0) {
-                mat.base_color = if disrupted {
-                    crate::render::overlay_palette::COUNTER_DISRUPTED
-                } else {
-                    Color::WHITE
-                };
+            // A freshly spawned counter is re-skinned on its first reconcile:
+            // that is no turn of fortune, so it takes its face at once.
+            if animate && !placed.is_added() {
+                commands.entity(entity).try_insert(CounterTurn {
+                    from: transform.rotation,
+                    to: counter_rotation(disrupted),
+                    from_tint: counter_tint(!disrupted),
+                    to_tint: counter_tint(disrupted),
+                    progress: 0.0,
+                });
+            } else {
+                transform.rotation = counter_rotation(disrupted);
+                commands.entity(entity).remove::<CounterTurn>();
+                if let Some(mut mat) = materials.get_mut(&material.0) {
+                    mat.base_color = counter_tint(disrupted);
+                }
             }
         }
         if *visibility != shown {
@@ -685,6 +822,13 @@ pub fn reconcile_unit_sprites(
             },
         );
         commands.entity(entity).insert(shown);
+        if pop_in {
+            commands
+                .entity(entity)
+                .insert((CounterPop::default(), Transform::from_scale(Vec3::splat(0.001))
+                    .with_translation(world(hex))
+                    .with_rotation(counter_rotation(false))));
+        }
     }
 
     sync_picker_tray(&mut picker, &mut picker_state, &on_board);

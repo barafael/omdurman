@@ -6,7 +6,7 @@
 //! shared night shading.
 
 use bevy::{prelude::*, render::view::ColorGrading};
-use omdurman_board_ui::night::{BoardDayNight, night_shading};
+use omdurman_board_ui::night::{BoardDayNight, NightFading, night_shading};
 
 pub use omdurman_board_ui::camera::{
     CameraDragState, CameraFit, CameraSettings, CameraSettling, CameraViewInsets, RtsCamera,
@@ -25,6 +25,8 @@ impl Plugin for CameraPlugin {
             .init_resource::<CameraSettling>()
             .init_resource::<CameraViewInsets>()
             .init_resource::<BoardDayNight>()
+            // "Still fading" flag of the day/night grading (see `activity`).
+            .init_resource::<NightFading>()
             .add_systems(Startup, spawn_camera)
             .add_systems(
                 Update,

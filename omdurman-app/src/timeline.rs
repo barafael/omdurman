@@ -175,7 +175,15 @@ pub fn scrub_teardown(mut timeline: ResMut<SpectatorTimeline>, mut teardown: Scr
 
 /// Rebuild phase of the timeline scrub: replays events `0..=cursor` and
 /// switches to the game view. Runs after [`scrub_teardown`].
-pub fn scrub_rebuild(mut timeline: ResMut<SpectatorTimeline>, mut rebuild: ScrubRebuild) {
+///
+/// A step to the next event plays out on the board (counters glide, fade,
+/// spin); any other seek is a jump, and the counters snap
+/// ([`crate::fx::SnapSprites`]).
+pub fn scrub_rebuild(
+    mut timeline: ResMut<SpectatorTimeline>,
+    mut rebuild: ScrubRebuild,
+    mut last_shown: Local<Option<(u32, usize)>>,
+) {
     if !timeline.dirty {
         return;
     }
@@ -218,6 +226,12 @@ pub fn scrub_rebuild(mut timeline: ResMut<SpectatorTimeline>, mut rebuild: Scrub
         rebuild_state_to(record, Some(timeline.cursor), &mut state);
     }
     timeline.dirty = false;
+    let stepped = last_shown
+        .is_some_and(|(generation, cursor)| generation == timeline.generation && timeline.cursor == cursor + 1);
+    if !stepped {
+        rebuild.commands.insert_resource(crate::fx::SnapSprites);
+    }
+    *last_shown = Some((timeline.generation, timeline.cursor));
 
     // Show the reviewed game on the play board (rebuild_state_to queued the
     // board data via PendingMapLoad; the reconciler keeps it on the reviewed
