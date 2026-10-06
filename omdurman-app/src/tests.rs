@@ -1876,3 +1876,71 @@ fn ai_plays_fall_of_khartoum_headless() {
         Some(omdurman_rules::GameResult::FoK(_))
     ));
 }
+
+/// A counter displaced by a live move glides to its new hex; after a jump
+/// (`fx::SnapSprites`: a history install, a timeline seek) it lands at once
+/// instead, and the jump marker is consumed.
+#[test]
+fn a_jump_snaps_counters_instead_of_gliding_them() {
+    use bevy::prelude::*;
+    use omdurman_rules::{UnitId, UnitPlacement, UnitState};
+    use omdurman_types::HexCoord;
+    let mut app = headless_game_app(false);
+    app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+        std::time::Duration::from_millis(10),
+    ))
+    .insert_resource(crate::fx::MotionSettings {
+        level: crate::fx::MotionLevel::Full,
+        follow_opponent: false,
+    });
+    for _ in 0..3 {
+        app.update();
+    }
+    app.world_mut()
+        .resource_mut::<NextState<crate::AppMode>>()
+        .set(crate::AppMode::Game);
+    let id = UnitId::Taiasha_0_0;
+    let start = HexCoord::new(3, 3);
+    app.world_mut()
+        .resource_mut::<crate::GameStateResource>()
+        .0
+        .units
+        .push(UnitPlacement {
+            id,
+            position: start,
+            profile: omdurman_rules::unit_profiles::profile_for_unit(id).unwrap(),
+            state: UnitState::default(),
+        });
+    for _ in 0..3 {
+        app.update();
+    }
+    let gliding = |app: &mut App| {
+        app.world_mut()
+            .query_filtered::<(), With<crate::fx::MovementAnimation>>()
+            .iter(app.world())
+            .count()
+    };
+    let move_to = |app: &mut App, hex: HexCoord| {
+        app.world_mut()
+            .resource_mut::<crate::GameStateResource>()
+            .0
+            .units[0]
+            .position = hex;
+    };
+
+    // A live one-hex move plays out.
+    let next = start.neighbors()[0];
+    move_to(&mut app, next);
+    app.update();
+    assert_eq!(gliding(&mut app), 1, "a live move glides");
+
+    // A jump lands at once, even mid-glide.
+    move_to(&mut app, next.neighbors()[0]);
+    app.insert_resource(crate::fx::SnapSprites);
+    app.update();
+    assert_eq!(gliding(&mut app), 0, "a jump snaps");
+    assert!(
+        !app.world().contains_resource::<crate::fx::SnapSprites>(),
+        "the reconcile consumes the jump marker"
+    );
+}

@@ -504,9 +504,7 @@ fn apply_sequenced(env: &mut ApplyEnv<'_, '_>, delivery: SequencedDelivery) {
     // The one application path (shared with replay): every variant reaches
     // the engine synchronously, in seq order.
     let accepted = game_apply::apply_game_event(&ev, &mut env.gsp.sinks());
-    if accepted
-        && let Some(before) = before
-    {
+    if accepted && let Some(before) = before {
         let change = crate::fx::LiveChange::between(&before, &env.gsp.game_state.0, setup);
         if let Some(live) = env.gsp.live_applied.as_mut()
             && !change.is_empty()

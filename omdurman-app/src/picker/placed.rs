@@ -8,8 +8,6 @@ use super::*;
 pub(crate) const SPRITE_HEX_FRACTION: f32 = 1.05;
 /// Height above the ground plane at which placed-unit quads are drawn.
 pub(crate) const UNIT_HEIGHT: f32 = 1.0;
-/// Seconds a unit takes to slide from one hex to an adjacent one.
-const MOVE_ANIM_SECS: f32 = 0.3;
 
 /// Per-index visual offset of a counter within its hex stack. Mirrors the
 /// rendering in `layout_stacked_units`: a single unit sits at the centre, a
@@ -174,18 +172,6 @@ impl UnitPaths {
     }
 }
 
-/// A counter gliding across the board, one hex step at a time: `from` → `to`
-/// is the current step, `rest` the remaining waypoints (world positions).
-/// Purely visual -- the counter's [`PlacedUnit::coord`] already holds the
-/// engine position; the animation only owns the transform until it finishes.
-#[derive(Component)]
-pub struct MovementAnimation {
-    pub from: Vec3,
-    pub to: Vec3,
-    pub progress: f32,
-    pub rest: std::collections::VecDeque<Vec3>,
-}
-
 // -- Shared spawn helper --------------------------------------------------------
 
 /// Spawn the mesh + material for a placed counter and return its entity.
@@ -232,14 +218,15 @@ pub fn spawn_placed_unit(
 /// its slot snaps there and is left alone (no `Transform` write, so no
 /// re-extraction), and while any counter is still easing the frame is marked
 /// busy ([`crate::activity::Activity`]). Units currently sliding between hexes
-/// (`MovementAnimation`) are left to `animate_unit_movement`.
+/// (`fx::MovementAnimation`) are left to their glide. Without motion
+/// ([`crate::fx::MotionSettings`]) the counters take their slots at once.
 pub fn layout_stacked_units(
-    time: Res<Time>,
+    (time, motion): (Res<Time>, Res<crate::fx::MotionSettings>),
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     hovered: Res<crate::HoveredHex>,
     mut activity: ResMut<crate::activity::Activity>,
-    mut units: Query<(Entity, &PlacedUnit, &mut Transform), Without<MovementAnimation>>,
+    mut units: Query<(Entity, &PlacedUnit, &mut Transform), Without<crate::fx::MovementAnimation>>,
     mut grouping: Local<Option<StackGrouping>>,
 ) {
     use std::collections::HashMap;
@@ -291,7 +278,11 @@ pub fn layout_stacked_units(
     };
     let by_hex = &grouping.by_hex;
 
-    let lerp = (time.delta_secs() * 12.0).min(1.0);
+    let lerp = if motion.motion() {
+        (time.delta_secs() * 12.0).min(1.0)
+    } else {
+        1.0
+    };
 
     for (entity, placed, mut transform) in &mut units {
         let stack = &by_hex[&placed.coord];
@@ -362,119 +353,6 @@ pub(crate) struct StackGrouping {
 /// before it snaps there and stops being updated.
 pub const SETTLE_EPSILON: f32 = 1e-3;
 
-// -- Animation: lerp unit movement ----------------------------------------------
-
-pub fn animate_unit_movement(
-    time: Res<Time>,
-    mut query: Query<(Entity, &mut Transform, &mut MovementAnimation)>,
-    mut commands: Commands,
-    mut activity: ResMut<crate::activity::Activity>,
-) {
-    for (entity, mut transform, mut anim) in query.iter_mut() {
-        activity.keep_running();
-        anim.progress += time.delta_secs() / MOVE_ANIM_SECS;
-        if anim.progress >= 1.0 {
-            transform.translation = anim.to;
-            if let Some(next) = anim.rest.pop_front() {
-                // Next hex of the route.
-                anim.from = anim.to;
-                anim.to = next;
-                anim.progress = 0.0;
-            } else {
-                commands.entity(entity).remove::<MovementAnimation>();
-            }
-        } else {
-            let t = anim.progress;
-            let ease = smoothstep(t);
-            transform.translation = anim.from.lerp(anim.to, ease);
-        }
-    }
-}
-
-/// Smoothstep easing: 0 at t=0, 1 at t=1, zero slope at both ends.
-fn smoothstep(t: f32) -> f32 {
-    t * t * (3.0 - 2.0 * t)
-}
-
-/// Seconds a counter takes to turn over (disruption, rally).
-const TURN_SECS: f32 = 0.35;
-/// Seconds a counter entering the board takes to pop in.
-const POP_SECS: f32 = 0.3;
-
-/// A counter turning over in place (disrupted, or rallied back): it spins
-/// from one face-up to the other, lifting a little mid-turn, while its tint
-/// follows. Purely visual -- [`PlacedUnit::disrupted`] already holds the
-/// engine flag.
-#[derive(Component)]
-pub struct CounterTurn {
-    from: Quat,
-    to: Quat,
-    from_tint: Color,
-    to_tint: Color,
-    progress: f32,
-}
-
-/// A counter that just entered the board (a reinforcement, a deployment)
-/// grows into place instead of appearing in one frame.
-#[derive(Component, Default)]
-pub struct CounterPop {
-    progress: f32,
-}
-
-/// Ease-out with a slight overshoot: 0 at t=0, 1 at t=1, peaking just over 1.
-fn ease_out_back(t: f32) -> f32 {
-    const C1: f32 = 1.2;
-    const C3: f32 = C1 + 1.0;
-    let u = t - 1.0;
-    1.0 + C3 * u * u * u + C1 * u * u
-}
-
-/// Play [`CounterTurn`]s and [`CounterPop`]s forward; each removes itself
-/// when done.
-pub fn animate_counter_changes(
-    time: Res<Time>,
-    mut turns: Query<
-        (
-            Entity,
-            &mut Transform,
-            &mut CounterTurn,
-            &MeshMaterial3d<StandardMaterial>,
-        ),
-        Without<CounterPop>,
-    >,
-    mut pops: Query<(Entity, &mut Transform, &mut CounterPop), Without<CounterTurn>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut commands: Commands,
-    mut activity: ResMut<crate::activity::Activity>,
-) {
-    use bevy::color::Mix;
-    let dt = time.delta_secs();
-    for (entity, mut transform, mut turn, material) in &mut turns {
-        activity.keep_running();
-        turn.progress = (turn.progress + dt / TURN_SECS).min(1.0);
-        let e = smoothstep(turn.progress);
-        transform.rotation = turn.from.slerp(turn.to, e);
-        transform.scale = Vec3::splat(1.0 + 0.18 * (std::f32::consts::PI * e).sin());
-        if let Some(mut mat) = materials.get_mut(&material.0) {
-            mat.base_color = turn.from_tint.mix(&turn.to_tint, e);
-        }
-        if turn.progress >= 1.0 {
-            transform.rotation = turn.to;
-            transform.scale = Vec3::ONE;
-            commands.entity(entity).remove::<CounterTurn>();
-        }
-    }
-    for (entity, mut transform, mut pop) in &mut pops {
-        activity.keep_running();
-        pop.progress = (pop.progress + dt / POP_SECS).min(1.0);
-        transform.scale = Vec3::splat(ease_out_back(pop.progress).max(0.001));
-        if pop.progress >= 1.0 {
-            transform.scale = Vec3::ONE;
-            commands.entity(entity).remove::<CounterPop>();
-        }
-    }
-}
-
 /// The tint of a counter face: dimmed when disrupted.
 fn counter_tint(disrupted: bool) -> Color {
     if disrupted {
@@ -516,6 +394,8 @@ const PENDING_PLACEMENT_GRACE_FRAMES: u8 = 3;
 
 /// Longest route (in hexes) glided hex by hex; anything longer snaps.
 const MAX_GLIDE_STEPS: usize = 16;
+/// Longest move without a recorded route that still slides (straight).
+const MAX_SLIDE_HEXES: u32 = 3;
 
 /// A counter-sheet cell: `(section, col, row)`.
 type SpriteKey = (SectionName, u32, u32);
@@ -563,16 +443,17 @@ pub struct SpriteReconcileCtx<'w> {
 ///   a rebuild to an earlier timeline position);
 /// * leaves a fading ghost where an eliminated counter stood;
 /// * moves displaced sprites -- gliding along the route recorded in
-///   [`UnitPaths`] (or a single adjacent hop), snapping otherwise so a scrub
-///   jump never slides a counter straight across walls and foreign stacks;
+///   [`UnitPaths`] (its own, or its carrier's), sliding straight over a
+///   short route-less move (a retreat, a drift), snapping otherwise -- and
+///   always after a jump, so a scrub never slides a counter across walls and
+///   foreign stacks;
 ///   a "Friendlies" counter loaded on a gunboat (§5.21) rides at the boat's
 ///   hex;
 /// * mirrors disruption: a disrupted counter is shown inverted and dimmed
 ///   (rulebook Combat Results Table note; §5.41), turning over in place;
 /// * spawns sprites for engine units that have none (remote placements, AI
 ///   deployments, replayed records -- texture from the picker's
-///   `sprites/{section}_{col}_{row}.webp` naming), popping in when they
-///   enter in play;
+///   `sprites/{section}_{col}_{row}.webp` naming);
 /// * keeps the picker tray equal to "every counter not on the board".
 ///
 /// Counters are hidden outside the Game view (menu / lobby), so returning
@@ -636,8 +517,7 @@ pub fn reconcile_unit_sprites(
     }
     let animate = !jumped && motion.motion();
     let ghosts = !jumped && motion.effects() && **mode == crate::AppMode::Game;
-    // Entering the board view re-derives every counter: no pop-ins then.
-    let pop_in = animate && !mode.is_changed();
+
     if awaiting_echo {
         // The grace period counts frames: keep them coming.
         activity.keep_running();
@@ -726,16 +606,27 @@ pub fn reconcile_unit_sprites(
         // (§5.21: a loaded counter stands on its gunboat's hex.)
         let hex = unit.position;
         if hex != placed.coord {
+            // The steps from `placed.coord` to `hex` along a recorded route.
+            let along = |p: &Vec<HexCoord>| {
+                if p.last() != Some(&hex) {
+                    return None;
+                }
+                let start = p.iter().rposition(|h| *h == placed.coord)?;
+                Some(p[start + 1..].to_vec())
+            };
             let route: Option<Vec<HexCoord>> = paths
                 .0
                 .get(&uid)
-                .filter(|p| p.last() == Some(&hex))
-                .and_then(|p| {
-                    let start = p.iter().rposition(|h| *h == placed.coord)?;
-                    Some(p[start + 1..].to_vec())
-                })
+                .and_then(along)
+                // A counter carried by another (Friendlies aboard a gunboat,
+                // §5.21) rides the route its carrier just took.
+                .or_else(|| paths.0.values().find_map(along))
                 .filter(|steps| !steps.is_empty() && steps.len() <= MAX_GLIDE_STEPS)
-                .or_else(|| (placed.coord.distance(hex) == 1).then(|| vec![hex]))
+                // A short move with no route (a retreat before melee, a
+                // drifting gunboat) slides straight there: a live change
+                // still reads as a move, not a teleport. (A jump never gets
+                // here: it snaps, see `animate`.)
+                .or_else(|| (placed.coord.distance(hex) <= MAX_SLIDE_HEXES).then(|| vec![hex]))
                 .filter(|_| animate);
             match route {
                 Some(steps) => {
@@ -744,17 +635,21 @@ pub fn reconcile_unit_sprites(
                     let mut rest: std::collections::VecDeque<Vec3> =
                         steps.into_iter().map(world).collect();
                     let to = rest.pop_front().unwrap_or_else(|| world(hex));
-                    commands.entity(entity).try_insert(MovementAnimation {
-                        from: transform.translation,
-                        to,
-                        progress: 0.0,
-                        rest,
-                    });
+                    commands
+                        .entity(entity)
+                        .try_insert(crate::fx::MovementAnimation {
+                            from: transform.translation,
+                            to,
+                            progress: 0.0,
+                            rest,
+                        });
                 }
                 None => {
                     // Teleport (scrub jump, resync): snap to the destination.
                     transform.translation = world(hex);
-                    commands.entity(entity).remove::<MovementAnimation>();
+                    commands
+                        .entity(entity)
+                        .remove::<crate::fx::MovementAnimation>();
                 }
             }
             placed.coord = hex;
@@ -766,16 +661,17 @@ pub fn reconcile_unit_sprites(
             // A freshly spawned counter is re-skinned on its first reconcile:
             // that is no turn of fortune, so it takes its face at once.
             if animate && !placed.is_added() {
-                commands.entity(entity).try_insert(CounterTurn {
-                    from: transform.rotation,
-                    to: counter_rotation(disrupted),
-                    from_tint: counter_tint(!disrupted),
-                    to_tint: counter_tint(disrupted),
-                    progress: 0.0,
-                });
+                commands
+                    .entity(entity)
+                    .try_insert(crate::fx::CounterTurn::new(
+                        transform.rotation,
+                        counter_rotation(disrupted),
+                        counter_tint(!disrupted),
+                        counter_tint(disrupted),
+                    ));
             } else {
                 transform.rotation = counter_rotation(disrupted);
-                commands.entity(entity).remove::<CounterTurn>();
+                commands.entity(entity).remove::<crate::fx::CounterTurn>();
                 if let Some(mut mat) = materials.get_mut(&material.0) {
                     mat.base_color = counter_tint(disrupted);
                 }
@@ -822,13 +718,6 @@ pub fn reconcile_unit_sprites(
             },
         );
         commands.entity(entity).insert(shown);
-        if pop_in {
-            commands
-                .entity(entity)
-                .insert((CounterPop::default(), Transform::from_scale(Vec3::splat(0.001))
-                    .with_translation(world(hex))
-                    .with_rotation(counter_rotation(false))));
-        }
     }
 
     sync_picker_tray(&mut picker, &mut picker_state, &on_board);
@@ -961,6 +850,7 @@ mod tests {
             .insert_resource(omdurman_board_ui::board_store::default_layout())
             .init_resource::<crate::HoveredHex>()
             .init_resource::<crate::activity::Activity>()
+            .init_resource::<crate::fx::MotionSettings>()
             .init_resource::<ChangedTransforms>()
             .add_systems(Update, (layout_stacked_units, count_changed).chain());
         app.world_mut().spawn((

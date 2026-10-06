@@ -1120,7 +1120,7 @@ impl OverlayGeneration {
 }
 
 /// Second-chunk overlay entities (the `Or` tuple above is at Bevy's arity
-/// limit): LOS rings, spectator combat markers, and the per-frame board
+/// limit): LOS rings, board marks (`fx`), and the per-frame board
 /// markers (acted rings, howitzer bursts, mines/chain, reinforcement entry).
 type OverlayRingEntities<'w, 's> = Query<
     'w,
@@ -1128,7 +1128,7 @@ type OverlayRingEntities<'w, 's> = Query<
     Entity,
     Or<(
         With<crate::los::LosRing>,
-        With<crate::timeline::SpectatorCombatMarker>,
+        With<crate::fx::transient::Transient>,
         With<crate::render::ActedMarker>,
         With<crate::fire::HowitzerImpactMarker>,
         With<crate::river_placement::MineChainMarker>,

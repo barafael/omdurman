@@ -53,8 +53,6 @@ pub mod overlay_palette {
     pub const PATH_SHADOW: Color = Color::srgba(0.45, 0.55, 0.95, 0.18);
     /// Fire-declaration arrow.
     pub const FIRE_ARROW: Color = Color::srgba(0.9, 0.15, 0.1, 0.45);
-    /// Spectator melee-clash triangles.
-    pub const MELEE_CLASH: Color = Color::srgba(0.95, 0.1, 0.08, 0.75);
     /// Idle movement arrow.
     pub const MOVE_ARROW: Color = Color::srgba(0.85, 0.5, 0.2, 0.45);
     /// Hovered movement arrow.
@@ -264,8 +262,6 @@ pub struct HexRingAssets {
     pub yellow: Handle<StandardMaterial>,
     pub path_shadow: Handle<StandardMaterial>,
     pub fire_arrow: Handle<StandardMaterial>,
-    /// Bright red for spectator melee clash triangles (§7).
-    pub melee_red: Handle<StandardMaterial>,
     /// Grey-blue for the per-unit "acted" ring.
     pub acted: Handle<StandardMaterial>,
 }
@@ -301,7 +297,6 @@ pub fn spawn_hex_ring_assets(
     let yellow = materials.add(unlit_alpha_material(op::RING_YELLOW));
     let path_shadow = materials.add(unlit_alpha_material(op::PATH_SHADOW));
     let fire_arrow = materials.add(unlit_alpha_material(op::FIRE_ARROW));
-    let melee_red = materials.add(unlit_alpha_material(op::MELEE_CLASH));
     // Grey-blue for "acted" outline — slightly transparent so the unit
     // counter underneath is still visible.
     let acted = materials.add(unlit_alpha_material(op::RING_ACTED));
@@ -321,7 +316,6 @@ pub fn spawn_hex_ring_assets(
         yellow,
         path_shadow,
         fire_arrow,
-        melee_red,
         acted,
     });
 }

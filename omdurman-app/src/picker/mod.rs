@@ -110,8 +110,7 @@ impl Plugin for GamePlugin {
                     reconcile_unit_sprites
                         .after(crate::net_socket::handle_reconnect)
                         .after(crate::timeline::scrub_rebuild)
-                        .after(crate::events::forward_local_actions)
-                        .before(animate_unit_movement),
+                        .after(crate::events::forward_local_actions),
                     (
                         placement_preview_mesh.in_set(crate::GameSet),
                         // Board click consumers: each reads the one mode
@@ -147,9 +146,8 @@ impl Plugin for GamePlugin {
                         crate::fire_allocation::reset_fire_allocation_on_phase_change,
                         // (ZOC + LOS overlays are scheduled in main.rs for
                         // both the live game and the spectator view.)
-                        animate_unit_movement,
                         layout_stacked_units
-                            .after(animate_unit_movement)
+                            .after(crate::fx::counters::animate_unit_movement)
                             .run_if(in_state(crate::AppMode::Game)),
                         // Right-click → Cancel comes from the click router
                         // (ordered before this); the handler itself is not
@@ -180,8 +178,6 @@ impl Plugin for GamePlugin {
                     // A selection is phase-shaped; never carry it across a
                     // phase boundary (see `select_combat_tile`).
                     reset_selection_on_phase_change.in_set(crate::GameSet),
-                    // Counters turning over / popping in (any board view).
-                    animate_counter_changes.after(reconcile_unit_sprites),
                 ),
             )
             // -- Execute fire allocations (separate block to stay under Bevy's

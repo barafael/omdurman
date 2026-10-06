@@ -205,7 +205,6 @@ fn add_game(app: &mut App, room: String) {
         // Legal-fire-target enumeration shared by the target overlay, the
         // actions-panel count, the hover preview, and the artillery panel.
         .init_resource::<fire::FireTargetCache>()
-        .add_systems(Startup, timeline::spawn_spectator_marker_assets)
         // The ZOC and LOS overlays run on any board view: the live game (GameSet
         // hosts the gameplay scheduling) *and* the spectator timeline, where
         // there is no local player and both sides' ZOC are drawn instead.
@@ -233,14 +232,6 @@ fn add_game(app: &mut App, room: String) {
                 timeline::advance_timeline_playback,
                 timeline::scrub_teardown.after(timeline::advance_timeline_playback),
                 timeline::scrub_rebuild.after(timeline::scrub_teardown),
-                // Combat markers for the event at the timeline cursor (fire
-                // arrows / melee triangles); after the rebuild so firer
-                // positions match the scrubbed state. Spawned once per event,
-                // then animated out by `animate_spectator_combat_markers`.
-                timeline::spectator_combat_markers
-                    .run_if(in_state(AppState::Spectating))
-                    .after(timeline::scrub_rebuild),
-                timeline::animate_spectator_combat_markers.run_if(in_state(AppState::Spectating)),
             ),
         )
         .add_systems(

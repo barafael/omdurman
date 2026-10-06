@@ -828,7 +828,6 @@ mod tests {
             yellow: default(),
             path_shadow: default(),
             fire_arrow: default(),
-            melee_red: default(),
             acted: default(),
         }
     }

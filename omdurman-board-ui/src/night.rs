@@ -31,6 +31,13 @@ const NIGHT_TINT: f32 = -0.30;
 #[derive(Resource, Default, Clone, Copy, Debug)]
 pub struct BoardDayNight(pub Option<omdurman_types::DayNight>);
 
+/// Whether the day/night grading is still easing toward its target: a
+/// reactive app keeps redrawing until it has settled, so the fade plays at
+/// the display rate instead of at the idle wake-up rate. Published by
+/// [`night_shading`] when the binary inserts it.
+#[derive(Resource, Default, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NightFading(pub bool);
+
 /// Ease the camera's colour grading toward the day/night target each frame: a
 /// `night` factor of 0 is full daylight (grading untouched), 1 is full night
 /// (darker + desaturated). Interpolated so the transition fades rather than
@@ -39,6 +46,7 @@ pub fn night_shading(
     time: Res<Time>,
     day_night: Option<Res<BoardDayNight>>,
     mut grading: Query<&mut ColorGrading, With<RtsCamera>>,
+    fading: Option<ResMut<NightFading>>,
     mut night: Local<f32>,
     // Dev: OMDURMAN_FORCE_NIGHT forces the night look for verification. Read
     // once (the environment doesn't change mid-run) instead of every frame.
@@ -63,6 +71,9 @@ pub fn night_shading(
         next = target;
     }
     *night = next;
+    if let Some(mut fading) = fading {
+        fading.set_if_neq(NightFading(next != target));
+    }
 
     let exposure = NIGHT_EXPOSURE * next;
     let post_saturation = 1.0 + (NIGHT_SATURATION - 1.0) * next;
