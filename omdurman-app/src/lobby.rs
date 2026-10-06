@@ -235,14 +235,13 @@ pub fn lobby_ui(
     mut local: ResMut<LocalPlayerSettings>,
     mut ctx: LobbyContext,
     mut editing_session: Local<String>,
-    splash_maps: Res<crate::splash::SplashMaps>,
 ) {
     let Ok(egui_ctx) = contexts.ctx_mut() else {
         return;
     };
-    // The background map gets its frames from
-    // `splash::map::animate_splash_maps` (ambient pacing); an egui repaint
-    // request here would force display-rate frames.
+    // The period-map background and the floating panel are native UI under
+    // egui (`splash`), with their frames from its ambient pacing; an egui
+    // repaint request here would force display-rate frames.
 
     let roster = build_roster(
         &net,
@@ -272,15 +271,20 @@ pub fn lobby_ui(
         "lobby_panel",
         egui_ctx.viewport_rect(),
     );
-    // The period-map background (drawn first, so the lobby sits on it), with
-    // the lobby's UI in a floating panel at its centre.
+    // The lobby's UI goes in the floating panel the splash backdrop draws at
+    // the screen's centre (same geometry: `splash::lobby_panel_rect`).
     let screen = egui_ctx.viewport_rect();
     let column_w = lobby_column_width(screen.width());
-    let panel = crate::splash::lobby_panel_rect(screen, column_w);
-    crate::splash::paint_lobby_backdrop(__ui.painter(), screen, panel, &splash_maps);
+    let content = crate::splash::lobby_panel_content(crate::splash::lobby_panel_rect(
+        Vec2::new(screen.width(), screen.height()),
+        column_w,
+    ));
     __ui.scope_builder(
         egui::UiBuilder::new()
-            .max_rect(crate::splash::lobby_panel_content(panel))
+            .max_rect(egui::Rect::from_min_max(
+                screen.min + egui::vec2(content.min.x, content.min.y),
+                screen.min + egui::vec2(content.max.x, content.max.y),
+            ))
             .layout(egui::Layout::top_down(egui::Align::Center)),
         |ui| {
             ui.vertical_centered(|ui| {
@@ -367,7 +371,7 @@ pub fn lobby_ui(
 /// clamped so it stays readable on a small window and doesn't sprawl on a
 /// wide one. The 460 px floor yields to a narrower window (small / WASM
 /// viewports) instead of overflowing it.
-fn lobby_column_width(avail: f32) -> f32 {
+pub(crate) fn lobby_column_width(avail: f32) -> f32 {
     (avail * 0.55).clamp(460.0_f32.min(avail), 900.0)
 }
 

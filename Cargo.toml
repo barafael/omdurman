@@ -28,7 +28,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
 [workspace.dependencies]
 # `webp` added on top of default features so the asset server can decode the
 # WebP map/unit/sprite textures (photo scans re-encoded lossily to shrink load).
-bevy = { version = "0.19", features = ["webp"] }
+bevy = { version = "0.19", features = ["webp", "bevy_feathers"] }
 bevy_egui = "0.42"
 bevy_matchbox = { git = "https://github.com/barafael/matchbox.git", branch = "bevy-0.19-socket-hardening" }
 matchbox_socket = { git = "https://github.com/barafael/matchbox.git", branch = "bevy-0.19-socket-hardening" }

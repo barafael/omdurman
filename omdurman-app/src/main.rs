@@ -16,6 +16,7 @@ mod dev_inspector;
 mod dispatch;
 mod event_viewer;
 mod events;
+mod feathers;
 mod fire;
 mod fire_allocation;
 mod fok_panel;
@@ -141,6 +142,7 @@ fn add_game(app: &mut App, room: String) {
         .add_plugins(ui_plugin::UiPlugin)
         .add_plugins(net_plugin::NetPlugin)
         .add_plugins(net_socket::NetSocketPlugin)
+        .add_plugins(feathers::FeathersPlugin)
         .add_plugins(splash::SplashPlugin)
         .add_plugins(mode_transitions::ModeTransitionsPlugin)
         .add_plugins(charts::ChartsPlugin)

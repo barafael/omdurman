@@ -282,7 +282,10 @@ position, one global block). Cut sprite images live under `omdurman-app/assets/s
 ## Mode switching (UI)
 
 The top-level `AppMode`s are `Menu`, `Lobby`, and `Game`.
-The splash screen provides the primary mode-switching UI.
+The splash screen provides the primary mode-switching UI. It (and the lobby's map backdrop and
+panel) is native Bevy UI over a GPU backdrop shader (`omdurman-app/src/splash/`), not egui; the
+lobby's egui widgets draw over it. `OMDURMAN_SPLASH_FREEZE=<map>,<pan time>` and
+`OMDURMAN_SPLASH_QUOTE=<index>` pin the screen for screenshots that compare across builds.
 There is no in-app editor — the board and asset data files are edited as text.
 
 ## Traceability

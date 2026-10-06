@@ -1384,9 +1384,9 @@ mod ui_gating_tests {
         );
     }
 
-    /// Same contract for painter-only fullscreen overlays (splash, event
-    /// viewer): an `interact` blocker inside the Area's Ui (see
-    /// `splash::splash_ui`) must cover the blank backdrop.
+    /// Same contract for painter-only fullscreen overlays (the event
+    /// viewer): an `interact` blocker inside the Area's Ui must cover the
+    /// blank backdrop.
     #[test]
     fn overlay_blocker_registers_pointer_interest() {
         let ctx = egui::Context::default();
@@ -1407,7 +1407,7 @@ mod ui_gating_tests {
                     egui::Id::new("test_overlay_blocker"),
                     egui::Sense::click(),
                 );
-                // Painter-only backdrop: no widgets, like the splash.
+                // Painter-only backdrop: no widgets.
                 ui.painter()
                     .rect_filled(screen, 0.0, egui::Color32::from_black_alpha(255));
             });

@@ -67,14 +67,26 @@ impl Activity {
     }
 }
 
+/// The frame rate for ambient motion: [`ambient_fps`] at start, retunable at
+/// run time (the title screen's tuning pane).
+#[derive(Resource, Clone, Copy, Debug, PartialEq)]
+pub struct AmbientFps(pub f32);
+
+impl Default for AmbientFps {
+    fn default() -> Self {
+        Self(ambient_fps())
+    }
+}
+
 /// Reactive frame pacing plus the redraw requests that keep animations
 /// smooth.
 pub struct ActivityPlugin;
 
 impl Plugin for ActivityPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(pacing(false))
+        app.insert_resource(pacing(false, ambient_fps()))
             .init_resource::<Activity>()
+            .init_resource::<AmbientFps>()
             .add_systems(
                 PreUpdate,
                 drop_unchanged_modifiers
@@ -129,6 +141,7 @@ pub fn drop_unchanged_modifiers(
 /// clear the flags for the next frame.
 pub fn request_redraws(
     mut activity: ResMut<Activity>,
+    fps: Option<Res<AmbientFps>>,
     redraw: Option<ResMut<Messages<RequestRedraw>>>,
     settings: Option<ResMut<WinitSettings>>,
 ) {
@@ -138,7 +151,8 @@ pub fn request_redraws(
         redraw.write(RequestRedraw);
     }
     // Write only on a change: the pacing stays put for whole screens.
-    let want = pacing(ambient && !busy);
+    let fps = fps.map_or_else(ambient_fps, |fps| fps.0);
+    let want = pacing(ambient && !busy, fps);
     if let Some(mut settings) = settings
         && (settings.focused_mode != want.focused_mode
             || settings.unfocused_mode != want.unfocused_mode)
@@ -147,12 +161,13 @@ pub fn request_redraws(
     }
 }
 
-/// The frame pacing: the idle waits, or the ambient frame times.
-fn pacing(ambient: bool) -> WinitSettings {
+/// The frame pacing: the idle waits, or the ambient frame times (at `fps`
+/// while focused).
+fn pacing(ambient: bool, fps: f32) -> WinitSettings {
     if ambient {
-        let frame = |fps: f32| Duration::from_secs_f32(1.0 / fps);
+        let frame = |fps: f32| Duration::from_secs_f32(1.0 / fps.max(1.0));
         WinitSettings {
-            focused_mode: UpdateMode::reactive(frame(ambient_fps())),
+            focused_mode: UpdateMode::reactive(frame(fps)),
             unfocused_mode: UpdateMode::reactive_low_power(frame(AMBIENT_UNFOCUSED_FPS)),
         }
     } else {
@@ -181,7 +196,7 @@ mod tests {
         let mut app = App::new();
         app.add_message::<RequestRedraw>()
             .init_resource::<Activity>()
-            .insert_resource(pacing(false))
+            .insert_resource(pacing(false, ambient_fps()))
             .add_systems(Last, request_redraws);
         let wait = |app: &App| match app.world().resource::<WinitSettings>().focused_mode {
             UpdateMode::Reactive { wait, .. } => wait,

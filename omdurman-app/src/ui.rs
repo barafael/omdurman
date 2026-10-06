@@ -281,14 +281,6 @@ pub mod palette {
     pub fn with_alpha(color: Color32, alpha: u8) -> Color32 {
         Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha)
     }
-
-    /// An opaque `color`'s channels reused verbatim as *premultiplied* RGB
-    /// with `alpha`. Not a physically correct fade (RGB is not scaled): it
-    /// reproduces the additive-looking glow the splash backdrop and the
-    /// "Your turn" popup were designed with.
-    pub const fn with_alpha_premultiplied(color: Color32, alpha: u8) -> Color32 {
-        Color32::from_rgba_premultiplied(color.r(), color.g(), color.b(), alpha)
-    }
 }
 
 /// A side's faction colour -- the single source for AE / Dervish tints.
