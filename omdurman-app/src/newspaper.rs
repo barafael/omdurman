@@ -43,7 +43,9 @@ pub(crate) fn compose_newspaper(
     report.saved = false;
 }
 
-/// The front page as plain text (the artifact file, and tests).
+/// The front page as plain text (the artifact file, and tests). The web
+/// build keeps no artifacts (no file system), so it never calls this.
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 pub(crate) fn page_text(page: &FrontPage) -> String {
     let mut out = String::new();
     out.push_str(&format!("# {}\n", page.masthead));
