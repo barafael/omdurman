@@ -274,6 +274,16 @@ pub(super) const MAP_PERIOD_ROT: f32 = 61.0;
 pub(super) const MAP_PHASE_X_MINOR: f32 = 1.3;
 pub(super) const MAP_PHASE_Y_MAJOR: f32 = 0.7;
 pub(super) const MAP_PHASE_TILT: f32 = 2.1;
+/// Per-run variety ([`super::map::PanVariation`]): each launch scales every
+/// period by up to this fraction either way, shifts the phases by up to
+/// [`PAN_PHASE_JITTER`] radians, and scales the pan's reach and the swings
+/// *down* by up to [`PAN_AMP_JITTER`] and [`PAN_SWING_JITTER`] -- down only,
+/// so the map covers its region in every run as it does with the values
+/// above.
+pub(super) const PAN_PERIOD_JITTER: f32 = 0.15;
+pub(super) const PAN_PHASE_JITTER: f32 = 0.6;
+pub(super) const PAN_AMP_JITTER: f32 = 0.15;
+pub(super) const PAN_SWING_JITTER: f32 = 0.2;
 
 /// Gaussian blur sigma in screen points, converted to texture pixels for the
 /// size the map is shown at in a [`REFERENCE_HEIGHT`] box; the shader blurs

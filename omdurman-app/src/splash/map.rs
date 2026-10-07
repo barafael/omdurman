@@ -57,11 +57,13 @@ pub(crate) struct SplashMaps {
     /// Dev affordance (`OMDURMAN_SPLASH_FREEZE=<map>,<pan time>`): hold one
     /// map at one pose, so screenshots of the screens compare across builds.
     freeze: Option<(usize, f32)>,
+    /// This run's variation of the pan (none while frozen).
+    pub(super) variation: PanVariation,
 }
 
 impl SplashMaps {
     /// Starts on a random map, from a random view, at a random point of the
-    /// pan.
+    /// pan, which drifts a little differently every run.
     pub(super) fn new() -> Self {
         use rand::RngExt;
         let current = rand::rng().random_range(0..MAPS.len());
@@ -74,6 +76,7 @@ impl SplashMaps {
             incoming_view: 0,
             settled: false,
             freeze: None,
+            variation: PanVariation::random(),
         }
     }
 
@@ -91,6 +94,7 @@ impl SplashMaps {
             .filter(|&(index, time): &(usize, f32)| index < MAPS.len() && time.is_finite());
         if let Some((index, _)) = maps.freeze {
             maps.show = MapShow::new(index);
+            maps.variation = PanVariation::NONE;
         }
         maps
     }
@@ -494,23 +498,77 @@ pub(super) struct MapPose {
     pub(super) rot: f32,
 }
 
+/// One run's small departure from the pan in `params`, so launches drift
+/// differently (see [`PAN_PERIOD_JITTER`]): a factor on each period, an
+/// offset on each phase, and factors (at most 1) on the pan's reach and on
+/// the tilt and rotation swings.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct PanVariation {
+    /// x major, x minor, y major, y minor, tilt, rotation.
+    periods: [f32; 6],
+    /// The same terms' phase offsets, radians.
+    phases: [f32; 6],
+    reach: f32,
+    swing: f32,
+}
+
+impl PanVariation {
+    /// The pan exactly as `params` has it.
+    pub(super) const NONE: Self = Self {
+        periods: [1.0; 6],
+        phases: [0.0; 6],
+        reach: 1.0,
+        swing: 1.0,
+    };
+
+    /// A fresh variation for this run.
+    fn random() -> Self {
+        Self::from_rng(&mut rand::rng())
+    }
+
+    fn from_rng(rng: &mut impl rand::Rng) -> Self {
+        use rand::RngExt;
+        let mut around = |spread: f32| rng.random_range(-spread..=spread);
+        Self {
+            periods: std::array::from_fn(|_| 1.0 + around(PAN_PERIOD_JITTER)),
+            phases: std::array::from_fn(|_| around(PAN_PHASE_JITTER)),
+            reach: 1.0 - around(PAN_AMP_JITTER).abs(),
+            swing: 1.0 - around(PAN_SWING_JITTER).abs(),
+        }
+    }
+}
+
 /// Broad Lissajous pan plus a slow tilt and rotation swing, for `layout` in a
-/// map box `box_height` points tall.
-pub(super) fn map_pose(t: f32, box_height: f32, layout: &MapLayout) -> MapPose {
+/// map box `box_height` points tall, as this run's `variation` has it.
+pub(super) fn map_pose(
+    t: f32,
+    box_height: f32,
+    layout: &MapLayout,
+    variation: &PanVariation,
+) -> MapPose {
     use std::f32::consts::TAU;
+    let PanVariation {
+        periods: k,
+        phases: p,
+        reach,
+        swing,
+    } = *variation;
     let wave = |period: f32, phase: f32| (TAU * t / period + phase).sin();
-    let (major, minor) = layout.pan_amp;
+    let (major, minor) = (layout.pan_amp.0 * reach, layout.pan_amp.1 * reach);
     let pan = box_height
         * Vec2::new(
-            major * wave(MAP_PERIOD_X.0, 0.0) + minor * wave(MAP_PERIOD_X.1, MAP_PHASE_X_MINOR),
-            major * wave(MAP_PERIOD_Y.0, MAP_PHASE_Y_MAJOR)
-                + minor * (TAU * t / MAP_PERIOD_Y.1).cos(),
+            major * wave(MAP_PERIOD_X.0 * k[0], p[0])
+                + minor * wave(MAP_PERIOD_X.1 * k[1], MAP_PHASE_X_MINOR + p[1]),
+            major * wave(MAP_PERIOD_Y.0 * k[2], MAP_PHASE_Y_MAJOR + p[2])
+                + minor * (TAU * t / (MAP_PERIOD_Y.1 * k[3]) + p[3]).cos(),
         );
+    let tilt_swing = layout.tilt_swing_deg * swing;
     let tilt = (layout.tilt_deg
-        + layout.tilt_swing_deg
-        + layout.tilt_swing_deg * wave(MAP_PERIOD_TILT, MAP_PHASE_TILT))
+        + tilt_swing
+        + tilt_swing * wave(MAP_PERIOD_TILT * k[4], MAP_PHASE_TILT + p[4]))
     .max(0.0);
-    let rot = layout.rotate_deg + layout.rotate_swing_deg * wave(MAP_PERIOD_ROT, 0.0);
+    let rot =
+        layout.rotate_deg + layout.rotate_swing_deg * swing * wave(MAP_PERIOD_ROT * k[5], p[5]);
     MapPose {
         pan,
         tilt: tilt.to_radians(),
@@ -736,7 +794,7 @@ mod tests {
         ] {
             let frame = map_frame(region, layout);
             for t in [0.0, 17.5, 133.0] {
-                let pose = map_pose(t, frame.box_height, layout);
+                let pose = map_pose(t, frame.box_height, layout, &PanVariation::NONE);
                 let h = map_homography(&frame, &pose);
                 let inverse = h.inverse();
                 for f in [
@@ -761,7 +819,7 @@ mod tests {
     #[test]
     fn the_pose_follows_the_layout() {
         for layout in [&TITLE_MAP, &LOBBY_MAP] {
-            let pose = map_pose(0.0, 800.0, layout);
+            let pose = map_pose(0.0, 800.0, layout, &PanVariation::NONE);
             let tilt = layout.tilt_deg + layout.tilt_swing_deg * (1.0 + MAP_PHASE_TILT.sin());
             assert!((pose.tilt - tilt.max(0.0).to_radians()).abs() < 1e-5);
             assert!((pose.rot - layout.rotate_deg.to_radians()).abs() < 1e-5);
@@ -840,9 +898,9 @@ mod tests {
     /// inside the square's projected edges, negative if a map edge shows.
     /// Exact while every corner stays in front of the eye, because a
     /// perspective projection keeps the square's edges straight.
-    fn coverage_margin(region: Rect, t: f32, layout: &MapLayout) -> f32 {
+    fn coverage_margin(region: Rect, t: f32, layout: &MapLayout, variation: &PanVariation) -> f32 {
         let frame = map_frame(region, layout);
-        let pose = map_pose(t, frame.box_height, layout);
+        let pose = map_pose(t, frame.box_height, layout, variation);
         let r = frame.image;
         let corners = [
             r.min,
@@ -885,6 +943,59 @@ mod tests {
     // screen's speed (40 in the lobby).
     #[test]
     fn no_map_edge_shows_in_a_ten_minute_run() {
+        for (region, layout) in coverage_cases() {
+            assert_covers(region, layout, &PanVariation::NONE, 0.05);
+        }
+    }
+
+    /// Every run's variation keeps the map over its region: the reach and
+    /// the swings only ever shrink, and the periods and phases only move the
+    /// path along poses the unvaried run takes too.
+    #[test]
+    fn no_map_edge_shows_in_a_varied_run() {
+        use rand::SeedableRng;
+        for seed in 0..6 {
+            let variation = PanVariation::from_rng(&mut rand::rngs::StdRng::seed_from_u64(seed));
+            for (region, layout) in coverage_cases() {
+                assert_covers(region, layout, &variation, 0.2);
+            }
+        }
+    }
+
+    /// The pan stays inside its variation's bounds: a little either way.
+    #[test]
+    fn a_variation_is_small() {
+        use rand::SeedableRng;
+        for seed in 0..50 {
+            let v = PanVariation::from_rng(&mut rand::rngs::StdRng::seed_from_u64(seed));
+            assert!(
+                v.periods
+                    .iter()
+                    .all(|k| (k - 1.0).abs() <= PAN_PERIOD_JITTER)
+            );
+            assert!(v.phases.iter().all(|p| p.abs() <= PAN_PHASE_JITTER));
+            assert!((1.0 - PAN_AMP_JITTER..=1.0).contains(&v.reach));
+            assert!((1.0 - PAN_SWING_JITTER..=1.0).contains(&v.swing));
+        }
+    }
+
+    /// No map edge shows over the start spread plus ten minutes, sampled
+    /// every `step` seconds.
+    fn assert_covers(region: Rect, layout: &MapLayout, variation: &PanVariation, step: f32) {
+        let samples = ((MAP_START_SPREAD_SECS + 600.0) / step) as usize;
+        let (worst, at) = (0..samples)
+            .map(|i| i as f32 * step)
+            .map(|t| (coverage_margin(region, t, layout, variation), t))
+            .fold((f32::INFINITY, 0.0), |a, b| if b.0 < a.0 { b } else { a });
+        assert!(
+            worst > 0.0,
+            "map edge visible in region {region:?} at pan time {at} ({variation:?}): {worst:.1} points"
+        );
+    }
+
+    /// The title screen's map regions and the lobby's screens, wide and
+    /// narrow.
+    fn coverage_cases() -> impl Iterator<Item = (Rect, &'static MapLayout)> {
         let wide = [
             (1280.0, 800.0),
             (1440.0, 900.0),
@@ -900,20 +1011,9 @@ mod tests {
             .into_iter()
             .chain(narrow.map(screen));
         let screens = wide.into_iter().chain(narrow).map(screen);
-        let cases = regions
+        regions
             .map(|region| (region, &TITLE_MAP))
-            .chain(screens.map(|screen| (screen, &LOBBY_MAP)));
-        for (region, layout) in cases {
-            let samples = ((MAP_START_SPREAD_SECS + 600.0) / 0.05) as usize;
-            let (worst, at) = (0..samples)
-                .map(|i| i as f32 * 0.05)
-                .map(|t| (coverage_margin(region, t, layout), t))
-                .fold((f32::INFINITY, 0.0), |a, b| if b.0 < a.0 { b } else { a });
-            assert!(
-                worst > 0.0,
-                "map edge visible in region {region:?} at pan time {at}: {worst:.1} points"
-            );
-        }
+            .chain(screens.map(|screen| (screen, &LOBBY_MAP)))
     }
 
     #[test]

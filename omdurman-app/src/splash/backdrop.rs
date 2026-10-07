@@ -123,16 +123,17 @@ fn stops(list: &[(f32, f32)]) -> [Vec4; MAX_STOPS] {
 }
 
 /// How to draw `image` in `view` as `variant`, laid out as `layout` and
-/// blurred `blur_px` screen points, at pan time `t` in `region`.
+/// blurred `blur_px` screen points, at pan time `t` of this run's pan
+/// `variation` in `region`.
 fn sampling(
     (image, view): (&MapImage, MapView),
     variant: MapVariant,
     (layout, blur_px): (&MapLayout, f32),
     region: Rect,
-    t: f32,
+    (t, variation): (f32, &map::PanVariation),
 ) -> MapSampling {
     let frame = map::map_frame(region, layout);
-    let pose = map::map_pose(t, frame.box_height, layout);
+    let pose = map::map_pose(t, frame.box_height, layout, variation);
     let uv = map::cover_uv(image.size, view);
     let taps = map::blur_taps(map::blur_sigma_texels(
         image.size, variant, blur_px, view.zoom,
@@ -221,13 +222,25 @@ impl BackdropMaterial {
             current: current
                 .map(|image| {
                     let shown = (image, maps.current_view());
-                    sampling(shown, variant, look, region, maps.pan_time)
+                    sampling(
+                        shown,
+                        variant,
+                        look,
+                        region,
+                        (maps.pan_time, &maps.variation),
+                    )
                 })
                 .unwrap_or_default(),
             next: incoming
                 .map(|(image, _)| {
                     let shown = (image, maps.incoming_view(incoming_index));
-                    sampling(shown, variant, look, region, maps.incoming_pan_time)
+                    sampling(
+                        shown,
+                        variant,
+                        look,
+                        region,
+                        (maps.incoming_pan_time, &maps.variation),
+                    )
                 })
                 .unwrap_or_default(),
             fade_stops: stops(&FADE_STOPS),
