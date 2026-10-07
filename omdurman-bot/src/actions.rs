@@ -8,6 +8,8 @@
 //! etc.) use clone-and-try: clone the state, call `apply_effect`, keep the
 //! candidate if it succeeds.
 
+use std::collections::HashMap;
+
 use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
 use omdurman_rules::terrain_chart::movement_cost;
 use omdurman_rules::unit_profiles::profile_for_unit;
@@ -222,6 +224,10 @@ fn setup_actions(
             });
         }
         let mut placed = 0usize;
+        // The generic placement preference of every hex, computed once per
+        // enumeration: it depends on the state alone, and every unit's
+        // option set ranks by it.
+        let mut preferences: Option<HashMap<HexCoord, i32>> = None;
         let unit_take = if hex_options <= 1 {
             MAX_SETUP_CANDIDATES
         } else {
@@ -236,7 +242,8 @@ fn setup_actions(
                     .into_iter()
                     .collect()
             } else {
-                deploy_hex_options(state, *id, profile, hex_options)
+                let preferences = preferences.get_or_insert_with(|| placement_preferences(state));
+                deploy_hex_options(state, *id, profile, hex_options, preferences)
             };
             for hex in options {
                 out.push(GameEffect::DeployUnit(omdurman_rules::UnitPlacement {
@@ -614,7 +621,9 @@ fn find_deploy_hex(
     // tribe one-unit-per-hex -- with a bounded deployment zone (FoK's
     // south/east edge, §9.322) that strands later tribes when every zone
     // hex holds a foreign tribe (§5.52 forbids the mix).
-    hexes.sort_by_key(|h| -hex_deploy_preference(state, *h, profile));
+    // (Cached: the key scans the hex's occupants, and a sort asks for it
+    // many times per element.)
+    hexes.sort_by_cached_key(|h| -hex_deploy_preference(state, *h, profile));
 
     hexes.into_iter().find(|h| {
         let placement = omdurman_rules::UnitPlacement {
@@ -638,6 +647,7 @@ fn deploy_hex_options(
     id: UnitId,
     profile: omdurman_rules::UnitProfile,
     n: usize,
+    preferences: &HashMap<HexCoord, i32>,
 ) -> Vec<HexCoord> {
     let mut legal: Vec<HexCoord> = state
         .board
@@ -655,9 +665,30 @@ fn deploy_hex_options(
         })
         .collect();
     sort_dedup_hexes(&mut legal);
-    legal.sort_by_key(|h| -placement_preference(state, *h));
+    // Stable, so hexes of equal preference keep their sorted order; the
+    // memo is looked up only, never iterated, so the ranking stays
+    // deterministic across processes.
+    legal.sort_by_cached_key(|h| {
+        -preferences
+            .get(h)
+            .copied()
+            .unwrap_or_else(|| placement_preference(state, *h))
+    });
     legal.truncate(n);
     legal
+}
+
+/// [`placement_preference`] of every hex of the board, for one enumeration
+/// (see [`setup_actions`]). It walks 42 hexside lookups per hex, and used to
+/// be recomputed per comparison of every unit's sort of the same hexes --
+/// seven tenths of a Fall of Khartoum game's time went there.
+fn placement_preferences(state: &GameState) -> HashMap<HexCoord, i32> {
+    state
+        .board
+        .terrain
+        .keys()
+        .map(|hex| (*hex, placement_preference(state, *hex)))
+        .collect()
 }
 
 /// Generic placement desirability of `hex` for any deploying land unit:
