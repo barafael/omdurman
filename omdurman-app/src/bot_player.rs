@@ -59,6 +59,8 @@ pub struct BotDriver {
     in_flight: Option<u64>,
     /// Seconds the action in flight has waited for its echo.
     in_flight_secs: f32,
+    /// What the AI is waiting on, and for how long (see [`Wait`]).
+    wait: Option<Wait>,
     /// The last decision was illegal even as the `AdvancePhase` fallback:
     /// the AI stands down (warned once) and looks again every
     /// [`STUCK_RETRY_SECS`] instead of re-submitting a rejected effect.
@@ -82,6 +84,7 @@ impl BotDriver {
             cooldown: 0.0,
             in_flight: None,
             in_flight_secs: 0.0,
+            wait: None,
             stuck: false,
         }
     }
@@ -98,6 +101,44 @@ const ACT_COOLDOWN_SECS: f32 = 0.4;
 const IN_FLIGHT_SPIN_SECS: f32 = 0.5;
 /// How often a stuck AI (no legal action) looks again.
 const STUCK_RETRY_SECS: f32 = 2.0;
+/// How long the AI may wait on one gate before saying so (once): the gates
+/// are silent by design -- the human's turn, a pause, a telegram -- and an
+/// AI waiting on one of them for good looked exactly like a hung one.
+const WAIT_REPORT_SECS: f32 = 10.0;
+
+/// A gate the AI is waiting on: which one, for how long, and whether it
+/// has been reported. Reset whenever the gate changes or an action goes out.
+struct Wait {
+    gate: &'static str,
+    secs: f32,
+    reported: bool,
+}
+
+impl BotDriver {
+    /// The AI is held by `gate` this frame: count the wait, and log it once
+    /// after [`WAIT_REPORT_SECS`] with the state it waits in.
+    fn waiting(&mut self, gate: &'static str, dt: f32, state: &GameState) {
+        let wait = match &mut self.wait {
+            Some(wait) if wait.gate == gate => wait,
+            _ => self.wait.insert(Wait {
+                gate,
+                secs: 0.0,
+                reported: false,
+            }),
+        };
+        wait.secs += dt;
+        if !wait.reported && wait.secs >= WAIT_REPORT_SECS {
+            wait.reported = true;
+            info!(
+                gate,
+                secs = format_args!("{:.0}", wait.secs),
+                phase = ?state.phase,
+                active = ?state.player_to_act(),
+                "AI: waiting"
+            );
+        }
+    }
+}
 
 /// The host plays the AI factions' turns: enumerate legal actions, take the
 /// commander's best *engine-validated* one, submit it as an ordinary game
@@ -117,23 +158,29 @@ pub fn bot_player_act(
     board: crate::fx::BoardBusy,
 ) {
     let ai = crate::seats::ai_factions(&seats.seats.0);
+    let state = &game_state.0;
+    let dt = time.delta_secs();
+    // Every gate below is silent by design; `waiting` says once, after a
+    // while, which one holds the AI (see `WAIT_REPORT_SECS`).
+    if ai.is_empty() {
+        return driver.waiting("no AI seat", dt, state);
+    }
     // Paused waiting for an absent seat holder: the AI waits too.
-    if ai.is_empty() || seats.presence.paused() {
-        return;
+    if seats.presence.paused() {
+        return driver.waiting("the game paused for an absent player", dt, state);
     }
     // The end-of-turn telegram is modal: the AI waits until the host's
     // player has read it, instead of playing on underneath.
-    if telegrams.is_some_and(|log| log.awaiting_ack(&game_state.0)) {
-        return;
+    if telegrams.is_some_and(|log| log.awaiting_ack(state)) {
+        return driver.waiting("the end-of-turn telegram to be read", dt, state);
     }
     // Only the host (or an offline self-hosted instance) drives the AI.
     if !(net.is_host || offline.is_some_and(|o| o.0)) {
-        return;
+        return driver.waiting("the host (this peer is a guest)", dt, state);
     }
     // Frames at the display rate only for the short, bounded waits (the
     // echo of the last action, the cooldown): every other wait -- a stalled
     // network, a stuck AI, the human's turn -- runs on the idle wake-ups.
-    let dt = time.delta_secs();
     // One action in flight at a time (see `BotDriver::in_flight`).
     if let Some(uid) = driver.in_flight {
         if pending.unconfirmed.iter().any(|(u, _)| *u == uid) {
@@ -141,16 +188,18 @@ pub fn bot_player_act(
             if driver.in_flight_secs < IN_FLIGHT_SPIN_SECS {
                 activity.keep_running();
             }
-            return;
+            return driver.waiting("the echo of the last action", dt, state);
         }
         driver.in_flight = None;
     }
-    let state = &game_state.0;
-    if state.game_over || state.board.terrain.is_empty() {
+    if state.game_over {
         return;
     }
+    if state.board.terrain.is_empty() {
+        return driver.waiting("a board to be loaded", dt, state);
+    }
     let Some(chooser) = ai_chooser(state).filter(|side| ai.contains(side)) else {
-        return;
+        return driver.waiting("a human player to act", dt, state);
     };
 
     // Let the board finish showing the last action (a glide, a shot, a
@@ -158,8 +207,9 @@ pub fn bot_player_act(
     // the AI's turn reads one action at a time instead of overlapping. (The
     // animations keep the frames coming meanwhile.)
     if board.busy() {
-        return;
+        return driver.waiting("the board to finish animating", dt, state);
     }
+    driver.wait = None;
     driver.cooldown -= dt;
     if driver.cooldown > 0.0 {
         if !driver.stuck {

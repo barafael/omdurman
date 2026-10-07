@@ -150,6 +150,11 @@ signalling server.
 - **The sidebar reflows** when a counter leaves it: to place several from
   one grid, click them from the end of the group backwards, or re-shoot
   between clicks. Auto-next stops at the end of a group.
+- **`state` ends in `started=false` until a `StartGame` has been applied**:
+  the default engine state reads like turn 1 set-up, so without that flag
+  an AI that does nothing in a lobby looks exactly like a hung one. The
+  app log also says `AI: waiting` (which gate, after 10 s) when the AI is
+  held: by the human's turn, a pause, an unread telegram, a missing echo.
 - **Set-up order ≠ turn order**: in the Campaign the Dervish deploy first,
   the Anglo-Egyptians move first. `state`'s `active=` is the side to act now
   (`GameState::player_to_act`): the deployer in set-up, the non-moving side
