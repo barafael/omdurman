@@ -132,6 +132,7 @@ pub(crate) fn generate_telegrams(
 pub(crate) fn save_telegram_artifacts(
     recorder: Res<crate::game_record::GameRecorder>,
     mut telegram_log: ResMut<TelegramLog>,
+    mut retry: Local<crate::game_record::WriteRetry>,
 ) {
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -142,6 +143,13 @@ pub(crate) fn save_telegram_artifacts(
             return;
         };
         let path = format!("{dir}/telegrams.md");
+        // A file that cannot be written is retried with a backoff and warned
+        // about once per failing streak (see `WriteRetry`), not rewritten
+        // and warned about every frame for the rest of the session.
+        retry.target(&path);
+        if !retry.due() {
+            return;
+        }
         let mut sorted = telegram_log.entries.clone();
         sorted.sort_by_key(|(turn, _)| *turn);
         let result = (|| -> std::io::Result<()> {
@@ -157,9 +165,20 @@ pub(crate) fn save_telegram_artifacts(
             Ok(())
         })();
         match result {
-            Ok(()) => telegram_log.flushed = telegram_log.entries.len(),
-            // Leave `flushed` behind so the write is retried next frame.
-            Err(error) => warn!(%error, %path, "failed to write telegrams artifact"),
+            Ok(()) => {
+                if retry.succeeded() {
+                    info!(%path, "telegrams artifact writable again");
+                }
+                telegram_log.flushed = telegram_log.entries.len();
+            }
+            // Leave `flushed` behind so the write is retried (after the backoff).
+            Err(error) => {
+                if retry.failed() {
+                    warn!(%error, %path, "failed to write telegrams artifact; will retry");
+                } else {
+                    debug!(%error, %path, "telegrams artifact still not writable");
+                }
+            }
         }
     }
 }

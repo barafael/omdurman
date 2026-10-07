@@ -99,6 +99,7 @@ pub(crate) fn page_text(page: &FrontPage) -> String {
 pub(crate) fn save_newspaper_artifact(
     recorder: Res<crate::game_record::GameRecorder>,
     mut report: ResMut<NewspaperReport>,
+    mut retry: Local<crate::game_record::WriteRetry>,
 ) {
     if report.saved {
         return;
@@ -117,10 +118,27 @@ pub(crate) fn save_newspaper_artifact(
             return;
         };
         let path = format!("{dir}/newspaper.md");
+        // Retried with a backoff, warned about once per failing streak (see
+        // `WriteRetry`): not rewritten and warned about every frame.
+        retry.target(&path);
+        if !retry.due() {
+            return;
+        }
         match std::fs::write(&path, page_text(page)) {
-            Ok(()) => report.saved = true,
-            // Leave `saved` clear so the write is retried next frame.
-            Err(error) => warn!(%error, %path, "failed to write newspaper artifact"),
+            Ok(()) => {
+                if retry.succeeded() {
+                    info!(%path, "newspaper artifact writable again");
+                }
+                report.saved = true;
+            }
+            // Leave `saved` clear so the write is retried (after the backoff).
+            Err(error) => {
+                if retry.failed() {
+                    warn!(%error, %path, "failed to write newspaper artifact; will retry");
+                } else {
+                    debug!(%error, %path, "newspaper artifact still not writable");
+                }
+            }
         }
     }
 }

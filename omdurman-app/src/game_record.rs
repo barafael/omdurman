@@ -270,7 +270,7 @@ pub struct WriteRetry {
 impl WriteRetry {
     /// Whether a write may be tried now (not backing off).
     #[cfg(not(target_arch = "wasm32"))]
-    fn due(&self) -> bool {
+    pub(crate) fn due(&self) -> bool {
         self.next_try
             .is_none_or(|at| bevy::platform::time::Instant::now() >= at)
     }
@@ -278,7 +278,7 @@ impl WriteRetry {
     /// A failed write: back off (0.5 s, doubling, at most 30 s). Returns
     /// whether this is the first failure of the streak (worth a warning).
     #[cfg(not(target_arch = "wasm32"))]
-    fn failed(&mut self) -> bool {
+    pub(crate) fn failed(&mut self) -> bool {
         self.failures += 1;
         let secs = (0.5 * 2f32.powi(self.failures.min(8) as i32 - 1)).min(30.0);
         self.next_try =
@@ -288,7 +288,7 @@ impl WriteRetry {
 
     /// A successful write ends the streak. Returns whether one was running.
     #[cfg(not(target_arch = "wasm32"))]
-    fn succeeded(&mut self) -> bool {
+    pub(crate) fn succeeded(&mut self) -> bool {
         let recovered = self.failures > 0;
         self.next_try = None;
         self.failures = 0;
@@ -298,13 +298,45 @@ impl WriteRetry {
     /// Writes now go to `path`: a streak against another file (the previous
     /// game's) does not hold this one back.
     #[cfg(not(target_arch = "wasm32"))]
-    fn target(&mut self, path: &str) {
+    pub(crate) fn target(&mut self, path: &str) {
         if self.path != path {
             *self = Self {
                 path: path.to_owned(),
                 ..Self::default()
             };
         }
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod write_retry_tests {
+    use super::WriteRetry;
+
+    /// A failing streak backs off (no retry before the wait is over) and is
+    /// worth one warning; a success ends it and says so.
+    #[test]
+    fn a_failing_streak_backs_off_and_warns_once() {
+        let mut retry = WriteRetry::default();
+        assert!(retry.due(), "nothing failed yet");
+        assert!(retry.failed(), "the first failure is the one to warn about");
+        assert!(!retry.due(), "backing off");
+        assert!(!retry.failed(), "the second is not");
+        assert!(retry.succeeded(), "a streak was running");
+        assert!(retry.due());
+        assert!(!retry.succeeded(), "no streak now");
+    }
+
+    /// A streak against one file does not hold back writes to another.
+    #[test]
+    fn a_new_target_starts_afresh() {
+        let mut retry = WriteRetry::default();
+        retry.target("games/a/events.jsonl");
+        assert!(retry.failed());
+        retry.target("games/a/events.jsonl");
+        assert!(!retry.due(), "the same file: still backing off");
+        retry.target("games/b/events.jsonl");
+        assert!(retry.due(), "another file: not held back");
+        assert!(retry.failed(), "and warned about on its own first failure");
     }
 }
 
