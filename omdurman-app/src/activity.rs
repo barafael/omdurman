@@ -61,9 +61,13 @@ impl Activity {
     }
 
     /// Whether some system asked for another frame this frame.
-    #[cfg(test)]
     pub fn is_busy(&self) -> bool {
         self.busy
+    }
+
+    /// Whether some system asked for ambient-rate frames this frame.
+    pub fn is_ambient(&self) -> bool {
+        self.ambient
     }
 }
 

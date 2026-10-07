@@ -19,6 +19,7 @@ mod events;
 mod fire;
 mod fire_allocation;
 mod fok_panel;
+mod frame_stats;
 mod fx;
 mod game_apply;
 mod game_record;
@@ -129,6 +130,8 @@ fn add_game(app: &mut App, room: String) {
     app.add_plugins(EguiPlugin::default())
         // Reactive frame pacing: no busy loop while nothing happens.
         .add_plugins(activity::ActivityPlugin)
+        // Frame counts and times on the log, with `OMDURMAN_FRAME_STATS`.
+        .add_plugins(frame_stats::FrameStatsPlugin)
         .add_plugins(camera::CameraPlugin)
         .add_plugins(omdurman_hexmap::HexMapPlugin)
         .add_plugins(board_state::BoardStatePlugin)
