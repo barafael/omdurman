@@ -34,17 +34,28 @@ pub struct RtsCameraState {
     pub smooth_pitch: f32,
 }
 
+/// How far (radians) the fitted view leans back from straight down: just
+/// enough that the board reads as a table seen from a chair, not a scan --
+/// about 7 degrees, well inside the fit's framing margin.
+pub const FIT_TILT: f32 = 0.12;
+
+/// The pitch of the fitted view (see [`FIT_TILT`]).
+fn fit_pitch(settings: &CameraSettings) -> f32 {
+    (settings.max_pitch - FIT_TILT).max(settings.min_pitch)
+}
+
 impl Default for RtsCameraState {
     fn default() -> Self {
+        let pitch = fit_pitch(&CameraSettings::default());
         Self {
             focus: Vec3::ZERO,
             distance: 1500.0,
             yaw: 0.0,
-            pitch: PI / 2.0 - 0.02,
+            pitch,
             smooth_focus: Vec3::ZERO,
             smooth_distance: 1500.0,
             smooth_yaw: 0.0,
-            smooth_pitch: PI / 2.0 - 0.02,
+            smooth_pitch: pitch,
         }
     }
 }
@@ -282,8 +293,10 @@ fn camera_touch_gestures(
     }
 }
 
-/// Point the camera straight down at the board, zoomed so the whole board
-/// fits the part of the window not covered by `insets`, and centred there.
+/// Point the camera down at the board, very slightly tilted ([`FIT_TILT`]),
+/// zoomed so the whole board fits the part of the window not covered by
+/// `insets`, and centred there. (The framing is computed for a straight-down
+/// view; the slight tilt stays inside its margin.)
 fn fit_board(
     state: &mut RtsCameraState,
     settings: &CameraSettings,
@@ -308,7 +321,7 @@ fn fit_board(
     state.distance = (world_per_px * window.y / (2.0 * (fov_y * 0.5).tan()))
         .clamp(settings.min_distance, settings.max_distance);
     state.yaw = 0.0;
-    state.pitch = settings.max_pitch;
+    state.pitch = fit_pitch(settings);
 }
 
 /// Keep the camera focus over the board, so panning can never lose it
@@ -319,8 +332,10 @@ fn clamp_focus_to_board(state: &mut RtsCameraState, dims: &MapDims) {
     state.focus.z = state.focus.z.clamp(-half.y, half.y);
 }
 
-/// Ease one smoothed value toward its target, snapping once within `eps`.
-/// Returns whether it is still on the way.
+/// Ease one smoothed value toward its target, snapping once within `eps` --
+/// or once a step no longer changes it (far out, an f32 step can round to
+/// nothing short of `eps`, and the camera would never settle). Returns
+/// whether it is still on the way.
 fn ease<T>(smooth: &mut T, target: T, t: f32, eps: f32, gap: impl Fn(T, T) -> f32) -> bool
 where
     T: Copy + PartialEq + std::ops::Add<Output = T> + std::ops::Sub<Output = T>,
@@ -333,7 +348,13 @@ where
         *smooth = target;
         return false;
     }
-    *smooth = *smooth + (target - *smooth) * t;
+    let next = *smooth + (target - *smooth) * t;
+    // (A frame without time passing, `t == 0`, steps by nothing too.)
+    if t > 0.0 && next == *smooth {
+        *smooth = target;
+        return false;
+    }
+    *smooth = next;
     true
 }
 
@@ -499,5 +520,38 @@ pub fn camera_control(
         settling.set_if_neq(CameraSettling(
             easing || held || framing.fit.pending_frames > 0,
         ));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Far from the origin a small fraction of a gap just above `eps` rounds
+    /// to no step at all: the ease snaps onto the target instead of asking
+    /// for frames forever without moving.
+    #[test]
+    fn an_ease_that_cannot_step_settles() {
+        let target = 6000.02_f32;
+        let mut smooth = 6000.0_f32;
+        assert!((target - smooth).abs() > 0.01, "the gap is above eps");
+        let gap = |a: f32, b: f32| (a - b).abs();
+        let still_easing = ease(&mut smooth, target, 0.01, 0.01, gap);
+        assert!(!still_easing);
+        assert_eq!(smooth, target);
+    }
+
+    #[test]
+    fn a_frame_without_time_does_not_snap() {
+        let mut smooth = 0.0_f32;
+        assert!(ease(&mut smooth, 10.0, 0.0, 0.01, |a: f32, b: f32| (a - b).abs()));
+        assert_eq!(smooth, 0.0);
+    }
+
+    #[test]
+    fn an_ease_that_can_step_steps() {
+        let mut smooth = 0.0_f32;
+        assert!(ease(&mut smooth, 10.0, 0.5, 0.01, |a: f32, b: f32| (a - b).abs()));
+        assert_eq!(smooth, 5.0);
     }
 }

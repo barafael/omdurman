@@ -857,10 +857,12 @@ pub fn unit_picker_ui(
         // in the Campaign the Anglo-Egyptians deploy nothing), narrowed in a
         // commanded game to one's own command scope plus the communal pool
         // (§1.1); a Movement phase offers what may enter this turn
-        // (§9.112/§9.113). Recomputed when the engine state or the tray moved.
+        // (§9.112/§9.113). Recomputed when the engine state, the tray or the
+        // seats (a command scope, a seat claimed) moved.
         if let Some(state) = game_state.as_deref() {
             let key = picker.available.len();
             if game_state.as_ref().is_some_and(|gs| gs.is_changed())
+                || peers.changed()
                 || offer_cache.as_ref().is_none_or(|(len, _)| *len != key)
             {
                 let gs = &state.0;

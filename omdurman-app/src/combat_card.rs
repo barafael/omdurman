@@ -687,7 +687,21 @@ fn combat_card_ui(
     if let Some(sec) = clicked_section {
         crate::rulebook::request_section(&mut rulebook, &sec);
     }
-    ctx.request_repaint();
+    // Display-rate frames only while something fades out. Until then the
+    // cards age on the idle wake-ups (see `activity`), and a held card --
+    // pinned, or under a resting pointer -- does not change at all: asking
+    // for every frame here kept a pinned card's window redrawing for good.
+    let fading = queue
+        .entries
+        .iter()
+        .any(|e| !e.hold.is_held() && e.age > CARD_TTL - CARD_FADE)
+        || dispatches.slips.iter().any(|s| {
+            !s.hold.is_held()
+                && s.age > crate::dispatch::DISPATCH_TTL - crate::dispatch::DISPATCH_FADE
+        });
+    if fading {
+        ctx.request_repaint();
+    }
 }
 
 fn draw_card(

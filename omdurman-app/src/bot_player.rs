@@ -57,6 +57,12 @@ pub struct BotDriver {
     /// a fresh uid, which the host would sequence -- and the log record --
     /// as a second event.
     in_flight: Option<u64>,
+    /// Seconds the action in flight has waited for its echo.
+    in_flight_secs: f32,
+    /// The last decision was illegal even as the `AdvancePhase` fallback:
+    /// the AI stands down (warned once) and looks again every
+    /// [`STUCK_RETRY_SECS`] instead of re-submitting a rejected effect.
+    stuck: bool,
 }
 
 impl Default for BotDriver {
@@ -75,6 +81,8 @@ impl BotDriver {
             memory: Default::default(),
             cooldown: 0.0,
             in_flight: None,
+            in_flight_secs: 0.0,
+            stuck: false,
         }
     }
 }
@@ -84,6 +92,12 @@ impl BotDriver {
 /// fast enough to finish a game in minutes, slow enough to watch the assault
 /// develop.
 const ACT_COOLDOWN_SECS: f32 = 0.4;
+/// How long the AI asks for display-rate frames while its action's echo is
+/// on its way (normally a frame or two). A longer wait is the network's, and
+/// waits on the idle wake-ups (see [`crate::activity`]) instead of spinning.
+const IN_FLIGHT_SPIN_SECS: f32 = 0.5;
+/// How often a stuck AI (no legal action) looks again.
+const STUCK_RETRY_SECS: f32 = 2.0;
 
 /// The host plays the AI factions' turns: enumerate legal actions, take the
 /// commander's best *engine-validated* one, submit it as an ordinary game
@@ -116,15 +130,17 @@ pub fn bot_player_act(
     if !(net.is_host || offline.is_some_and(|o| o.0)) {
         return;
     }
-    // The AI is to move: its paced actions (cooldown, the echo of the last
-    // one) need consecutive frames, not the idle wake-up interval.
-    let state = &game_state.0;
-    if !state.game_over && ai_chooser(state).is_some_and(|side| ai.contains(&side)) {
-        activity.keep_running();
-    }
+    // Frames at the display rate only for the short, bounded waits (the
+    // echo of the last action, the cooldown): every other wait -- a stalled
+    // network, a stuck AI, the human's turn -- runs on the idle wake-ups.
+    let dt = time.delta_secs();
     // One action in flight at a time (see `BotDriver::in_flight`).
     if let Some(uid) = driver.in_flight {
         if pending.unconfirmed.iter().any(|(u, _)| *u == uid) {
+            driver.in_flight_secs += dt;
+            if driver.in_flight_secs < IN_FLIGHT_SPIN_SECS {
+                activity.keep_running();
+            }
             return;
         }
         driver.in_flight = None;
@@ -133,29 +149,51 @@ pub fn bot_player_act(
     if state.game_over || state.board.terrain.is_empty() {
         return;
     }
+    let Some(chooser) = ai_chooser(state).filter(|side| ai.contains(side)) else {
+        return;
+    };
 
     // Let the board finish showing the last action (a glide, a shot, a
     // ghost) before the next: the cooldown only runs on a quiet board, so
-    // the AI's turn reads one action at a time instead of overlapping.
+    // the AI's turn reads one action at a time instead of overlapping. (The
+    // animations keep the frames coming meanwhile.)
     if board.busy() {
         return;
     }
-    driver.cooldown -= time.delta_secs();
+    driver.cooldown -= dt;
     if driver.cooldown > 0.0 {
-        return;
-    }
-
-    let Some(chooser) = ai_chooser(state) else {
-        return;
-    };
-    if !ai.contains(&chooser) {
+        if !driver.stuck {
+            activity.keep_running();
+        }
         return;
     }
 
     let driver = &mut *driver;
     let effect = next_ai_action(state, chooser, &ai, &mut driver.rng, &mut driver.memory);
+    // The commanders fall back to `AdvancePhase` when nothing else is legal;
+    // if even that is refused, submitting it would only be rejected on the
+    // echo, and the AI would pick it again and again.
+    if !engine_accepts(state, &effect) {
+        if !driver.stuck {
+            warn!(?chooser, ?effect, "AI: no legal action; standing down");
+            driver.stuck = true;
+        }
+        driver.cooldown = STUCK_RETRY_SECS;
+        return;
+    }
+    if driver.stuck {
+        info!(?chooser, "AI: a legal action again; resuming");
+        driver.stuck = false;
+    }
     driver.cooldown = ACT_COOLDOWN_SECS;
     driver.in_flight = Some(pending.submit_game(GameEvent::Effect(effect)));
+    driver.in_flight_secs = 0.0;
+    activity.keep_running();
+}
+
+/// Whether the engine would take `effect` in `state` (a dry run on a copy).
+fn engine_accepts(state: &GameState, effect: &GameEffect) -> bool {
+    apply_effect(&mut state.clone(), effect).is_ok()
 }
 
 /// The side whose decision the AI would make now: the Dervish player's roll
@@ -217,8 +255,7 @@ pub(crate) fn next_ai_action(
 /// [`commanders::pick_validated`]'s safety net for the mandatory-action
 /// shortcuts above.
 fn validated(state: &GameState, effect: GameEffect) -> GameEffect {
-    let mut test = state.clone();
-    if apply_effect(&mut test, &effect).is_ok() {
+    if engine_accepts(state, &effect) {
         return effect;
     }
     GameEffect::AdvancePhase

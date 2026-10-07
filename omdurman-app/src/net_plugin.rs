@@ -361,11 +361,18 @@ pub(crate) struct LocalAnnouncement<'w> {
     setup_ready: Res<'w, crate::peers::LocalSetupReady>,
 }
 
+/// Announce ourselves (identity, picks, readiness) to every peer we have not
+/// announced ourselves to on its current connection. `notified` is our own
+/// id plus the peers told under it: a peer that disconnects is forgotten (it
+/// is told again if it comes back), and our own reconnect -- a fresh id the
+/// others have never heard from -- starts over. (It used to only grow: after
+/// a reconnect the others never learned our player key again, so our seat
+/// read as absent, which pauses the game and finally frees the seat.)
 pub(crate) fn send_player_info_on_connect(
     net: Res<NetState>,
     me: LocalAnnouncement,
     mut pending: ResMut<PendingEdits>,
-    mut notified: Local<Vec<PeerId>>,
+    mut notified: Local<(Option<PeerId>, Vec<PeerId>)>,
 ) {
     let LocalAnnouncement {
         settings: local,
@@ -374,6 +381,12 @@ pub(crate) fn send_player_info_on_connect(
         spectator: local_spectator,
         setup_ready: local_setup_ready,
     } = me;
+    let (announced_as, notified) = &mut *notified;
+    if *announced_as != net.my_id() {
+        *announced_as = net.my_id();
+        notified.clear();
+    }
+    notified.retain(|peer| net.peers().contains(peer));
     for &peer in net.peers() {
         if !notified.contains(&peer) {
             notified.push(peer);
@@ -553,7 +566,18 @@ pub(crate) fn flush_pending(
                 // in two systems made host-own vs guest-relayed ordering depend
                 // on intra-frame system scheduling; routing both through
                 // `handle_socket` removes that nondeterminism.
-                incoming.loopback.push(NetMsg::Game { uid, event });
+                //
+                // One copy per uid: while sequencing is held, `handle_socket`
+                // bounces a held submission back here every frame and the
+                // retransmit timer re-stages it on top, so keeping every copy
+                // would grow without bound for as long as the hold lasts.
+                let already_looped = incoming
+                    .loopback
+                    .iter()
+                    .any(|m| matches!(m, NetMsg::Game { uid: u, .. } if *u == uid));
+                if !already_looped {
+                    incoming.loopback.push(NetMsg::Game { uid, event });
+                }
             }
             NetMsg::Game { uid, event } => {
                 let submission = NetMsg::Game { uid, event };
@@ -694,6 +718,91 @@ mod tests {
         assert_eq!(pending.outgoing_broadcast.len(), 1, "sent once, not resent");
         pending.retransmit_unconfirmed(SUBMIT_RETRANSMIT_SECS);
         assert_eq!(pending.outgoing_broadcast.len(), 2, "resent once overdue");
+    }
+
+    /// A host whose sequencing is held gets its own submissions back every
+    /// frame, and the retransmit timer re-stages them on top: the loopback
+    /// keeps one copy per uid instead of growing for as long as the hold
+    /// lasts (it flooded the log with the same uids within one frame).
+    #[test]
+    fn a_held_host_submission_loops_back_once() {
+        let mut app = App::new();
+        let mut net = NetState::default();
+        net.is_host = true;
+        let mut pending = PendingEdits::default();
+        let uid = pending.submit_game(event());
+        app.insert_resource(net)
+            .insert_resource(pending)
+            .insert_resource(PendingIncoming::default())
+            .add_plugins(bevy::time::TimePlugin)
+            .add_systems(Update, flush_pending);
+        for _ in 0..10 {
+            // `handle_socket`'s hold: the copy goes back to staging, plus a
+            // retransmission of the same uid.
+            let world = app.world_mut();
+            let mut pending = world.resource_mut::<PendingEdits>();
+            pending.outgoing_broadcast.push(NetMsg::Game {
+                uid,
+                event: event(),
+            });
+            pending.outgoing_broadcast.push(NetMsg::Game {
+                uid,
+                event: event(),
+            });
+            app.update();
+        }
+        let looped = app
+            .world()
+            .resource::<PendingIncoming>()
+            .loopback
+            .iter()
+            .filter(|m| matches!(m, NetMsg::Game { uid: u, .. } if *u == uid))
+            .count();
+        assert_eq!(looped, 1);
+    }
+
+    /// Our identity reaches every peer on every connection: after our own
+    /// reconnect (a fresh id, the others' unchanged) the peers already told
+    /// under the old id are told again, and a peer that left and came back
+    /// is told again too.
+    #[test]
+    fn identity_is_announced_again_after_a_reconnect() {
+        let mut app = App::new();
+        app.insert_resource(NetState::default())
+            .insert_resource(PendingEdits::default())
+            .insert_resource(crate::settings::LocalPlayerSettings::default())
+            .insert_resource(crate::seats::LocalPlayerKey(omdurman_net::PlayerKey(1)))
+            .init_resource::<crate::LocalFaction>()
+            .init_resource::<crate::LocalSpectator>()
+            .init_resource::<crate::peers::LocalSetupReady>()
+            .add_systems(Update, send_player_info_on_connect);
+        let peer = PeerId(uuid::Uuid::from_u128(9));
+        let told = |app: &mut App| {
+            app.update();
+            app.world_mut()
+                .resource_mut::<PendingEdits>()
+                .outgoing_targeted
+                .drain(..)
+                .filter(|(m, to)| {
+                    *to == peer && matches!(m, NetMsg::Ephemeral(Ephemeral::PlayerInfo { .. }))
+                })
+                .count()
+        };
+        {
+            let mut net = app.world_mut().resource_mut::<NetState>();
+            net.set_my_id(Some(PeerId(uuid::Uuid::from_u128(1))));
+            net.add_peer(peer);
+        }
+        assert_eq!(told(&mut app), 1, "told on connect");
+        assert_eq!(told(&mut app), 0, "once per connection");
+        app.world_mut()
+            .resource_mut::<NetState>()
+            .set_my_id(Some(PeerId(uuid::Uuid::from_u128(2))));
+        assert_eq!(told(&mut app), 1, "told again after our reconnect");
+        app.world_mut().resource_mut::<NetState>().remove_peer(peer);
+        assert_eq!(told(&mut app), 0);
+        app.world_mut().resource_mut::<NetState>().add_peer(peer);
+        assert_eq!(told(&mut app), 1, "told again when it comes back");
     }
 
     /// Offline self-hosting puts the local player in the sorted peer list:

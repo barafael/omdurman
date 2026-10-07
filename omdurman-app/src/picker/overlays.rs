@@ -816,7 +816,10 @@ pub fn selection_outline_mesh(
     // rather than sitting at the raw hex centre. Local +Z maps to world +Y
     // under the counter's `rotation_x(-PI/2)`, so local z = -0.02 places the
     // backing just below the counter (world Y), framing it.
-    for entity in &sources {
+    // (Only counters still on the board: one removed this frame -- picked
+    // up, eliminated -- would leave its ring orphaned at the world origin.
+    // The system runs after the sprite reconcile, so its despawns show.)
+    for entity in sources.iter().filter(|e| placed_units.contains(**e)) {
         commands.entity(*entity).with_children(|parent| {
             parent.spawn((
                 SelectionRing,
@@ -897,7 +900,7 @@ pub fn hover_outline_mesh(
     hovered: Res<crate::HoveredUnit>,
     state: Res<PickerState>,
     existing: Query<Entity, With<HoverRing>>,
-    mut last: Local<Option<Entity>>,
+    (mut last, placed_units): (Local<Option<Entity>>, Query<(), With<PlacedUnit>>),
     (generation, mut seen_generation): (Res<OverlayGeneration>, Local<u32>),
 ) {
     if generation.invalidates(&mut seen_generation) {
@@ -922,7 +925,8 @@ pub fn hover_outline_mesh(
     let old: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &old);
     *last = target;
-    let Some(entity) = target else {
+    // (Only a counter still on the board -- see `selection_outline_mesh`.)
+    let Some(entity) = target.filter(|e| placed_units.contains(*e)) else {
         return;
     };
     let sprite_size = overlay.params.hex_size * SPRITE_HEX_FRACTION;

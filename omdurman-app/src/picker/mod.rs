@@ -163,14 +163,18 @@ impl Plugin for GamePlugin {
             .add_systems(
                 Update,
                 (
-                    selection_outline_mesh.in_set(crate::GameSet),
+                    selection_outline_mesh
+                        .in_set(crate::GameSet)
+                        .after(reconcile_unit_sprites),
                     placement_marker_color
                         .in_set(crate::GameSet)
                         .after(placement_preview_mesh),
                     update_hovered_unit
                         .in_set(crate::GameSet)
                         .before(hover_outline_mesh),
-                    hover_outline_mesh.in_set(crate::GameSet),
+                    hover_outline_mesh
+                        .in_set(crate::GameSet)
+                        .after(reconcile_unit_sprites),
                     // Persistent red arrows per pending fire allocation
                     // (§6.41 allocation preview). Kept here so the big GameSet
                     // tuple stays under Bevy's schedule-config arity limit.

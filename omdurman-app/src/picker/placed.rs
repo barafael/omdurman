@@ -331,10 +331,15 @@ pub fn layout_stacked_units(
         if current == target {
             continue;
         }
-        if current.distance(target) <= SETTLE_EPSILON {
+        let next = current.lerp(target, lerp);
+        // Snap once close -- or once a real step no longer moves it: far
+        // from the origin an f32 step can round to nothing short of the
+        // epsilon, and the counter would ask for frames forever without
+        // moving. (A frame without time passing steps by nothing too.)
+        if current.distance(target) <= SETTLE_EPSILON || (lerp > 0.0 && next == current) {
             transform.translation = target;
         } else {
-            transform.translation = current.lerp(target, lerp);
+            transform.translation = next;
             activity.keep_running();
         }
     }
@@ -491,11 +496,15 @@ pub fn reconcile_unit_sprites(
         mut fx,
     } = ctx;
     // One look over the counters (`iter_mut` without writing marks nothing
-    // changed): any spawned since the last run, any awaiting its echo.
-    let (mut fresh, mut awaiting_echo) = (false, false);
-    for (_, placed, ..) in query.iter_mut() {
+    // changed): any spawned since the last run, any awaiting its echo, any
+    // still within its grace period.
+    let (mut fresh, mut awaiting_echo, mut in_grace) = (false, false, false);
+    for (_, placed, .., pending_placement) in query.iter_mut() {
         fresh |= placed.is_added();
         awaiting_echo |= placed.unit_id.is_none();
+        in_grace |= pending_placement
+            .as_ref()
+            .is_some_and(|p| p.frames < PENDING_PLACEMENT_GRACE_FRAMES);
     }
     let despawned = removed.read().count() > 0;
     if !(game_state.is_changed()
@@ -518,8 +527,10 @@ pub fn reconcile_unit_sprites(
     let animate = !jumped && motion.motion();
     let ghosts = !jumped && motion.effects() && **mode == crate::AppMode::Game;
 
-    if awaiting_echo {
-        // The grace period counts frames: keep them coming.
+    if in_grace {
+        // The grace period counts frames: keep them coming. (The echo
+        // itself is waited for on the idle wake-ups: a host that never
+        // answers must not keep the window redrawing.)
         activity.keep_running();
     }
     let gs = &game_state.0;

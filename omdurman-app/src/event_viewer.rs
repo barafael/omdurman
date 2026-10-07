@@ -226,9 +226,9 @@ fn highlight_ron(source: &str) -> LayoutJob {
                 }
                 i += 1;
             }
-            if i < n {
-                i += 1;
-            }
+            // (An escape at the very end of an unterminated string stepped
+            // past it.)
+            i = (i + 1).min(n);
             push(start..i, string_col);
             continue;
         }
@@ -292,9 +292,10 @@ fn highlight_ron(source: &str) -> LayoutJob {
             continue;
         }
 
-        // everything else (whitespace, operators)
+        // everything else (whitespace, operators, non-ASCII): one whole
+        // character -- a byte step would slice inside a multi-byte one.
         let start = i;
-        i += 1;
+        i += source[start..].chars().next().map_or(1, char::len_utf8);
         push(start..i, default_col);
     }
 
@@ -303,4 +304,25 @@ fn highlight_ron(source: &str) -> LayoutJob {
 
 fn payload_label(payload: &omdurman_net::GameEvent) -> &'static str {
     payload.into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The highlighter walks bytes; every piece it slices must still fall on
+    /// character boundaries, and it must not run past the end.
+    #[test]
+    fn highlighting_never_slices_through_a_character() {
+        for source in [
+            "Unit(name: 'é', tag: \"Mahdī\")",
+            "→ ← «quoted» ✓",
+            "\"unterminated \\",
+            "\"unterminated",
+            "",
+        ] {
+            let job = highlight_ron(source);
+            assert_eq!(job.text, source, "the text survives highlighting intact");
+        }
+    }
 }

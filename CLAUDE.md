@@ -173,10 +173,13 @@ The system is a deterministic event-sourced engine over a peer-to-peer mesh:
    double-sequencing them.
    Unreliable traffic (cursor positions, ephemeral selections) bypasses staging.
 5. **Election stabilization.** A host only sequences when its peer-set view has been unchanged for
-   `SEQ_STABILIZE_SECS` *and* it has session evidence (`NetState::has_ever_peered`, or offline
-   self-host mode). Without this gate, two peers joining near-simultaneously each briefly elect
-   themselves host, self-sequence their own submissions, and the colliding seqs are silently dropped
-   by the other side's apply-once dedup — a permanent divergence.
+   `SEQ_STABILIZE_SECS` *and* it has session evidence (`NetState::has_ever_peered`: another peer
+   seen, offline self-host mode, or registered by the signalling server and alone in the room for
+   `SOLO_ROOM_SECS` — a solo game against the AI; never for a peer rejoining a same-room session,
+   `NetState::rejoining`). Without this gate, two peers joining
+   near-simultaneously each briefly elect themselves host, self-sequence their own submissions, and
+   the colliding seqs are silently dropped by the other side's apply-once dedup — a permanent
+   divergence.
 6. **Divergence healing.** The receive path detects two proof-of-brokenness conditions. A *seq
    conflict* is a `Sequenced` at an already-applied seq carrying a different event (transient
    dual-host streams), or with no local event at that seq at all (our watermark sits on a stale,

@@ -362,7 +362,7 @@ pub fn enc_msg(msg: &NetMsg) -> Option<Box<[u8]>> {
 
 pub fn decode(raw: &[u8]) -> Option<NetMsg> {
     postcard::from_bytes(raw)
-        .inspect_err(|e| warn!("matchbox decode error: {e}"))
+        .inspect_err(|e| debug!("matchbox decode error: {e}"))
         .ok()
 }
 
@@ -370,6 +370,24 @@ pub fn decode(raw: &[u8]) -> Option<NetMsg> {
 /// must have been unchanged before the host is allowed to sequence events.
 /// See [`NetState::election_stable_secs`].
 pub const SEQ_STABILIZE_SECS: f32 = 1.0;
+
+/// How long a peer the signalling server has registered (it has an id) must
+/// have been alone in its room before the room counts as its own: the server
+/// introduces every peer of a room on connect, and a peer counts as connected
+/// once the WebRTC handshake (offer, answer, ICE, data channels) completes --
+/// seconds, not tens of seconds. A room still empty after this holds no
+/// session. Session evidence for a solo game against the AI in a networked
+/// room (see [`NetState::has_ever_peered`]) -- but never for a peer
+/// rejoining a session ([`NetState::rejoining`]).
+pub const SOLO_ROOM_SECS: f32 = 10.0;
+
+/// How long a socket may wait for the signalling server's answer (our id)
+/// with no peer connected before this instance gives up on the room and plays
+/// on offline as its own host. The socket is dropped then: an offline game
+/// must not merge into whatever session the room holds once the server is
+/// back (reconnecting from the lobby joins the room afresh). Never for a
+/// peer rejoining a session ([`NetState::rejoining`]).
+pub const SIGNALLING_TIMEOUT_SECS: f32 = 15.0;
 
 /// A rejoining peer's record is wiped by `handle_reconnect`; it must install
 /// a canonical history before resuming host authority (otherwise a
@@ -442,14 +460,22 @@ pub struct NetState {
     /// window collide in seq space and are then dropped by the other side's
     /// apply-once dedup -- a permanent, silent divergence.
     pub election_stable_secs: f32,
-    /// True once this peer has ever seen at least one other peer (or runs in
-    /// offline self-host mode). A peer that has *never* seen the roster must
-    /// not sequence: a lone peer cannot know whether a session already exists
-    /// elsewhere in the room, and its self-sequenced stream would collide with
-    /// the session's canonical numbering. This is the network-side analogue of
-    /// the lobby discipline (StartGame requires both factions picked, so a
-    /// game cannot start solo in a networked room anyway).
+    /// True once this peer has session evidence: it has seen at least one
+    /// other peer, runs in offline self-host mode, or has been registered by
+    /// the signalling server and alone in its room for [`SOLO_ROOM_SECS`]. A
+    /// peer without it must not sequence: a lone peer that just connected
+    /// cannot know yet whether a session already exists in the room, and its
+    /// self-sequenced stream would collide with the session's canonical
+    /// numbering. (A room found empty is evidence since AI commanders made a
+    /// solo game in a networked room possible: one human against the AI.)
     pub has_ever_peered: bool,
+    /// Set by a same-room reconnect: this peer was in a session here, and
+    /// its record was wiped to re-download the canonical one. Solitude is
+    /// then no session evidence (it would let the peer self-sequence onto
+    /// the wiped record once the resync gate expires, and impose that line
+    /// on the session when the network returns), and there is no offline
+    /// fallback. Cleared when a history is installed or found converged.
+    pub rejoining: bool,
     /// Set when a received `Sequenced` delivery proves the local record
     /// divergent (seq conflict) or incomplete (seq gap): the next
     /// `Control::GameHistory` must be installed even if it is not "ahead" by

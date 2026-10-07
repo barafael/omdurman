@@ -21,6 +21,18 @@ fn sequencing_allowed(net: &NetState) -> bool {
     net.has_ever_peered && resynced && net.election_stable_secs >= SEQ_STABILIZE_SECS
 }
 
+/// Whether this peer now knows enough about its room to sequence: another
+/// peer is connected, or the signalling server has registered us (we have an
+/// id) and the room has stayed empty for [`omdurman_net::SOLO_ROOM_SECS`] --
+/// a solo game against the AI. (Offline self-hosting sets the flag at
+/// startup.)
+fn has_session_evidence(net: &NetState) -> bool {
+    !net.peers().is_empty()
+        || (!net.rejoining
+            && net.my_id().is_some()
+            && net.election_stable_secs >= omdurman_net::SOLO_ROOM_SECS)
+}
+
 /// The next seq this peer expects to apply: one past its watermark.
 fn expected_seq(net: &NetState) -> u32 {
     net.last_applied_seq.map_or(0, |s| s + 1)
@@ -347,6 +359,9 @@ pub(crate) fn handle_reconnect(
     // is installed or the bootstrap budget expires.
     net.needs_snapshot = true;
     net.resync_gate_secs = RESYNC_BOOTSTRAP_SECS;
+    // Back into the same room: a session lives here, and our record is gone
+    // until a history is installed (see `NetState::rejoining`).
+    net.rejoining = same_room;
     incoming.ephemeral.clear();
     incoming.loopback.clear();
     incoming.seat_control.clear();
@@ -430,28 +445,66 @@ pub(crate) fn retry_snapshot_request(
     time: Res<Time>,
     mut net: ResMut<NetState>,
     mut pending: ResMut<PendingEdits>,
+    // Seconds the current request has gone unanswered, and whether the latch
+    // was set last frame (a fresh request restarts the count).
+    mut waited: Local<(f64, bool)>,
 ) {
-    if net.needs_snapshot {
-        net.snapshot_retry_timer += time.delta_secs_f64();
-        if net.snapshot_retry_timer > 2.0 {
-            net.snapshot_retry_timer = 0.0;
-            // Heartbeat of the whole numbering state while a resync loop is
-            // active: correlating next_seq / last_applied / unconfirmed over
-            // time shows whether sequencing, application, or confirmation is
-            // the side that is stuck.
-            info!(
-                next_seq = net.next_seq,
-                last_applied = ?net.last_applied_seq,
-                is_host = net.is_host,
-                unconfirmed = pending.unconfirmed.len(),
-                buffered = net.reorder.len(),
-                "guest: retrying snapshot request"
-            );
-            pending
-                .outgoing_broadcast
-                .push(NetMsg::Control(Control::RequestSnapshot));
-        }
+    if !net.needs_snapshot {
+        *waited = (0.0, false);
+        return;
     }
+    if !waited.1 {
+        *waited = (0.0, true);
+    }
+    // A host that bootstrapped its own line (resync budget spent, events
+    // applied) never installs a foreign history (see the `GameHistory`
+    // arm): asking would only make every guest send it the whole record,
+    // every round, for good.
+    if net.is_host && net.resync_gate_secs <= 0.0 && net.last_applied_seq.is_some() {
+        info!("host: own line bootstrapped; no longer requesting a game history");
+        net.needs_snapshot = false;
+        net.snapshot_retry_timer = 0.0;
+        return;
+    }
+    let dt = time.delta_secs_f64();
+    waited.0 += dt;
+    net.snapshot_retry_timer += dt;
+    // Every 2 s at first; once the bootstrap budget has passed unanswered
+    // (nobody in the room has a game -- a lobby before the start), only
+    // now and then, quietly: a game starting later pushes its history to
+    // everyone anyway.
+    // (A detected seq conflict or gap is urgent whatever came before: the
+    // local record is known to be wrong.)
+    let patient = !net.force_install_history && waited.0 > f64::from(RESYNC_BOOTSTRAP_SECS);
+    let interval = if patient { 15.0 } else { 2.0 };
+    if net.snapshot_retry_timer <= interval {
+        return;
+    }
+    net.snapshot_retry_timer = 0.0;
+    // Nobody to ask: the request would be dropped unsent (keep the latch for
+    // the first peer that connects).
+    if net.peers().is_empty() {
+        return;
+    }
+    if patient {
+        debug!("guest: retrying snapshot request (no answer yet)");
+    } else {
+        // Heartbeat of the whole numbering state while a resync loop is
+        // active: correlating next_seq / last_applied / unconfirmed over
+        // time shows whether sequencing, application, or confirmation is
+        // the side that is stuck.
+        info!(
+            next_seq = net.next_seq,
+            last_applied = ?net.last_applied_seq,
+            is_host = net.is_host,
+            unconfirmed = pending.unconfirmed.len(),
+            buffered = net.reorder.len(),
+            "guest: retrying snapshot request"
+        );
+    }
+    pending
+        .outgoing_broadcast
+        .push(NetMsg::Control(Control::RequestSnapshot));
 }
 
 /// Everything applying a ready `Sequenced` delivery touches, borrowed from
@@ -555,6 +608,18 @@ fn apply_sequenced(env: &mut ApplyEnv<'_, '_>, delivery: SequencedDelivery) {
     }
 }
 
+/// What [`handle_socket`] remembers between frames: what it has already
+/// reported (so each condition is logged once), and that the socket closed.
+#[derive(Default)]
+pub(crate) struct SocketMemo {
+    /// Submissions held while sequencing is not allowed, each logged once.
+    held_uids: std::collections::HashSet<u64>,
+    /// The socket is closed (logged once).
+    socket_lost: bool,
+    /// Peers that sent something undecodable (logged once each).
+    undecodable_from: std::collections::HashSet<PeerId>,
+}
+
 /// The per-frame receive path: socket I/O (peer roster, election, inbound
 /// messages) when a socket exists, then the loopback / sequencing / apply
 /// path -- which runs *without* a socket too, so offline self-host mode
@@ -567,9 +632,14 @@ pub(crate) fn handle_socket(
     mut commands: Commands,
     mut gsp: GameStateParams,
     mut ctx: SocketContext,
-    mut last_held_uid: Local<Option<u64>>,
     local_key: Res<crate::seats::LocalPlayerKey>,
+    mut memo: Local<SocketMemo>,
 ) {
+    let SocketMemo {
+        held_uids,
+        socket_lost,
+        undecodable_from,
+    } = &mut *memo;
     let NetTraffic {
         mut net,
         mut pending,
@@ -623,6 +693,46 @@ pub(crate) fn handle_socket(
         },
         None => false,
     };
+    // No signalling: the socket closed for good (matchbox ends it when the
+    // server goes away with no peer connected), or the server has not
+    // answered (no id) for `SIGNALLING_TIMEOUT_SECS` with nobody here. Say so
+    // once; and with nobody connected this instance is offline -- it plays on
+    // as its own host (a solo game against the AI must not freeze waiting for
+    // an id the server may never assign). A late answer replaces the offline
+    // id; reconnecting from the lobby builds a fresh socket.
+    let closed = socket.is_some() && !socket_live;
+    let unanswered = socket_live
+        && net.my_id().is_none()
+        && net.peers().is_empty()
+        && net.election_stable_secs >= omdurman_net::SIGNALLING_TIMEOUT_SECS;
+    if (closed || unanswered) && !net.rejoining {
+        if !*socket_lost {
+            *socket_lost = true;
+            if net.peers().is_empty() {
+                warn!(
+                    closed,
+                    "no signalling server connection and no peer connected; \
+                     playing on offline (reconnect from the lobby to meet other players)"
+                );
+                // Leave the room for good: an offline game must not merge
+                // into the room's session if the server answers later.
+                commands.remove_resource::<MatchboxSocket>();
+                if net.my_id().is_none() {
+                    my_id_changed = net.set_my_id(Some(PeerId(uuid::Uuid::nil())));
+                }
+                // Offline self-hosting is session evidence (see
+                // `sequencing_allowed`).
+                net.has_ever_peered = true;
+            } else {
+                warn!(
+                    peers = net.peers().len(),
+                    "signalling connection closed; no further peers can join"
+                );
+            }
+        }
+    } else {
+        *socket_lost = false;
+    }
 
     // -- election clocks (socket or not: offline mode needs them too) --
     net.resync_gate_secs = (net.resync_gate_secs - time.delta_secs()).max(0.0);
@@ -633,7 +743,7 @@ pub(crate) fn handle_socket(
     } else {
         net.election_stable_secs += time.delta_secs();
     }
-    if !net.peers().is_empty() {
+    if has_session_evidence(&net) {
         net.has_ever_peered = true;
     }
 
@@ -750,7 +860,12 @@ pub(crate) fn handle_socket(
         .filter_map(|(peer, raw)| match decode(&raw) {
             Some(msg) => Some((peer, msg, false)),
             None => {
-                warn!("unknown message, ignoring");
+                // All peers must run the same build (the wire format is the
+                // variant index): a peer that does not will send nothing we
+                // can read. Say so once per peer, not once per message.
+                if undecodable_from.insert(peer) {
+                    warn!(%peer, "undecodable message from peer (a different build?); ignoring its messages");
+                }
                 None
             }
         })
@@ -819,7 +934,7 @@ pub(crate) fn handle_socket(
                     // host. Hold the submission; it is retried next frame.
                     // (Logged once per uid: the bounce re-delivers it every
                     // frame while the gate is closed, which would spam.)
-                    if last_held_uid.is_none_or(|held| held != uid) {
+                    if held_uids.insert(uid) {
                         info!(
                             uid,
                             stable_secs = net.election_stable_secs,
@@ -827,13 +942,12 @@ pub(crate) fn handle_socket(
                             "host: holding submission until sequencing is allowed"
                         );
                     }
-                    *last_held_uid = Some(uid);
                     pending
                         .outgoing_broadcast
                         .push(NetMsg::Game { uid, event: ev });
                     continue;
                 }
-                *last_held_uid = None;
+                held_uids.clear();
                 let seq = next_host_seq(&net);
                 net.next_seq = seq + 1;
                 info!(seq, uid, event = ?ev, "host: sequenced submission");
@@ -901,12 +1015,18 @@ pub(crate) fn handle_socket(
                 if !is_host && !requester_is_my_host {
                     continue;
                 }
-                info!("late joiner requested game history");
                 if turn.game_started
                     && let Some(ref record) = ctx.recorder.record
                     && !record.events.is_empty()
                 {
+                    info!(
+                        events = record.events.len(),
+                        "late joiner requested game history; sending"
+                    );
                     targeted.push((NetMsg::Control(Control::GameHistory(record.clone())), peer));
+                } else {
+                    // No game to serve (yet): the requester retries.
+                    debug!("game history requested, but no game has started");
                 }
             }
             NetMsg::Control(
@@ -967,6 +1087,7 @@ pub(crate) fn handle_socket(
                         );
                         net.snapshot_applied = true;
                         net.needs_snapshot = false;
+                        net.rejoining = false;
                         net.snapshot_retry_timer = 0.0;
                         net.force_install_history = false;
                     } else {
@@ -976,6 +1097,7 @@ pub(crate) fn handle_socket(
                 }
                 net.snapshot_applied = true;
                 net.needs_snapshot = false;
+                net.rejoining = false;
                 net.snapshot_retry_timer = 0.0;
                 net.force_install_history = false;
                 net.resync_gate_secs = 0.0;
@@ -1322,6 +1444,117 @@ mod tests {
     }
 
     // D2: the host's next seq is floored at the watermark.
+    #[test]
+    fn a_room_found_empty_is_session_evidence() {
+        let mut net = NetState::default();
+        net.election_stable_secs = 60.0;
+        assert!(
+            !has_session_evidence(&net),
+            "not registered by the signalling server: no evidence"
+        );
+        net.set_my_id(Some(PeerId(uuid::Uuid::from_u128(7))));
+        net.election_stable_secs = omdurman_net::SOLO_ROOM_SECS * 0.5;
+        assert!(
+            !has_session_evidence(&net),
+            "just connected: the server may still introduce the room"
+        );
+        net.election_stable_secs = omdurman_net::SOLO_ROOM_SECS;
+        assert!(has_session_evidence(&net), "alone long enough: a solo room");
+        net.has_ever_peered = true;
+        net.resync_gate_secs = 0.0;
+        assert!(sequencing_allowed(&net), "the solo host sequences");
+    }
+
+    /// A peer back in the room it had a session in waits for that session:
+    /// alone, it must not start a line of its own on its wiped record.
+    #[test]
+    fn a_rejoining_peer_alone_has_no_session_evidence() {
+        let mut net = NetState::default();
+        net.set_my_id(Some(PeerId(uuid::Uuid::from_u128(7))));
+        net.election_stable_secs = 600.0;
+        net.rejoining = true;
+        assert!(!has_session_evidence(&net));
+        net.add_peer(PeerId(uuid::Uuid::from_u128(9)));
+        assert!(has_session_evidence(&net), "a peer present is evidence");
+    }
+
+    /// Run `retry_snapshot_request` for `secs` (in 0.1 s frames); returns how
+    /// many `RequestSnapshot`s it staged.
+    fn snapshot_requests(app: &mut App, secs: f32) -> usize {
+        let mut sent = 0;
+        for _ in 0..(secs * 10.0) as usize {
+            app.update();
+            let mut pending = app.world_mut().resource_mut::<PendingEdits>();
+            sent += pending
+                .outgoing_broadcast
+                .drain(..)
+                .filter(|m| matches!(m, NetMsg::Control(Control::RequestSnapshot)))
+                .count();
+        }
+        sent
+    }
+
+    fn snapshot_app(net: NetState) -> App {
+        let mut app = App::new();
+        app.add_plugins(bevy::time::TimePlugin)
+            .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+                std::time::Duration::from_millis(100),
+            ))
+            .insert_resource(net)
+            .insert_resource(PendingEdits::default())
+            .add_systems(Update, retry_snapshot_request);
+        app
+    }
+
+    /// The snapshot request loop is bounded: every 2 s at first, then only
+    /// every 15 s once the bootstrap budget passed unanswered -- unless the
+    /// record is known wrong (a seq conflict), which stays urgent.
+    #[test]
+    fn unanswered_snapshot_requests_slow_down_unless_urgent() {
+        let mut net = NetState::default();
+        net.needs_snapshot = true;
+        net.add_peer(PeerId(uuid::Uuid::from_u128(9)));
+        let mut app = snapshot_app(net);
+        let early = snapshot_requests(&mut app, RESYNC_BOOTSTRAP_SECS);
+        assert!(early >= 6, "every ~2 s at first: {early}");
+        let late = snapshot_requests(&mut app, 30.0);
+        assert!(late <= 2, "every ~15 s once patient: {late}");
+        app.world_mut()
+            .resource_mut::<NetState>()
+            .force_install_history = true;
+        let urgent = snapshot_requests(&mut app, 10.0);
+        assert!(urgent >= 4, "a conflict is urgent again: {urgent}");
+    }
+
+    /// Nobody to ask: no request is staged (it would be dropped unsent).
+    #[test]
+    fn no_snapshot_request_without_peers() {
+        let mut net = NetState::default();
+        net.needs_snapshot = true;
+        let mut app = snapshot_app(net);
+        assert_eq!(snapshot_requests(&mut app, 10.0), 0);
+        assert!(
+            app.world().resource::<NetState>().needs_snapshot,
+            "the latch waits"
+        );
+    }
+
+    /// A host that bootstrapped its own line never installs a foreign
+    /// history, so it stops asking for one (every guest would send it the
+    /// whole record, every round).
+    #[test]
+    fn a_bootstrapped_host_stops_requesting_history() {
+        let mut net = NetState::default();
+        net.needs_snapshot = true;
+        net.is_host = true;
+        net.resync_gate_secs = 0.0;
+        net.last_applied_seq = Some(3);
+        net.add_peer(PeerId(uuid::Uuid::from_u128(9)));
+        let mut app = snapshot_app(net);
+        assert_eq!(snapshot_requests(&mut app, 5.0), 0);
+        assert!(!app.world().resource::<NetState>().needs_snapshot);
+    }
+
     #[test]
     fn host_seq_never_reuses_applied_seqs() {
         let mut net = NetState::default();

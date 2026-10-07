@@ -256,9 +256,61 @@ pub fn init_game_record(mut commands: Commands, mut recorder: ResMut<GameRecorde
     info!(seed, "game record initialised");
 }
 
+/// A record file that cannot be written (read-only directory, full disk):
+/// which file, when to try again, and how many tries have failed in a row.
+/// (Unused on the web, which writes no files.)
+#[derive(Default)]
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+pub struct WriteRetry {
+    path: String,
+    next_try: Option<bevy::platform::time::Instant>,
+    failures: u32,
+}
+
+impl WriteRetry {
+    /// Whether a write may be tried now (not backing off).
+    #[cfg(not(target_arch = "wasm32"))]
+    fn due(&self) -> bool {
+        self.next_try
+            .is_none_or(|at| bevy::platform::time::Instant::now() >= at)
+    }
+
+    /// A failed write: back off (0.5 s, doubling, at most 30 s). Returns
+    /// whether this is the first failure of the streak (worth a warning).
+    #[cfg(not(target_arch = "wasm32"))]
+    fn failed(&mut self) -> bool {
+        self.failures += 1;
+        let secs = (0.5 * 2f32.powi(self.failures.min(8) as i32 - 1)).min(30.0);
+        self.next_try =
+            Some(bevy::platform::time::Instant::now() + std::time::Duration::from_secs_f32(secs));
+        self.failures == 1
+    }
+
+    /// A successful write ends the streak. Returns whether one was running.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn succeeded(&mut self) -> bool {
+        let recovered = self.failures > 0;
+        self.next_try = None;
+        self.failures = 0;
+        recovered
+    }
+
+    /// Writes now go to `path`: a streak against another file (the previous
+    /// game's) does not hold this one back.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn target(&mut self, path: &str) {
+        if self.path != path {
+            *self = Self {
+                path: path.to_owned(),
+                ..Self::default()
+            };
+        }
+    }
+}
+
 /// Append unreleased events to the JSONL file (native only).
 /// On WASM, keep everything in memory; user can download via a button.
-pub fn flush_game_record(mut recorder: ResMut<GameRecorder>) {
+pub fn flush_game_record(mut recorder: ResMut<GameRecorder>, mut retry: Local<WriteRetry>) {
     if !recorder.dirty {
         return;
     }
@@ -268,6 +320,7 @@ pub fn flush_game_record(mut recorder: ResMut<GameRecorder>) {
         // On WASM everything stays in memory; the user downloads it via a
         // button, so there's nothing to write -- just clear the flag.
         recorder.dirty = false;
+        let _ = &mut retry;
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -291,9 +344,14 @@ pub fn flush_game_record(mut recorder: ResMut<GameRecorder>) {
             return;
         }
         // `dirty` stays set until the write succeeds, so a failed open or
-        // write is retried on the next tick rather than silently dropping
-        // the events. A rewrite truncates and re-heads the file; an append
-        // extends it.
+        // write is retried rather than silently dropping the events -- with
+        // a backoff, warned once per failing streak: a directory that is not
+        // writable must not warn every frame for the rest of the session. A
+        // rewrite truncates and re-heads the file; an append extends it.
+        retry.target(&recorder.events_path);
+        if !retry.due() {
+            return;
+        }
         let opened = if rewrite {
             std::fs::File::create(&recorder.events_path).and_then(|mut f| {
                 writeln!(f, r#"{{"seed":{}}}"#, record.initial_state.seed).map(|()| f)
@@ -303,10 +361,16 @@ pub fn flush_game_record(mut recorder: ResMut<GameRecorder>) {
                 .append(true)
                 .open(&recorder.events_path)
         };
-        let Ok(mut f) = opened.inspect_err(|error| {
-            warn!(%error, path = %recorder.events_path, rewrite, "failed to open game record; will retry");
-        }) else {
-            return;
+        let mut f = match opened {
+            Ok(f) => f,
+            Err(error) => {
+                if retry.failed() {
+                    warn!(%error, path = %recorder.events_path, rewrite, "failed to open game record; will retry");
+                } else {
+                    debug!(%error, path = %recorder.events_path, "game record still not writable");
+                }
+                return;
+            }
         };
         let mut all_written = true;
         for ev in new_events {
@@ -316,12 +380,19 @@ pub fn flush_game_record(mut recorder: ResMut<GameRecorder>) {
                 continue;
             };
             if let Err(error) = writeln!(f, "{line}") {
-                warn!(%error, path = %recorder.events_path, "failed to write recorded event; will retry");
+                if retry.failed() {
+                    warn!(%error, path = %recorder.events_path, "failed to write recorded event; will retry");
+                } else {
+                    debug!(%error, path = %recorder.events_path, "game record still not writable");
+                }
                 all_written = false;
                 break;
             }
         }
         if all_written {
+            if retry.succeeded() {
+                info!(path = %recorder.events_path, "game record writable again");
+            }
             recorder.flushed_count = record.events.len();
             recorder.rewrite_pending = false;
             recorder.dirty = false;

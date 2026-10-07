@@ -578,6 +578,18 @@ impl SeatPresence {
         }
     }
 
+    /// Everything but the clock: what the change-detection of the resource
+    /// should track (see [`update_seat_presence`]).
+    fn observable(
+        &self,
+    ) -> (
+        HashMap<PlayerKey, Presence>,
+        HashMap<PlayerKey, String>,
+        bool,
+    ) {
+        (self.status.clone(), self.names.clone(), self.paused)
+    }
+
     /// `key`'s last announced display name, or a neutral fallback.
     pub fn name(&self, key: PlayerKey) -> String {
         self.names
@@ -596,7 +608,11 @@ pub(crate) struct SeatView<'w> {
 }
 
 /// Refresh [`SeatPresence`] from the connected peers' announced keys (plus
-/// our own) every frame. Cheap: a handful of seats and peers.
+/// our own) every frame. Cheap: a handful of seats and peers. The resource
+/// is marked changed only when a holder's connection, a name or the pause
+/// changed -- not for the clock alone: `Peers::changed` keys on it, and a
+/// resource written every frame made every one of its users recompute every
+/// frame. (Countdowns read the clock themselves, every frame they draw.)
 pub(crate) fn update_seat_presence(
     time: Res<Time>,
     seats: Res<Seats>,
@@ -609,21 +625,26 @@ pub(crate) fn update_seat_presence(
     )>,
     mut presence: ResMut<SeatPresence>,
 ) {
+    let before = presence.observable();
+    let tracked = presence.bypass_change_detection();
     let mut connected: HashSet<PlayerKey> = HashSet::with_capacity(peers.iter().len() + 1);
     connected.insert(local_key.0);
     for (key, name) in &peers {
         connected.insert(key.0);
         if let Some(name) = name {
-            presence.remember_name(key.0, &name.0);
+            tracked.remember_name(key.0, &name.0);
         }
     }
-    presence.remember_name(local_key.0, &settings.name);
-    presence.update(
+    tracked.remember_name(local_key.0, &settings.name);
+    tracked.update(
         &seats.0,
         &connected,
         time.elapsed_secs_f64(),
         game_state.0.game_over,
     );
+    if presence.observable() != before {
+        presence.set_changed();
+    }
 }
 
 #[cfg(test)]
