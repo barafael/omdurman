@@ -7,6 +7,22 @@
 //!
 //! The authoritative source is `Boardgame - Remember_Gordon/tables/los_table.ron`.
 //!
+//! ## The table
+//!
+//! Locate the firing unit's level in the left column and the target's level
+//! in the top row; the features in the intersecting box block line of sight,
+//! subject to the superscript Details below.
+//!
+//! | Firer ↓ · Target → | Ground                                           | Rough                                            | Hilltop                          |
+//! | :----------------- | :----------------------------------------------- | :----------------------------------------------- | :------------------------------- |
+//! | **Ground**         | Units, Huts¹, Wall, Rough, Trees¹                | Units³ ⁶, Huts¹ ³, Wall, Crest², Trees¹, Hilltop | Units³, Huts¹ ³, Crest³, Hilltop |
+//! | **Rough**          | Units⁴ ⁵, Huts¹ ⁴, Wall, Crest², Trees¹, Hilltop | Units⁷, Hilltop, Crest²                          | Units³, Crest² ³, Hilltop        |
+//! | **Hilltop**        | Units⁴, Huts¹ ⁴, Crest⁴, Hilltop                 | Units⁴, Hilltop, Crest² ⁴                        | Units⁸                           |
+//!
+//! Each cell is a [`blocking_rules`] slice of [`BlockingRule`]s; a feature
+//! blocks only when *all* of its [`LosCondition`]s hold. The cells are the
+//! `static` in [`crate::tables_data`], transcribed from the RON file above.
+//!
 //! ## How it works
 //!
 //! 1. Determine the firer's LOS level from the terrain at the firing hex.
@@ -32,6 +48,7 @@
 //! 5. Blocks only if adjacent to, and at the same level as, the firing unit.
 //! 6. Blocks only if adjacent to, and at the same level as, the target unit.
 //! 7. Does not block if the feature is at a lower level.
+//! 8. Only units on a hilltop block (the Hilltop → Hilltop box).
 //!
 //! ## Special LOS Notes
 //!
@@ -662,7 +679,7 @@ fn los_rays(
 /// The hexes a clear line of sight from `from` enters `to` out of (§6.3):
 /// the last hex before `to` on each candidate ray that is not blocked --
 /// `from` itself for an adjacent target. A ray along hexsides has two
-/// candidate paths ([`los_rays`]); fire that is only clear on one of them
+/// candidate paths (`los_rays`); fire that is only clear on one of them
 /// enters the target hex across that path's hexside, not the other's
 /// (Terrain Effects Chart: the crest or wall the fire crosses). Empty when
 /// no ray is clear.

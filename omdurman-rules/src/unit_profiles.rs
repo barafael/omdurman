@@ -177,18 +177,18 @@ pub fn section_owner(section_name: SectionName) -> Option<Player> {
     }
 }
 
-/// Whether a multi-player command [`CommandScope`] claims this unit outright
+/// Whether a multi-player command `CommandScope` claims this unit outright
 /// (rulebook §1.1: "each player assuming command of one or more Dervish
 /// tribes or Anglo-Egyptian brigades").
 ///
 /// A unit is claimed when
-///   * its tribe is in a [`CommandScope::Tribes`] set, or
+///   * its tribe is in a `CommandScope::Tribes` set, or
 ///   * it is a Dervish leader whose whole pinned command (§5.53) is covered by
 ///     that set -- Khalifa→Taiasha, Yakub→Baggara+Jaalin, Osman
 ///     Digna→Hadendowa, Sheik El Din→Mulazmin+Jehadia -- or
-///   * its brigade is in a [`CommandScope::Brigades`] set.
+///   * its brigade is in a `CommandScope::Brigades` set.
 ///
-/// [`CommandScope::Army`] claims nothing, and neither do the communal units
+/// `CommandScope::Army` claims nothing, and neither do the communal units
 /// (artillery, gunboats, forts, cavalry, camel corps, Maxims, the Royal
 /// Engineers, unbrigaded infantry). Callers
 /// treat *nobody-claims-it* units as the faction's communal pool, so `false`

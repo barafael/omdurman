@@ -14,6 +14,19 @@ use omdurman_types::{HexCoord, HexsideRef, Player};
 /// Every distinct die-roll modifier the rulebook recognises during a fire
 /// attack. Encoding each as a variant means the engine cannot silently
 /// double-apply a bonus and can audit any combat after the fact.
+///
+/// | Fire modifier                              | Die roll | Rule                              |
+/// | :----------------------------------------- | -------: | :-------------------------------- |
+/// | All Anglo-Egyptian direct fire attacks     |       +1 | §6.24                             |
+/// | Anglo-Egyptian brigade integrity           |       +1 | §5.54, §6.24                      |
+/// | Target hex is Huts / a named Building      |  −1 / −3 | §6.23, [`crate::terrain_chart`] |
+/// | Fire crosses a crest / city wall hexside   |  −1 / −4 | §6.23, [`crate::terrain_chart`] |
+/// | Target stacked inside a friendly fort      |       −3 | §6.54                             |
+/// | Target behind the Zariba thorn hedge       |       −2 | §9.231                            |
+/// | Entrenched target behind the Zariba trench |       −4 | §9.232                            |
+///
+/// The terrain, hexside and fort rows all travel as [`FireModifier::Terrain`];
+/// the modified roll is clamped to 1–10 ([`crate::DieRoll::apply_modifier`]).
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FireModifier {
     /// +1 to all Anglo-Egyptian *direct* fire (§6.24).
@@ -197,6 +210,16 @@ impl DisruptionDraw {
 // 10) Melee combat
 // ---------------------------------------------------------------------------
 
+/// Every distinct die-roll modifier the rulebook recognises during a melee
+/// (§7.7). Each side rolls on the Combat Results Table with its own
+/// modifier; the modified roll is clamped to 1–10.
+///
+/// | Melee modifier                                                    | Die roll | Rule   |
+/// | :---------------------------------------------------------------- | -------: | :----- |
+/// | Dervish units                                                     |       +2 | §7.7   |
+/// | Anglo-Egyptian units                                              |       +1 | §7.7   |
+/// | Anglo-Egyptian "Friendlies" (melee with the Dervish modifier)     |       +2 | §6.52  |
+/// | Dervish attacking an entrenched defender across the Zariba trench |       −2 | §9.232 |
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MeleeModifier {
     /// +2 to all Dervish melee rolls (§7.7).

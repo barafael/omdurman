@@ -1,3 +1,33 @@
+//! Combat Results Table (rulebook §CRT): the attacker's total fire factor
+//! picks the row, the modified ten-sided die roll picks the column. Fire
+//! (§6.22) and melee (§7.7) both resolve on it.
+//!
+//! | Fire factors |  1  |  2  |  3  |  4  |  5  |  6  |  7  |  8  |  9  | 10  |
+//! | -----------: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: |
+//! |          1–5 |  –  |  –  |  –  |  D  |  D  |  1  |  1  |  1  |  2  |  2  |
+//! |         6–10 |  –  |  –  |  D  |  D  |  1  |  1  |  1  |  2  |  2  |  2  |
+//! |        11–15 |  –  |  D  |  D  |  1  |  1  |  1  |  2  |  2  |  2  |  3  |
+//! |        16–20 |  D  |  D  |  1  |  1  |  1  |  2  |  2  |  2  |  3  |  3  |
+//! |        21–25 |  D  |  1  |  1  |  1  |  2  |  2  |  2  |  3  |  3  |  3  |
+//! |        26–30 |  1  |  1  |  1  |  2  |  2  |  2  |  3  |  3  |  3  |  4  |
+//! |        31–35 |  1  |  1  |  2  |  2  |  2  |  3  |  3  |  3  |  4  |  4  |
+//! |        36–40 |  1  |  2  |  2  |  2  |  3  |  3  |  3  |  4  |  4  |  4  |
+//! |          41+ |  2  |  2  |  2  |  3  |  3  |  3  |  4  |  4  |  4  |  5  |
+//!
+//! Explanation of combat results (§CombatResults):
+//!
+//! * **–** miss, no effect ([`CombatResult::NoEffect`]);
+//! * **D** half (round up) of the units in the target hex are disrupted
+//!   ([`CombatResult::Disrupt`]; what that means is §Disrupted);
+//! * **1 … 5** that many units in the target hex are eliminated
+//!   ([`CombatResult::Eliminate`]).
+//!
+//! Modified die rolls of less than 1 are treated as 1, more than 10 as 10
+//! ([`DieRoll::apply_modifier`]). [`FireFactorRow::from_total`] finds the
+//! row and [`combat_results_table`] the cell; the cells themselves are the
+//! `static` in [`crate::tables_data`], transcribed from
+//! `Boardgame - Remember_Gordon/tables/combat_results_table.ron`.
+
 use crate::{CombatResult, DieRoll};
 
 /// Fire-factor row thresholds on the Combat Results Table (rulebook §6.22).

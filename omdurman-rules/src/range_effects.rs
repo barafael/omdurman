@@ -1,3 +1,44 @@
+//! Range Effects Tables (rulebook §6.22): how a unit's printed fire factor is
+//! multiplied at each range, one table per side. The column is the distance
+//! in hexes from the firing unit to the target hex; the cell is the
+//! [`RangeBand`] (×3 tripled, ×2 doubled, ×1 normal, ½ halved, – out of
+//! range). Nothing reaches beyond ten hexes.
+//!
+//! ## Anglo-Egyptian Range Effects Table
+//!
+//! | Weapon    |  1  |  2  |  3  |  4  |  5  |  6  |  7  |  8  |  9  | 10  |
+//! | :-------- | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: |
+//! | Rifles    | ×2  | ×1  | ×1  |  ½  |  ½  |  –  |  –  |  –  |  –  |  –  |
+//! | Maxims    | ×2  | ×1  | ×1  |  ½  |  ½  |  –  |  –  |  –  |  –  |  –  |
+//! | Artillery | ×3  | ×2  | ×1  | ×1  | ×1  | ×1  |  ½  |  ½  |  –  |  –  |
+//! | Howitzer  |  –  |  –  |  –  |  ½  |  ½  |  ½  |  ½  |  ½  |  ½  |  ½  |
+//!
+//! Which line a unit fires on is §2.32: rifles for most units, Maxims on the
+//! Maxims line, artillery and old gunboats on the Artillery line; the named
+//! gunboats may fire on the Howitzer, Artillery and Maxims lines. Howitzer
+//! fire ignores line of sight and scatters (§6.64, [`crate::howitzer_scatter`]).
+//!
+//! ## Dervish Range Effects Table
+//!
+//! | Weapon    |  1  |  2  |  3  |  4  |  5  |  6  |  7  |  8  |  9  | 10  |
+//! | :-------- | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: |
+//! | Spears    | ×1  |  –  |  –  |  –  |  –  |  –  |  –  |  –  |  –  |  –  |
+//! | Rifles    | ×1  | ×1  |  ½  |  ½  |  –  |  –  |  –  |  –  |  –  |  –  |
+//! | Artillery | ×2  | ×1  | ×1  | ×1  |  ½  |  ½  |  ½  |  –  |  –  |  –  |
+//!
+//! Dervish artillery, gunboats and forts fire on the Artillery line; Jehadia,
+//! Danagla and the Isa Zachneih fire on the Rifles line; every other Dervish
+//! unit carries spears and swords, the `Melee` weapon class (§2.31).
+//!
+//! At night every maximum range is halved, rounding down but never below one
+//! hex (§8.1, [`night_max_range`]); within that limit the day table applies
+//! unchanged ([`night_range_effects`]). Halving a fire factor rounds down
+//! per unit and never reduces it below 1 (§6.16, [`RangeBand::apply`]).
+//!
+//! The lookups are [`ae_range_effects`] and [`dervish_range_effects`]; the
+//! rows are the `static`s in [`crate::tables_data`], transcribed from
+//! `Boardgame - Remember_Gordon/tables/range_effects_table.ron`.
+
 use crate::{HexDistance, RangeBand, WeaponClass};
 
 /// The faction rows of the Range Effects Table: one 10-hex row per weapon

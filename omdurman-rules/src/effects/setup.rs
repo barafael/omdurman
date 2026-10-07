@@ -20,7 +20,7 @@ pub fn apply_construct_zariba(
 
 /// Apply a Royal Engineers demolition action (rulebook §6.53). The Engineers
 /// commit to the demolition this turn (flagged `demolishing`); the actual
-/// resolution happens at end of turn ([`resolve_demolition`]), which checks
+/// resolution happens at end of turn (`resolve_demolition`), which checks
 /// the engineer is still adjacent and undisrupted.
 pub fn apply_demolition(
     state: &mut GameState,

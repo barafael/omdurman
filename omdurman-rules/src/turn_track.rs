@@ -1,3 +1,76 @@
+//! Turn Record Tracks: the clock of each scenario.
+//!
+//! ## Campaign Game (§9.12, printed on the mapsheet as §TurnTrack)
+//!
+//! Twenty-two turns, 6:00 am Sept. 1 through 8:00 am Sept. 3. The printed
+//! track is three rows of boxes joined by arrows (left to right, back right
+//! to left, then left to right again); the four NIGHT boxes are shaded and
+//! carry no clock time. Night halves Anglo-Egyptian movement and fire ranges
+//! and bars howitzer fire (§8.1); the first night box carries the once-per-
+//! game Dervish Desertion Roll (§8.2).
+//!
+//! | Turn | Date    | Time     | Day / Night | Event                  |
+//! | ---: | :------ | :------- | :---------- | :--------------------- |
+//! |    1 | Sept. 1 | 6:00 am  | Day         |                        |
+//! |    2 |         | 8:00 am  | Day         |                        |
+//! |    3 |         | 10:00 am | Day         |                        |
+//! |    4 |         | 12:00 pm | Day         |                        |
+//! |    5 |         | 2:00 pm  | Day         |                        |
+//! |    6 |         | 4:00 pm  | Day         |                        |
+//! |    7 |         | 6:00 pm  | Day         |                        |
+//! |    8 |         | 8:00 pm  | Day         |                        |
+//! |    9 |         | NIGHT    | Night       | Dervish Desertion Roll |
+//! |   10 | Sept. 2 | NIGHT    | Night       |                        |
+//! |   11 |         | 6:00 am  | Day         |                        |
+//! |   12 |         | 8:00 am  | Day         |                        |
+//! |   13 |         | 10:00 am | Day         |                        |
+//! |   14 |         | 12:00 pm | Day         |                        |
+//! |   15 |         | 2:00 pm  | Day         |                        |
+//! |   16 |         | 4:00 pm  | Day         |                        |
+//! |   17 |         | 6:00 pm  | Day         |                        |
+//! |   18 |         | 8:00 pm  | Day         |                        |
+//! |   19 |         | NIGHT    | Night       |                        |
+//! |   20 | Sept. 3 | NIGHT    | Night       |                        |
+//! |   21 |         | 6:00 am  | Day         |                        |
+//! |   22 |         | 8:00 am  | Day         |                        |
+//!
+//! [`CAMPAIGN_TURN_TRACK`] gives the night boxes nominal 10:00 pm and
+//! 12:00 am times so every entry has a [`GameTime`]; [`TurnLabel`] holds
+//! the printed box text.
+//!
+//! ## Historical Scenario (§9.22)
+//!
+//! Four turns, 6:00 am through 12:00 pm Sept. 2, all day
+//! ([`HISTORICAL_TURN_TRACK`]).
+//!
+//! | Turn | Time     | Day / Night |
+//! | ---: | :------- | :---------- |
+//! |    1 | 6:00 am  | Day         |
+//! |    2 | 8:00 am  | Day         |
+//! |    3 | 10:00 am | Day         |
+//! |    4 | 12:00 pm | Day         |
+//!
+//! ## Fall of Khartoum (§9.33, §9.341, §9.35)
+//!
+//! No printed track: the scenario is variable length, "rarely lasts five
+//! turns" and ends by turn eight at the latest. Turn 1 is always a night turn
+//! (the pre-dawn assault) and no rule makes any other turn night. The times
+//! in [`FALL_OF_KHARTOUM_TURN_TRACK`] are illustrative; only the day/night
+//! column is rule-bearing.
+//!
+//! | Turn | Time     | Day / Night |
+//! | ---: | :------- | :---------- |
+//! |    1 | 4:00 am  | Night       |
+//! |    2 | 6:00 am  | Day         |
+//! |    3 | 8:00 am  | Day         |
+//! |    4 | 10:00 am | Day         |
+//! |    5 | 12:00 pm | Day         |
+//! |    6 | 2:00 pm  | Day         |
+//! |    7 | 4:00 pm  | Day         |
+//! |    8 | 6:00 pm  | Day         |
+//!
+//! [`scenario_turn`] routes a scenario and turn index to its track.
+
 use serde::{Deserialize, Serialize};
 
 use crate::GameTurnIndex;

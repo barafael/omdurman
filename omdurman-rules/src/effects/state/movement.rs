@@ -349,7 +349,7 @@ impl GameState {
     /// Whether `unit` may step on land from `from` to the adjacent `to`,
     /// terrain and occupants aside from ZOC and cost: not into the Nile
     /// (§5.22), not off the board, not into an enemy fort or enemy-held hex
-    /// ([`Self::check_move_step`]), not across a closed hexside (§5.23 wall,
+    /// (`check_move_step`), not across a closed hexside (§5.23 wall,
     /// §9.233 Zariba) and not into the walled city by a unit barred from it
     /// (§5.23). The per-step core of a land move, shared with the §7.5
     /// retreat and the app's route planning.

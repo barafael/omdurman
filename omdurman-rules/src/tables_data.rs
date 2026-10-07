@@ -17,6 +17,14 @@
 //! The RON files remain the authoring source of truth: edit them, then
 //! update the constants here to match (the parity tests
 //! enforce exactly that, cell by cell).
+//!
+//! The tables are rendered, as printed, in the docs of the modules that look
+//! them up: the Combat Results Table in [`crate::combat_results_table`], the
+//! Range Effects Tables in [`crate::range_effects`], the Howitzer Fire
+//! Scattergram in [`crate::howitzer_scatter`] and the Line of Sight Table in
+//! [`crate::los_table`]. The Terrain Effects Chart ([`crate::terrain_chart`]),
+//! the Turn Record Tracks ([`crate::turn_track`]) and the Order of Appearance
+//! ([`crate::reinforcements`]) are encoded as Rust in their own modules.
 
 use crate::howitzer_scatter::ScatterHexDirection;
 use crate::los_table::{BlockingRule, LosCondition, LosFeature, LosLevel};

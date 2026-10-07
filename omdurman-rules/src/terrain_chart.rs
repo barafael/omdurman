@@ -1,3 +1,38 @@
+//! Terrain Effects Chart (printed at the top of the mapsheet): what each
+//! terrain type costs to enter (§5.11) and what it does to fire aimed at
+//! units inside it (§6.23).
+//!
+//! | Terrain          | Movement point cost | Effect on combat          |
+//! | :--------------- | :------------------ | :------------------------ |
+//! | Clear            | 1                   | None                      |
+//! | Rough            | 3                   | None                      |
+//! | Trees            | 1                   | None                      |
+//! | Swamp            | 3                   | None                      |
+//! | Nile             | Gunboats only: 1    | None                      |
+//! | Hilltop          | 1                   | None                      |
+//! | Huts             | 3                   | −1 to attacker's die roll |
+//! | Building (named) | 3                   | −3 to attacker's die roll |
+//! | Road             | 1                   | Per other terrain in hex  |
+//!
+//! | Hexside       | Movement point cost                                                              | Effect on combat                             |
+//! | :------------ | :------------------------------------------------------------------------------- | :------------------------------------------- |
+//! | Khor (stream) | +5                                                                               | May not melee across                         |
+//! | Crest         | +1                                                                               | −1 to attacker's die roll                    |
+//! | City wall     | +1: may only cross at gate or breach                                             | −4 to attacker's die roll, but see LOS notes |
+//! | The Zariba    | Historical scenario only! Considered clear terrain in the campaign game (§9.23). |                                              |
+//!
+//! As encoded here: a hex's cost and modifier come from
+//! [`terrain_effects_chart`] (the Nile is impassable to land units, `None`);
+//! a step along a road *link* costs a flat 1 whatever the terrain
+//! ([`movement_cost_with_road`]). The wall hexside itself is closed and a
+//! gate or breach costs the +1 ([`hexside_movement_surcharge`]), while the
+//! −4 applies only to fire that crosses the wall proper, not an opening in it
+//! ([`hexside_fire_modifier`]). The Zariba's own effects are §9.23: +2 MP to
+//! cross a trench or thorn-hedge end (§9.233), −2 against units behind the
+//! thorn hedge (§9.231) and −4 against entrenched units (§9.232). The table
+//! is parity-checked against
+//! `Boardgame - Remember_Gordon/tables/terrain_effects_chart.ron`.
+
 use omdurman_types::{HexsideKind, Terrain};
 
 use crate::MovementAllowance;

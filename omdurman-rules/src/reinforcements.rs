@@ -1,3 +1,46 @@
+//! Campaign Game Order of Appearance (rulebook §9.112 Dervish, §9.113
+//! Anglo-Egyptian): which units may enter the map on which of the first
+//! four turns, and where.
+//!
+//! ## Dervish reinforcements (§9.112)
+//!
+//! All enter on the west edge of the mapsheet, south of the Khor Shambat
+//! ([`ReinforcementEntry::DervishWestEdge`]). Each unit pays the terrain
+//! cost of the hex through which it enters, however many units use that hex.
+//!
+//! | Turn | Time           | Leader       | Units                       |
+//! | ---: | :------------- | :----------- | :-------------------------- |
+//! |    1 | 6:00 am Sept 1 | Yakub        | Baggara (12), Jaalin (25)   |
+//! |      |                | Sherif       | Danagla (4)                 |
+//! |      |                | Ali Wad Helu | Kehena (6), Degheim (5)     |
+//! |    2 | 8:00 am        | Osman Digna  | Hadendowa (12)              |
+//! |    3 | 10:00 am       | Sheik el Din | Mulazmin (32), Jehadia (24) |
+//!
+//! ## Anglo-Egyptian reinforcements (§9.113)
+//!
+//! The Anglo-Egyptian player moves first and starts with nothing on the map
+//! (the GORDON unit is not used). Gunboats enter through any north-edge Nile
+//! hex for 1 MP ([`ReinforcementEntry::GunboatNorthEdge`]); the "Friendlies"
+//! brigade enters through the Abu Alim hut hex on the east bank for 8 MP per
+//! unit ([`ReinforcementEntry::AbuAlimHut`]); every other unit enters through
+//! the west-bank Anglo-Egyptian Entrance Area for 1 MP
+//! ([`ReinforcementEntry::AngloEgyptianEntrance`]).
+//!
+//! | Turn | Time           | Gunboats      | Land units                                                                                              |
+//! | ---: | :------------- | :------------ | :------------------------------------------------------------------------------------------------------ |
+//! |    1 | 6:00 am Sept 1 | any three     | "Friendlies" brigade; Egyptian Cavalry; Horse Artillery; two infantry brigades of the Egyptian Division |
+//! |    2 | 8:00 am        | any three     | any twelve                                                                                              |
+//! |    3 | 10:00 am       | any three     | any twelve                                                                                              |
+//! |    4 | 12:00 noon     | all remaining | all remaining Anglo-Egyptian units                                                                      |
+//!
+//! The leaders Kitchener, Gatacre and Hunter may enter at any time during
+//! the first four turns, do not count against the twelve-units-per-turn
+//! limit, and must all be in play by the end of turn four.
+//!
+//! [`dervish_campaign_schedule`] and [`anglo_egyptian_campaign_schedule`]
+//! encode the two tables as [`ReinforcementWave`]s; the card is transcribed
+//! in `Boardgame - Remember_Gordon/tables/order_of_appearance.ron`.
+
 use omdurman_types::{DervishTribe, Player};
 use serde::{Deserialize, Serialize};
 use strum::EnumIter;

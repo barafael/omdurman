@@ -1,3 +1,37 @@
+//! Howitzer Fire Scattergram (rulebook §6.64): where a howitzer shell lands.
+//!
+//! Howitzer fire selects any target hex 4–10 hexes from the firing gunboat,
+//! ignoring line of sight, and rolls the ten-sided die twice: the first roll
+//! is the Combat Results Table roll, the second the impact-hex roll, read
+//! off the scattergram printed on the mapsheet. The designated target hex
+//! is hit on a 7–10; otherwise the shell lands in the neighbour the diagram
+//! names. Once rolled, the results take effect even in a friendly-occupied
+//! hex.
+//!
+//! ```text
+//!           __    __
+//!        __/ 1\__/ 2\__
+//!       / 6\__/ C\__/ 3\
+//!       \__/ 5\__/ 4\__/
+//!          \__/  \__/
+//! ```
+//!
+//! | Impact roll | Impact hex                                                           |
+//! | :---------: | :------------------------------------------------------------------- |
+//! |      1      | upper left ([`ScatterHexDirection::UpperLeft`])                    |
+//! |      2      | upper right ([`ScatterHexDirection::UpperRight`])                  |
+//! |      3      | right ([`ScatterHexDirection::Right`])                             |
+//! |      4      | lower right ([`ScatterHexDirection::LowerRight`])                  |
+//! |      5      | lower left ([`ScatterHexDirection::LowerLeft`])                    |
+//! |      6      | left ([`ScatterHexDirection::Left`])                               |
+//! |    7–10     | **C**, the designated target hex ([`ScatterHexDirection::Center`]) |
+//!
+//! The diagram lies on the mapsheet, so "upper" is north like the rest of
+//! the map. [`howitzer_scatter`] reads the roll off the table (the `static`
+//! in [`crate::tables_data`], transcribed from
+//! `Boardgame - Remember_Gordon/tables/howitzer_scattergram.ron`) and
+//! [`scatter_impact_hex`] turns the direction into a hex coordinate.
+
 use crate::DieRoll;
 use omdurman_types::HexCoord;
 
