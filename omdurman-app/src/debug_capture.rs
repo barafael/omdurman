@@ -78,7 +78,24 @@ fn capture_then_exit(
 /// (physical) pixels under the current camera -- so an external driver
 /// (xdotool, ydotool) can click a hex by coordinate. Creating `<path>.shot` requests a
 /// window screenshot, written to `<path>.png` (the request file is removed).
-/// Inert when unset.
+/// Writing `<path>.input` requests pointer input served by the app itself --
+/// one step per line, one step per frame, in window (physical) pixels:
+///
+/// ```text
+/// move X Y      the pointer to (X, Y)
+/// down [1|2|3]  press the left (default), middle or right button
+/// up [1|2|3]    release it
+/// click [1|2|3] down, then up on the next frame
+/// wheel DY      one scroll of DY lines (+ up / zoom in, - down)
+/// wait N        N idle frames
+/// ```
+///
+/// The file is removed once read. The steps go through the same messages
+/// winit's would (`CursorMoved`, `MouseButtonInput`, `MouseWheel`, and the
+/// `WindowEvent` stream egui reads), so egui widgets, the board picking and
+/// the camera see them as real input -- for a desktop whose compositor
+/// ignores pointer warps, and they can reach no other window. Inert when
+/// unset.
 pub struct HexProbePlugin;
 
 #[derive(Resource)]
@@ -91,7 +108,7 @@ impl Plugin for HexProbePlugin {
         };
         info!(%path, "hex probe armed");
         app.insert_resource(HexProbePath(path))
-            .add_systems(Last, (write_hex_probe, probe_screenshot));
+            .add_systems(Last, (write_hex_probe, probe_screenshot, probe_input));
     }
 }
 
@@ -217,5 +234,145 @@ fn probe_screenshot(
             .observe(save_to_disk(format!("{}.png", path.0)));
         *capturing = PROBE_SHOT_FRAMES;
         activity.keep_running();
+    }
+}
+
+/// One step of a `<probe>.input` request (see [`HexProbePlugin`]).
+enum PointerStep {
+    /// To a window position, in physical pixels.
+    Move(Vec2),
+    Down(MouseButton),
+    Up(MouseButton),
+    Wheel(f32),
+    Wait,
+}
+
+fn parse_pointer_steps(text: &str) -> Vec<PointerStep> {
+    let button = |word: Option<&str>| match word {
+        Some("2") => MouseButton::Middle,
+        Some("3") => MouseButton::Right,
+        _ => MouseButton::Left,
+    };
+    let mut steps = Vec::new();
+    for line in text.lines() {
+        let mut words = line.split_whitespace();
+        match words.next() {
+            Some("move") => {
+                let x = words.next().and_then(|w| w.parse::<f32>().ok());
+                let y = words.next().and_then(|w| w.parse::<f32>().ok());
+                match (x, y) {
+                    (Some(x), Some(y)) => steps.push(PointerStep::Move(Vec2::new(x, y))),
+                    _ => warn!(line, "hex probe: malformed move"),
+                }
+            }
+            Some("down") => steps.push(PointerStep::Down(button(words.next()))),
+            Some("up") => steps.push(PointerStep::Up(button(words.next()))),
+            Some("click") => {
+                let b = button(words.next());
+                steps.push(PointerStep::Down(b));
+                steps.push(PointerStep::Up(b));
+            }
+            Some("wheel") => match words.next().and_then(|w| w.parse::<f32>().ok()) {
+                Some(dy) => steps.push(PointerStep::Wheel(dy)),
+                None => warn!(line, "hex probe: malformed wheel"),
+            },
+            Some("wait") => {
+                let n = words
+                    .next()
+                    .and_then(|w| w.parse::<usize>().ok())
+                    .unwrap_or(1);
+                steps.extend(std::iter::repeat_with(|| PointerStep::Wait).take(n));
+            }
+            Some(_) => warn!(line, "hex probe: unknown input step"),
+            None => {}
+        }
+    }
+    steps
+}
+
+/// Serve a `<probe>.input` pointer request (see [`HexProbePlugin`]): one
+/// step per frame, through the messages winit's input would arrive by.
+#[allow(clippy::too_many_arguments)]
+fn probe_input(
+    path: Res<HexProbePath>,
+    time: Res<Time>,
+    mut last_poll: Local<f64>,
+    mut queue: Local<std::collections::VecDeque<PointerStep>>,
+    mut windows: Query<(Entity, &mut Window), With<bevy::window::PrimaryWindow>>,
+    mut window_events: MessageWriter<bevy::window::WindowEvent>,
+    mut moved: MessageWriter<bevy::window::CursorMoved>,
+    mut buttons: MessageWriter<bevy::input::mouse::MouseButtonInput>,
+    mut wheel: MessageWriter<bevy::input::mouse::MouseWheel>,
+    mut activity: ResMut<crate::activity::Activity>,
+) {
+    use bevy::input::ButtonState;
+    use bevy::input::mouse::{MouseButtonInput, MouseScrollUnit, MouseWheel};
+    use bevy::window::{CursorMoved, WindowEvent};
+
+    if queue.is_empty() {
+        let now = time.elapsed_secs_f64();
+        if now - *last_poll < PROBE_SHOT_POLL_SECS {
+            return;
+        }
+        *last_poll = now;
+        let request = format!("{}.input", path.0);
+        let Ok(text) = std::fs::read_to_string(&request) else {
+            return;
+        };
+        let _ = std::fs::remove_file(&request);
+        queue.extend(parse_pointer_steps(&text));
+        if queue.is_empty() {
+            return;
+        }
+        info!(steps = queue.len(), "hex probe: pointer input requested");
+    }
+    let Ok((window_entity, mut window)) = windows.single_mut() else {
+        queue.clear();
+        return;
+    };
+    // The frames keep coming while steps are pending (one per frame), so
+    // the app sees them at its normal pace instead of all in one frame.
+    activity.keep_running();
+    let Some(step) = queue.pop_front() else {
+        return;
+    };
+    match step {
+        PointerStep::Move(physical) => {
+            window.set_physical_cursor_position(Some(physical.as_dvec2()));
+            let position = physical / window.scale_factor();
+            let event = CursorMoved {
+                window: window_entity,
+                position,
+                delta: None,
+            };
+            moved.write(event.clone());
+            window_events.write(WindowEvent::CursorMoved(event));
+        }
+        PointerStep::Down(button) | PointerStep::Up(button) => {
+            let state = if matches!(step, PointerStep::Down(_)) {
+                ButtonState::Pressed
+            } else {
+                ButtonState::Released
+            };
+            let event = MouseButtonInput {
+                button,
+                state,
+                window: window_entity,
+            };
+            buttons.write(event);
+            window_events.write(WindowEvent::MouseButtonInput(event));
+        }
+        PointerStep::Wheel(dy) => {
+            let event = MouseWheel {
+                unit: MouseScrollUnit::Line,
+                x: 0.0,
+                y: dy,
+                window: window_entity,
+                phase: bevy::input::touch::TouchPhase::Moved,
+            };
+            wheel.write(event);
+            window_events.write(WindowEvent::MouseWheel(event));
+        }
+        PointerStep::Wait => {}
     }
 }

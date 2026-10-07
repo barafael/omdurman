@@ -17,10 +17,25 @@ win() {
 }
 all_wins() { xdotool search --name '^omdurman$' 2>/dev/null | sort; }
 need_win() { W=$(win); [ -n "$W" ] || { echo "no omdurman window (run: launch)" >&2; exit 1; }; }
+# Pointer input served by the app itself (`<probe>.input`, see
+# debug_capture.rs): with OMDURMAN_INPUT=probe, or after a warp the
+# compositor ignored (`$D/input_probe` is left behind then). Such input can
+# reach no other window, so the active-window guard does not apply to it.
+probe_input() { [ "${OMDURMAN_INPUT:-}" = probe ] || [ -e "$D/input_probe" ]; }
+# inject <step>...  -- queue pointer steps for the app; returns once it has
+# taken them (it serves one per frame).
+inject() {
+  local i
+  printf '%s\n' "$@" > "$D/probe.input.new"; mv -f "$D/probe.input.new" "$D/probe.input"
+  for i in $(seq 1 60); do [ -e "$D/probe.input" ] || break; sleep 0.05; done
+  [ -e "$D/probe.input" ] && { echo "the app did not take the pointer input (probe not armed?)" >&2; exit 3; }
+  sleep $(awk -v n=$# 'BEGIN{printf "%.2f", 0.1 + n * 0.02}')
+}
 # Input goes to whatever window is on top: never send any while another
 # window (the user's own work, a game...) is active.
 need_input() {
   need_win
+  probe_input && return 0
   local active; active=$(xdotool getactivewindow 2>/dev/null)
   # Side-by-side instances: take the focus over from a sibling game window
   # (never from anything else).
@@ -42,6 +57,7 @@ mouse() { xdotool getmouselocation | sed 's/x:\([0-9-]*\) y:\([0-9-]*\).*/\1 \2/
 # moveto <x> <y>  -- window pixels; exits 3 if the pointer cannot get there.
 moveto() {
   local ox oy tx ty x y dx dy i
+  probe_input && { inject "move $1 $2"; return 0; }
   eval "$(xdotool getwindowgeometry --shell "$W" | grep -E '^[XY]=')"; ox=$X; oy=$Y
   tx=$((ox + $1)); ty=$((oy + $2))
   # KWin honours warps but reads them in its own (scaled) units: the pointer
@@ -64,7 +80,12 @@ moveto() {
     fi
     near "$x" "$y" "$tx" "$ty" && return 0
   fi
-  [ -S "$YDOTOOL_SOCKET" ] || { echo "pointer warp ignored by the compositor; start ydotoold (see SKILL.md)" >&2; exit 3; }
+  if [ ! -S "$YDOTOOL_SOCKET" ]; then
+    # No uinput either: let the app serve the input itself from now on.
+    [ -e "$D/probe" ] && { echo "pointer warp ignored by the compositor; switching to in-app input (probe)" >&2
+      touch "$D/input_probe"; inject "move $1 $2"; return 0; }
+    echo "pointer warp ignored by the compositor; start ydotoold (see SKILL.md)" >&2; exit 3
+  fi
   for i in $(seq 1 80); do
     read -r x y < <(mouse)
     dx=$((tx - x)); dy=$((ty - y))
@@ -87,6 +108,7 @@ moveto() {
 }
 # click with button 1|2|3 (left|middle|right) at the current pointer.
 press() {
+  probe_input && { inject "click ${1:-1}"; return 0; }
   if [ -S "$YDOTOOL_SOCKET" ]; then
     case ${1:-1} in 1) ydotool click 0xC0;; 2) ydotool click 0xC2;; 3) ydotool click 0xC1;; esac >/dev/null
   else xdotool click "${1:-1}"; fi
@@ -95,6 +117,7 @@ press() {
 wheel() {
   local n=$1 b=4 i; [ "$n" -lt 0 ] && { b=5; n=$((-n)); }
   for i in $(seq 1 "$n"); do
+    probe_input && { inject "wheel $([ $b = 4 ] && echo 1 || echo -1)"; sleep 0.2; continue; }
     if [ -S "$YDOTOOL_SOCKET" ]; then ydotool mousemove -w -x 0 -y $([ $b = 4 ] && echo 1 || echo -1) >/dev/null
     else xdotool click $b; fi
     sleep 0.25
@@ -119,7 +142,7 @@ launch)
   # launch [Lobby|Menu]  -- offline self-host, XWayland, probe armed.
   mode=${1:-Lobby}
   [ -n "$(win)" ] && { echo "already running"; exit 0; }
-  rm -f "$D/probe" "$D/probe.state" "$D/probe.png" "$D/win"
+  rm -f "$D/probe" "$D/probe.state" "$D/probe.png" "$D/probe.input" "$D/input_probe" "$D/win"
   before=$(all_wins)
   # Offline self-host, unless OMDURMAN_ROOM names an online room.
   net=(OMDURMAN_OFFLINE=1); room=()
@@ -174,6 +197,10 @@ drag)
   need_input
   if [ "${5:-}" = px ]; then x=$3; y=$4; else read -r x y < <(hexpos "$3" "$4"); fi
   [ -n "${x:-}" ] || { echo "hex $3,$4 not on screen" >&2; exit 1; }
+  if probe_input; then
+    inject "move $1 $2" "wait 5" "down 1" "wait 5" "move $(( ($1 + x) / 2 )) $(( ($2 + y) / 2 ))" "wait 3" "move $x $y" "wait 5" "up 1"
+    exit 0
+  fi
   moveto "$1" "$2"; sleep 0.15
   if [ -S "$YDOTOOL_SOCKET" ]; then ydotool click 0x40 >/dev/null; else xdotool mousedown 1; fi
   sleep 0.2; moveto $(( ($1 + x) / 2 )) $(( ($2 + y) / 2 )); sleep 0.1; moveto "$x" "$y"; sleep 0.2

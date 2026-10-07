@@ -37,6 +37,23 @@ setsid nohup ydotoold --socket-path=$YDOTOOL_SOCKET --socket-own=$(id -u):$(id -
 driver steers in a closed loop against `xdotool getmouselocation` until the
 pointer sits on the exact pixel (a `click` takes ~0.6 s).
 
+## Two ways to deliver input
+
+The driver sends pointer input with `xdotool` (XTest, through XWayland) by
+default, and switches by itself to **in-app input** when the compositor
+ignores a pointer warp (`$OMDURMAN_PLAY/input_probe` is then left behind;
+`launch` clears it). `OMDURMAN_INPUT=probe` selects in-app input from the
+start. In-app input is the hex probe serving a `<probe>.input` request
+file (`move X Y` / `down` / `up` / `click` / `wheel DY` / `wait N`, one
+step per frame, window pixels; see `debug_capture.rs`): it reaches egui,
+the board picking and the camera through the same messages winit's input
+takes, needs neither focus nor the pointer, and can touch no other window
+-- so it works while the user keeps using the desktop, and the
+active-window guard below does not apply to it. XWayland can only warp
+the pointer while it sits over an X window: the moment the user's pointer
+rests on a native window, `xdotool` warps are ignored and the switch
+happens. Keys (`key`, `pan`) still go through `xdotool`.
+
 ## Run (agent path)
 
 ```bash
@@ -56,7 +73,8 @@ against the AI Khalifa is (for a 2208x1403 window: 672 570, 1004 1006,
 ```bash
 $D click 1202 424        # Faction: Anglo-Egyptian
 $D click 1470 715        # AI Commanders: Khalifa (Dervish)
-$D click 1535 799        # Start Battle
+$D click 1535 799        # Start Battle (it moves down once the AI row is in)
+$D wait 'phase=Setup active=Dervish$' 30            # the game has started
 $D wait 'phase=Setup active=AngloEgyptian' 900      # the AI Dervish sets up first
 $D click 32 128          # Ready (rail): the A-E deploy nothing in the Campaign,
                          # but set-up waits for it -- the game sits idle until then
@@ -150,6 +168,12 @@ signalling server.
 - **The sidebar reflows** when a counter leaves it: to place several from
   one grid, click them from the end of the group backwards, or re-shoot
   between clicks. Auto-next stops at the end of a group.
+- **Wait for a started game with `wait 'phase=Setup active=Dervish$'`**:
+  before Start Battle the state line already reads `phase=Setup
+  active=Dervish started=false`, so `wait 'phase=Setup'` returns at once.
+- **Start Battle moves down when an AI row is added** (the AI commander
+  joins the Players list): for a 3072x1704 window it is at 1535 778 before
+  the AI tick and 1535 799 after. Click the AI commander first, then Start.
 - **`state` ends in `started=false` until a `StartGame` has been applied**:
   the default engine state reads like turn 1 set-up, so without that flag
   an AI that does nothing in a lobby looks exactly like a hung one. The
