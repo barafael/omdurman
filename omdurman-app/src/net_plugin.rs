@@ -279,7 +279,7 @@ impl Plugin for NetPlugin {
                         .after(crate::net_socket::handle_socket)
                         .after(crate::seats::update_seat_presence)
                         .before(flush_pending),
-                    broadcast_cursor.run_if(crate::map_view_active),
+                    broadcast_cursor.run_if(crate::on_board),
                     // `flush_pending` conflicts with the whole receive chain on
                     // `ResMut<MatchboxSocket>` / the staging buffers, so pin it
                     // after the chain: the frame pipeline is then deterministic

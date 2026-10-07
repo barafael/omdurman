@@ -576,7 +576,7 @@ pub fn section_header(ui: &mut egui::Ui, title: &str) {
         egui::RichText::new(title)
             .font(egui::FontId::new(
                 17.0,
-                egui::FontFamily::Name("Garamond".into()),
+                egui::FontFamily::Name("Merriweather".into()),
             ))
             .color(palette::SECTION_TITLE),
     );

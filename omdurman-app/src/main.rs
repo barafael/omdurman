@@ -16,7 +16,6 @@ mod dev_inspector;
 mod dispatch;
 mod event_viewer;
 mod events;
-mod feathers;
 mod fire;
 mod fire_allocation;
 mod fok_panel;
@@ -142,7 +141,6 @@ fn add_game(app: &mut App, room: String) {
         .add_plugins(ui_plugin::UiPlugin)
         .add_plugins(net_plugin::NetPlugin)
         .add_plugins(net_socket::NetSocketPlugin)
-        .add_plugins(feathers::FeathersPlugin)
         .add_plugins(splash::SplashPlugin)
         .add_plugins(mode_transitions::ModeTransitionsPlugin)
         .add_plugins(charts::ChartsPlugin)
@@ -157,6 +155,8 @@ fn add_game(app: &mut App, room: String) {
         .add_plugins(dev_inspector::DevInspectorPlugin)
         .init_state::<AppState>()
         .init_state::<AppMode>()
+        // The screen that is up, derived from the two (see `state::Screen`).
+        .add_computed_state::<Screen>()
         // The Bevy mirror of the rules engine's §4 turn machine (Setup →
         // Movement → fire subphases → Melee → next turn; see
         // `ui_phase_state::UiPhaseState`). Gameplay/UI systems gate on it with
@@ -169,7 +169,7 @@ fn add_game(app: &mut App, room: String) {
         .add_systems(
             Update,
             bot_player::bot_player_act
-                .run_if(in_state(AppState::InGame).and_then(in_state(AppMode::Game)))
+                .run_if(in_state(Screen::Board))
                 .before(net_plugin::flush_pending),
         )
         .add_message::<events::LocalAction>()
@@ -180,7 +180,7 @@ fn add_game(app: &mut App, room: String) {
                 // Gameplay systems (picker, combat overlays, movement) run only on a
                 // play view (Game) *and* while actually in a game -- never
                 // in the lobby/connecting.
-                GameSet.run_if(in_state(AppState::InGame).and_then(in_state(AppMode::Game))),
+                GameSet.run_if(in_state(Screen::Board)),
             ),
         )
         .insert_resource(RoomId::new(room))
@@ -219,11 +219,7 @@ fn add_game(app: &mut App, room: String) {
                 crate::los::los_blocked_labels,
             )
                 .chain()
-                .run_if(
-                    in_state(AppState::InGame)
-                        .or_else(in_state(AppState::Spectating))
-                        .and_then(in_state(AppMode::Game)),
-                ),
+                .run_if(on_board),
         )
         .add_systems(
             Update,
@@ -242,16 +238,19 @@ fn add_game(app: &mut App, room: String) {
                 // The pause notice stacks under the top bar.
                 seats_ui::pause_card_ui
                     .after(ui_plugin::mode_toolbar_ui)
-                    .run_if(in_game_view),
+                    .run_if(in_state(Screen::Board)),
                 // A spectator's way into a running game, below the pause card.
                 seats_ui::join_panel_ui
                     .after(seats_ui::pause_card_ui)
-                    .run_if(in_game_view),
+                    .run_if(in_state(Screen::Board)),
+                // A seat vote waits for nobody: on every screen of a live
+                // session, the menu included (the menu's native buttons
+                // take no clicks through it: `EguiPointerOverUi`).
                 seats_ui::vote_popup_ui.run_if(in_state(AppState::InGame)),
                 // "Back to lobby" lives in the mode toolbar (ui_plugin) now.
                 timeline::timeline_ui
                     .in_set(ui_plugin::PanelUiSet)
-                    .run_if(in_state(AppState::Spectating)),
+                    .run_if(in_state(Screen::Review)),
             ),
         )
         // The saved-games list is cached and refreshed on entering the lobby,

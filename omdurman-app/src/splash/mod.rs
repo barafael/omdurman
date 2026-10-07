@@ -22,7 +22,7 @@ mod tuning;
 use bevy::asset::{LoadState, load_internal_asset};
 use bevy::prelude::*;
 use bevy::ui_render::prelude::UiMaterialPlugin;
-use bevy_egui::egui;
+use bevy_egui::{EguiPrimaryContextPass, egui};
 
 use crate::{AppMode, AppState};
 use backdrop::BackdropMaterial;
@@ -73,7 +73,6 @@ impl Plugin for SplashPlugin {
                 (
                     map::load_splash_maps,
                     (screen::load_fonts, screen::spawn_splash_screen).chain(),
-                    tuning::spawn_tuning_pane,
                 ),
             )
             .add_systems(
@@ -85,11 +84,15 @@ impl Plugin for SplashPlugin {
                     screen::menu_buttons,
                     screen::sync_splash_screen,
                     screen::sync_credits,
-                    tuning::show_tuning_pane,
-                    tuning::apply_tuned_fps,
                 )
                     .chain(),
-            );
+            )
+            .add_observer(screen::press_menu_button)
+            .add_observer(screen::release_menu_button)
+            .add_observer(screen::end_menu_button_drag)
+            .add_observer(screen::cancel_menu_button)
+            .add_observer(screen::click_menu_button)
+            .add_systems(EguiPrimaryContextPass, tuning::tuning_pane_ui);
     }
 }
 

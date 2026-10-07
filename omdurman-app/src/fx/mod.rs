@@ -259,7 +259,6 @@ pub struct FxPlugin;
 
 impl Plugin for FxPlugin {
     fn build(&self, app: &mut App) {
-        let on_board = in_state(crate::AppMode::Game);
         app.init_resource::<MotionSettings>()
             .init_resource::<LiveApplied>()
             .init_resource::<pointers::Sightings>()
@@ -289,10 +288,10 @@ impl Plugin for FxPlugin {
                         .after(crate::picker::handle_picker_clicks)
                         .before(transient::spawn_fx),
                     orders::pending_order_trail.in_set(crate::GameSet),
-                    pointers::card_focus_rings.run_if(on_board.clone()),
+                    pointers::card_focus_rings.run_if(crate::on_board),
                     transient::spawn_fx
                         .after(crate::picker::reconcile_unit_sprites)
-                        .run_if(on_board.clone()),
+                        .run_if(crate::on_board),
                     transient::animate_transients.after(transient::spawn_fx),
                 ),
             )
@@ -313,12 +312,12 @@ impl Plugin for FxPlugin {
                     pointers::offscreen_pointers_ui
                         .after(crate::ui_plugin::LeftRailSet)
                         .after(crate::charts::chart_sheet_ui)
-                        .run_if(crate::map_view_active),
+                        .run_if(crate::on_board),
                     banner::your_move_banner_ui
                         .after(crate::ui_plugin::mode_toolbar_ui)
                         .after(crate::ui_plugin::LeftRailSet)
                         .after(crate::charts::chart_sheet_ui)
-                        .run_if(in_state(crate::AppState::InGame).and_then(on_board)),
+                        .run_if(in_state(crate::Screen::Board)),
                 ),
             )
             .add_systems(

@@ -25,8 +25,8 @@ use super::params::*;
 #[cfg(test)]
 const NEAR_LIMIT: f32 = 0.05;
 
-/// Most taps per axis of the shader's separable blur kernel (`MAX_TAPS` in
-/// `backdrop.wgsl`).
+/// Most taps per axis of the shader's blur kernel (handed to `backdrop.wgsl`
+/// as its `MAX_TAPS`).
 pub(super) const MAX_TAPS: usize = 12;
 
 /// The map images still loading, index-aligned with [`MAPS`]; an entry is
@@ -77,7 +77,9 @@ impl SplashMaps {
         }
     }
 
-    /// [`Self::new`], held still where `OMDURMAN_SPLASH_FREEZE` says.
+    /// [`Self::new`], held still where `OMDURMAN_SPLASH_FREEZE` says
+    /// (`<map index>,<pan seconds>`): the show starts on that map, whichever
+    /// loads first, so screenshots compare across builds.
     pub(super) fn from_env() -> Self {
         let mut maps = Self::new();
         maps.freeze = std::env::var("OMDURMAN_SPLASH_FREEZE")
@@ -86,7 +88,10 @@ impl SplashMaps {
                 let (index, time) = spec.split_once(',')?;
                 Some((index.trim().parse().ok()?, time.trim().parse().ok()?))
             })
-            .filter(|&(index, _): &(usize, f32)| index < MAPS.len());
+            .filter(|&(index, time): &(usize, f32)| index < MAPS.len() && time.is_finite());
+        if let Some((index, _)) = maps.freeze {
+            maps.show = MapShow::new(index);
+        }
         maps
     }
 
@@ -103,14 +108,16 @@ impl SplashMaps {
         self.images.get(index).and_then(Option::as_ref)
     }
 
-    /// Start the show, on another map if the random pick failed to load.
+    /// Start the show, on another map if the random pick failed to load. A
+    /// frozen show starts on its own map only, faded in (a failed load
+    /// leaves the plain backdrop: still the same picture every run).
     fn settle(&mut self) {
         self.settled = true;
-        if let Some((index, time)) = self.freeze {
-            self.show = MapShow::new(index);
+        if let Some((_, time)) = self.freeze {
             self.show.shown = MAP_FADE_IN_SECS;
             self.pan_time = time;
             self.view = 0;
+            return;
         }
         let current = self.show.current;
         if !self.is_ready(current)
@@ -187,7 +194,8 @@ fn view_of(index: usize, slot: usize) -> MapView {
 /// A random point of the pan's path for a slide to start at.
 fn random_pan_start() -> f32 {
     use rand::RngExt;
-    rand::rng().random_range(0.0..MAP_START_SPREAD_SECS)
+    // (`max`: an empty range panics.)
+    rand::rng().random_range(0.0..MAP_START_SPREAD_SECS.max(f32::EPSILON))
 }
 
 /// A loaded map image: its texture (its *encoded* sRGB values, sampled as
@@ -302,15 +310,20 @@ impl MapShow {
             && let Some(target) = self.target.take()
         {
             self.current = target;
-            self.clock -= slot;
+            // At most to the next crossfade's start: a slide shortened under
+            // a running clock (the tuning pane) moves on once, instead of
+            // cascading through a slide a frame.
+            self.clock = (self.clock - slot).min(hold);
         }
     }
 
-    /// The map fading in and how far (0..1, eased), during a crossfade.
+    /// The map fading in and how far (0..1, eased), during a crossfade --
+    /// not before it starts (a slide lengthened under a running crossfade
+    /// holds again, without drawing the incoming map unseen).
     pub(super) fn fade(&self) -> Option<(usize, f32)> {
-        self.target.map(|target| {
-            let progress = (self.clock - self.timing.hold_secs())
-                / self.timing.crossfade_secs.max(f32::EPSILON);
+        let hold = self.timing.hold_secs();
+        self.target.filter(|_| self.clock >= hold).map(|target| {
+            let progress = (self.clock - hold) / self.timing.crossfade_secs.max(f32::EPSILON);
             (target, ease(progress))
         })
     }
@@ -335,15 +348,14 @@ pub(super) fn ease(t: f32) -> f32 {
 /// is up; a stalled frame steps at most [`MAP_MAX_STEP_SECS`].
 pub(super) fn animate_splash_maps(
     time: Res<Time>,
-    app_state: Res<State<crate::AppState>>,
-    mode: Res<State<crate::AppMode>>,
+    screen: Option<Res<State<crate::Screen>>>,
     tuning: Res<super::tuning::SplashTuning>,
     mut maps: ResMut<SplashMaps>,
     mut activity: ResMut<crate::activity::Activity>,
 ) {
-    let pan_speed = match (app_state.get(), mode.get()) {
-        (crate::AppState::Splash, _) | (_, crate::AppMode::Menu) => tuning.pan_speed,
-        (crate::AppState::Lobby, _) => LOBBY_PAN_SPEED,
+    let pan_speed = match screen.as_deref().map(State::get) {
+        Some(crate::Screen::Title) => tuning.pan_speed,
+        Some(crate::Screen::Lobby) => LOBBY_PAN_SPEED,
         _ => return,
     };
     maps.show.timing = tuning.timing;

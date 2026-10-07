@@ -82,7 +82,7 @@ impl Plugin for CombatCardPlugin {
                 // the sheet / peek tab (see `ScreenLayout::right_inset`).
                 combat_card_ui
                     .after(crate::charts::chart_sheet_ui)
-                    .run_if(crate::map_view_active),
+                    .run_if(crate::on_board),
             );
     }
 }

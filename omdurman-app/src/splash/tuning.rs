@@ -1,26 +1,17 @@
 //! The title screen's tuning pane (a dev aid): hold **Shift** on the title
-//! screen for a small Feathers pane that switches the menu column off and on
-//! and sets the pan's parameters live. Everything starts from
-//! [`super::params`]; each finished change logs the whole set, ready to be
-//! copied back there.
+//! screen for a small egui pane that switches the menu column off and on and
+//! sets the pan's, the slideshow's, the blur's and the ambient frame rate's
+//! parameters live. Everything starts from [`super::params`]; each finished
+//! change logs the whole set, ready to be copied back there. The pane exists
+//! only while it shows: nothing of it takes focus or input otherwise.
 
-use bevy::feathers::{
-    containers::{pane, pane_body, pane_header},
-    controls::{FeathersCheckbox, FeathersSlider},
-    display::{label, label_small},
-    theme::ThemedText,
-};
-use bevy::input_focus::tab_navigation::TabGroup;
 use bevy::prelude::*;
-use bevy::ui::Checked;
-use bevy::ui_widgets::{SliderPrecision, SliderValue, ValueChange};
+use bevy_egui::{EguiContexts, egui};
 
 use super::map::SlideTiming;
 use super::params::*;
-use crate::{AppMode, AppState};
-
-/// The tuning pane sits over the title screen (`screen::SPLASH_Z`).
-const TUNING_Z: i32 = 1_100;
+use crate::Screen;
+use crate::activity::AmbientFps;
 
 /// The title screen's live-tunable look: the menu column, and the pan.
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
@@ -32,8 +23,6 @@ pub(super) struct SplashTuning {
     pub(super) timing: SlideTiming,
     /// The map's blur, screen points (see [`MAP_BLUR_PX`]).
     pub(super) blur_px: f32,
-    /// The frame rate while the map moves (see `activity::AMBIENT_FPS`).
-    pub(super) fps: f32,
 }
 
 impl Default for SplashTuning {
@@ -44,34 +33,31 @@ impl Default for SplashTuning {
             title_map: TITLE_MAP,
             timing: SlideTiming::default(),
             blur_px: MAP_BLUR_PX,
-            fps: crate::activity::AmbientFps::default().0,
         }
     }
 }
 
-impl SplashTuning {
-    /// The values as `params` spells them.
-    fn describe(&self) -> String {
-        let map = &self.title_map;
-        format!(
-            "MAP_PAN_SPEED = {:.2}; TITLE_MAP: pan_amp = ({:.3}, {:.3}), rotate_deg = {:.1}, \
-             rotate_swing_deg = {:.1}, tilt_deg = {:.1}, tilt_swing_deg = {:.1}; \
-             MAP_SECS = {:.0}; MAP_CROSSFADE_SECS = {:.1}; MAP_BLUR_PX = {:.1}; \
-             AMBIENT_FPS = {:.0}; sidebar = {}",
-            self.pan_speed,
-            map.pan_amp.0,
-            map.pan_amp.1,
-            map.rotate_deg,
-            map.rotate_swing_deg,
-            map.tilt_deg,
-            map.tilt_swing_deg,
-            self.timing.slide_secs,
-            self.timing.crossfade_secs,
-            self.blur_px,
-            self.fps,
-            self.sidebar,
-        )
-    }
+/// The values as `params` spells them (and the ambient frame rate, `fps`).
+fn describe(tuning: &SplashTuning, fps: f32) -> String {
+    let map = &tuning.title_map;
+    format!(
+        "MAP_PAN_SPEED = {:.2}; TITLE_MAP: pan_amp = ({:.3}, {:.3}), rotate_deg = {:.1}, \
+         rotate_swing_deg = {:.1}, tilt_deg = {:.1}, tilt_swing_deg = {:.1}; \
+         MAP_SECS = {:.0}; MAP_CROSSFADE_SECS = {:.1}; MAP_BLUR_PX = {:.1}; \
+         AMBIENT_FPS = {:.0}; sidebar = {}",
+        tuning.pan_speed,
+        map.pan_amp.0,
+        map.pan_amp.1,
+        map.rotate_deg,
+        map.rotate_swing_deg,
+        map.tilt_deg,
+        map.tilt_swing_deg,
+        tuning.timing.slide_secs,
+        tuning.timing.crossfade_secs,
+        tuning.blur_px,
+        fps,
+        tuning.sidebar,
+    )
 }
 
 /// One slider of the pane.
@@ -87,10 +73,22 @@ enum Knob {
     SlideSecs,
     CrossfadeSecs,
     Blur,
-    Fps,
 }
 
 impl Knob {
+    const ALL: [Knob; 10] = [
+        Knob::PanSpeed,
+        Knob::PanMajor,
+        Knob::PanMinor,
+        Knob::Rotate,
+        Knob::RotateSwing,
+        Knob::Tilt,
+        Knob::TiltSwing,
+        Knob::SlideSecs,
+        Knob::CrossfadeSecs,
+        Knob::Blur,
+    ];
+
     fn label(self) -> &'static str {
         match self {
             Knob::PanSpeed => "Pan speed",
@@ -103,7 +101,6 @@ impl Knob {
             Knob::SlideSecs => "Seconds per map",
             Knob::CrossfadeSecs => "Crossfade (s)",
             Knob::Blur => "Blur (points)",
-            Knob::Fps => "Frames per second",
         }
     }
 
@@ -119,7 +116,6 @@ impl Knob {
             Knob::SlideSecs => (4.0, 90.0, 0),
             Knob::CrossfadeSecs => (0.5, 20.0, 1),
             Knob::Blur => (0.0, 6.0, 1),
-            Knob::Fps => (5.0, 60.0, 0),
         }
     }
 
@@ -136,7 +132,6 @@ impl Knob {
             Knob::SlideSecs => tuning.timing.slide_secs,
             Knob::CrossfadeSecs => tuning.timing.crossfade_secs,
             Knob::Blur => tuning.blur_px,
-            Knob::Fps => tuning.fps,
         }
     }
 
@@ -153,162 +148,121 @@ impl Knob {
             Knob::SlideSecs => tuning.timing.slide_secs = value,
             Knob::CrossfadeSecs => tuning.timing.crossfade_secs = value,
             Knob::Blur => tuning.blur_px = value,
-            Knob::Fps => tuning.fps = value,
         }
     }
 }
 
-/// Marks the pane.
-#[derive(Component, Default, Clone)]
-pub(super) struct TuningPane;
+/// The pane's width, and its sliders' (logical pixels): wide, so a slider
+/// moves in small steps.
+const PANE_WIDTH: f32 = 520.0;
+const SLIDER_WIDTH: f32 = 360.0;
+/// Pixels of drag on a slider's number box that cross the slider's whole
+/// range: dragging the number is the fine adjustment (the handle follows
+/// the pointer, the number creeps).
+const FINE_DRAG_PX: f64 = 2000.0;
 
-pub(super) fn spawn_tuning_pane(mut commands: Commands) {
-    commands.spawn_scene(tuning_pane(SplashTuning::default()));
-}
+/// The range of the frame-rate slider: from the unfocused pace up.
+const FPS_RANGE: (f32, f32) = (crate::activity::AMBIENT_UNFOCUSED_FPS, 60.0);
 
-fn tuning_pane(tuning: SplashTuning) -> impl Scene {
-    bsn! {
-        pane()
-        Node {
-            position_type: PositionType::Absolute,
-            top: px(12),
-            right: px(12),
-            width: px(260),
-            display: Display::None,
-        }
-        TuningPane
-        GlobalZIndex(TUNING_Z)
-        TabGroup
-        Children [
-            (pane_header() Children [ label("Title screen") ]),
-            (
-                pane_body()
-                Children [
-                    (
-                        @FeathersCheckbox {
-                            @caption: bsn! { Text("Sidebar") ThemedText }
-                        }
-                        Checked
-                        on(toggle_sidebar)
-                    ),
-                    knob(Knob::PanSpeed, tuning),
-                    knob(Knob::PanMajor, tuning),
-                    knob(Knob::PanMinor, tuning),
-                    knob(Knob::Rotate, tuning),
-                    knob(Knob::RotateSwing, tuning),
-                    knob(Knob::Tilt, tuning),
-                    knob(Knob::TiltSwing, tuning),
-                    knob(Knob::SlideSecs, tuning),
-                    knob(Knob::CrossfadeSecs, tuning),
-                    knob(Knob::Blur, tuning),
-                    knob(Knob::Fps, tuning),
-                ]
-            ),
-        ]
-    }
-}
-
-/// A captioned slider for `knob`, starting at its value in `tuning`.
-fn knob(knob: Knob, tuning: SplashTuning) -> impl Scene {
-    let (min, max, decimals) = knob.range();
-    let value = knob.get(&tuning);
-    bsn! {
-        Node {
-            display: Display::Flex,
-            flex_direction: FlexDirection::Column,
-            row_gap: px(2),
-        }
-        Children [
-            label_small(knob.label()),
-            (
-                @FeathersSlider {
-                    @min: min,
-                    @max: max,
-                    @value: value,
-                }
-                SliderPrecision(decimals)
-                on(move |change: On<ValueChange<f32>>,
-                         mut tuning: ResMut<SplashTuning>,
-                         mut commands: Commands| {
-                    commands
-                        .entity(change.source)
-                        .insert(SliderValue(change.value));
-                    knob.set(&mut tuning, change.value);
-                    if change.is_final {
-                        info!("splash tuning: {}", tuning.describe());
-                    }
-                })
-            ),
-        ]
-    }
-}
-
-fn toggle_sidebar(
-    change: On<ValueChange<bool>>,
-    mut tuning: ResMut<SplashTuning>,
-    mut commands: Commands,
-) {
-    let mut checkbox = commands.entity(change.source);
-    if change.value {
-        checkbox.insert(Checked);
-    } else {
-        checkbox.remove::<Checked>();
-    }
-    tuning.sidebar = change.value;
-    info!("splash tuning: {}", tuning.describe());
-}
-
-/// The tuned frame rate drives the app's ambient pacing.
-pub(super) fn apply_tuned_fps(
-    tuning: Res<SplashTuning>,
-    mut fps: ResMut<crate::activity::AmbientFps>,
-) {
-    if tuning.is_changed() && fps.0 != tuning.fps {
-        fps.0 = tuning.fps;
-    }
-}
-
-/// The pane shows while Shift is held on the title screen.
-pub(super) fn show_tuning_pane(
+/// The pane, top right, while Shift is held on the title screen. Edits go
+/// straight to the resources (written only when a value changed); a finished
+/// change -- a drag let go, a click, a typed value -- logs the whole set.
+pub(super) fn tuning_pane_ui(
+    mut contexts: EguiContexts,
     keys: Res<ButtonInput<KeyCode>>,
-    app_state: Res<State<AppState>>,
-    mode: Res<State<AppMode>>,
-    mut pane: Query<&mut Node, With<TuningPane>>,
+    screen: Option<Res<State<Screen>>>,
+    mut tuning: ResMut<SplashTuning>,
+    mut fps: ResMut<AmbientFps>,
 ) {
-    let title = *app_state.get() == AppState::Splash || *mode.get() == AppMode::Menu;
-    let show = title && keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
-    let display = if show { Display::Flex } else { Display::None };
-    for mut node in &mut pane {
-        if node.display != display {
-            node.display = display;
-        }
+    let title = screen.is_some_and(|screen| **screen == Screen::Title);
+    if !title || !keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]) {
+        return;
     }
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    let (mut edited, mut edited_fps) = (*tuning, fps.0);
+    let finished = egui::Area::new(egui::Id::new("splash_tuning"))
+        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-12.0, 12.0))
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            egui::Frame::popup(ui.style())
+                .show(ui, |ui| tuning_controls(ui, &mut edited, &mut edited_fps))
+                .inner
+        })
+        .inner;
+    if edited != *tuning {
+        *tuning = edited;
+    }
+    if edited_fps != fps.0 {
+        fps.0 = edited_fps;
+    }
+    if finished {
+        info!("splash tuning: {}", describe(&edited, edited_fps));
+    }
+}
+
+/// The pane's controls over `tuning` and the ambient `fps`; whether a change
+/// was finished this frame (a drag let go, a click, a typed value).
+fn tuning_controls(ui: &mut egui::Ui, tuning: &mut SplashTuning, fps: &mut f32) -> bool {
+    ui.set_width(PANE_WIDTH);
+    ui.spacing_mut().slider_width = SLIDER_WIDTH;
+    ui.strong("Title screen");
+    let mut finished = ui.checkbox(&mut tuning.sidebar, "Sidebar").changed();
+    let mut slider =
+        |ui: &mut egui::Ui, value: &mut f32, (min, max, decimals): (f32, f32, i32), label: &str| {
+            ui.label(egui::RichText::new(label).small());
+            let before = *value;
+            // (`min_decimals`, not `fixed_decimals`: a fixed count rounds the
+            // value itself the moment the slider shows -- a pan reach of 0.0625
+            // became 0.062 -- so opening the pane changed the look.)
+            // The number box beside the slider drags slowly, one decimal finer
+            // than the slider shows.
+            let response = ui.add(
+                egui::Slider::new(value, min..=max)
+                    .min_decimals(decimals.max(0) as usize)
+                    .max_decimals(decimals.max(0) as usize + 1)
+                    .drag_value_speed(f64::from(max - min) / FINE_DRAG_PX),
+            );
+            // (`changed` alone also fires for a value the slider merely clamped
+            // or rounded on show; a finished edit is a user's, and moves it.)
+            let edited = *value != before;
+            finished |= response.drag_stopped() || (edited && !response.dragged());
+        };
+    for knob in Knob::ALL {
+        let mut value = knob.get(tuning);
+        slider(ui, &mut value, knob.range(), knob.label());
+        knob.set(tuning, value);
+    }
+    slider(ui, fps, (FPS_RANGE.0, FPS_RANGE.1, 0), "Frames per second");
+    finished
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const KNOBS: [Knob; 11] = [
-        Knob::PanSpeed,
-        Knob::PanMajor,
-        Knob::PanMinor,
-        Knob::Rotate,
-        Knob::RotateSwing,
-        Knob::Tilt,
-        Knob::TiltSwing,
-        Knob::SlideSecs,
-        Knob::CrossfadeSecs,
-        Knob::Blur,
-        Knob::Fps,
-    ];
+    /// Showing the pane changes nothing and reports nothing: only a user's
+    /// edit is a change worth logging.
+    #[test]
+    fn an_untouched_pane_changes_nothing() {
+        let (mut tuning, mut fps) = (SplashTuning::default(), crate::activity::AMBIENT_FPS);
+        let mut reported = false;
+        crate::ui::headless(3, |ctx, _| {
+            egui::Area::new(egui::Id::new("pane")).show(ctx, |ui| {
+                reported |= tuning_controls(ui, &mut tuning, &mut fps);
+            });
+        });
+        assert_eq!(tuning, SplashTuning::default());
+        assert_eq!(fps, crate::activity::AMBIENT_FPS);
+        assert!(!reported);
+    }
 
     // Every knob starts inside its slider's range, and sets exactly what it
-    // reads.
+    // reads. (The frame rate is not a knob: it starts from the environment.)
     #[test]
     fn the_knobs_start_in_range_and_round_trip() {
+        assert!((FPS_RANGE.0..=FPS_RANGE.1).contains(&crate::activity::AMBIENT_FPS));
         let defaults = SplashTuning::default();
-        for (i, knob) in KNOBS.into_iter().enumerate() {
+        for (i, knob) in Knob::ALL.into_iter().enumerate() {
             let (min, max, _) = knob.range();
             let value = knob.get(&defaults);
             assert!((min..=max).contains(&value), "{knob:?} {value}");
@@ -316,7 +270,7 @@ mod tests {
             let other = (min + max) / 2.0 + 0.125;
             knob.set(&mut tuning, other);
             assert_eq!(knob.get(&tuning), other, "{knob:?}");
-            for (j, untouched) in KNOBS.into_iter().enumerate() {
+            for (j, untouched) in Knob::ALL.into_iter().enumerate() {
                 if i != j {
                     assert_eq!(untouched.get(&tuning), untouched.get(&defaults));
                 }

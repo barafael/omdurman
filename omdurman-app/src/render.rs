@@ -403,7 +403,7 @@ impl Plugin for RenderPlugin {
             .add_systems(
                 Update,
                 (
-                    update_selection_marker.run_if(crate::hex_hover_visible),
+                    update_selection_marker.run_if(crate::off_title),
                     // Board markers are drawn only on the board view of a
                     // live or reviewed game; `clear_gameplay_overlays`
                     // despawns them when that view is left.
@@ -414,7 +414,7 @@ impl Plugin for RenderPlugin {
                         // §10.11/§10.21 Dervish-secret mine & chain markers.
                         crate::river_placement::mine_chain_overlay_mesh,
                     )
-                        .run_if(crate::board_view_active),
+                        .run_if(crate::on_board),
                 ),
             );
     }

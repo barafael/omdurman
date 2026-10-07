@@ -252,11 +252,11 @@ impl Plugin for GamePlugin {
                         .in_set(crate::ui_plugin::PanelUiSet)
                         .in_set(crate::ui_plugin::LeftRailSet)
                         .after(unit_picker_ui),
-                    movement_path_labels.run_if(crate::map_view_active),
+                    movement_path_labels.run_if(crate::on_board),
                     crate::turn_track_ui::turn_track_labels,
                     crate::desertion::desertion_panel_ui,
                 )
-                    .run_if(crate::in_game_view),
+                    .run_if(in_state(crate::Screen::Board)),
             )
             // The same left rail in the spectator view: Overlays toggles +
             // unit list (game-control actions are gated to InGame inside).

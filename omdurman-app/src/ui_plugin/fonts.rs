@@ -5,6 +5,32 @@ pub(crate) fn maximize_primary_window(mut window: Single<&mut Window, With<Prima
     window.set_maximized(true);
 }
 
+/// The app's fonts, embedded once and shared by egui (below) and the native
+/// title screen (`splash::screen`).
+pub(crate) mod faces {
+    /// Inter Medium: the sans-serif UI face.
+    pub(crate) const INTER_MEDIUM: &[u8] = include_bytes!("../../../assets/fonts/Inter-Medium.ttf");
+    /// Merriweather: the serif of the title screen and the section titles.
+    pub(crate) const MERRIWEATHER_REGULAR: &[u8] =
+        include_bytes!("../../../assets/fonts/Merriweather-Regular.ttf");
+    pub(crate) const MERRIWEATHER_ITALIC: &[u8] =
+        include_bytes!("../../../assets/fonts/Merriweather-Italic.ttf");
+    pub(crate) const MERRIWEATHER_BOLD: &[u8] =
+        include_bytes!("../../../assets/fonts/Merriweather-Bold.ttf");
+    /// Noto Sans Symbols 2: the icon fallback.
+    pub(crate) const NOTO_SYMBOLS: &[u8] =
+        include_bytes!("../../../assets/fonts/NotoSansSymbols2-Regular.ttf");
+    /// The newspaper's blackletter masthead and 19th-century body type.
+    pub(crate) const UNIFRAKTUR: &[u8] =
+        include_bytes!("../../../assets/fonts/UnifrakturMaguntia-Book.ttf");
+    pub(crate) const OLD_STANDARD_REGULAR: &[u8] =
+        include_bytes!("../../../assets/fonts/OldStandard-Regular.ttf");
+    pub(crate) const OLD_STANDARD_BOLD: &[u8] =
+        include_bytes!("../../../assets/fonts/OldStandard-Bold.ttf");
+    pub(crate) const OLD_STANDARD_ITALIC: &[u8] =
+        include_bytes!("../../../assets/fonts/OldStandard-Italic.ttf");
+}
+
 #[derive(Resource, Default)]
 pub(crate) struct FontsInstalled(bool);
 
@@ -19,59 +45,22 @@ pub(crate) fn setup_egui_fonts(mut contexts: EguiContexts, mut installed: ResMut
     // Medium (500) is the primary weight for all UI text.
     ctx.add_font(FontInsert::new(
         "Inter-Medium",
-        egui::FontData::from_static(include_bytes!("../../../assets/fonts/Inter-Medium.ttf")),
+        egui::FontData::from_static(faces::INTER_MEDIUM),
         vec![InsertFontFamily {
             family: egui::FontFamily::Proportional,
             priority: FontPriority::Highest,
         }],
     ));
 
-    // -- Merriweather: serif font for the splash screen ----------------------
-    // Registered under "Garamond" family name so every existing reference
-    // (splash screen, quoted titles) picks it up without code changes.
+    // -- Merriweather: the serif of the section titles -----------------------
+    // (The native title screen sets its italic and bold itself.)
     ctx.add_font(FontInsert::new(
         "Merriweather-Regular",
-        egui::FontData::from_static(include_bytes!(
-            "../../../assets/fonts/Merriweather-Regular.ttf"
-        )),
+        egui::FontData::from_static(faces::MERRIWEATHER_REGULAR),
         vec![InsertFontFamily {
-            family: egui::FontFamily::Name("Garamond".into()),
+            family: egui::FontFamily::Name("Merriweather".into()),
             priority: FontPriority::Highest,
         }],
-    ));
-    // A real italic face, registered as its own family.  Italic text (the
-    // splash quote, book titles) selects this family rather than egui's
-    // synthetic italic -- epaint fakes italics by shearing the upright glyphs
-    // without fixing advances, which left uneven gaps.  A genuine italic has
-    // correct metrics.
-    ctx.add_font(FontInsert::new(
-        "Merriweather-Italic",
-        egui::FontData::from_static(include_bytes!(
-            "../../../assets/fonts/Merriweather-Italic.ttf"
-        )),
-        vec![InsertFontFamily {
-            family: egui::FontFamily::Name("GaramondItalic".into()),
-            priority: FontPriority::Highest,
-        }],
-    ));
-    // The bold face is a fallback of the regular family and, like the italic,
-    // its own family: text that must really be bold (the splash title)
-    // selects "GaramondBold".
-    ctx.add_font(FontInsert::new(
-        "Merriweather-Bold",
-        egui::FontData::from_static(include_bytes!(
-            "../../../assets/fonts/Merriweather-Bold.ttf"
-        )),
-        vec![
-            InsertFontFamily {
-                family: egui::FontFamily::Name("Garamond".into()),
-                priority: FontPriority::Lowest,
-            },
-            InsertFontFamily {
-                family: egui::FontFamily::Name("GaramondBold".into()),
-                priority: FontPriority::Highest,
-            },
-        ],
     ));
 
     // -- Noto Sans Symbols 2: icon fallback ----------------------------------
@@ -80,9 +69,7 @@ pub(crate) fn setup_egui_fonts(mut contexts: EguiContexts, mut installed: ResMut
     // so it only kicks in for missing glyphs.
     ctx.add_font(FontInsert::new(
         "NotoSansSymbols2",
-        egui::FontData::from_static(include_bytes!(
-            "../../../assets/fonts/NotoSansSymbols2-Regular.ttf"
-        )),
+        egui::FontData::from_static(faces::NOTO_SYMBOLS),
         vec![
             InsertFontFamily {
                 family: egui::FontFamily::Proportional,
@@ -99,25 +86,21 @@ pub(crate) fn setup_egui_fonts(mut contexts: EguiContexts, mut installed: ResMut
     // OFL-*.txt files beside them), each its own family so only the end-of-
     // game front page uses them (`ui_plugin::victory`).
     for (name, family, bytes) in [
-        (
-            "UnifrakturMaguntia",
-            "Masthead",
-            &include_bytes!("../../../assets/fonts/UnifrakturMaguntia-Book.ttf")[..],
-        ),
+        ("UnifrakturMaguntia", "Masthead", faces::UNIFRAKTUR),
         (
             "OldStandard-Regular",
             "OldStandard",
-            &include_bytes!("../../../assets/fonts/OldStandard-Regular.ttf")[..],
+            faces::OLD_STANDARD_REGULAR,
         ),
         (
             "OldStandard-Bold",
             "OldStandardBold",
-            &include_bytes!("../../../assets/fonts/OldStandard-Bold.ttf")[..],
+            faces::OLD_STANDARD_BOLD,
         ),
         (
             "OldStandard-Italic",
             "OldStandardItalic",
-            &include_bytes!("../../../assets/fonts/OldStandard-Italic.ttf")[..],
+            faces::OLD_STANDARD_ITALIC,
         ),
     ] {
         ctx.add_font(FontInsert::new(
@@ -161,6 +144,9 @@ pub(crate) fn setup_egui_fonts(mut contexts: EguiContexts, mut installed: ResMut
         w.active.weak_bg_fill = crate::ui::palette::theme::WIDGET_ACTIVE;
         w.active.bg_fill = crate::ui::palette::theme::WIDGET_ACTIVE;
     });
+    // No Ctrl +/- zoom: the lobby's egui widgets are laid out over its
+    // native panel in window pixels, and a zoomed egui would drift off it.
+    ctx.options_mut(|options| options.zoom_with_keyboard = false);
     installed.0 = true;
 }
 

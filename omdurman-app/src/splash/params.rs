@@ -166,10 +166,11 @@ pub(super) const MAP_SECS: f32 = 24.0;
 pub(super) const MAP_CROSSFADE_SECS: f32 = 6.0;
 /// Seconds the first map takes to fade in from the plain backdrop.
 pub(super) const MAP_FADE_IN_SECS: f32 = 2.0;
-/// Longest step (seconds) the animation takes in one frame, like the design's
-/// `Math.min(0.1, dt)`: after a stalled frame the map carries on instead of
-/// jumping.
-pub(super) const MAP_MAX_STEP_SECS: f32 = 0.1;
+/// Longest step (seconds) the animation takes in one frame: after a stalled
+/// frame the map carries on instead of jumping. Above the slowest regular
+/// frame -- the ambient pace of an unfocused window -- so the show keeps its
+/// speed there (the design's `Math.min(0.1, dt)` halved it at 5 fps).
+pub(super) const MAP_MAX_STEP_SECS: f32 = 1.25 / crate::activity::AMBIENT_UNFOCUSED_FPS;
 
 /// Fraction of the screen width covered by the map region (right-anchored).
 pub(super) const MAP_REGION_W: f32 = 0.703; // 900 / 1280

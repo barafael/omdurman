@@ -108,9 +108,7 @@ impl Plugin for UiPlugin {
                     mode_toolbar_ui.run_if(not(bevy::prelude::in_state(crate::AppMode::Menu))),
                     // After the rail: it draws only on the board the rail
                     // leaves free (`ScreenLayout::left_inset`).
-                    cursor_overlay_ui
-                        .run_if(crate::map_view_active)
-                        .after(LeftRailSet),
+                    cursor_overlay_ui.run_if(crate::on_board).after(LeftRailSet),
                     // (ZOC/LOS toggles live in the left rail's Overlays
                     // section -- see overview::unit_overview_ui.)
                     // In-game HUD/overlays: only while actually in a game, so
@@ -146,28 +144,31 @@ impl Plugin for UiPlugin {
                     )
                         .chain()
                         .after(mode_toolbar_ui)
-                        .run_if(crate::in_game_view),
-                    // (`in_game_view`, not just `InGame`: the menu is shown
-                    // with `AppState::InGame`, and must not have the in-game
-                    // HUD drawn over it.)
+                        .run_if(in_state(crate::Screen::Board)),
+                    // (Gated on the screen, not on `AppState::InGame`: the
+                    // menu is shown in that state too, and must not have the
+                    // in-game HUD drawn over it.)
                     // Live game *and* the spectator review (a finished
                     // record ends on the result).
-                    victory_modal.run_if(crate::board_view_active),
-                    telegram_overlay.run_if(crate::in_game_view),
-                    // (Not a run condition: its not-in-Setup branch clears the
-                    // staged mine/chain placement on the transition out of
-                    // §10 setup -- cleanup a `run_if` would skip.)
+                    victory_modal.run_if(crate::on_board),
+                    telegram_overlay.run_if(in_state(crate::Screen::Board)),
+                    // (No phase run condition: its not-in-Setup branch clears
+                    // the staged mine/chain placement on the transition out
+                    // of §10 setup -- cleanup a phase `run_if` would skip.)
                     optional_rule_setup_ui
-                        .run_if(crate::in_game_view)
+                        .run_if(in_state(crate::Screen::Board))
                         .after(crate::charts::chart_sheet_ui),
-                    event_viewer::event_viewer_ui
-                        .run_if(in_state(AppState::InGame).or_else(in_state(AppState::Spectating))),
+                    // The event viewer covers the board it narrates.
+                    event_viewer::event_viewer_ui.run_if(crate::on_board),
                     event_viewer::event_viewer_toggle
-                        .run_if(in_state(AppState::InGame).or_else(in_state(AppState::Spectating)))
+                        .run_if(crate::on_board)
                         .run_if(crate::hotkeys::keyboard_free),
+                    // The lobby's widgets, over its native panel (`splash`):
+                    // only while the lobby screen is up -- the menu is shown
+                    // in the lobby state too.
                     lobby::lobby_ui
                         .in_set(PanelUiSet)
-                        .run_if(in_state(AppState::Lobby)),
+                        .run_if(in_state(crate::Screen::Lobby)),
                 ),
             );
     }

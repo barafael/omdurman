@@ -281,11 +281,19 @@ position, one global block). Cut sprite images live under `omdurman-app/assets/s
 
 ## Mode switching (UI)
 
-The top-level `AppMode`s are `Menu`, `Lobby`, and `Game`.
+The top-level `AppMode`s are `Menu`, `Lobby`, and `Game`; `AppState` (`Splash`, `Lobby`,
+`InGame`, `Spectating`) is the session's lifecycle, an independent axis. The screen that is up is
+the computed state `Screen` (`Title`, `Lobby`, `Board`, `Review`, in `omdurman-app/src/state.rs`):
+gate every system that draws on a screen on `Screen` (`in_state(Screen::Board)`, `on_board`),
+never on one axis alone -- the menu shows in every `AppState`, and a system gated on the state
+draws over it.
 The splash screen provides the primary mode-switching UI. It (and the lobby's map backdrop and
 panel) is native Bevy UI over a GPU backdrop shader (`omdurman-app/src/splash/`), not egui; the
-lobby's egui widgets draw over it. `OMDURMAN_SPLASH_FREEZE=<map>,<pan time>` and
-`OMDURMAN_SPLASH_QUOTE=<index>` pin the screen for screenshots that compare across builds.
+lobby's egui widgets draw over it. Its buttons take picking events and, like the board, ignore the
+pointer while it is over an egui surface (`EguiPointerOverUi`): egui draws over the native UI.
+`OMDURMAN_SPLASH_FREEZE=<map>,<pan time>` and `OMDURMAN_SPLASH_QUOTE=<index>` pin the screen for
+screenshots that compare across builds; holding Shift on the title screen shows an egui pane to
+tune its look live.
 There is no in-app editor — the board and asset data files are edited as text.
 
 ## Traceability

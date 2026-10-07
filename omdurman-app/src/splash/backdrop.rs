@@ -5,9 +5,9 @@
 
 use bevy::asset::uuid_handle;
 use bevy::prelude::*;
-use bevy::render::render_resource::{AsBindGroup, ShaderType};
-use bevy::shader::ShaderRef;
-use bevy::ui_render::prelude::UiMaterial;
+use bevy::render::render_resource::{AsBindGroup, RenderPipelineDescriptor, ShaderType};
+use bevy::shader::{ShaderDefVal, ShaderRef};
+use bevy::ui_render::prelude::{UiMaterial, UiMaterialKey};
 
 use super::map::{self, MAX_TAPS, MapImage, MapVariant, SplashMaps};
 use super::params::*;
@@ -16,7 +16,7 @@ use super::params::*;
 pub(super) const BACKDROP_SHADER: Handle<Shader> =
     uuid_handle!("6b0f5e8e-0c8f-4d9e-9a51-5a3f2b7c1d42");
 
-/// Most stops of one gradient (`array<vec4<f32>, 8>` in the shader).
+/// Most stops of one gradient (the shader's `MAX_STOPS`).
 const MAX_STOPS: usize = 8;
 
 /// What the backdrop draws.
@@ -38,7 +38,7 @@ pub(super) enum BackdropLayout {
     Lobby { panel: Rect },
 }
 
-#[derive(Asset, TypePath, AsBindGroup, Clone, Debug, Default)]
+#[derive(Asset, TypePath, AsBindGroup, Clone, Debug, Default, PartialEq)]
 pub(super) struct BackdropMaterial {
     #[uniform(0)]
     pub(super) params: BackdropParams,
@@ -54,10 +54,21 @@ impl UiMaterial for BackdropMaterial {
     fn fragment_shader() -> ShaderRef {
         BACKDROP_SHADER.into()
     }
+
+    /// The shader's array sizes come from here, so the uniform layouts on
+    /// both sides cannot drift apart.
+    fn specialize(descriptor: &mut RenderPipelineDescriptor, _key: UiMaterialKey<Self>) {
+        if let Some(fragment) = descriptor.fragment.as_mut() {
+            fragment.shader_defs.extend([
+                ShaderDefVal::UInt("MAX_TAPS".into(), MAX_TAPS as u32),
+                ShaderDefVal::UInt("MAX_STOPS".into(), MAX_STOPS as u32),
+            ]);
+        }
+    }
 }
 
 /// One slide's map: see `MapSampling` in the shader.
-#[derive(ShaderType, Clone, Copy, Debug, Default)]
+#[derive(ShaderType, Clone, Copy, Debug, Default, PartialEq)]
 pub(super) struct MapSampling {
     to_square: Mat3,
     uv_min: Vec2,
@@ -68,7 +79,7 @@ pub(super) struct MapSampling {
 }
 
 /// The shader's parameters: see `Params` in the shader.
-#[derive(ShaderType, Clone, Copy, Debug, Default)]
+#[derive(ShaderType, Clone, Copy, Debug, Default, PartialEq)]
 pub(super) struct BackdropParams {
     screen: Vec2,
     composite: f32,

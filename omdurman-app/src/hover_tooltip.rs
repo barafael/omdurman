@@ -31,7 +31,7 @@ impl Plugin for HoverTooltipPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             EguiPrimaryContextPass,
-            draw_hover_tooltip.run_if(crate::map_view_active),
+            draw_hover_tooltip.run_if(crate::on_board),
         );
     }
 }

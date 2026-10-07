@@ -103,36 +103,51 @@ impl std::ops::DerefMut for GameRng {
 #[derive(Resource)]
 pub struct GameStateResource(pub GameState);
 
-// -- View-gating predicates -------------------------------------------------
+// -- The screen that is up ---------------------------------------------------
 
-/// Camera drag/zoom is enabled everywhere but the menu.
-pub(crate) fn camera_enabled(mode: Res<State<AppMode>>) -> bool {
-    !matches!(**mode, AppMode::Menu)
+/// Which screen is up, derived from the two state axes: [`AppMode`] (what the
+/// player picked: menu, lobby, game) and [`AppState`] (where the session is:
+/// splash, lobby, in a game, reviewing one). Gate a system on the screen it
+/// draws on, not on either axis alone: the menu is shown in every
+/// `AppState`, and a lobby or game system gated on the state alone draws
+/// over the menu.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Screen {
+    /// The title screen: the start-up splash, or the menu over whatever
+    /// session is running.
+    Title,
+    /// The lobby.
+    Lobby,
+    /// The board of the live game.
+    Board,
+    /// The board of a game under review on the timeline.
+    Review,
 }
 
-/// The hex hover marker is shown on the play board (not the menu).
-pub(crate) fn hex_hover_visible(mode: Res<State<AppMode>>) -> bool {
-    !matches!(**mode, AppMode::Menu)
+impl ComputedStates for Screen {
+    type SourceStates = (AppState, AppMode);
+
+    fn compute((state, mode): (AppState, AppMode)) -> Option<Self> {
+        match (state, mode) {
+            (AppState::Splash, _) | (_, AppMode::Menu) => Some(Screen::Title),
+            (AppState::Lobby, _) => Some(Screen::Lobby),
+            (AppState::InGame, AppMode::Game) => Some(Screen::Board),
+            (AppState::Spectating, AppMode::Game) => Some(Screen::Review),
+            // (The lobby mode is entered together with the lobby state; a
+            // frame between the two shows nothing.)
+            (AppState::InGame | AppState::Spectating, AppMode::Lobby) => None,
+        }
+    }
 }
 
-/// Whether a hex-grid-bearing view is active (cursor broadcast / cursor overlay
-/// gate): the play view.
-pub(crate) fn map_view_active(mode: Res<State<AppMode>>) -> bool {
-    matches!(**mode, AppMode::Game)
+/// A board is up: the live game's or a reviewed one's.
+pub(crate) fn on_board(screen: Option<Res<State<Screen>>>) -> bool {
+    screen.is_some_and(|screen| matches!(**screen, Screen::Board | Screen::Review))
 }
 
-/// The board view of a live *or* reviewed game: `AppMode::Game` while
-/// `InGame` or `Spectating`. Gate for the per-frame board markers, whose
-/// entities `clear_gameplay_overlays` removes when this view is left.
-pub(crate) fn board_view_active(mode: Res<State<AppMode>>, state: Res<State<AppState>>) -> bool {
-    matches!(**mode, AppMode::Game) && matches!(**state, AppState::InGame | AppState::Spectating)
-}
-
-/// The live game's board view: `InGame` *and* `AppMode::Game`. The menu is
-/// shown with `AppState::InGame` too, so in-game HUD / cards gate on this
-/// rather than on the app state alone, or they would draw over the menu.
-pub(crate) fn in_game_view(mode: Res<State<AppMode>>, state: Res<State<AppState>>) -> bool {
-    matches!(**mode, AppMode::Game) && matches!(**state, AppState::InGame)
+/// Anything but the title screen is up (the camera, the hover marker).
+pub(crate) fn off_title(screen: Option<Res<State<Screen>>>) -> bool {
+    screen.is_none_or(|screen| **screen != Screen::Title)
 }
 
 /// Whether there is a game to return to from the menu / lobby: a `StartGame`

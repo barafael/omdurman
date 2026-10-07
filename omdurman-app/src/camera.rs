@@ -31,7 +31,7 @@ impl Plugin for CameraPlugin {
             .add_systems(
                 Update,
                 (
-                    camera_control.run_if(crate::camera_enabled),
+                    camera_control.run_if(crate::off_title),
                     night_shading,
                     sync_board_day_night,
                 ),

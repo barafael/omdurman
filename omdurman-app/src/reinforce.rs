@@ -23,10 +23,7 @@ pub struct ReinforcePlugin;
 
 impl Plugin for ReinforcePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            Update,
-            reinforce_entry_overlay_mesh.run_if(crate::board_view_active),
-        );
+        app.add_systems(Update, reinforce_entry_overlay_mesh.run_if(crate::on_board));
     }
 }
 

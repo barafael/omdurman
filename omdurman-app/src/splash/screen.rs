@@ -9,6 +9,8 @@
 //! right two thirds the period map, fading into the backdrop. Every
 //! look-and-feel number is in [`super::params`].
 
+use bevy::picking::hover::Hovered;
+use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
 use bevy::text::{FontSize, FontSource, LetterSpacing, LineHeight};
 use bevy::window::PrimaryWindow;
@@ -18,7 +20,8 @@ use super::map::SplashMaps;
 use super::params::*;
 use super::{Destination, SplashData, palette_color};
 use crate::ui::palette;
-use crate::{AppMode, AppState};
+use crate::ui_plugin::EguiPointerOverUi;
+use crate::{AppMode, AppState, Screen};
 
 /// The splash sits over every other Bevy UI node (egui draws over it).
 const SPLASH_Z: i32 = 1_000;
@@ -30,7 +33,8 @@ const NO_GAME_HINT: &str = "No game in progress — start one from the Lobby";
 /// shows (egui's tooltip delay).
 const HINT_DELAY_SECS: f32 = 0.5;
 
-/// The screen's fonts, from the same files egui uses (`ui_plugin::fonts`).
+/// The screen's fonts, the same embedded faces egui uses
+/// (`ui_plugin::faces`).
 #[derive(Resource)]
 pub(super) struct SplashFonts {
     serif: Handle<Font>,
@@ -68,12 +72,31 @@ pub(super) struct LoadingLabel;
 pub(super) struct ButtonGroup;
 
 /// A menu button: where it sends the player, which layout's it is, and
-/// whether a press began on it (a click is a release over the button).
+/// whether a press is held on it. Driven by picking events (a touch is a
+/// pointer like the mouse) and gated, like the board, on
+/// [`EguiPointerOverUi`]: egui draws over the native UI, and a pointer over
+/// an egui surface (a seat vote, a tooltip) must not reach the button
+/// beneath it.
 #[derive(Component)]
 pub(super) struct MenuButton {
     destination: Destination,
     narrow: bool,
     pressed: bool,
+}
+
+impl MenuButton {
+    /// "Game" only leads somewhere while a game is in progress.
+    fn enabled(&self, game_in_progress: bool) -> bool {
+        self.destination == Destination::Lobby || game_in_progress
+    }
+}
+
+/// How a button looks under the pointer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ButtonLook {
+    Idle,
+    Hovered,
+    Pressed,
 }
 
 /// A menu button's label.
@@ -104,23 +127,6 @@ pub(super) struct GameHint {
     hovered_secs: f32,
 }
 
-/// Which screen the root shows.
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Showing {
-    /// The title screen / persistent menu, over the board when a game is
-    /// in progress.
-    Title,
-    Lobby,
-}
-
-fn showing(app_state: &AppState, mode: &AppMode) -> Option<Showing> {
-    match (app_state, mode) {
-        (AppState::Splash, _) | (_, AppMode::Menu) => Some(Showing::Title),
-        (AppState::Lobby, _) => Some(Showing::Lobby),
-        _ => None,
-    }
-}
-
 /// Runs of `text` with `*...*` markdown emphasis: each run and whether it is
 /// italic (the emphasized runs, and the rest when `base_italic`).
 pub(super) fn emphasis_runs(text: &str, base_italic: bool) -> Vec<(&str, bool)> {
@@ -132,18 +138,13 @@ pub(super) fn emphasis_runs(text: &str, base_italic: bool) -> Vec<(&str, bool)> 
 }
 
 pub(super) fn load_fonts(mut commands: Commands, mut fonts: ResMut<Assets<Font>>) {
+    use crate::ui_plugin::faces;
     let mut add = |bytes: &'static [u8]| fonts.add(Font::from_bytes(bytes.to_vec()));
     commands.insert_resource(SplashFonts {
-        serif: add(include_bytes!(
-            "../../../assets/fonts/Merriweather-Regular.ttf"
-        )),
-        serif_italic: add(include_bytes!(
-            "../../../assets/fonts/Merriweather-Italic.ttf"
-        )),
-        serif_bold: add(include_bytes!(
-            "../../../assets/fonts/Merriweather-Bold.ttf"
-        )),
-        sans: add(include_bytes!("../../../assets/fonts/Inter-Medium.ttf")),
+        serif: add(faces::MERRIWEATHER_REGULAR),
+        serif_italic: add(faces::MERRIWEATHER_ITALIC),
+        serif_bold: add(faces::MERRIWEATHER_BOLD),
+        sans: add(faces::INTER_MEDIUM),
     });
 }
 
@@ -476,7 +477,7 @@ fn spawn_button(
             narrow,
             pressed: false,
         },
-        Button,
+        Hovered::default(),
         Node {
             width: Val::Px(BUTTON_SIZE.x),
             height: Val::Px(BUTTON_SIZE.y),
@@ -497,6 +498,8 @@ fn spawn_button(
         },
         children![(
             MenuButtonLabel,
+            // The button takes the pointer, not its label.
+            Pickable::IGNORE,
             Text::new(label),
             font(
                 &fonts.serif,
@@ -570,7 +573,7 @@ fn shadow_offsets() -> Vec<Vec2> {
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub(super) fn sync_splash_screen(
     app_state: Res<State<AppState>>,
-    mode: Res<State<AppMode>>,
+    screen_up: Option<Res<State<Screen>>>,
     splash: Res<SplashData>,
     maps: Res<SplashMaps>,
     tuning: Res<super::tuning::SplashTuning>,
@@ -591,7 +594,9 @@ pub(super) fn sync_splash_screen(
     let Ok(mut visibility) = root.single_mut() else {
         return;
     };
-    let shown = showing(app_state.get(), mode.get());
+    let shown = screen_up
+        .map(|screen| *screen.get())
+        .filter(|screen| matches!(screen, Screen::Title | Screen::Lobby));
     let Some(shown) = shown else {
         visibility.set_if_neq(Visibility::Hidden);
         return;
@@ -600,7 +605,7 @@ pub(super) fn sync_splash_screen(
     let Ok(window) = window.single() else { return };
     let screen = Vec2::new(window.width(), window.height());
     let narrow = screen.x < NARROW_BREAKPOINT;
-    let title = shown == Showing::Title;
+    let title = shown == Screen::Title;
     let column = title && tuning.sidebar;
     let display = |on: bool| if on { Display::Flex } else { Display::None };
     let set_display = |node: &mut Node, on: bool| {
@@ -641,18 +646,29 @@ pub(super) fn sync_splash_screen(
         set_display(&mut node, splash.loaded);
     }
 
-    let layout = match shown {
-        Showing::Title => BackdropLayout::Title {
+    let layout = if title {
+        BackdropLayout::Title {
             narrow,
             sidebar: tuning.sidebar,
             composite: title_composite(&app_state, &progress),
             map: tuning.title_map,
             blur_px: tuning.blur_px,
-        },
-        Showing::Lobby => BackdropLayout::Lobby { panel },
+        }
+    } else {
+        BackdropLayout::Lobby { panel }
     };
-    if let Some(mut material) = materials.get_mut(&backdrop.0) {
-        material.update(screen, &maps, layout);
+    // Written back only when it changed: a modified material is re-prepared
+    // (its uniform buffer and bind group rebuilt), so an untouched write
+    // every frame cost that every frame for nothing (a frozen show, a show
+    // still loading, an idle lobby between pan steps).
+    if let Some(current) = materials.get(&backdrop.0) {
+        let mut next = current.clone();
+        next.update(screen, &maps, layout);
+        if next != *current
+            && let Some(mut material) = materials.get_mut(&backdrop.0)
+        {
+            *material = next;
+        }
     }
 }
 
@@ -678,18 +694,16 @@ fn title_composite(
 #[allow(clippy::type_complexity)]
 pub(super) fn sync_credits(
     app_state: Res<State<AppState>>,
-    mode: Res<State<AppMode>>,
+    screen: Option<Res<State<Screen>>>,
     maps: Res<SplashMaps>,
     progress: (Res<crate::TurnState>, Res<crate::game_record::GameRecorder>),
     mut credits: Query<(&Credit, &mut Visibility, &Children)>,
     mut texts: Query<(&CreditText, &mut Text, &mut TextColor)>,
 ) {
-    let Some(shown) = showing(app_state.get(), mode.get()) else {
-        return;
-    };
-    let composite = match shown {
-        Showing::Title => title_composite(&app_state, &progress),
-        Showing::Lobby => 1.0,
+    let composite = match screen.as_deref().map(State::get) {
+        Some(Screen::Title) => title_composite(&app_state, &progress),
+        Some(Screen::Lobby) => 1.0,
+        _ => return,
     };
     let opacity = composite * maps.show.fade_in();
     let fade = maps.show.fade().filter(|&(index, _)| maps.is_ready(index));
@@ -730,18 +744,16 @@ pub(super) fn sync_credits(
     }
 }
 
-/// The buttons: their visuals for the pointer, a click (a release over the
-/// button a press began on) sends the player on, and the disabled "Game"
-/// button's hint shows after the pointer rests on it.
-#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+/// The buttons' visuals for the pointer, and the disabled "Game" button's
+/// hint after the pointer rests on it. (The clicks are observers:
+/// [`press_menu_button`], [`release_menu_button`], [`click_menu_button`].)
+#[allow(clippy::type_complexity)]
 pub(super) fn menu_buttons(
-    time: Res<Time>,
-    app_state: Res<State<AppState>>,
-    mode: Res<State<AppMode>>,
+    (time, over_egui): (Res<Time>, Res<EguiPointerOverUi>),
     progress: (Res<crate::TurnState>, Res<crate::game_record::GameRecorder>),
     window: Query<&Window, With<PrimaryWindow>>,
     mut buttons: Query<(
-        &Interaction,
+        &Hovered,
         &mut MenuButton,
         &mut BackgroundColor,
         &mut BorderColor,
@@ -750,34 +762,27 @@ pub(super) fn menu_buttons(
     )>,
     mut labels: Query<&mut TextColor, With<MenuButtonLabel>>,
     mut hint: Query<(&mut GameHint, &mut Node)>,
-    mut next_app_state: ResMut<NextState<AppState>>,
-    mut next_app_mode: ResMut<NextState<AppMode>>,
     mut activity: ResMut<crate::activity::Activity>,
 ) {
-    let up = showing(app_state.get(), mode.get()) == Some(Showing::Title);
     let game_enabled = crate::game_in_progress(&progress.0, &progress.1);
-    let mut chosen = None;
     let mut hint_hovered = false;
-    for (interaction, mut button, mut fill, mut border, children, node) in &mut buttons {
-        let enabled = button.destination == Destination::Lobby || game_enabled;
-        let visible = node.size().x > 0.0;
-        if !up || !visible {
-            button.pressed = false;
+    for (hovered, mut button, mut fill, mut border, children, node) in &mut buttons {
+        if node.size().x <= 0.0 {
+            // Laid out away (the other layout's, or the screen is down).
+            if button.pressed {
+                button.pressed = false;
+            }
             continue;
         }
-        if enabled {
-            match interaction {
-                Interaction::Pressed => button.pressed = true,
-                Interaction::Hovered if button.pressed => {
-                    button.pressed = false;
-                    chosen = Some(button.destination);
-                }
-                _ => button.pressed = false,
-            }
-        } else if *interaction != Interaction::None {
-            hint_hovered = true;
-        }
-        let (fill_color, border_color, text) = button_colors(enabled, button.narrow, interaction);
+        let enabled = button.enabled(game_enabled);
+        let hovered = hovered.get() && !over_egui.0;
+        let look = match (hovered, button.pressed) {
+            (true, true) => ButtonLook::Pressed,
+            (true, false) => ButtonLook::Hovered,
+            (false, _) => ButtonLook::Idle,
+        };
+        hint_hovered |= !enabled && hovered;
+        let (fill_color, border_color, text) = button_colors(enabled, button.narrow, look);
         fill.set_if_neq(BackgroundColor(fill_color));
         border.set_if_neq(BorderColor::all(border_color));
         for &child in children {
@@ -809,25 +814,90 @@ pub(super) fn menu_buttons(
             node.top = Val::Px(at.y);
         }
     }
+}
 
-    match chosen {
-        Some(Destination::Lobby) => {
+/// A primary press on a menu button holds it down (its pressed look).
+pub(super) fn press_menu_button(
+    mut press: On<Pointer<Press>>,
+    mut buttons: Query<&mut MenuButton>,
+    over_egui: Res<EguiPointerOverUi>,
+) {
+    if let Ok(mut button) = buttons.get_mut(press.entity) {
+        press.propagate(false);
+        if press.button == PointerButton::Primary && !over_egui.0 {
+            button.pressed = true;
+        }
+    }
+}
+
+/// The press ends: released over the button, dragged off it, or cancelled.
+pub(super) fn release_menu_button(
+    mut release: On<Pointer<Release>>,
+    mut buttons: Query<&mut MenuButton>,
+) {
+    if let Ok(mut button) = buttons.get_mut(release.entity) {
+        release.propagate(false);
+        button.pressed = false;
+    }
+}
+
+/// See [`release_menu_button`].
+pub(super) fn end_menu_button_drag(
+    mut drag_end: On<Pointer<DragEnd>>,
+    mut buttons: Query<&mut MenuButton>,
+) {
+    if let Ok(mut button) = buttons.get_mut(drag_end.entity) {
+        drag_end.propagate(false);
+        button.pressed = false;
+    }
+}
+
+/// See [`release_menu_button`].
+pub(super) fn cancel_menu_button(
+    mut cancel: On<Pointer<Cancel>>,
+    mut buttons: Query<&mut MenuButton>,
+) {
+    if let Ok(mut button) = buttons.get_mut(cancel.entity) {
+        cancel.propagate(false);
+        button.pressed = false;
+    }
+}
+
+/// A primary click (a press and a release on the button) sends the player
+/// on, if the button leads somewhere.
+pub(super) fn click_menu_button(
+    mut click: On<Pointer<Click>>,
+    buttons: Query<&MenuButton>,
+    progress: (Res<crate::TurnState>, Res<crate::game_record::GameRecorder>),
+    over_egui: Res<EguiPointerOverUi>,
+    mut next_app_state: ResMut<NextState<AppState>>,
+    mut next_app_mode: ResMut<NextState<AppMode>>,
+) {
+    let Ok(button) = buttons.get(click.entity) else {
+        return;
+    };
+    click.propagate(false);
+    let game_enabled = crate::game_in_progress(&progress.0, &progress.1);
+    if click.button != PointerButton::Primary || over_egui.0 || !button.enabled(game_enabled) {
+        return;
+    }
+    match button.destination {
+        Destination::Lobby => {
             info!("menu: entering lobby");
             next_app_state.set(AppState::Lobby);
             next_app_mode.set(AppMode::Lobby);
         }
-        Some(Destination::Game) => {
+        Destination::Game => {
             info!("menu: entering game");
             crate::enter_game_view(&mut next_app_mode, &mut next_app_state);
         }
-        None => {}
     }
 }
 
 /// A button's fill, border and label colours: the dark title-card visuals (the
 /// splash is art-directed, not paper chrome) for the pointer, or faded when
 /// disabled.
-fn button_colors(enabled: bool, narrow: bool, interaction: &Interaction) -> (Color, Color, Color) {
+fn button_colors(enabled: bool, narrow: bool, look: ButtonLook) -> (Color, Color, Color) {
     if !enabled {
         // The wide column paints its own disabled visuals; the narrow one's
         // are the normal ones, faded.
@@ -842,10 +912,10 @@ fn button_colors(enabled: bool, narrow: bool, interaction: &Interaction) -> (Col
         let faded = |color| palette_color(color).with_alpha(DISABLED_ALPHA);
         return (faded(fill), faded(border), faded(palette::TEXT_DISABLED));
     }
-    let (fill, border) = match interaction {
-        Interaction::None => (palette::NEUTRAL_FILL, palette::NEUTRAL_BORDER),
-        Interaction::Hovered => (palette::NEUTRAL_FILL_RAISED, palette::NEUTRAL_BORDER_HOVER),
-        Interaction::Pressed => (
+    let (fill, border) = match look {
+        ButtonLook::Idle => (palette::NEUTRAL_FILL, palette::NEUTRAL_BORDER),
+        ButtonLook::Hovered => (palette::NEUTRAL_FILL_RAISED, palette::NEUTRAL_BORDER_HOVER),
+        ButtonLook::Pressed => (
             palette::NEUTRAL_FILL_PRESSED,
             palette::NEUTRAL_BORDER_ACTIVE,
         ),
