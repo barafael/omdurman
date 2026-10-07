@@ -9,6 +9,7 @@ use bevy_egui::egui;
 use omdurman_net::GameEvent;
 use omdurman_rules::effects::GameEffect;
 use omdurman_rules::{FireAttack, FireKind, Phase};
+use omdurman_types::HexCoord;
 
 /// Tracks fire allocations before batch resolution (§6.41).
 /// Resets each fire sub-phase (see [`reset_fire_allocation_on_phase_change`]).
@@ -550,46 +551,73 @@ pub fn execute_fire_allocations(
     allocation.execute_requested = false;
 }
 
-/// Persistent orange arrows — one per allocated [`FireAttack`], from its
-/// firer hex to its target hex — so the player sees *which* shots are pending
+/// What [`fire_allocation_arrows`] draws: one (firer hex, target hex) per
+/// allocated attack while the allocations are open in a fire sub-phase --
+/// nothing once they are committed, or outside the fire phases.
+fn allocation_arrow_key(
+    allocation: &FireAllocationState,
+    gs: Option<&GameStateResource>,
+) -> Vec<(HexCoord, HexCoord)> {
+    let Some(gs) = gs else { return Vec::new() };
+    if allocation.committed || !in_fire_phase(gs) {
+        return Vec::new();
+    }
+    allocation
+        .attacks
+        .iter()
+        .filter_map(|attack| {
+            let unit = attack
+                .all_firing_units()
+                .first()
+                .and_then(|id| gs.0.find_unit(*id))?;
+            Some((unit.position, attack.target_hex))
+        })
+        .collect()
+}
+
+/// Persistent arrows from each allocated attack's firer hex to its target
 /// (§6.41). Same bold-orange look as the melee direction arrows and the hover
-/// preview arrow: one visual language for combat targeting. Rebuilt from the
-/// allocation list each frame (one arrow mesh per attack at most), so
-/// removing/executing an allocation drops its arrow immediately. Runs in the
-/// fire `GameSet`; exit the fire phase and they vanish with the rest of the
-/// gameplay overlays.
+/// preview arrow: one visual language for combat targeting. One arrow mesh
+/// per attack at most, rebuilt only when what they describe changed (the
+/// allocation list, the engine state: a firer's hex, the phase) or the
+/// overlays were cleared ([`crate::picker::OverlayGeneration`]) -- not every
+/// frame, matching the fire-target rings' discipline; removing/executing an
+/// allocation still drops its arrow at once, since that changes the list.
+/// Runs in the fire `GameSet`; exit the fire phase and they vanish with the
+/// rest of the gameplay overlays.
 pub fn fire_allocation_arrows(
     mut commands: Commands,
     render: crate::DirectionArrowCtx,
     existing: Query<Entity, With<AllocationArrow>>,
     allocation: Res<FireAllocationState>,
     gs: Option<Res<GameStateResource>>,
+    mut last: Local<Option<Vec<(HexCoord, HexCoord)>>>,
+    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
-    let existing: Vec<Entity> = existing.iter().collect();
-    crate::ui::despawn_all(&mut commands, &existing);
-    let Some(gs) = gs else { return };
-    if allocation.committed || !in_fire_phase(&gs) {
+    let invalidated = generation.invalidates(&mut seen_generation);
+    if invalidated {
+        // The overlays were cleared: forget what we last drew, so the arrows
+        // come back instead of being taken for still there.
+        *last = None;
+    }
+    let inputs_moved =
+        invalidated || allocation.is_changed() || gs.as_ref().is_some_and(|gs| gs.is_changed());
+    if !inputs_moved {
         return;
     }
-    for attack in &allocation.attacks {
-        let Some(unit) = attack
-            .all_firing_units()
-            .first()
-            .and_then(|id| gs.0.find_unit(*id))
-        else {
-            continue;
-        };
+    let key = allocation_arrow_key(&allocation, gs.as_deref());
+    if last.as_ref() == Some(&key) {
+        return;
+    }
+    let existing: Vec<Entity> = existing.iter().collect();
+    crate::ui::despawn_all(&mut commands, &existing);
+    for &(from, to) in &key {
         // The shared arrow mesh (tail at the firer, head at the target) --
         // not the hex-ring mesh, which stretched into a double-pointed
         // hexagon and read as fire in both directions.
-        crate::combat_ui::direction_arrow(
-            &mut commands,
-            &render,
-            unit.position,
-            attack.target_hex,
-            AllocationArrow,
-        );
+        crate::combat_ui::direction_arrow(&mut commands, &render, from, to, AllocationArrow);
     }
+    *last = Some(key);
 }
 
 /// Reset the allocation state whenever the engine phase changes, so an
@@ -689,5 +717,63 @@ mod tray_layout_tests {
             rect.min.x >= 0.0 && rect.max.x <= 1200.0,
             "off screen: {rect:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod arrow_key_tests {
+    use super::*;
+    use omdurman_rules::{FireSubPhase, UnitId, UnitPlacement, UnitState};
+    use omdurman_types::{Player, Scenario};
+
+    fn fire_state(phase: Phase) -> GameStateResource {
+        let mut gs = omdurman_rules::effects::GameState::new(Scenario::Campaign);
+        gs.phase = phase;
+        for (id, hex) in [
+            (UnitId::BritishArmy_0_0, HexCoord::new(0, 0)),
+            (UnitId::Baggara_0_0, HexCoord::new(3, 0)),
+        ] {
+            gs.units.push(UnitPlacement {
+                id,
+                position: hex,
+                profile: omdurman_rules::unit_profiles::profile_for_unit(id).unwrap(),
+                state: UnitState::default(),
+            });
+        }
+        GameStateResource(gs)
+    }
+
+    fn attack(phase: Phase) -> FireAttack {
+        FireAttack {
+            firing_player: Player::AngloEgyptian,
+            phase,
+            kind: FireKind::Direct,
+            firers: vec![UnitId::BritishArmy_0_0],
+            target_hex: HexCoord::new(3, 0),
+            at_fort: false,
+            factor_row: omdurman_rules::combat_results_table::FireFactorRow::Row41Plus,
+            modifiers: Vec::new(),
+            gunboat_maxims: Vec::new(),
+        }
+    }
+
+    /// One arrow per open allocation, from the firer's hex to the target;
+    /// none once committed, outside the fire phases, or without a state.
+    #[test]
+    fn arrows_follow_the_open_allocations() {
+        let phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        let gs = fire_state(phase);
+        let mut allocation = FireAllocationState {
+            attacks: vec![attack(phase)],
+            ..Default::default()
+        };
+        assert_eq!(
+            allocation_arrow_key(&allocation, Some(&gs)),
+            vec![(HexCoord::new(0, 0), HexCoord::new(3, 0))]
+        );
+        assert!(allocation_arrow_key(&allocation, None).is_empty());
+        assert!(allocation_arrow_key(&allocation, Some(&fire_state(Phase::Movement))).is_empty());
+        allocation.committed = true;
+        assert!(allocation_arrow_key(&allocation, Some(&gs)).is_empty());
     }
 }
