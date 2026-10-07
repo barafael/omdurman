@@ -30,6 +30,8 @@ serde = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
 indexmap = { workspace = true }
+# The board maps' deterministic hasher (see `board::DeterministicHasher`).
+rustc-hash = "1.1"
 tracing = { workspace = true }
 # Shared deterministic dice stream (`rng::GameRng`) -- app and bot both draw
 # from this, so replays and bot traces stay in sync. `GameRng` is *always*

@@ -9,7 +9,6 @@
 //! active board's annotations at game start and stores it *in* the serialized
 //! `GameState`, so late joiners and `GameRecord` replay reproduce it for free.
 
-use std::collections::hash_map::DefaultHasher;
 use std::hash::BuildHasherDefault;
 
 use indexmap::{IndexMap, IndexSet};
@@ -22,12 +21,15 @@ use omdurman_types::{HexCoord, HexDirection, HexsideKind, HexsideRef, Location, 
 /// proof harnesses; `IndexMap`/`IndexSet` default their `S` hasher to
 /// `std`'s `RandomState`, which seeds from the OS RNG (`getrandom`) on every
 /// construction. That foreign `syscall` is unmodellable under Kani and sank
-/// every `apply_effect` atomicity proof to UNDETERMINED. SipHash with fixed
-/// keys never touches the OS RNG, is what `HashMap::default()` would have
-/// used pre-1.x `RandomState`, and keeps `IndexMap`'s insertion-ordered,
+/// every `apply_effect` atomicity proof to UNDETERMINED. A hasher with fixed
+/// keys never touches the OS RNG and keeps `IndexMap`'s insertion-ordered,
 /// serde-deterministic behaviour intact — so `BoardInfo` stays honest for
-/// rule lookups while the proofs stay tractable.
-type DeterministicHasher = BuildHasherDefault<DefaultHasher>;
+/// rule lookups while the proofs stay tractable. `FxHasher` (rustc's own,
+/// a multiply-and-rotate per word) rather than SipHash with fixed keys:
+/// the keys are two or four small integers, every rule lookup goes through
+/// these maps, and SipHash alone was a sixth of a headless bot game's
+/// instructions.
+type DeterministicHasher = BuildHasherDefault<rustc_hash::FxHasher>;
 type Map<K, V> = IndexMap<K, V, DeterministicHasher>;
 type Set<T> = IndexSet<T, DeterministicHasher>;
 
