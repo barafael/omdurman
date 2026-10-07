@@ -21,8 +21,22 @@ use omdurman_rules::range_effects::night_range_effects;
 use omdurman_rules::{FireKind, HexDistance, RangeBand};
 use omdurman_types::{DayNight, HexCoord, Player, UnitKind};
 
+/// What the fire map depends on: the scenario and time of day, the
+/// breaches, and the shooter's firing units (where they stand, whether they
+/// are disrupted). Compared exactly, not hashed: a 64-bit digest of every
+/// shooter per query cost a tenth of a Campaign game, and a collision would
+/// have served a stale map.
+#[derive(PartialEq)]
+struct Key {
+    scenario: omdurman_types::Scenario,
+    night: bool,
+    shooter: Player,
+    breaches: std::collections::BTreeSet<omdurman_types::HexsideRef>,
+    shooters: Vec<(omdurman_rules::UnitId, HexCoord, bool)>,
+}
+
 struct Cache {
-    key: u64,
+    key: Key,
     hexes: HashMap<(HexCoord, bool), f32>,
 }
 
@@ -30,20 +44,19 @@ thread_local! {
     static CACHE: RefCell<Option<Cache>> = const { RefCell::new(None) };
 }
 
-fn key(state: &GameState, shooter: Player) -> u64 {
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    (state.scenario as u8).hash(&mut h);
-    (state.day_night == DayNight::Night).hash(&mut h);
-    shooter.hash(&mut h);
-    state.breaches.hash(&mut h);
-    for u in &state.units {
-        if u.profile.identity.owner() == shooter && u.profile.fire.is_some() {
-            u.id.hash(&mut h);
-            u.position.hash(&mut h);
-            u.state.disrupted.hash(&mut h);
-        }
+fn key(state: &GameState, shooter: Player) -> Key {
+    Key {
+        scenario: state.scenario,
+        night: state.day_night == DayNight::Night,
+        shooter,
+        breaches: state.breaches.clone(),
+        shooters: state
+            .units
+            .iter()
+            .filter(|u| u.profile.identity.owner() == shooter && u.profile.fire.is_some())
+            .map(|u| (u.id, u.position, u.state.disrupted))
+            .collect(),
     }
-    h.finish()
 }
 
 fn band_multiplier(band: RangeBand) -> f32 {
@@ -154,7 +167,7 @@ fn compute(state: &GameState, hex: HexCoord, shooter: Player, guns_only: bool) -
 }
 
 struct ShotCache {
-    key: u64,
+    key: (Key, u64),
     shots: HashMap<(HexCoord, u8, u16, u8), f32>,
 }
 
@@ -178,7 +191,7 @@ pub fn best_shot_from(
     };
     let owner = unit.profile.identity.owner();
     let target_side = owner.opponent();
-    let k = key(state, target_side) ^ terrain_key(state);
+    let k = (key(state, target_side), terrain_key(state));
     let level_kind = los_level_for_unit(unit.profile.kind, at, &state.board) as u8;
     let entry = (at, unit.profile.weapon as u8, fire.value(), level_kind);
     if let Some(v) = SHOTS.with(|c| {
