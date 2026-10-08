@@ -1779,6 +1779,7 @@ proofs = [
 ]
 tests = [
     "omdurman-rules::src::effects::tests::can_melee_gates_phase_adjacency_and_kind",
+    "omdurman-rules::src::effects::tests::a_stack_may_hold_units_back_from_a_melee",
 ]
 
 [[mapping.impl]]

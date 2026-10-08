@@ -356,8 +356,11 @@ fn picker_click(
         // nothing to plot -- keep the selection so the fire overlay stays
         // active (§6.41). A press on another friendly counter switches the
         // selection to it (as the tile selection does), so a player can pick
-        // the next firer without cancelling first; a hex holding enemy
-        // counters stays target territory for the release.
+        // the next firer without cancelling first -- a stackmate of the
+        // selected counter included (§6.15 lets a stack divide its fire, so
+        // after one battalion is allocated the next must be reachable without
+        // cancelling); a press on the selected counter itself keeps it. A hex
+        // holding enemy counters stays target territory for the release.
         ActiveSelection::Single { source, .. } => {
             if pressed {
                 let owner = picker_ctx.placed_units.get(source).ok().and_then(|(_, p)| {
@@ -369,12 +372,17 @@ fn picker_click(
                             omdurman_rules::unit_profiles::section_owner(u.section_name) != Some(o)
                         })
                 });
-                let own_hex = picker_ctx
-                    .placed_units
-                    .get(source)
-                    .is_ok_and(|(_, p)| p.coord == coord);
+                let same_counter = nearest_placed_unit_at(
+                    &picker_ctx.placed_units,
+                    coord,
+                    click.center,
+                    click.hit,
+                    click.stack_spread,
+                    click.hex_size,
+                )
+                .is_some_and(|(entity, _)| entity == source);
                 if !holds_foreign
-                    && !own_hex
+                    && !same_counter
                     && select_single_unit(
                         &mut picker_ctx.state,
                         &mut picker_ctx.commands,

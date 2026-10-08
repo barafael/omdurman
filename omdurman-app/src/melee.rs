@@ -6,15 +6,17 @@
 //! ([`PickerState::SelectedTile`], the unified combat selection; a
 //! single-clicked counter works too) — and the rules engine permits it
 //! ([`GameState::can_melee`]), adjacent enemy-occupied hexes are highlighted.
-//! Clicking one builds a [`MeleeAttack`] -- the co-stacked melee-capable
-//! attackers vs. the defenders in the target hex, with the standard side
-//! modifiers (Dervish +2, Anglo-Egyptian +1, §7.7) -- pre-rolls both dice,
-//! and broadcasts a [`GameEffect::DeclareMelee`].
+//! Clicking one builds a [`MeleeAttack`] -- the selection's melee-capable
+//! attackers (the whole tile, or a single-clicked counter alone: melee is
+//! each unit's own choice, §7.4, and its stackmates stay out) vs. the
+//! defenders in the target hex, with the standard side modifiers (Dervish
+//! +2, Anglo-Egyptian +1, §7.7) -- pre-rolls both dice, and broadcasts a
+//! [`GameEffect::DeclareMelee`].
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_net::GameEvent;
-use omdurman_rules::effects::{GameEffect, GameState};
+use omdurman_rules::effects::{GameEffect, GameState, build_melee_attack_from};
 use omdurman_rules::{MeleeModifier, Phase, UnitId};
 use omdurman_types::HexCoord;
 
@@ -25,12 +27,28 @@ use crate::{
     picker::{PickerState, PlacedUnit, selected_origin_hex, selected_unit_ids},
 };
 
+/// The members of the current selection that may melee `target` now
+/// (§7.4/§7.5, as the engine judges each): every melee-capable unit of a
+/// double-clicked tile ([`PickerState::SelectedTile`]), or a single-clicked
+/// counter alone -- melee is each unit's own choice, so the counter's
+/// stackmates stay out of the attack (§7.7 takes "losses from meleeing units
+/// first"). The declared attack carries exactly these.
+fn selected_melee_attackers(
+    state: &PickerState,
+    placed_units: &Query<(Entity, &PlacedUnit)>,
+    gs: &GameState,
+    target: HexCoord,
+) -> Vec<UnitId> {
+    selected_unit_ids(state, placed_units)
+        .into_iter()
+        .filter(|&id| gs.can_melee(id, target).is_ok())
+        .collect()
+}
+
 /// The acting melee group of the current selection: the origin hex plus a
-/// melee-capable representative. A combat-phase double-click selects the
-/// whole tile ([`PickerState::SelectedTile`]) and the engine's
-/// `build_melee_attack` gathers exactly these co-stacked attackers — so one
-/// representative suffices for `can_melee` while the attack still carries the
-/// whole tile. A single-clicked counter resolves to itself.
+/// melee-capable representative, for the target rings and the direction
+/// arrow (`can_melee` per candidate target). The attack itself is built from
+/// [`selected_melee_attackers`].
 fn selected_melee_group(
     state: &PickerState,
     placed_units: &Query<(Entity, &PlacedUnit)>,
@@ -159,7 +177,7 @@ pub fn handle_melee_combat(
     if !peers.may_act(gs.0.phase_player()) {
         return;
     }
-    let Some((attacker, attacker_hex)) = selected_melee_group(&state, &placed_units, &gs.0) else {
+    let Some((attacker, _)) = selected_melee_group(&state, &placed_units, &gs.0) else {
         return;
     };
 
@@ -185,7 +203,8 @@ pub fn handle_melee_combat(
         return;
     }
 
-    let Some(attack) = build_melee_attack(&gs.0, attacker_hex, target) else {
+    let attackers = selected_melee_attackers(&state, &placed_units, &gs.0, target);
+    let Some(attack) = build_melee_attack_from(&gs.0, &attackers, target) else {
         return;
     };
     let attacker_roll = rng.roll_d10();
@@ -287,11 +306,6 @@ pub(crate) fn defenders_may_retreat(
 ) -> bool {
     crate::retreat::retreat_candidate_at(gs, attack.defender_hex).is_some()
 }
-
-/// Attack construction lives in the engine (`omdurman_rules::effects::
-/// build_melee_attack`, shared verbatim with the bot); imported so the click
-/// gate and the preview panel use the same builder.
-use omdurman_rules::effects::build_melee_attack;
 
 /// The selected units that advance into `to` with one click: every eligible
 /// one, each checked against the state after the ones before it moved in, so
@@ -437,13 +451,14 @@ pub fn melee_combat_preview_ui(
     ) else {
         return;
     };
-    let Some((attacker, attacker_hex)) = selected_melee_group(&state, &placed_units, &gs.0) else {
+    let Some((attacker, _)) = selected_melee_group(&state, &placed_units, &gs.0) else {
         return;
     };
     if gs.0.can_melee(attacker, target).is_err() {
         return;
     }
-    let Some(attack) = build_melee_attack(&gs.0, attacker_hex, target) else {
+    let attackers = selected_melee_attackers(&state, &placed_units, &gs.0, target);
+    let Some(attack) = build_melee_attack_from(&gs.0, &attackers, target) else {
         return;
     };
 
@@ -703,8 +718,71 @@ mod tests {
     use super::*;
     use crate::picker::{OverlayGeneration, TileSelection};
     use crate::render::{HexOverlay, HexRingAssets};
+    use bevy::ecs::system::RunSystemOnce;
     use omdurman_rules::{FireSubPhase, UnitPlacement};
     use omdurman_types::{Player, Scenario, SectionName};
+
+    /// A single-clicked counter melees alone (§7.4: melee is each unit's
+    /// choice), the double-clicked tile melees as one -- the declared
+    /// attackers follow the selection, not the whole hex.
+    #[test]
+    fn the_declared_attackers_follow_the_selection() {
+        let mut gs = GameState::new(Scenario::Campaign);
+        gs.phase = Phase::Melee;
+        gs.active_player = Player::Dervish;
+        let from = HexCoord::new(4, 5);
+        let target = HexCoord::new(5, 5);
+        let stack = [UnitId::MulazminI_0_0, UnitId::MulazminI_0_1];
+        for id in stack.into_iter().chain([UnitId::BritishArmy_0_0]) {
+            gs.units.push(UnitPlacement {
+                id,
+                position: if id == UnitId::BritishArmy_0_0 {
+                    target
+                } else {
+                    from
+                },
+                profile: omdurman_rules::unit_profiles::profile_for_unit(id).unwrap(),
+                state: Default::default(),
+            });
+        }
+        let mut world = World::new();
+        let sources: Vec<Entity> = stack
+            .iter()
+            .map(|&id| {
+                world
+                    .spawn(PlacedUnit {
+                        coord: from,
+                        section_name: SectionName::MulazminI,
+                        col: 0,
+                        row: 0,
+                        is_boat: false,
+                        unit_id: Some(id),
+                        disrupted: false,
+                    })
+                    .id()
+            })
+            .collect();
+        let single = PickerState::Selected {
+            source: sources[0],
+            start_coord: from,
+            remaining_mp: 0,
+            forced_stop: false,
+        };
+        let tile = PickerState::SelectedTile(TileSelection {
+            sources: sources.clone(),
+            start_coord: from,
+        });
+        let attackers_of = |world: &mut World, state: PickerState| {
+            let gs = gs.clone();
+            world
+                .run_system_once(move |placed: Query<(Entity, &PlacedUnit)>| {
+                    selected_melee_attackers(&state, &placed, &gs, target)
+                })
+                .expect("the query runs")
+        };
+        assert_eq!(attackers_of(&mut world, single), vec![stack[0]]);
+        assert_eq!(attackers_of(&mut world, tile), stack.to_vec());
+    }
 
     /// Overlay caches must treat an [`crate::picker::OverlayGeneration`] bump
     /// as "the rings you drew are gone": after `clear_gameplay_overlays`

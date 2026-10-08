@@ -423,7 +423,6 @@ pub fn build_melee_attack(
         .iter()
         .find(|u| u.position == attacker_hex)
         .map(|u| u.profile.identity.owner())?;
-    let enemy = owner.opponent();
 
     // Every co-stacked unit that may melee the target now (§7.4, §7.5):
     // not disrupted, not spent this turn, not busy demolishing or building
@@ -437,9 +436,37 @@ pub fn build_melee_attack(
         .filter(|u| gs.can_melee(u.id, defender_hex).is_ok())
         .map(|u| u.id)
         .collect();
-    if attackers.is_empty() {
-        return None;
+    build_melee_attack_from(gs, &attackers, defender_hex)
+}
+
+/// Build the `MeleeAttack` for an explicit attacker list: melee is each
+/// unit's own choice (§7.4 says who *may* melee attack; §7.7 takes "losses
+/// from meleeing units first", so a stack may keep units out of the fight),
+/// and the caller names the subunits that attack rather than the whole hex
+/// -- the melee counterpart of [`build_fire_attack_from`]. Every attacker
+/// must share one hex and one owner and pass [`GameState::can_melee`] for
+/// `defender_hex`; the defenders are all meleeable enemy units there (§7.1).
+/// Returns `None` for an empty or not-fully-legal list, or no defender.
+pub fn build_melee_attack_from(
+    gs: &GameState,
+    attackers: &[UnitId],
+    defender_hex: HexCoord,
+) -> Option<MeleeAttack> {
+    let mut attackers: Vec<UnitId> = attackers.to_vec();
+    attackers.sort_unstable();
+    attackers.dedup();
+    let lead = gs.find_unit(*attackers.first()?)?;
+    let (owner, attacker_hex) = (lead.profile.identity.owner(), lead.position);
+    for &id in &attackers {
+        let unit = gs.find_unit(id)?;
+        if unit.position != attacker_hex
+            || unit.profile.identity.owner() != owner
+            || gs.can_melee(id, defender_hex).is_err()
+        {
+            return None;
+        }
     }
+    let enemy = owner.opponent();
 
     // All enemy units in the target hex defend (gunboats can't be melee'd --
     // §7.1).

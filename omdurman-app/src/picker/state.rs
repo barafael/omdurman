@@ -153,8 +153,9 @@ pub enum PickerState {
     /// combat selection. In a fire sub-phase the group is every firing unit
     /// of the hex (§6.14 combines them; §6.15 lets a smaller set fire
     /// instead — the engine's `build_fire_attack_from` takes any firer
-    /// list); in Melee it is every melee-capable unit (the engine's
-    /// `build_melee_attack` always gathers the co-stacked attackers, §7).
+    /// list); in Melee it is every melee-capable unit (§7.4; the engine's
+    /// `build_melee_attack_from` likewise takes any attacker list, so a
+    /// single-clicked counter melees alone and its stackmates stay out).
     /// A single click selects one counter instead. There is no plotted path:
     /// the group is the actor set for target rings, direction arrows,
     /// previews, and allocation. Clicking the group's own hex again

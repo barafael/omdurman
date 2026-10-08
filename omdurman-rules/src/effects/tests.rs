@@ -11501,6 +11501,52 @@ mod tests {
         let _ = friend;
     }
 
+    /// Melee is each unit's own choice: a stack may send one battalion in
+    /// and hold the other back (§7.4 says who *may* attack; §7.7 takes the
+    /// losses "from meleeing units first"). The engine accepts the subset
+    /// and only the declared attacker is spent (§7.5).
+    #[rulebook("§7.4")]
+    #[test]
+    fn a_stack_may_hold_units_back_from_a_melee() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::Melee;
+        state.active_player = Player::AngloEgyptian;
+        let from = HexCoord::new(0, 0);
+        let target = HexCoord::new(1, 0);
+        let goes_in = make_ae_infantry(&mut state, from);
+        let held_back = make_ae_infantry(&mut state, from);
+        make_dervish_tribal(&mut state, target);
+
+        let whole = build_melee_attack(&state, from, target).unwrap();
+        assert_eq!(whole.attackers.len(), 2, "the whole stack may attack");
+        let attack = build_melee_attack_from(&state, &[goes_in], target).unwrap();
+        assert_eq!(attack.attackers, vec![goes_in]);
+        assert_eq!(
+            attack.defenders, whole.defenders,
+            "all defenders defend (§7.1)"
+        );
+        assert!(
+            build_melee_attack_from(&state, &[], target).is_none(),
+            "an empty attacker list is no attack"
+        );
+
+        declare_and_resolve(
+            &mut state,
+            &GameEffect::DeclareMelee {
+                attack,
+                attacker_roll: DieRoll::One,
+                defender_roll: DieRoll::One,
+                disruption: crate::DisruptionDraw::default(),
+            },
+        )
+        .unwrap();
+        assert!(state.units_meleed_this_turn.contains(&goes_in));
+        assert!(
+            !state.units_meleed_this_turn.contains(&held_back),
+            "the unit held back is not spent"
+        );
+    }
+
     // §7.7: "Melee losses must be taken from meleeing units first!" -- and
     // then from the other units of the attacking hex.
     #[rulebook("§7.7")]
