@@ -512,13 +512,14 @@ impl GameState {
             // enters a chained hex stops there (the move is cut short on
             // apply -- it does not know where the chain lies), and from it
             // may only go back the way it came; a Dervish gunboat, which
-            // knows, may not enter one at all. (A gunboat the chain was
-            // strung under in setup came from nowhere: it may leave.)
+            // knows, may not enter one at all. No gunboat sets up on a
+            // chained hex (§10.21), so a boat lying on one always steamed
+            // in and is on record; one without a record has no way back.
             if i == 0 && self.chain_covers(prev) {
                 let back = self
                     .gunboats_at_chain
                     .get(&unit.id)
-                    .is_none_or(|&from| next == from || next.is_adjacent_to(from));
+                    .is_some_and(|&from| next == from || next.is_adjacent_to(from));
                 if !back || self.chain_covers(next) {
                     return Err(RuleError::BlockedByChain(next));
                 }
@@ -662,6 +663,14 @@ impl GameState {
                 }
                 if !u.position.is_adjacent_to(g.position) {
                     return Err(RuleError::FriendliesNotAdjacentToGunboat);
+                }
+                // "from the east bank of the Nile to the west bank": the
+                // ferry runs one way; a unit already across does not board
+                // again.
+                if !self.board.terrain.is_empty()
+                    && self.board.bank_of(u.position) != Some(crate::board::NileBank::East)
+                {
+                    return Err(RuleError::FriendliesLoadNotEastBank(u.position));
                 }
                 if self.mp_spent(unit) > 0 || self.mp_spent(gunboat) > 0 {
                     return Err(RuleError::FriendliesMustStartTurnAdjacent);

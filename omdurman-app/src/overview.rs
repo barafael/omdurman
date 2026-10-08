@@ -82,7 +82,35 @@ pub fn unit_overview_ui(
             entry.0 += 1;
             entry.1 += usize::from(placed.disrupted);
         }
-        *unit_list = Some(UnitListCache { counters, groups });
+        // The units off the board for good: the casualties, and the Dervish
+        // deserters of the first night (§8.2), listed apart.
+        let off_board = |ids: &[omdurman_rules::UnitId]| {
+            let mut gone: std::collections::BTreeMap<(u8, String), usize> =
+                std::collections::BTreeMap::new();
+            for id in ids {
+                let Some(profile) = omdurman_rules::unit_profiles::profile_for_unit(*id) else {
+                    continue;
+                };
+                let side = match profile.identity.owner() {
+                    omdurman_types::Player::AngloEgyptian => 0,
+                    omdurman_types::Player::Dervish => 1,
+                };
+                *gone
+                    .entry((side, identity_description(&profile.identity)))
+                    .or_default() += 1;
+            }
+            gone
+        };
+        let (eliminated, deserted) = match game_state.as_deref() {
+            Some(gs) => (off_board(&gs.0.eliminated), off_board(&gs.0.deserted)),
+            None => Default::default(),
+        };
+        *unit_list = Some(UnitListCache {
+            counters,
+            groups,
+            eliminated,
+            deserted,
+        });
     }
     let unit_list = unit_list.as_ref().expect("filled above");
     let local = peers.local();
@@ -279,6 +307,20 @@ pub fn unit_overview_ui(
                                     );
                                 }
                             });
+                            off_board_section(
+                                ui,
+                                "Eliminated",
+                                "eliminated_list",
+                                &unit_list.eliminated,
+                                local,
+                            );
+                            off_board_section(
+                                ui,
+                                "Deserted",
+                                "deserted_list",
+                                &unit_list.deserted,
+                                local,
+                            );
                         });
                 })
                 .response
@@ -316,6 +358,64 @@ pub struct UnitListCache {
     counters: usize,
     /// (side: A-E 0 / Dervish 1 / other 2, label) -> (counters, disrupted).
     groups: std::collections::BTreeMap<(u8, String), (usize, usize)>,
+    /// (side, label) -> counters eliminated, off the board for good.
+    eliminated: std::collections::BTreeMap<(u8, String), usize>,
+    /// (side, label) -> counters that deserted in the night (§8.2).
+    deserted: std::collections::BTreeMap<(u8, String), usize>,
+}
+
+/// A collapsed list of counters off the board ("Eliminated", "Deserted"),
+/// grouped by side and label like the forces list; nothing when empty.
+fn off_board_section(
+    ui: &mut egui::Ui,
+    title: &str,
+    salt: &str,
+    gone: &std::collections::BTreeMap<(u8, String), usize>,
+    local: Option<omdurman_types::Player>,
+) {
+    let total: usize = gone.values().sum();
+    if total == 0 {
+        return;
+    }
+    ui.add_space(6.0);
+    egui::CollapsingHeader::new(
+        egui::RichText::new(format!("{title} ({total})"))
+            .size(13.0)
+            .color(crate::ui::palette::HEADING),
+    )
+    .id_salt(salt)
+    .default_open(false)
+    .show(ui, |ui| {
+        let mut last_side = None;
+        for ((side, label), count) in gone {
+            if last_side != Some(*side) {
+                last_side = Some(*side);
+                let player = match side {
+                    0 => Some(omdurman_types::Player::AngloEgyptian),
+                    1 => Some(omdurman_types::Player::Dervish),
+                    _ => None,
+                };
+                if let Some(player) = player {
+                    let yours = if local == Some(player) {
+                        " (yours)"
+                    } else {
+                        ""
+                    };
+                    ui.add_space(4.0);
+                    ui.label(
+                        egui::RichText::new(format!("{}{yours}", crate::ui::faction_name(player)))
+                            .size(13.0)
+                            .color(crate::ui::faction_color(player)),
+                    );
+                }
+            }
+            ui.label(
+                egui::RichText::new(format!("{label} \u{00d7}{count}"))
+                    .size(12.0)
+                    .color(crate::ui::palette::TEXT_STRONG),
+            );
+        }
+    });
 }
 
 fn placed_unit_identity(placed: &PlacedUnit, game_state: Option<&GameStateResource>) -> String {

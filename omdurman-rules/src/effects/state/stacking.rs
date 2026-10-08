@@ -98,6 +98,12 @@ pub fn stacking_rule(occupants: &[&UnitPlacement]) -> Result<(), crate::Stacking
             let bad = occupants.iter().any(|other| match other.profile.identity {
                 crate::UnitIdentity::DervishTribal { tribe } => !leader.commands(tribe),
                 crate::UnitIdentity::DervishLeader(other_leader) => other_leader != leader,
+                // The Dervish artillery is the Khalifa's: it sets up with
+                // him in the walled city (§5.23, §9.111) and near him in the
+                // Historical scenario (§9.212), so it wears his colour.
+                crate::UnitIdentity::DervishArtillery => {
+                    leader != crate::DervishLeader::KhalifaAbdullah
+                }
                 _ => false,
             });
             if bad {

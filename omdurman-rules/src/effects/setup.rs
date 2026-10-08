@@ -291,6 +291,10 @@ pub fn apply_dervish_desertion(
 
     for &id in deserters {
         state.units.retain(|u| u.id != id);
+        // A deserter is gone for good: off the board without victory points
+        // (§8.2), listed apart from the casualties, and never marching back
+        // on as a reinforcement (§9.112).
+        state.deserted.push(id);
     }
     state.turn_events.push(TurnEventRecord::Desertion {
         units: deserters.to_vec(),

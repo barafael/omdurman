@@ -69,8 +69,14 @@ pub enum TurnEventRecord {
     /// A unit was eliminated.
     UnitEliminated { unit: UnitId, cause: ElimCause },
     /// A howitzer shell impacted at `at` (§6.64) — `scattered` when the
-    /// impact roll moved the shell off the aimed hex.
-    HowitzerImpact { at: HexCoord, scattered: bool },
+    /// impact roll moved the shell off the aimed hex, `lost` when it
+    /// carried it off the map (nothing to resolve).
+    HowitzerImpact {
+        at: HexCoord,
+        scattered: bool,
+        #[serde(default)]
+        lost: bool,
+    },
     /// Victory points were scored.
     VpScored {
         source: VpSource,
@@ -212,8 +218,17 @@ impl TurnEventRecord {
             TurnEventRecord::UnitEliminated { unit, cause } => {
                 format!("{} eliminated ({cause})", unit_name(unit))
             }
-            TurnEventRecord::HowitzerImpact { at, scattered } => {
-                if *scattered {
+            TurnEventRecord::HowitzerImpact {
+                at,
+                scattered,
+                lost,
+            } => {
+                if *lost {
+                    format!(
+                        "Howitzer shell scattered off the map at {} (§6.64)",
+                        hex(at)
+                    )
+                } else if *scattered {
                     format!("Howitzer shell scattered to {} (§6.64)", hex(at))
                 } else {
                     format!("Howitzer shell on target at {}", hex(at))

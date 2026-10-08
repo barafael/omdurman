@@ -105,11 +105,70 @@ impl HexCoord {
     }
 
     /// [`line_between`](Self::line_between), resolving every hexside tie to
-    /// the other side. Equal to `line_between` unless the line runs along
-    /// hexsides somewhere.
+    /// the other side. Equal to `line_between` unless the line hits a
+    /// hexside tie somewhere: it runs along hexsides
+    /// ([`line_runs_along_hexsides`](Self::line_runs_along_hexsides)), or
+    /// crosses one exactly at its midpoint.
     pub fn line_between_other_side(self, other: HexCoord) -> Vec<HexCoord> {
         HexLine::new(self, other, -1).collect()
     }
+
+    /// Whether the straight line between the two hex centres runs along
+    /// hexsides instead of through hexes (rulebook §6.3, special LOS notes
+    /// d and e): the six directions midway between neighbour directions,
+    /// where the line leaves `self` through a corner and follows the edge
+    /// radiating from it. On the cube axes `(q, r - q, -r)` these are the
+    /// multiples of `(2, -1, -1)` and its rotations -- a delta with two
+    /// equal components. Such a line alternates hex centres (even steps)
+    /// and edge midpoints (odd steps); the midpoints are the hexside ties
+    /// that [`line_between`](Self::line_between) and
+    /// [`line_between_other_side`](Self::line_between_other_side) resolve
+    /// to opposite sides.
+    ///
+    /// A line in any other direction can hit a tie too, by crossing a
+    /// hexside exactly at its midpoint (`(0, 0)` to `(4, 1)` crosses the
+    /// `(2, 0)|(2, 1)` edge there); it then crosses that hexside at an
+    /// angle, running along none.
+    pub fn line_runs_along_hexsides(self, other: HexCoord) -> bool {
+        let dq = other.q - self.q;
+        let dr = other.r - self.r;
+        let [x, y, z] = [dq, dr - dq, -dr];
+        (x, y, z) != (0, 0, 0) && (x == y || y == z || x == z)
+    }
+
+    /// The hexsides the straight line from `self` to `other` runs along
+    /// (rulebook §6.3, special LOS notes d and e), in order from `self`.
+    /// Empty unless [`line_runs_along_hexsides`](Self::line_runs_along_hexsides);
+    /// then one per odd step of the line, each between the two hexes
+    /// [`line_between`](Self::line_between) and
+    /// [`line_between_other_side`](Self::line_between_other_side) walk at
+    /// that step.
+    pub fn hexsides_along_line(self, other: HexCoord) -> Vec<AlongHexside> {
+        if !self.line_runs_along_hexsides(other) {
+            return Vec::new();
+        }
+        HexLine::new(self, other, 1)
+            .zip(HexLine::new(self, other, -1))
+            .enumerate()
+            .filter(|(_, (a, b))| a != b)
+            .map(|(i, (a, b))| AlongHexside { step: i + 1, a, b })
+            .collect()
+    }
+}
+
+/// A hexside the straight line between two hex centres runs along (see
+/// [`HexCoord::hexsides_along_line`]; rulebook §6.3, notes d and e).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct AlongHexside {
+    /// The step of the line (its hex distance from the start) at which the
+    /// hexside's midpoint lies: the line runs along the hexside from half a
+    /// step before to half a step after it.
+    pub step: usize,
+    /// The hex on the side [`HexCoord::line_between`] walks at that step.
+    pub a: HexCoord,
+    /// The hex on the other side, the one
+    /// [`HexCoord::line_between_other_side`] walks. Adjacent to `a`.
+    pub b: HexCoord,
 }
 
 /// The intervening hexes of a straight line between two hex centres (see
@@ -1677,6 +1736,61 @@ mod tests {
         }
     }
 
+    /// The hexsides a line runs along (§6.3 notes d, e), exhaustively over
+    /// the 13 x 13 window: a line in a corner direction has even length and
+    /// one along-hexside per odd step, between the adjacent hexes its two
+    /// tie sides walk there (the even steps agree); every other line runs
+    /// along none -- including one that crosses a hexside at its midpoint,
+    /// which is a tie too. Reversing the line mirrors the steps.
+    #[test]
+    fn hexsides_along_line_are_the_odd_step_ties_of_corner_lines() {
+        let window = || (-6..=6).flat_map(|q| (-6..=6).map(move |r| HexCoord::new(q, r)));
+        for a in window() {
+            for b in window() {
+                let along = a.hexsides_along_line(b);
+                let n = a.distance(b) as usize;
+                let (side, other) = (a.line_between(b), a.line_between_other_side(b));
+                if a.line_runs_along_hexsides(b) {
+                    assert_eq!(n % 2, 0, "{a} -> {b}");
+                    assert_eq!(along.len(), n / 2, "{a} -> {b}");
+                    for (k, ah) in along.iter().enumerate() {
+                        assert_eq!(ah.step, 2 * k + 1, "{a} -> {b}");
+                        assert_eq!((ah.a, ah.b), (side[ah.step - 1], other[ah.step - 1]));
+                        assert!(ah.a.is_adjacent_to(ah.b), "{a} -> {b}");
+                        assert_eq!(a.distance(ah.a), ah.step as u32);
+                    }
+                    for step in (2..n).step_by(2) {
+                        assert_eq!(side[step - 1], other[step - 1], "{a} -> {b}");
+                    }
+                    // The same hexsides seen from the other end.
+                    let back = b.hexsides_along_line(a);
+                    assert_eq!(back.len(), along.len());
+                    for (ah, bh) in along.iter().zip(back.iter().rev()) {
+                        assert_eq!(bh.step, n - ah.step);
+                        assert_eq!(HexsideRef::new(bh.a, bh.b), HexsideRef::new(ah.a, ah.b));
+                    }
+                } else {
+                    assert!(along.is_empty(), "{a} -> {b}");
+                }
+            }
+        }
+        // A corner line: along the edge its two sides share.
+        let (a, b) = (HexCoord::new(0, 0), HexCoord::new(2, 1));
+        assert_eq!(
+            a.hexsides_along_line(b),
+            vec![AlongHexside {
+                step: 1,
+                a: HexCoord::new(1, 1),
+                b: HexCoord::new(1, 0),
+            }]
+        );
+        // A midpoint crossing: a tie, but the line crosses the hexside.
+        let (a, b) = (HexCoord::new(0, 0), HexCoord::new(4, 1));
+        assert_ne!(a.line_between(b), a.line_between_other_side(b));
+        assert!(!a.line_runs_along_hexsides(b));
+        assert!(a.hexsides_along_line(b).is_empty());
+    }
+
     #[test]
     fn hexside_ref_normalizes_and_separates() {
         let a = HexCoord::new(2, 3);
@@ -1943,6 +2057,35 @@ mod verification {
             let d = hex.distance(b);
             assert!(d < prev_dist);
             prev_dist = d;
+        }
+    }
+
+    /// The hexsides a ray runs along (§6.3 notes d and e) each join two
+    /// *adjacent* hexes, one from either tie side of the line, at an odd
+    /// step of it -- so the LOS walk's `hexside_between` lookup on them
+    /// names a real edge, half a step either side of a hex of the ray.
+    // §6.3
+    #[traceability_macro::rulebook("§6.3")]
+    #[kani::proof]
+    #[kani::unwind(14)]
+    fn hexsides_along_line_join_adjacent_hexes() {
+        let a = any_near_hex();
+        let b = any_near_hex();
+        let along = a.hexsides_along_line(b);
+        // A corner line has even length and one along-hexside per odd step;
+        // any other line runs along none.
+        if a.line_runs_along_hexsides(b) {
+            assert!(a.distance(b) % 2 == 0);
+            assert!(along.len() == (a.distance(b) / 2) as usize);
+        } else {
+            assert!(along.is_empty());
+        }
+        for (k, ah) in along.iter().enumerate() {
+            assert!(ah.step == 2 * k + 1);
+            assert!(ah.a != ah.b);
+            assert!(ah.a.is_adjacent_to(ah.b));
+            assert!(a.distance(ah.a) == ah.step as u32);
+            assert!(a.distance(ah.b) == ah.step as u32);
         }
     }
 

@@ -821,13 +821,16 @@ pub fn unit_picker_ui(
             }
         }
 
-        // -- eliminated counters --
-        // A destroyed unit never returns to play; the engine refuses it
-        // (`RuleError::UnitEliminated`), so keep it out of the tray.
+        // -- eliminated and deserted counters --
+        // A destroyed unit never returns to play, nor does a deserter (§8.2);
+        // the engine refuses both (`RuleError::UnitEliminated`,
+        // `RuleError::UnitDeserted`), so keep them out of the tray.
         if let Some(state) = game_state.as_deref() {
             for unit in &mut picker.available {
                 if unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
-                    .is_some_and(|id| state.0.eliminated.contains(&id))
+                    .is_some_and(|id| {
+                        state.0.eliminated.contains(&id) || state.0.deserted.contains(&id)
+                    })
                 {
                     unit.visible = false;
                 }

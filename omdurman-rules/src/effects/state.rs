@@ -130,6 +130,12 @@ pub struct GameState {
     /// the way it came ("No gunboats ... may cross the chain", §10.23).
     #[serde(default)]
     pub gunboats_at_chain: BTreeMap<UnitId, HexCoord>,
+    /// The Anglo-Egyptian infantry and cavalry standing on a bank next to a
+    /// chained hex when the Anglo-Egyptian player turn began (§10.23 a):
+    /// one of them still there, unmoved, at the end of the turn has "spent
+    /// one complete turn" beside the chain. Rebuilt at every turn start.
+    #[serde(default)]
+    pub chain_sentries: Vec<UnitId>,
     /// Static per-board map facts (hexsides, terrain, Nile current, landmarks)
     /// the engine consults to enforce map-dependent rules (§5.11, §5.24, §5.44,
     /// §6.6x, §9.14, §10). Empty until the app attaches the active board at game
@@ -155,6 +161,11 @@ pub struct GameState {
     /// (§8.2). Prevents re-applying the desertion effect.
     #[serde(default)]
     pub dervish_deserted: bool,
+    /// The Dervish units that deserted (§8.2): off the board for good like
+    /// the eliminated, but no casualties -- they scored nothing and are
+    /// listed apart. A deserter never re-enters as a reinforcement.
+    #[serde(default)]
+    pub deserted: Vec<UnitId>,
     /// A melee that has been *declared* but not yet resolved (§7.5): while it
     /// is pending, the defender's cavalry/camel may retreat before resolution.
     /// `None` outside a declaration window.
@@ -262,9 +273,11 @@ impl GameState {
             pending_mine: None,
             gunboats_stopped_this_turn: Vec::new(),
             gunboats_at_chain: BTreeMap::new(),
+            chain_sentries: Vec::new(),
             board: Arc::new(BoardInfo::default()),
             breaches: BTreeSet::new(),
             dervish_deserted: false,
+            deserted: Vec::new(),
             pending_melee: None,
             gordon_eliminated_turn: None,
             setup_ready_ae: false,
@@ -524,9 +537,11 @@ impl GameState {
             pending_mine: None,
             gunboats_stopped_this_turn: Vec::new(),
             gunboats_at_chain: BTreeMap::new(),
+            chain_sentries: Vec::new(),
             board: Arc::new(BoardInfo::default()),
             breaches: BTreeSet::new(),
             dervish_deserted: false,
+            deserted: Vec::new(),
             pending_melee: None,
             gordon_eliminated_turn: None,
             setup_ready_ae: false,

@@ -29,7 +29,8 @@
 mod types_paths {
     // Types / enums.
     use omdurman_types::{
-        Faction, HexsideKind, HexsideRef, Location, Scenario, SetupLetter, Terrain, UnitKind,
+        Faction, HexCoord, HexsideKind, HexsideRef, Location, Scenario, SetupLetter, Terrain,
+        UnitKind,
     };
     // Enum variants (§5.23, §5.44, §9.231 hexside kinds).
     use omdurman_types::HexsideKind::{Breach, Khor, Wall, ZaribaThornHedge, ZaribaTrench};
@@ -39,6 +40,8 @@ mod types_paths {
     // Methods.
     #[test]
     fn methods_resolve() {
+        // §6.3 notes d and e: the hexsides a ray runs along.
+        let _ = HexCoord::hexsides_along_line;
         let _ = HexsideKind::blocks_los;
         let _ = HexsideKind::blocks_melee;
         let _ = HexsideKind::blocks_movement;
@@ -190,6 +193,8 @@ mod rules_effects_paths {
         let _ = GameState::historical_set_up_area;
         let _ = GameState::can_fire_at;
         let _ = GameState::can_fire_gunboat_maxims_at;
+        let _ = GameState::los_unit_blocker;
+        let _ = GameState::fire_rays;
         let _ = GameState::can_melee;
         let _ = GameState::can_advance_after_combat;
         let _ = GameState::can_retreat_before_melee;
@@ -226,8 +231,8 @@ mod rules_submodule_paths {
     use omdurman_rules::combat_results_table::{FireFactorRow, combat_results_table};
     use omdurman_rules::howitzer_scatter::{ScatterHexDirection, howitzer_scatter};
     use omdurman_rules::los_table::{
-        LosCondition, LosFeature, LosLevel, LosStepResult, blocking_rules, has_los, los_level,
-        los_level_for_unit, los_path_analysis,
+        LosCondition, LosFeature, LosLevel, LosStepResult, blocking_rules, has_los, los_clear_rays,
+        los_level, los_level_for_unit, los_path_analysis,
     };
     use omdurman_rules::range_effects::{ae_range_effects, dervish_range_effects, night_max_range};
     use omdurman_rules::reinforcements::{

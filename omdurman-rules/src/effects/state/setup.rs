@@ -598,6 +598,13 @@ impl GameState {
         let fixed = crate::scenario_setup::is_fixed_placement(self.scenario, placement.id);
         let (owner, hex) = (placement.profile.identity.owner(), placement.position);
         let is_boat = placement.profile.kind.is_boat();
+        // §10.21/§10.23: no gunboat sets up astride the chain (see
+        // `can_plot_chain`: nor is the chain strung under one).
+        if is_boat && self.chain_covers(hex) {
+            return Err(RuleError::SetupLimit(
+                "a gunboat may not set up on a chained river hex (§10.21)",
+            ));
+        }
         if self.scenario == Scenario::Historical {
             // The counter's own area (§9.211/§9.212), after the cheap checks:
             // the Dervish one walks lines of sight. The fixed leaders stand
@@ -902,6 +909,14 @@ impl GameState {
                 ));
             }
             self.check_river_obstacle_hex(*hex)?;
+            // A gunboat lying on the line would sit astride the chain with
+            // no side of its own to go back to (§10.23); the chain is strung
+            // under open water (and a gunboat may not set up on it either).
+            if self.units.iter().any(|u| u.position == *hex) {
+                return Err(RuleError::SetupLimit(
+                    "the chain is strung under open water, not under a gunboat (§10.21)",
+                ));
+            }
         }
         Ok(())
     }
@@ -988,6 +1003,10 @@ impl GameState {
         }
         if self.eliminated.contains(&p.id) {
             return Err(RuleError::UnitEliminated(p.id));
+        }
+        // §8.2: a deserter is gone for good.
+        if self.deserted.contains(&p.id) {
+            return Err(RuleError::UnitDeserted(p.id));
         }
         Ok(())
     }

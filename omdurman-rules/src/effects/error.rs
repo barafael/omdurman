@@ -68,6 +68,9 @@ pub enum RuleError {
     #[error("{0} was eliminated -- a destroyed unit never returns to play")]
     UnitEliminated(UnitId),
 
+    #[error("unit {0} deserted in the night and is gone for good (§8.2)")]
+    UnitDeserted(UnitId),
+
     #[error("unit {0} has already fired this phase")]
     AlreadyFired(UnitId),
 
@@ -320,6 +323,9 @@ pub enum RuleError {
 
     #[error("{0} is no west-bank land hex next to the gunboat (§5.21)")]
     FriendliesDisembarkHex(HexCoord),
+
+    #[error("the \"Friendlies\" board only from the east bank, at {0} they are not (§5.21)")]
+    FriendliesLoadNotEastBank(HexCoord),
 
     #[error("gunboat {0} has lost its engines and only drifts with the current (§10.12)")]
     EnginesLost(UnitId),

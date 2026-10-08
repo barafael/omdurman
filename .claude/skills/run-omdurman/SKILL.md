@@ -105,6 +105,15 @@ $D pan Up 0.3           # hold an arrow key: pan the camera
 $D stop
 ```
 
+Moving: `hex` the unit, `hex` the destination (the picker plots the route and
+logs `path leg accepted`), then `key Return` to confirm -- without it the
+next click extends the pending route instead of starting a new order, and
+`key Escape` drops it. Placing from the sidebar: the first click takes the
+counter in hand; a second click on the same counter puts it back, so with
+"Then pick the next of the group" ticked click the group once and then one
+hex per counter. The tool shell here is zsh: loops over `"q r"` pairs belong
+in a bash script file (`bash script.sh`, not `bash -c`).
+
 Fire: select a unit (`hex`) or tile (`dbl`), click enemy hexes to allocate,
 then click "Resolve N attacks" in the tray; the combat cards appear top
 right. Melee: `dbl` your tile, `hex` the adjacent enemy, click "Resolve

@@ -375,9 +375,11 @@ pub fn end_player_turn(state: &mut GameState) {
     clear_per_turn_tracking(state);
     advance_game_turn(state);
     // §10.12: disabled British gunboats drift at the start of the
-    // Anglo-Egyptian player turn.
+    // Anglo-Egyptian player turn; §10.23 a: the units already beside the
+    // chain are noted.
     if state.active_player == Player::AngloEgyptian && !state.game_over {
         super::river::drift_disabled_gunboats(state);
+        super::river::post_chain_sentries(state);
     }
     #[cfg(not(feature = "kani"))]
     debug!(

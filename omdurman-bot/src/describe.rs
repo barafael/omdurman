@@ -560,8 +560,14 @@ pub fn describe_turn_event(ev: &TurnEventRecord) -> String {
         TurnEventRecord::WallBreach { .. } | TurnEventRecord::ZaribaBuilt { .. } => {
             ev.format_for_dispatch()
         }
-        TurnEventRecord::HowitzerImpact { at, scattered } => {
-            if *scattered {
+        TurnEventRecord::HowitzerImpact {
+            at,
+            scattered,
+            lost,
+        } => {
+            if *lost {
+                format!("Howitzer shell scattered off the map at {}", hex(*at))
+            } else if *scattered {
                 format!("Howitzer shell scattered to {}", hex(*at))
             } else {
                 format!("Howitzer shell on target at {}", hex(*at))

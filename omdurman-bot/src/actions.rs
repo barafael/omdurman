@@ -418,7 +418,11 @@ fn reinforcement_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<Game
     let player = state.active_player;
     let waiting: Vec<UnitId> = oob::deployable_oob_for(state.scenario, player)
         .into_iter()
-        .filter(|id| state.find_unit(*id).is_none() && !state.eliminated.contains(id))
+        .filter(|id| {
+            state.find_unit(*id).is_none()
+                && !state.eliminated.contains(id)
+                && !state.deserted.contains(id)
+        })
         .collect();
 
     let mut batch: Vec<omdurman_rules::UnitPlacement> = Vec::new();

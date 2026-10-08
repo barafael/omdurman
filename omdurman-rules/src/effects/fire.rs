@@ -47,12 +47,25 @@ pub fn apply_howitzer_fire(
         attack.target_hex,
         howitzer_scatter(impact_roll),
     );
+    // A shell aimed at a hex on the map's edge may scatter off the map: it
+    // is spent, with nothing to resolve. (The aimed hex lies 4 to 10 hexes
+    // from the gunboat, so the shell never lands on the gunboat itself.)
+    let lost = if state.board.terrain.is_empty() {
+        super::dispatch::check_coord(actual_target).is_err()
+    } else {
+        state.board.terrain_at(actual_target).is_none()
+    };
     // §6.64: record where the shell actually landed so every seat (and the
     // UI's impact marker) can show the scatter, not just the aimed hex.
     state.turn_events.push(TurnEventRecord::HowitzerImpact {
         at: actual_target,
         scattered: actual_target != attack.target_hex,
+        lost,
     });
+    if lost {
+        commit_fired_markers(state, attack, &[], false);
+        return Ok(());
+    }
     // §6.64: "the results must take effect" on *everyone* in the impact hex,
     // friend or foe -- at a fort, on the units inside it (§6.54), or on the
     // fort itself when the shell hits the fort it was aimed at or an empty
@@ -272,6 +285,14 @@ fn validate_fire_resolution(state: &GameState, attack: &FireAttack) -> Result<()
     if !attack.at_fort && !enemy.is_empty() && enemy.iter().all(is_fort) {
         return Err(RuleError::FortStandsEmpty(attack.target_hex));
     }
+    // §6.51/§6.15: Anglo-Egyptian leaders are no fire targets (see
+    // `can_fire_mount`); a hex holding only leaders is not enemy-occupied.
+    if enemy
+        .iter()
+        .all(|u| matches!(u.profile.kind, UnitKind::BritishLeader { .. }))
+    {
+        return Err(RuleError::FireTargetNotEnemyOccupied);
+    }
     let target_units = fire_target_units(state, attack, attack.target_hex);
     // §6.14: "a combat unit may only fire once and may only be fired at
     // once" (the Maxim and gunboat exceptions are to firing once, §6.42).
@@ -376,9 +397,14 @@ fn commit_fire_attack(
         let pre_units: Vec<UnitId> = target_units.to_vec();
         if destroyed {
             // §6.62: if a destroyed fort contained enemy units, one is
-            // eliminated with it (picked before the fort leaves the board).
+            // eliminated with it (picked before the fort leaves the board;
+            // the rank and file before their leaders, as everywhere).
             let fort_victim = matches!(special_kind, UnitKind::Fort { .. })
-                .then(|| target_units.iter().copied().find(|&id| id != special_id))
+                .then(|| {
+                    leaders_last(state, target_units)
+                        .into_iter()
+                        .find(|&id| id != special_id)
+                })
                 .flatten();
             // The shared elimination path scores the kill (§9.14) and takes
             // a sunk gunboat's loaded "Friendlies" down with it (§5.21).
@@ -557,25 +583,19 @@ pub fn target_hexside_fire_modifier(
         .iter()
         .filter_map(|id| state.find_unit(*id))
         .filter(|u| u.position != target_hex)
-        .filter_map(|u| {
-            let mut entries = state.fire_entry_hexes(u, target_hex);
-            if entries.is_empty() {
-                // No line of sight (a preview of an illegal shot): the
-                // straight line's last step.
-                entries.push(
-                    omdurman_types::HexLine::new(u.position, target_hex, 1)
-                        .last()
-                        .unwrap_or(u.position),
-                );
-            }
-            entries
+        .flat_map(|u| {
+            // The shot is seen along a clear ray (§6.3); where the line
+            // hits a hexside tie with both sides clear, the defender gets
+            // the better entry hexside of the two.
+            state
+                .fire_rays(u, target_hex, attack.kind)
                 .into_iter()
-                .map(|entry| {
+                .map(|ray| {
+                    let entry = ray[ray.len() - 2];
                     crate::terrain_chart::hexside_fire_modifier(
                         state.hexside_effective(entry, target_hex),
                     )
                 })
-                .min()
         })
         .min()
         .unwrap_or(0)
@@ -981,9 +1001,9 @@ pub fn mandatory_fire_modifiers(state: &GameState, attack: &FireAttack) -> Vec<F
             .iter()
             .chain(attack.gunboat_maxims.iter())
             .any(|id| {
-                state
-                    .find_unit(*id)
-                    .is_some_and(|u| fire_crosses_thorn_hedge(state, u.position, attack.target_hex))
+                state.find_unit(*id).is_some_and(|u| {
+                    fire_crosses_thorn_hedge(state, u, attack.target_hex, attack.kind)
+                })
             })
         {
             modifiers.push(FireModifier::ZaribaThornHedge);
@@ -995,23 +1015,25 @@ pub fn mandatory_fire_modifiers(state: &GameState, attack: &FireAttack) -> Vec<F
     modifiers
 }
 
-/// Whether the line of fire from `from` to `to` crosses a thorn-hedge
+/// Whether the line of fire of `firer` at `to` crosses a thorn-hedge
 /// hexside (§9.231), read through the effective hexsides (in the Campaign,
-/// only a constructed Zariba, §5.3). Walks the same hex line as the LOS
-/// check (§6.3).
-fn fire_crosses_thorn_hedge(state: &GameState, from: HexCoord, to: HexCoord) -> bool {
-    let mut prev = from;
-    for hex in omdurman_types::HexLine::new(from, to, 1).chain(std::iter::once(to)) {
-        if hex != prev
-            && state
-                .hexside_effective(prev, hex)
+/// only a constructed Zariba, §5.3). Walks the ray the shot is seen along
+/// ([`GameState::fire_rays`], the clear side of the LOS check's line, §6.3);
+/// where both sides of a hexside tie are clear, the defender-favourable
+/// reading applies -- the hedge counts if either crosses it.
+fn fire_crosses_thorn_hedge(
+    state: &GameState,
+    firer: &UnitPlacement,
+    to: HexCoord,
+    kind: FireKind,
+) -> bool {
+    state.fire_rays(firer, to, kind).iter().any(|ray| {
+        ray.windows(2).any(|w| {
+            state
+                .hexside_effective(w[0], w[1])
                 .is_some_and(omdurman_types::HexsideKind::is_zariba_thorn_hedge)
-        {
-            return true;
-        }
-        prev = hex;
-    }
-    false
+        })
+    })
 }
 
 /// Validate that a fire attack is legal in the current state (rulebook §6).
@@ -1116,8 +1138,23 @@ pub(crate) fn apply_combat_results_table_result(
             // picks them, so the pre-rolled draw picks at random -- among the
             // undisrupted units: re-disrupting a unit already face down would
             // spend the result on nothing.
-            let n = target_ids.len().div_ceil(2);
-            let fresh: Vec<UnitId> = target_ids
+            // §6.54: a fort is a structure, not a unit that can be inverted
+            // -- it is never a `D` candidate nor counted toward the half.
+            // (Artillery fire at the fort itself treats `D` as a miss,
+            // §6.62; fire at the units inside never lists the fort; in melee
+            // the result falls on the garrison.)
+            let is_fort = |id: &UnitId| {
+                state
+                    .find_unit(*id)
+                    .is_some_and(|u| matches!(u.profile.kind, UnitKind::Fort { .. }))
+            };
+            let disruptable: Vec<UnitId> = target_ids
+                .iter()
+                .copied()
+                .filter(|id| !is_fort(id))
+                .collect();
+            let n = disruptable.len().div_ceil(2);
+            let fresh: Vec<UnitId> = disruptable
                 .iter()
                 .copied()
                 .filter(|id| state.find_unit(*id).is_some_and(|u| !u.state.disrupted))

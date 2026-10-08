@@ -406,9 +406,11 @@ title = "Friendlies transport via gunboat"
 status = "implemented"
 clause = "The transport is accomplished in the following sequence: a) on any turn that a \"Friendlies\" unit and any Anglo-Egyptian gunboat start their turn adjacent, that unit may load onto (i.e. stack with) the gunboat; b) during the Anglo-Egyptian player's next turn the gunboat may move to any Nile hex adjacent to a west bank hex (up to the gunboat's movement allowance); c) on the Anglo-Egyptian player's third turn the \"Friendlies\" unit may disembark and move normally, paying the normal terrain cost for the first hex entered."
 witness = "omdurman-rules::src::effects::tests::friendlies_cross_the_nile_over_three_turns"
-approximation = "Only one Friendlies transport mission may be in progress at a time, a design choice where the manual is silent, so a second Friendlies unit cannot load while another is aboard or in transit."
+approximation = "Only one Friendlies transport mission may be in progress at a time, a design choice where the manual is silent, so a second Friendlies unit cannot load while another is aboard or in transit. A unit aboard is cargo: it neither fires nor is fired at on its own (only artillery engages the gunboat, §6.61), and it boards only from the east bank -- the ferry runs one way."
 note = "Implemented: Load (Anglo-Egyptian Movement phase, Isa Zachneih eliminated, a Friendlies unit and a gunboat that start their turn adjacent -- neither has moved -- the gunboat otherwise alone) puts the unit aboard, on the gunboat's hex; the gunboat carries it as it moves from the next turn (not the load turn); Disembark from turn N+2 onto an adjacent west-bank land hex, paying its terrain cost, after which the unit moves normally. One mission at a time (design choice; the manual is silent). The UI offers exactly can_friendlies_transport's legal actions (friendlies_transport_offers)."
 tests = [
+    "omdurman-rules::src::effects::tests::a_loaded_friendlies_unit_may_not_fire",
+    "omdurman-rules::src::effects::tests::the_friendlies_board_only_from_the_east_bank",
     "omdurman-rules::src::effects::tests::a_mined_gunboat_scores_and_takes_its_friendlies_down",
     "omdurman-rules::src::effects::tests::friendlies_transport_offer_load_requires_prerequisites",
     "omdurman-rules::src::effects::tests::friendlies_cross_the_nile_over_three_turns",
@@ -820,10 +822,12 @@ title = "Leader stacking with command colour only"
 status = "implemented"
 clause = "If Dervish leaders elect to stack, however, they may only stack with units of their command (i.e. color)."
 witness = "omdurman-rules::src::effects::tests::dervish_leader_stacks_only_with_command_colour"
+approximation = "The Dervish artillery wears the Khalifa's colour (it sets up with him in the walled city, §9.111, and near him in the Historical scenario, §9.212), so only the Khalifa may stack with the guns."
 proofs = [
     "omdurman-rules::src::effects::stacking_rule_leaders_are_free_stacking",
 ]
 tests = [
+    "omdurman-rules::src::effects::tests::only_the_khalifa_stacks_with_the_dervish_artillery",
     "omdurman-rules::src::effects::tests::dervish_leader_stacks_only_with_command_colour",
     "omdurman-rules::src::unit_profiles::command_owns_unit_follows_tribes_and_brigades",
     "omdurman-rules::src::effects::tests::dervish_leaders_of_different_commands_do_not_stack",
@@ -833,6 +837,10 @@ tests = [
 file = "omdurman-rules/src/unit.rs"
 symbol = "DervishLeaderCommandMismatch"
 
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/state/stacking.rs"
+symbol = "stacking_rule"
 [[mapping]]
 section = "§5.54"
 title = "Anglo-Egyptian Brigade Integrity"
@@ -1082,6 +1090,7 @@ tests = [
     "omdurman-rules::src::terrain_chart::engine_matches_the_transcribed_terrain_effects_chart",
     "omdurman-rules::src::effects::tests::fire_across_a_crest_or_wall_is_penalised",
     "omdurman-rules::src::effects::tests::fire_through_a_gate_beside_a_wall_is_not_charged_the_wall",
+    "omdurman-rules::src::effects::tests::the_entry_hexside_is_read_along_the_clear_side_of_a_tied_ray",
     "omdurman-rules::src::terrain_chart::clear_terrain_no_bonus",
     "omdurman-rules::src::terrain_chart::building_gives_minus_3",
     "omdurman-rules::src::terrain_chart::trees_cost_one_and_give_no_defense",
@@ -1155,9 +1164,10 @@ title = "Line of Sight Table"
 status = "implemented"
 clause = "Locate the terrain type the firing unit is in and cross-index it with the terrain type the target unit is in. Terrain types in the intersecting box block line of sight, with exceptions as footnoted."
 witness = "omdurman-rules::src::los_table::los_blocking_rules_match_reference_table"
-note = "A box entry carrying two footnotes -- Units (3,6), Huts (1,4), Crest (2,3) -- blocks only when both footnotes hold (they compose with 'and'; the table does not say, this is the chosen reading). The Hilltop-fires-on-Ground Units entry is footnote 4 as printed (closer to the target), not 3."
+note = "A box entry carrying two footnotes -- Units (3,6), Huts (1,4), Crest (2,3) -- blocks only when both footnotes hold (they compose with 'and'; the table does not say, this is the chosen reading). The Hilltop-fires-on-Ground Units entry is footnote 4 as printed (closer to the target), not 3. A ray in a corner direction runs along hexsides (HexCoord::hexsides_along_line) and may pass either side; it is clear if either side is. Notes d and e read exactly those hexsides: the ray may run along one wall hexside, a second blocks; a crest run along is a crest fired through, its footnote weighed at the step the ray runs along it, and a firer or target whose hex touches it at a corner is adjacent to it (detail 2). A crest on a lateral side of an intervening hex is neither crossed nor run along and blocks nothing."
 proofs = [
     "omdurman-types::src::lib::line_between_forms_a_connected_ray",
+    "omdurman-types::src::lib::hexsides_along_line_join_adjacent_hexes",
     "omdurman-types::src::lib::hexside_blocking_classifiers_are_exact",
     "omdurman-rules::src::los_table::los_level_depends_only_on_the_ground",
     "omdurman-rules::src::los_table::los_level_overrides_hold_for_gunboats_and_forts",
@@ -1201,6 +1211,14 @@ tests = [
     "omdurman-rules::src::los_table::los_blocking_rules_match_reference_table",
     "omdurman-rules::src::los_table::los_ground_to_ground_features_block_as_expected",
     "omdurman-rules::src::effects::tests::a_crest_halfway_along_the_line_blocks_ground_to_hilltop_fire",
+    "omdurman-rules::src::los_table::a_crest_beside_a_straight_ray_does_not_block",
+    "omdurman-rules::src::los_table::a_crest_the_ray_runs_along_blocks_like_one_fired_through",
+    "omdurman-rules::src::los_table::crest_adjacency_rescues_a_crest_the_ray_runs_along",
+    "omdurman-rules::src::los_table::fire_along_one_wall_hexside_is_clear_along_two_blocked",
+    "omdurman-rules::src::los_table::los_clear_rays_are_the_clear_sides_of_the_line",
+    "omdurman-rules::src::effects::tests::a_rampart_unit_blocks_line_of_sight_at_rough_level",
+    "omdurman-rules::src::effects::tests::the_hedge_is_read_along_the_clear_side_of_a_tied_ray",
+    "omdurman-rules::src::effects::tests::the_entry_hexside_is_read_along_the_clear_side_of_a_tied_ray",
   ]
 
 [[mapping.impl]]
@@ -1230,6 +1248,22 @@ symbol = "blocking_rules"
 [[mapping.impl]]
 file = "omdurman-rules/src/los_table.rs"
 symbol = "has_los"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/los_table.rs"
+symbol = "los_clear_rays"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/state/fire.rs"
+symbol = "GameState::los_unit_blocker"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/state/fire.rs"
+symbol = "GameState::fire_rays"
+
+[[mapping.impl]]
+file = "omdurman-types/src/lib.rs"
+symbol = "HexCoord::hexsides_along_line"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
@@ -1327,10 +1361,12 @@ title = "Leader Units"
 status = "implemented"
 clause = "They are eliminated if a) they are alone in a hex when a Dervish unit occupies or passes through that hex, or b) if all of the combat units a leader is stacked with are eliminated in fire combat or melee."
 witness = "omdurman-rules::src::effects::tests::dervish_move_through_lone_ae_leader_hex_eliminates_the_leader"
+approximation = "Fire never touches an Anglo-Egyptian leader: a hex holding nothing but leaders is no fire target, and leaders are left out of the count of \"units in the target hex\" for a D result (a stack of four battalions and Kitchener takes two disruptions, not three)."
 proofs = [
     "omdurman-types::src::lib::unit_kind_fire_and_movement_capability_law_is_exact",
 ]
 tests = [
+    "omdurman-rules::src::effects::tests::a_hex_holding_only_an_ae_leader_is_no_fire_target",
     "omdurman-rules::src::unit_profiles::zero_factor_is_none_not_zero",
     "omdurman-rules::src::unit_profiles::kitchener_block_resolves_leaders_friendlies_camel_and_sudanese",
     "omdurman-rules::src::unit_profiles::dervish_leader_sections_resolve_leader_and_retinue_per_cell",
@@ -1424,7 +1460,7 @@ title = "Forts"
 status = "implemented"
 clause = "The −3 defensive value is deducted from the die roll of enemy fire attacks on friendly units stacked inside the fort."
 witness = "omdurman-rules::src::effects::tests::the_units_inside_a_fort_are_fired_at_with_its_minus_three"
-approximation = "The fort's −3 does not add to the terrain modifier of the hex it stands in: the more protective of the two applies (the printed Forts Makran and Buri and the North Fort are Building hexes, −3, and their garrisons are fired at with −3, not −6)."
+approximation = "The fort's −3 does not add to the terrain modifier of the hex it stands in: the more protective of the two applies (the printed Forts Makran and Buri and the North Fort are Building hexes, −3, and their garrisons are fired at with −3, not −6). In melee the manual gives no casualty order for a garrisoned fort; the engine reads §7.7 (\"losses must be taken from meleeing units first\") with §6.54: the fort melee-defends with its value (§7.4) but is the LAST defender to fall -- the garrison (rank and file, then leaders) absorbs the eliminations, and the fort is destroyed only when the count reaches it and at least one attacker is infantry (resolve_melee_combat). A fort is never a D candidate nor counted toward the half a D inverts (apply_combat_results_table_result). An empty enemy fort is the sole defender of its hex and falls to any elimination of one or more -- the 2+ threshold is §6.62's artillery rule. A fort that outlives its garrison is a defender that remains: the hex is not vacated, nobody advances (§7.6), and the empty fort must be stormed in a later melee."
 note = "Implemented: forts may not be occupied or advanced into by the enemy, may not melee attack, exert a ZOC even when unoccupied, may fire their artillery factor unstacked. Fire at a fort hex is either aimed at the fort itself (FireAttack::at_fort; artillery only, §6.62) or at the units stacked inside it, by any weapon, with the fort's −3 (target_defence_modifier). Forts are destroyed by artillery (§6.62), an infantry melee attack (§7.6; cavalry, camels or leaders alone cannot take one) or the Royal Engineers (§6.53, taking one occupant with them)."
 tests = [
     "omdurman-rules::src::effects::tests::printed_fok_forts_are_british_forts",
@@ -1434,6 +1470,12 @@ tests = [
     "omdurman-rules::src::effects::tests::mandatory_advance_stops_at_an_enemy_fort",
     "omdurman-rules::src::effects::tests::the_units_inside_a_fort_are_fired_at_with_its_minus_three",
     "omdurman-rules::src::effects::tests::only_infantry_melee_destroys_a_fort",
+    "omdurman-rules::src::effects::tests::melee_losses_fall_on_the_garrison_before_the_fort",
+    "omdurman-rules::src::effects::tests::the_fort_falls_after_its_garrison_and_the_dervish_advance",
+    "omdurman-rules::src::effects::tests::anglo_egyptian_infantry_may_advance_into_a_stormed_fort",
+    "omdurman-rules::src::effects::tests::cavalry_melee_never_eliminates_the_fort",
+    "omdurman-rules::src::effects::tests::a_melee_disruption_never_falls_on_the_fort",
+    "omdurman-rules::src::effects::tests::infantry_melee_destroys_an_empty_fort_and_opens_the_advance",
 ]
 
 
@@ -1536,8 +1578,10 @@ title = "Howitzer fire"
 status = "implemented"
 clause = "The designated target hex is hit on a roll of 7–10."
 witness = "omdurman-rules::src::howitzer_scatter::scatter_is_center_exactly_for_rolls_7_to_10"
+approximation = "A shell that scatters off the map (the aimed hex lay on the edge) is lost: nothing is resolved, the gunboat has fired."
 note = "The printed Scattergram's directions are the map's (1 upper-left ... 6 left; 7-10 on target), one hex off the designated hex (scatter_impact_hex). Results take effect on every unit in the impact hex, friend or foe; legality is validated against the aimed hex. The 4-10 hex target window is pinned under §6.22's range tests. The impact roll and hex are reported on FireResolved."
 tests = [
+    "omdurman-rules::src::effects::tests::a_shell_scattered_off_the_map_is_lost",
     "omdurman-rules::src::howitzer_scatter::howitzer_on_target_7_to_10",
     "omdurman-rules::src::howitzer_scatter::howitzer_scatters_below_7",
     "omdurman-rules::src::howitzer_scatter::howitzer_each_miss_gets_its_printed_hex",
@@ -1816,6 +1860,9 @@ tests = [
     "omdurman-rules::src::effects::tests::a_lone_gordon_makes_no_melee_roll",
     "omdurman-rules::src::effects::tests::melee_advance_overruns_a_lone_ae_leader",
     "omdurman-rules::src::effects::tests::mandatory_advance_stops_at_an_enemy_fort",
+    "omdurman-rules::src::effects::tests::the_fort_falls_after_its_garrison_and_the_dervish_advance",
+    "omdurman-rules::src::effects::tests::anglo_egyptian_infantry_may_advance_into_a_stormed_fort",
+    "omdurman-rules::src::effects::tests::infantry_melee_destroys_an_empty_fort_and_opens_the_advance",
 ]
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/effect.rs"
@@ -1848,6 +1895,7 @@ tests = [
     "omdurman-rules::src::effects::tests::friendlies_melee_with_the_dervish_modifier",
     "omdurman-rules::src::effects::tests::disrupted_defenders_add_no_melee_factor",
     "omdurman-rules::src::effects::tests::melee_losses_beyond_the_attackers_fall_on_their_stack",
+    "omdurman-rules::src::effects::tests::melee_losses_fall_on_the_garrison_before_the_fort",
 ]
 [[mapping.impl]]
 file = "omdurman-rules/src/combat.rs"
@@ -1931,13 +1979,14 @@ title = "Dervish Desertion Roll"
 status = "implemented"
 clause = "the number of deserting Dervish units is equal to 1½ times the roll of one die"
 witness = "omdurman-rules::src::effects::desertion_count_is_one_and_a_half_times_the_roll"
-approximation = "The manual does not say how to round 1½ times an odd roll; the count is rounded up (a roll of 1 deserts 2 units, a 3 deserts 5)."
+approximation = "The manual does not say how to round 1½ times an odd roll; the count is rounded up (a roll of 1 deserts 2 units, a 3 deserts 5). Deserters are out of play for good: listed apart from the casualties (GameState::deserted, scoring nothing), they never march back on as reinforcements."
 note = "The 'no victory points for deserting Dervishes' clause holds by construction: deserters are removed via units.retain without any VpEvent, and that absence is not separately testable."
 proofs = [
     "omdurman-rules::src::effects::desertion_count_is_one_and_a_half_times_the_roll",
     "omdurman-rules::src::turn_track::desertion_event_is_unique_to_the_first_night_turn",
 ]
 tests = [
+    "omdurman-rules::src::effects::tests::deserters_never_return_as_reinforcements",
     "omdurman-rules::src::effects::tests::desertion_rejects_a_unit_listed_twice",
     "omdurman-rules::src::effects::tests::desertion_count_rounds_one_and_a_half_up",
     "omdurman-rules::src::turn_track::desertion_on_first_night",
@@ -2289,6 +2338,7 @@ tests = [
     "omdurman-rules::src::board_data::the_zariba_is_trench_in_the_north_and_hedge_in_the_south",
     "omdurman-rules::src::effects::tests::zariba_fire_penalties_apply_to_dervish_fire_only",
     "omdurman-rules::src::effects::tests::the_hedge_penalises_fire_across_it_only",
+    "omdurman-rules::src::effects::tests::the_hedge_is_read_along_the_clear_side_of_a_tied_ray",
     "omdurman-rules::src::effects::tests::an_advance_may_cross_a_trench_but_not_a_thorn_hedge",
 ]
 [[mapping.impl]]
@@ -2733,9 +2783,10 @@ title = "Secretly record chain hexes"
 status = "implemented"
 clause = "Prior to the commencement of play the Dervish player secretly records a line of river hexes (not exceeding four hexes long) across which the chain is strung."
 witness = "omdurman-rules::src::effects::tests::mine_and_chain_limits_enforced_in_setup"
-approximation = "\"Across\" is checked as: the line's two end hexes touch different land (the two banks, or a bank and an island) -- a chain to an island leaves the other channel open. The chain is hidden on the Anglo-Egyptian seat's board but carried in the recorded event log."
+approximation = "\"Across\" is checked as: the line's two end hexes touch different land (the two banks, or a bank and an island) -- a chain to an island leaves the other channel open. The chain is hidden on the Anglo-Egyptian seat's board but carried in the recorded event log. The chain is strung under open water: not under a gunboat, and no gunboat sets up on it, so a boat lying on the chain always steamed in from one side."
 note = "Digital replacement for the paper scratchpad: the chain is recorded in `GameState.chain` and rendered only to the Dervish seat. Enforced: Campaign only, optional-rule gated, setup-only, one to four Nile hexes in a line of adjacent hexes, south of the Khor Shambat's mouth row."
 tests = [
+    "omdurman-rules::src::effects::tests::no_gunboat_sets_up_astride_the_chain",
     "omdurman-rules::src::effects::tests::mine_and_chain_limits_enforced_in_setup",
     "omdurman-rules::src::effects::tests::mines_and_chain_require_their_optional_rule",
     "omdurman-rules::src::effects::tests::river_obstacles_lie_south_of_the_khor_shambat",
@@ -2778,8 +2829,10 @@ title = "Sinking the chain"
 status = "implemented"
 clause = "No gunboats (British or Dervish) may cross the chain until it has been sunk by the British player."
 witness = "omdurman-rules::src::effects::tests::chain_stops_gunboat_until_sunk"
+approximation = "\"One complete turn\" on the bank is read as: the infantry or cavalry unit stands beside a chained hex when the Anglo-Egyptian player turn begins and still at its end, having spent no movement points -- a unit that arrives during the turn (by a move, an advance after combat or a retreat) has not spent the turn there."
 note = "Implemented: (a) at the end of the Anglo-Egyptian player turn, an undisrupted Anglo-Egyptian infantry or cavalry unit on land next to a chained hex that has not moved all turn sinks the chain; (b) SinkChain: British artillery in the Direct Fire subphase, each in range and sight of a chained hex (can_fire_at_chain), a Combat Results Table result of 3 or more (with the §6.24 +1) sinks it."
 tests = [
+    "omdurman-rules::src::effects::tests::a_unit_arriving_beside_the_chain_mid_turn_does_not_sink_it",
     "omdurman-rules::src::effects::tests::a_british_gunboat_runs_onto_the_chain_and_may_only_go_back",
     "omdurman-rules::src::effects::tests::chain_stops_gunboat_until_sunk",
     "omdurman-rules::src::effects::tests::a_battalion_on_the_bank_sinks_the_chain",

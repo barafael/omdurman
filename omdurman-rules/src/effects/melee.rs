@@ -118,26 +118,34 @@ pub(crate) fn resolve_melee_combat(
     let def_result = crt(defender_total, def_row, def_net);
 
     let att_units: Vec<UnitId> = attack.attackers.clone();
-    // §6.54: a fort falls to an *infantry* melee attack -- against cavalry,
-    // camels or leaders alone it defends but cannot be lost.
+    // §6.54: "Forts may be destroyed by ... b) infantry melee attack" -- a
+    // fort falls to an *infantry* melee attack; against cavalry, camels or
+    // leaders alone it defends with its melee value (§7.4) but cannot be
+    // lost, so it is no casualty slot at all.
     let infantry_attack = att_units.iter().any(|id| {
         state
             .find_unit(*id)
             .is_some_and(|u| matches!(u.profile.kind, UnitKind::Infantry { .. }))
     });
-    let def_units: Vec<UnitId> = attack
-        .defenders
-        .iter()
-        .copied()
-        .filter(|id| {
-            infantry_attack
-                || !state
-                    .find_unit(*id)
-                    .is_some_and(|u| matches!(u.profile.kind, UnitKind::Fort { .. }))
-        })
-        .collect();
-    // §CombatResults casualty order: the rank and file before their leaders.
-    let def_units = super::fire::leaders_last(state, &def_units);
+    let is_fort = |id: &UnitId| {
+        state
+            .find_unit(*id)
+            .is_some_and(|u| matches!(u.profile.kind, UnitKind::Fort { .. }))
+    };
+    // §7.7: "Melee losses must be taken from meleeing units first!" -- the
+    // garrison (the fort's meleeing units) absorbs the eliminations before
+    // the fort itself; within the garrison, the rank and file before their
+    // leaders (§CombatResults). The fort stands *last*: it is destroyed only
+    // when the elimination count reaches it, so a melee can never kill the
+    // fort and spare its garrison. (An empty enemy fort is the sole defender
+    // and falls to any elimination -- the 2+ threshold is §6.62's artillery
+    // rule, not a melee rule.)
+    let (forts, garrison): (Vec<UnitId>, Vec<UnitId>) =
+        attack.defenders.iter().copied().partition(is_fort);
+    let mut def_units = super::fire::leaders_last(state, &garrison);
+    if infantry_attack {
+        def_units.extend(forts);
+    }
     // §7.7: "Melee losses must be taken from meleeing units first!" -- an
     // elimination beyond the meleeing units falls on the other units of
     // their hexes (a battery or a disrupted battalion stacked with them).
@@ -187,16 +195,18 @@ pub(crate) fn resolve_melee_combat(
     // `AdvanceAfterCombat`.)
     // An Anglo-Egyptian leader left alone does not hold the hex: it falls to
     // the Dervish unit that enters it (§6.51(a); GORDON in the palace,
-    // §9.346), so only combat units count as remaining defenders.
+    // §9.346), so only combat units count as remaining defenders. A
+    // surviving fort *is* one: it melee-defends (§7.4) and outlives its
+    // garrison, so the hex is not vacated -- §6.54 "Players may not ...
+    // advance after combat into an unoccupied enemy fort" -- and the
+    // attacker must storm the empty fort in a later melee. Only a fort that
+    // fell (last, to infantry) leaves a hex the §7.6 advance may enter.
     let defenders_remain = state.units.iter().any(|u| {
         u.position == attack.defender_hex
             && !matches!(u.profile.kind, UnitKind::BritishLeader { .. })
     });
     let mut mandatory_advance: Option<u8> = None;
-    // §6.54: "Players may not ... advance after combat into an unoccupied
-    // enemy fort" -- the mandatory advance stops at an enemy fort's hex too.
-    let into_enemy_fort = state.hex_has_enemy_fort(attack.defender_hex, attacker_player);
-    if attacker_player == Player::Dervish && !defenders_remain && !into_enemy_fort {
+    if attacker_player == Player::Dervish && !defenders_remain {
         // §5.51: only *counted* units (non-leaders) consume the four-per-hex
         // stacking budget; leaders are free stacking, so a leader among the
         // attackers advances even once the budget is spent.

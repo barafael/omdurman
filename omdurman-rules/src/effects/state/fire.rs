@@ -2,6 +2,7 @@
 //! and [`GameState::can_fire_at_wall`].
 
 use super::*;
+use crate::los_table::los_level_for_unit;
 
 impl GameState {
     /// The player whose fire attacks are legal right now (§4): the active
@@ -17,7 +18,9 @@ impl GameState {
     }
 
     /// The "Units" line-of-sight blocker (§6.3 note a): a hex occupied by any
-    /// non-gunboat, non-fort unit blocks LOS at that hex's terrain level --
+    /// non-gunboat, non-fort unit blocks LOS at those units' level -- the
+    /// hex's terrain level, or rough level for a unit "inside a walled city
+    /// adjacent to a wall hexside" (note b, [`los_level_for_unit`]) --
     /// except entrenched units, which "may be fired 'over' in both
     /// directions" (§9.232). Shared by [`Self::can_fire_at`],
     /// [`Self::can_fire_at_wall`] and the Historical set-up's out-of-sight
@@ -29,7 +32,9 @@ impl GameState {
     /// A sorted `Vec` + binary search keeps the index allocation-free to use
     /// and deterministic (no hasher), like the rest of the engine's lookups.
     pub fn los_unit_blocker(&self) -> impl Fn(HexCoord) -> Option<crate::los_table::LosLevel> + '_ {
-        let mut blockers: Vec<HexCoord> = self
+        // Keyed by hex: the units of a hex share its level (only gunboats
+        // and forts have a level of their own, and they never block).
+        let mut blockers: Vec<(HexCoord, crate::los_table::LosLevel)> = self
             .units
             .iter()
             .filter(|u| {
@@ -38,16 +43,70 @@ impl GameState {
                     crate::UnitKind::Gunboat { .. } | crate::UnitKind::Fort { .. }
                 )
             })
-            .map(|u| u.position)
+            .map(|u| {
+                (
+                    u.position,
+                    los_level_for_unit(u.profile.kind, u.position, &self.board),
+                )
+            })
             .collect();
         blockers.sort_unstable();
         blockers.dedup();
         move |hex| {
-            if blockers.binary_search(&hex).is_err() || self.is_zariba_entrenched(hex) {
+            let i = blockers.binary_search_by_key(&hex, |&(at, _)| at).ok()?;
+            if self.is_zariba_entrenched(hex) {
                 return None;
             }
-            self.board.terrain_at(hex).map(crate::los_table::los_level)
+            Some(blockers[i].1)
         }
+    }
+
+    /// The LOS level of the target at `target_hex` (§6.3): that of the first
+    /// unit standing there, with notes b and c ([`los_level_for_unit`]), or
+    /// the hex's terrain level when it is empty.
+    pub fn target_los_level(&self, target_hex: HexCoord) -> crate::los_table::LosLevel {
+        self.units
+            .iter()
+            .find(|u| u.position == target_hex)
+            .map(|u| los_level_for_unit(u.profile.kind, target_hex, &self.board))
+            .unwrap_or_else(|| {
+                self.board
+                    .terrain_at(target_hex)
+                    .map(crate::los_table::los_level)
+                    .unwrap_or(crate::los_table::LosLevel::Ground)
+            })
+    }
+
+    /// The ray(s) the shot of `firer` at `target_hex` is seen along (§6.21,
+    /// §6.3; [`crate::los_table::los_clear_rays`]): the clear side(s) of the
+    /// straight line, each as `[firer, intervening..., target]`. When neither
+    /// side is clear -- the shot is illegal, but a preview may still ask --
+    /// the straight line, so the fire modifiers that read the line of fire
+    /// (§6.23 entry hexside, §9.231 thorn hedge) always have one to read.
+    pub fn fire_rays(
+        &self,
+        firer: &UnitPlacement,
+        target_hex: HexCoord,
+        kind: FireKind,
+    ) -> Vec<Vec<HexCoord>> {
+        let firer_level = los_level_for_unit(firer.profile.kind, firer.position, &self.board);
+        let rays = crate::los_table::los_clear_rays(
+            &self.board,
+            firer.position,
+            target_hex,
+            kind,
+            firer_level,
+            self.target_los_level(target_hex),
+            self.los_unit_blocker(),
+            |a, b| self.wall_is_breached(a, b),
+        );
+        if !rays.is_empty() {
+            return rays;
+        }
+        let mut path = vec![firer.position];
+        path.extend(firer.position.line_between(target_hex));
+        path.push(target_hex);
+        vec![path]
     }
 
     /// Read-only check of whether `firer` may fire `kind` at `target_hex` in
@@ -145,6 +204,12 @@ impl GameState {
         if unit.state.disrupted {
             return Err(RuleError::Disrupted(firer));
         }
+        // §5.21: a "Friendlies" unit aboard a gunboat is cargo in transit,
+        // not a firing position -- it neither fires nor is fired at on its
+        // own (only artillery engages the gunboat, §6.61).
+        if unit.state.loaded_on.is_some() {
+            return Err(RuleError::LoadedOnGunboat(firer));
+        }
         // §5.3/§6.53: units constructing a zariba or committed to a
         // demolition "may neither fire offensively nor melee attack" that
         // turn (defensive fire stays legal).
@@ -164,22 +229,23 @@ impl GameState {
         // at a fort itself; the units stacked inside a fort may be fired at
         // by anyone (§6.54, at the fort's −3). Check it here so the app
         // pre-blocks the shot rather than the engine rejecting it after the
-        // fact. One pass over the target hex's occupants serves all three
-        // §6 rules that read the same stack: this artillery-only rule, the
-        // §6.15 enemy-occupied gate below, and the target's LOS level
-        // (§6.3 notes b/c — the first unit standing there) further down.
+        // fact. One pass over the target hex's occupants serves both §6
+        // rules that read the same stack: this artillery-only rule and the
+        // §6.15 enemy-occupied gate below.
         let opponent = unit.profile.identity.owner().opponent();
         let mut has_enemy = false;
         let mut only_artillery_targets = true;
-        let mut first_kind = None;
         for u in &self.units {
             if u.position != target_hex {
                 continue;
             }
-            if first_kind.is_none() {
-                first_kind = Some(u.profile.kind);
-            }
-            if u.profile.identity.owner() == opponent {
+            // §6.51: an Anglo-Egyptian leader has "a movement factor only"
+            // and falls only to a Dervish unit entering his hex or to the
+            // loss of every combat unit he stacks with -- fire cannot touch
+            // him, so a hex holding nothing but leaders is no target.
+            if u.profile.identity.owner() == opponent
+                && !matches!(u.profile.kind, UnitKind::BritishLeader { .. })
+            {
                 has_enemy = true;
                 only_artillery_targets &= matches!(
                     u.profile.kind,
@@ -248,17 +314,17 @@ impl GameState {
         //
         // The firer and target LOS levels are computed with notes (b) and
         // (c): gunboats → Rough, forts → Ground, walled-city-wall-adjacent
-        // units → Rough. The "Units" blocker excludes gunboats and forts
-        // (note a).
-        let (firer_los_level, target_los_level) =
-            self.fire_los_levels(unit, target_hex, first_kind);
+        // units → Rough (the target's: the first unit standing there). The
+        // "Units" blocker excludes gunboats and forts (note a).
+        let firer_los_level =
+            crate::los_table::los_level_for_unit(unit.profile.kind, unit.position, &self.board);
         if !crate::los_table::has_los(
             &self.board,
             unit.position,
             target_hex,
             kind,
             firer_los_level,
-            target_los_level,
+            self.target_los_level(target_hex),
             self.los_unit_blocker(),
             |a, b| self.wall_is_breached(a, b),
         ) {
@@ -267,48 +333,21 @@ impl GameState {
         Ok(())
     }
 
-    /// The LOS levels of `firer` and of a target in `target_hex` (§6.3 notes
-    /// b and c): `target_kind` is the first unit standing there, the bare
-    /// terrain's level when the hex is empty.
-    fn fire_los_levels(
-        &self,
-        firer: &UnitPlacement,
-        target_hex: HexCoord,
-        target_kind: Option<UnitKind>,
-    ) -> (crate::los_table::LosLevel, crate::los_table::LosLevel) {
-        let firer_level =
-            crate::los_table::los_level_for_unit(firer.profile.kind, firer.position, &self.board);
-        let target_level = target_kind
-            .map(|kind| crate::los_table::los_level_for_unit(kind, target_hex, &self.board))
-            .unwrap_or_else(|| {
-                self.board
-                    .terrain_at(target_hex)
-                    .map(crate::los_table::los_level)
-                    .unwrap_or(crate::los_table::LosLevel::Ground)
-            });
-        (firer_level, target_level)
-    }
-
-    /// The hexes `firer`'s line of sight enters `target_hex` out of (§6.3,
-    /// [`los_entry_hexes`](crate::los_table::los_entry_hexes)): one hex,
-    /// or two when the fire runs along hexsides and both sides are clear.
-    /// Empty when the firer cannot see the hex.
+    /// The hexes `firer`'s line of sight enters `target_hex` out of (§6.3):
+    /// the last hex before the target on each clear ray
+    /// ([`Self::fire_rays`]) -- one hex, or two when the fire runs along
+    /// hexsides and both sides are clear. Empty when the firer cannot see
+    /// the hex.
     pub fn fire_entry_hexes(&self, firer: &UnitPlacement, target_hex: HexCoord) -> Vec<HexCoord> {
-        let target_kind = self
-            .units
-            .iter()
-            .find(|u| u.position == target_hex)
-            .map(|u| u.profile.kind);
-        let (firer_level, target_level) = self.fire_los_levels(firer, target_hex, target_kind);
-        crate::los_table::los_entry_hexes(
-            &self.board,
-            firer.position,
-            target_hex,
-            firer_level,
-            target_level,
-            self.los_unit_blocker(),
-            |a, b| self.wall_is_breached(a, b),
-        )
+        let mut entries: Vec<HexCoord> = Vec::new();
+        for ray in self.fire_rays(firer, target_hex, crate::FireKind::Direct) {
+            if let Some(&entry) = ray.get(ray.len().wrapping_sub(2))
+                && !entries.contains(&entry)
+            {
+                entries.push(entry);
+            }
+        }
+        entries
     }
 
     /// Read-only validation for §6.63 artillery-fire wall breaching. The firer

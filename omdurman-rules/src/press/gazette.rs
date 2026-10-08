@@ -693,6 +693,7 @@ mod tests {
             TurnEventRecord::HowitzerImpact {
                 at,
                 scattered: false,
+                lost: false,
             },
             TurnEventRecord::UnitEliminated {
                 unit,

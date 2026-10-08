@@ -217,27 +217,49 @@ pub fn apply_sink_chain(
     Ok(())
 }
 
+/// The Anglo-Egyptian infantry and cavalry standing on a bank beside the
+/// chain (§10.23 a): undisrupted, ashore, not aboard a gunboat, next to a
+/// chained hex.
+fn units_beside_the_chain(state: &GameState) -> Vec<UnitId> {
+    let Some(chain) = state.chain.as_ref().filter(|c| !c.sunk) else {
+        return Vec::new();
+    };
+    state
+        .units
+        .iter()
+        .filter(|u| {
+            u.profile.identity.owner() == Player::AngloEgyptian
+                && matches!(
+                    u.profile.kind,
+                    UnitKind::Infantry { .. } | UnitKind::Cavalry { .. }
+                )
+                && !u.state.disrupted
+                && u.state.loaded_on.is_none()
+                && !state.board.is_nile(u.position)
+                && chain.hexes.iter().any(|h| h.is_adjacent_to(u.position))
+        })
+        .map(|u| u.id)
+        .collect()
+}
+
+/// §10.23 a: note, as the Anglo-Egyptian player turn begins, who already
+/// stands beside the chain -- only a unit there from the start of the turn
+/// to its end has "spent one complete turn" there (one that arrives during
+/// the turn, by a move, an advance after combat or a retreat, has not).
+pub(crate) fn post_chain_sentries(state: &mut GameState) {
+    state.chain_sentries = units_beside_the_chain(state);
+}
+
 /// §10.23 a: the British sink the chain "by having an infantry or cavalry
 /// unit spend one complete turn on either riverbank adjacent to a 'chained'
 /// river hex". Checked at the end of the Anglo-Egyptian player turn: an
 /// undisrupted infantry or cavalry unit on land next to a chained hex that
-/// has not moved all turn has spent it there.
+/// stood there when the turn began ([`post_chain_sentries`]) and has not
+/// moved all turn has spent it there.
 pub(crate) fn sink_chain_from_the_bank(state: &mut GameState) {
-    let Some(chain) = state.chain.as_ref().filter(|c| !c.sunk) else {
-        return;
-    };
-    let on_the_bank = state.units.iter().any(|u| {
-        u.profile.identity.owner() == Player::AngloEgyptian
-            && matches!(
-                u.profile.kind,
-                UnitKind::Infantry { .. } | UnitKind::Cavalry { .. }
-            )
-            && !u.state.disrupted
-            && u.state.loaded_on.is_none()
-            && !state.board.is_nile(u.position)
-            && state.mp_spent(u.id) == 0
-            && chain.hexes.iter().any(|h| h.is_adjacent_to(u.position))
-    });
+    let on_the_bank = units_beside_the_chain(state)
+        .into_iter()
+        .any(|id| state.chain_sentries.contains(&id) && state.mp_spent(id) == 0);
     if on_the_bank {
         if let Some(chain) = state.chain.as_mut() {
             chain.sunk = true;

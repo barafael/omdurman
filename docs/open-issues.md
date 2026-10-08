@@ -16,11 +16,6 @@ item when it is fixed.
 - **§10.11 / §10.21 secrecy.** Mines and the chain are "secretly recorded".
   The board hides them from the Anglo-Egyptian seat, but the event log
   carries them (see also "private dice" below).
-- **§10.21 chain shape.** The chain must be a line of adjacent Nile hexes;
-  that it runs *across* the river is not checked.
-- **§10.22 chain.** A British gunboat should be able to enter a chained hex
-  and stop there. Instead `BlockedByChain` refuses the entry (which also
-  keeps every gunboat from crossing, §10.23).
 - **§6.41 allocate, then resolve.** "Allocate all fire attacks, then resolve"
   is enforced by the UI's allocation tray only; the engine accepts attacks
   one at a time.
@@ -38,8 +33,10 @@ item when it is fixed.
 - **§5.44 building vs breach.** A building hex just inside a breached wall:
   ZOCs "extend both ways across a breach" but "not into a hut or building
   hex". [The hut/building clause wins.]
-- **§6.14 "fired at once".** [Maxims and gunboats may be fired at more than
-  once a phase.] The exception may only mean they *fire* twice.
+- **§6.14 "fired at once".** [The Maxim and gunboat exception is to *firing*
+  twice (§6.42); every unit, Maxims and gunboats included, may be fired at
+  only once per fire phase. A howitzer shell on its intended hex and a Maxim
+  second fire may both strike the same hex in the second subphase.]
 - **§6.24 Maxim second fire.** [The +1 accuracy bonus applies to Maxim fire,
   first and second, and to batteries breaching walls or firing at the chain;
   not to howitzer fire, which ignores line of sight and scatters.]
@@ -48,6 +45,14 @@ item when it is fixed.
   when a melee *eliminates* the defenders.
 - **§7.7 mixed Friendlies.** [The Friendlies' Dervish +2 applies only when the
   whole Anglo-Egyptian side of a melee is Friendlies.]
+- **§6.54 forts in melee.** The manual gives no casualty order for a
+  garrisoned fort. [The fort melee-defends with its value but falls LAST:
+  "losses must be taken from meleeing units first" (§7.7) -- the garrison,
+  then its leaders, then the fort, which only infantry can destroy (§6.54b).
+  A fort is never disrupted by a D. An empty enemy fort falls to any
+  elimination of one or more (the 2+ is §6.62's artillery rule). A fort that
+  outlives its garrison still holds the hex: no advance (§7.6), and it must
+  be stormed again.]
 - **§5.51 stacking.** [Forts count against the four-unit limit; the Dervish
   artillery is its own stacking group.]
 - **§9.321 Fall of Khartoum set-up.** "Adjacent to any wall hex": [a hex with
@@ -73,9 +78,54 @@ item when it is fixed.
 - **Combat Results "D".** "½ (round up) of the units in the target hex are
   disrupted" does not say who picks them. [At random among the undisrupted
   units, by a draw rolled into the effect with its dice.]
+- **§6.51 leaders under fire.** Anglo-Egyptian leaders fall only by clause
+  (a) or (b). [Fire never touches them: a hex holding only leaders is no
+  fire target, and they are not counted among the "units in the target hex"
+  for a D result.]
+- **§6.3 Trees.** The LOS table's levels do not list Trees. [Ground level;
+  Trees block only as an intervening feature, more than two of them.]
+- **§6.23 hexside modifier of a ray along a hexside.** [A ray running exactly
+  along a hexside has two candidate paths; the more protective entry
+  hexside counts, and in a combined attack the most protective over all
+  firers.]
+- **§5.21 Friendlies lost aboard.** A Friendlies unit lost with a sunk or
+  mined gunboat is on neither bank. [Scored as east bank, 1 VP (§9.14).]
+- **§5.21 aboard.** [A loaded unit neither fires nor is fired at on its own,
+  and boards only from the east bank.]
+- **§5.53 Dervish artillery.** [The guns wear the Khalifa's colour: only he
+  stacks with them.]
+- **§8.2 deserters.** [Out of play for good: listed apart from the
+  casualties, scoring nothing, never re-entering as reinforcements.]
+- **§9.35 GORDON on turn 7 or 8.** The ladder names turns 4-6 only. [Killed on
+  turn 7: British marginal; on turn 8: British tactical.]
+- **§7.5 retreat.** [The two-hex retreat ignores movement costs and zones of
+  control; a mixed infantry-and-mounted attack permits it; each unit of a
+  stack retreats on its own.]
+- **§7.6 which four advance.** More than four eligible Dervish attackers:
+  [the first four in declaration order, leaders free; a unit the stacking or
+  walled-city rules refuse is skipped.]
+- **§5.23 Khartoum.** The walled-city unit restrictions name Omdurman only.
+  [In FALL OF KHARTOUM only the wall hexsides bind; any unit may enter.]
+- **§6.42 in FALL OF KHARTOUM.** [The Maxim and howitzer subphase is skipped
+  entirely: the order of battle has no Maxims and no named gunboats.]
+- **§10.23 "one complete turn".** [Standing beside a chained hex from the
+  start of the Anglo-Egyptian player turn to its end, without spending
+  movement points.]
+- **§6.64 off-map scatter.** [A shell scattered off the map is lost: nothing
+  resolves, the gunboat has fired.]
+- **§9.345 at night.** The crossing costs six upstream points; on the FALL OF
+  KHARTOUM night turn 1 an old gunboat's halved upstream allowance is five.
+  [Unaffordable that turn -- a consequence of §8.1, not a bug.]
 
 ## UI
 
+- A gunboat that may not move for a rules reason other than its allowance
+  (the §5.21 loading turn, a chain or mine stop) gets a route slip that
+  blames the §5.24 upstream allowance ("this move has 0 MP left"): the
+  engine's `remaining_movement` folds every precondition into 0 and
+  `no_route_reason` only knows budgets (`picker/clicks.rs`). Say which rule
+  holds the boat. The hover tooltip likewise prints "0 left" beside
+  "11↑ 17↓ MP left" for such a boat.
 - The melee-declared card shows the defender's retreat instructions to
   spectators, too: anyone who is not the attacker gets them (`melee.rs`).
 - The advance slip says "may advance" even when the §7.6 Dervish advance is
@@ -166,7 +216,6 @@ item when it is fixed.
   - §9.33: nothing pins the early end when GORDON falls.
   - §9.344: nothing checks that the North Fort fort may fire its guns.
   - §9.345: nothing checks that six upstream movement points are debited.
-  - §10.22: no British gunboat is moved toward the chain.
 
 - Mutation-gate debt: mutants the citing sections' tests miss, from a pilot
   over the sections the 2026-09 audit fixed (7 of its 20 functions finished
