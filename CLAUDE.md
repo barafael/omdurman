@@ -295,7 +295,7 @@ panel) is native Bevy UI over a GPU backdrop shader (`omdurman-app/src/splash/`)
 lobby's egui widgets draw over it. Its buttons take picking events and, like the board, ignore the
 pointer while it is over an egui surface (`EguiPointerOverUi`): egui draws over the native UI.
 `OMDURMAN_SPLASH_FREEZE=<map>,<pan time>` and `OMDURMAN_SPLASH_QUOTE=<index>` pin the screen for
-screenshots that compare across builds; holding Shift on the title screen shows an egui pane to
+screenshots that compare across builds; tapping Shift on the title screen toggles an egui pane to
 tune its look live.
 There is no in-app editor — the board and asset data files are edited as text.
 

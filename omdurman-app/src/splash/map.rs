@@ -173,6 +173,30 @@ impl SplashMaps {
         }
     }
 
+    /// Skip `step` maps on (`+1`) or back (`-1`) in list order, past any not
+    /// ready: a crossfade into that map starts now (the tuning pane's map
+    /// buttons). A crossfade already running completes first, the incoming
+    /// map taking over at once. Nothing happens while frozen or before a map
+    /// shows. Returns the map crossfading in.
+    pub(super) fn skip(&mut self, step: isize) -> Option<usize> {
+        if self.freeze.is_some() || !self.is_ready(self.show.current) {
+            return None;
+        }
+        if self.show.finish_fade() {
+            self.pan_time = self.incoming_pan_time;
+            self.view = self.incoming_view;
+        }
+        let Self {
+            images, settled, ..
+        } = self;
+        let target = self.show.skip(step, |index| {
+            *settled && images.get(index).is_some_and(Option::is_some)
+        })?;
+        self.incoming_pan_time = random_pan_start();
+        self.incoming_view = random_view(target);
+        Some(target)
+    }
+
     /// Whether a map is on screen and moving, so the screen showing it must
     /// keep repainting.
     pub(crate) fn is_animating(&self) -> bool {
@@ -319,6 +343,31 @@ impl MapShow {
             // cascading through a slide a frame.
             self.clock = (self.clock - slot).min(hold);
         }
+    }
+
+    /// Start a crossfade now into the `step`th ready map on (`+1`) or back
+    /// (`-1`) from the current one in list order, if there is one; a running
+    /// crossfade is retargeted from its start. Returns the target.
+    pub(super) fn skip(&mut self, step: isize, ready: impl Fn(usize) -> bool) -> Option<usize> {
+        let len = MAPS.len() as isize;
+        let target = (1..len)
+            .map(|k| (self.current as isize + step * k).rem_euclid(len) as usize)
+            .find(|&index| ready(index))?;
+        self.target = Some(target);
+        self.clock = self.timing.hold_secs();
+        Some(target)
+    }
+
+    /// Complete a running crossfade at once: its target becomes current, and
+    /// holds from the start. Whether one was running.
+    pub(super) fn finish_fade(&mut self) -> bool {
+        let Some(target) = self.fade().map(|(target, _)| target) else {
+            return false;
+        };
+        self.current = target;
+        self.target = None;
+        self.clock = 0.0;
+        true
     }
 
     /// The map fading in and how far (0..1, eased), during a crossfade --
@@ -1042,6 +1091,57 @@ mod tests {
         // The next map takes over exactly `MAP_SECS` after the first appeared.
         show.advance(MAP_CROSSFADE_SECS / 2.0, all);
         assert_eq!((show.current, show.fade()), (0, None));
+    }
+
+    /// A skip starts a crossfade at once, forward or back in list order past
+    /// maps not ready, and skipping mid-crossfade first lets the incoming map
+    /// take over.
+    #[test]
+    fn a_skip_crossfades_into_the_next_or_previous_ready_map() {
+        let all = |_: usize| true;
+        let mut show = MapShow::new(0);
+        show.advance(1.0, all);
+        assert_eq!(show.skip(1, all), Some(1));
+        let (target, progress) = show.fade().expect("fading at once");
+        assert_eq!((target, progress), (1, 0.0));
+        show.advance(MAP_CROSSFADE_SECS, all);
+        assert_eq!((show.current, show.fade()), (1, None));
+        assert_eq!(show.skip(-1, |index| index != 0), Some(MAPS.len() - 1));
+        assert_eq!(show.fade().map(|(target, _)| target), Some(MAPS.len() - 1));
+        // Mid-crossfade: the incoming map takes over, and the skip counts
+        // from it.
+        show.advance(MAP_CROSSFADE_SECS / 2.0, all);
+        assert!(show.finish_fade());
+        assert_eq!((show.current, show.fade()), (MAPS.len() - 1, None));
+        assert!(!show.finish_fade());
+        assert_eq!(show.skip(1, all), Some(0));
+        assert_eq!(show.skip(1, |_| false), None);
+    }
+
+    /// The show's skip: a crossfade into the next loaded map starts now, with
+    /// its own pan start; none before the show starts.
+    #[test]
+    fn the_show_skips_to_another_loaded_map() {
+        let mut maps = SplashMaps::new();
+        assert_eq!(maps.skip(1), None, "not started");
+        let blank = || {
+            Some(MapImage {
+                handle: Handle::default(),
+                size: Vec2::ONE,
+            })
+        };
+        (maps.images[0], maps.images[2]) = (blank(), blank());
+        maps.show = MapShow::new(0);
+        maps.settle();
+        assert_eq!(maps.skip(1), Some(2), "past the map not loaded");
+        let incoming = (maps.incoming_pan_time, maps.incoming_view);
+        maps.advance(MAP_CROSSFADE_SECS, 1.0);
+        assert_eq!(maps.show.current, 2);
+        assert_eq!(
+            (maps.pan_time, maps.view),
+            (incoming.0 + MAP_CROSSFADE_SECS, incoming.1),
+            "the incoming slide keeps its pan when it takes over"
+        );
     }
 
     // The curve runs 0 to 1, symmetric about its middle, never backwards,

@@ -1,14 +1,17 @@
-//! The title screen's tuning pane (a dev aid): hold **Shift** on the title
-//! screen for a small egui pane that switches the menu column off and on and
-//! sets the pan's, the slideshow's, the blur's and the ambient frame rate's
-//! parameters live. Everything starts from [`super::params`]; each finished
-//! change logs the whole set, ready to be copied back there. The pane exists
-//! only while it shows: nothing of it takes focus or input otherwise.
+//! The title screen's tuning pane (a dev aid): tap **Shift** on the title
+//! screen for a small egui pane that switches the menu column off and on,
+//! skips the slideshow to the next or previous map, and sets the pan's, the
+//! slideshow's, the blur's and the ambient frame rate's parameters live.
+//! Everything starts from [`super::params`]; each finished change logs the
+//! whole set, ready to be copied back there. Shift again (or its Close
+//! button) hides it; the pane exists only while it shows: nothing of it takes
+//! focus or input otherwise. (A tap, not a hold: it works the same in a
+//! browser, and leaves both hands free for its buttons.)
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
-use super::map::SlideTiming;
+use super::map::{SlideTiming, SplashMaps};
 use super::params::*;
 use crate::Screen;
 use crate::activity::AmbientFps;
@@ -16,6 +19,8 @@ use crate::activity::AmbientFps;
 /// The title screen's live-tunable look: the menu column, and the pan.
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
 pub(super) struct SplashTuning {
+    /// The pane is open.
+    pub(super) open: bool,
     /// The menu column (and the fade that makes room for it) shows.
     pub(super) sidebar: bool,
     pub(super) pan_speed: f32,
@@ -28,6 +33,7 @@ pub(super) struct SplashTuning {
 impl Default for SplashTuning {
     fn default() -> Self {
         Self {
+            open: false,
             sidebar: true,
             pan_speed: MAP_PAN_SPEED,
             title_map: TITLE_MAP,
@@ -154,8 +160,11 @@ impl Knob {
 
 /// The pane's width, and its sliders' (logical pixels): wide, so a slider
 /// moves in small steps.
-const PANE_WIDTH: f32 = 520.0;
-const SLIDER_WIDTH: f32 = 360.0;
+const PANE_WIDTH: f32 = 560.0;
+const SLIDER_WIDTH: f32 = 380.0;
+/// The pane's text, relative to the app's egui text: a dev pane read from
+/// across the room.
+const TEXT_SCALE: f32 = 1.3;
 /// Pixels of drag on a slider's number box that cross the slider's whole
 /// range: dragging the number is the fine adjustment (the handle follows
 /// the pointer, the number creeps).
@@ -164,49 +173,124 @@ const FINE_DRAG_PX: f64 = 2000.0;
 /// The range of the frame-rate slider: from the unfocused pace up.
 const FPS_RANGE: (f32, f32) = (crate::activity::AMBIENT_UNFOCUSED_FPS, 60.0);
 
-/// The pane, top right, while Shift is held on the title screen. Edits go
-/// straight to the resources (written only when a value changed); a finished
-/// change -- a drag let go, a click, a typed value -- logs the whole set.
+/// What the pane's buttons asked for this frame.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct PaneActions {
+    /// Skip the slideshow: `+1` on, `-1` back.
+    skip: isize,
+    close: bool,
+}
+
+/// The slideshow as the pane describes it: the showing map, and the one
+/// crossfading in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ShowInfo {
+    current: usize,
+    incoming: Option<usize>,
+}
+
+impl ShowInfo {
+    fn of(maps: &SplashMaps) -> Self {
+        Self {
+            current: maps.show.current,
+            incoming: maps.show.fade().map(|(index, _)| index),
+        }
+    }
+}
+
+/// The pane, top right, while open on the title screen; Shift opens and
+/// closes it. Edits go straight to the resources (written only when a value
+/// changed); a finished change -- a drag let go, a click, a typed value --
+/// logs the whole set.
 pub(super) fn tuning_pane_ui(
     mut contexts: EguiContexts,
     keys: Res<ButtonInput<KeyCode>>,
     screen: Option<Res<State<Screen>>>,
     mut tuning: ResMut<SplashTuning>,
     mut fps: ResMut<AmbientFps>,
+    mut maps: ResMut<SplashMaps>,
 ) {
     let title = screen.is_some_and(|screen| **screen == Screen::Title);
-    if !title || !keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]) {
+    if !title {
+        return;
+    }
+    if keys.any_just_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]) {
+        tuning.open = !tuning.open;
+    }
+    if !tuning.open {
         return;
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };
     let (mut edited, mut edited_fps) = (*tuning, fps.0);
-    let finished = egui::Area::new(egui::Id::new("splash_tuning"))
+    let show = ShowInfo::of(&maps);
+    let (finished, actions) = egui::Area::new(egui::Id::new("splash_tuning"))
         .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-12.0, 12.0))
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
             egui::Frame::popup(ui.style())
-                .show(ui, |ui| tuning_controls(ui, &mut edited, &mut edited_fps))
+                .show(ui, |ui| {
+                    tuning_controls(ui, &mut edited, &mut edited_fps, show)
+                })
                 .inner
         })
         .inner;
+    if actions.close {
+        edited.open = false;
+    }
     if edited != *tuning {
         *tuning = edited;
     }
     if edited_fps != fps.0 {
         fps.0 = edited_fps;
     }
+    if actions.skip != 0 {
+        maps.show.timing = edited.timing;
+        maps.skip(actions.skip);
+    }
     if finished {
         info!("splash tuning: {}", describe(&edited, edited_fps));
     }
 }
 
-/// The pane's controls over `tuning` and the ambient `fps`; whether a change
-/// was finished this frame (a drag let go, a click, a typed value).
-fn tuning_controls(ui: &mut egui::Ui, tuning: &mut SplashTuning, fps: &mut f32) -> bool {
+/// The pane's controls over `tuning` and the ambient `fps`, and its map
+/// buttons over the show (`show` says where it is): whether a change was
+/// finished this frame (a drag let go, a click, a typed value), and what the
+/// buttons asked for.
+fn tuning_controls(
+    ui: &mut egui::Ui,
+    tuning: &mut SplashTuning,
+    fps: &mut f32,
+    show: ShowInfo,
+) -> (bool, PaneActions) {
     ui.set_width(PANE_WIDTH);
-    ui.spacing_mut().slider_width = SLIDER_WIDTH;
-    ui.strong("Title screen");
+    let style = ui.style_mut();
+    style.spacing.slider_width = SLIDER_WIDTH;
+    for font in style.text_styles.values_mut() {
+        font.size *= TEXT_SCALE;
+    }
+    let mut actions = PaneActions::default();
+    ui.horizontal(|ui| {
+        ui.strong("Title screen");
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            actions.close = ui.button("Close").clicked();
+            ui.label(egui::RichText::new("Shift").small().weak());
+        });
+    });
     let mut finished = ui.checkbox(&mut tuning.sidebar, "Sidebar").changed();
+    ui.horizontal(|ui| {
+        if ui.button("◀ Map").clicked() {
+            actions.skip = -1;
+        }
+        if ui.button("Map ▶").clicked() {
+            actions.skip = 1;
+        }
+        let map = |index: usize| format!("{} of {}: {}", index + 1, MAPS.len(), MAPS[index].credit);
+        let text = match show.incoming {
+            Some(incoming) => format!("{} → {}", show.current + 1, map(incoming)),
+            None => map(show.current),
+        };
+        ui.add(egui::Label::new(egui::RichText::new(text).small()).truncate());
+    });
     let mut slider =
         |ui: &mut egui::Ui, value: &mut f32, (min, max, decimals): (f32, f32, i32), label: &str| {
             ui.label(egui::RichText::new(label).small());
@@ -233,7 +317,7 @@ fn tuning_controls(ui: &mut egui::Ui, tuning: &mut SplashTuning, fps: &mut f32) 
         knob.set(tuning, value);
     }
     slider(ui, fps, (FPS_RANGE.0, FPS_RANGE.1, 0), "Frames per second");
-    finished
+    (finished, actions)
 }
 
 #[cfg(test)]
@@ -245,15 +329,23 @@ mod tests {
     #[test]
     fn an_untouched_pane_changes_nothing() {
         let (mut tuning, mut fps) = (SplashTuning::default(), crate::activity::AMBIENT_FPS);
+        let show = ShowInfo {
+            current: 0,
+            incoming: Some(1),
+        };
         let mut reported = false;
+        let mut asked = PaneActions::default();
         crate::ui::headless(3, |ctx, _| {
             egui::Area::new(egui::Id::new("pane")).show(ctx, |ui| {
-                reported |= tuning_controls(ui, &mut tuning, &mut fps);
+                let (finished, actions) = tuning_controls(ui, &mut tuning, &mut fps, show);
+                reported |= finished;
+                asked = actions;
             });
         });
         assert_eq!(tuning, SplashTuning::default());
         assert_eq!(fps, crate::activity::AMBIENT_FPS);
         assert!(!reported);
+        assert_eq!(asked, PaneActions::default());
     }
 
     // Every knob starts inside its slider's range, and sets exactly what it
