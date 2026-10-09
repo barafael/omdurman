@@ -33,3 +33,6 @@ todo.md
 /omdurman-kani/
 
 *.png
+
+# Claude Code agent worktrees (nested checkouts)
+/.claude/worktrees/
