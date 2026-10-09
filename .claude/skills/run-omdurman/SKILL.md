@@ -221,3 +221,30 @@ signalling server.
 - `hex q,r not on screen` → the hex is outside the camera; `zoom` with a
   negative count, or `zoom` at a visible hex nearer the target.
 - `shot` prints "no screenshot" → the app is not running (`$D launch`).
+
+## Run inside the gnome-boxes VM (no host-desktop interference)
+
+A Debian 13 VM (`debian13-liv`, libvirt `qemu:///session`, 1280x800) can
+host the game instead. `.claude/skills/run-omdurman/vm.sh` drives it
+out-of-band: `virsh screenshot` for shots, QMP `input-send-event` on the
+absolute vmmouse for the pointer, `virsh send-key` for keys. Nothing
+touches the host pointer, focus or the Boxes window.
+
+```bash
+V=.claude/skills/run-omdurman/vm.sh
+$V shot desk                 # -> /tmp/omdurman-vm/desk.png (VM_PLAY overrides)
+$V shot panel 400x300+120+0  # crop WxH+X+Y
+$V click 640 400; $V dbl X Y; $V drag X1 Y1 X2 Y2; $V wheel X Y -3
+$V key ctrl l; $V key Return; $V type 'cargo run -p omdurman-app'
+```
+
+- The guest's network is user-mode (slirp): the host cannot connect in
+  (no SSH, no hex probe files), but the guest reaches host services at
+  `10.0.2.2` -- `trunk serve --address 0.0.0.0` on the host, then open
+  `http://10.0.2.2:8080` in the guest browser to test the web build without
+  building in the VM. A host-built native binary does not run there
+  (host glibc 2.44, Debian 13 has 2.41).
+- Screenshots omit the pointer; the guest root disk is 19 GB (a full
+  debug build does not fit next to the toolchain -- `cargo clean` first).
+- `virsh console` on `/dev/pts/1` is the serial line, but the live image
+  runs no getty on it.
