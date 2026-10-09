@@ -63,7 +63,7 @@ pub(crate) fn describe_result(result: CombatResult) -> String {
     }
 }
 
-/// The bold-orange direction arrow from an acting stack to its hovered
+/// The bold-red direction arrow from an acting stack to its hovered
 /// target — the shared geometry behind the fire and melee aim arrows
 /// (inset 18% of the hex, drawn between the two rims).
 pub(crate) fn direction_arrow(
@@ -92,7 +92,7 @@ pub(crate) fn direction_arrow(
     commands.spawn((
         marker,
         Mesh3d(ctx.arrow_assets.mesh.clone()),
-        MeshMaterial3d(hex.assets.orange.clone()),
+        MeshMaterial3d(ctx.arrow_assets.combat.clone()),
         Transform::from_xyz(tail.x, 1.55, tail.z)
             .with_rotation(Quat::from_rotation_arc(Vec3::Z, dir))
             .with_scale(Vec3::new(size * 0.5, 1.0, draw_len)),
@@ -120,6 +120,26 @@ pub(crate) fn unit_name(
 
 /// A player-readable name for one weapon firing: the counter's name, and
 /// "<gunboat> Maxims" for a named gunboat's Maxim guns (§2.32).
+/// Collapse repeated names (or whole lines) into counts, in first-seen
+/// order: eight identical Mulazmin read "8\u{d7} Mulazmin (3)", not eight
+/// copies chained with " + " across five lines of the rail.
+pub(crate) fn tally_names(names: Vec<String>) -> Vec<String> {
+    let mut counted: Vec<(String, usize)> = Vec::new();
+    for name in names {
+        match counted.iter_mut().find(|(n, _)| *n == name) {
+            Some((_, count)) => *count += 1,
+            None => counted.push((name, 1)),
+        }
+    }
+    counted
+        .into_iter()
+        .map(|(name, count)| match count {
+            1 => name,
+            n => format!("{n}\u{d7} {name}"),
+        })
+        .collect()
+}
+
 pub(crate) fn shot_name(
     shot: omdurman_rules::Shot,
     gs: Option<&omdurman_rules::effects::GameState>,
@@ -128,5 +148,18 @@ pub(crate) fn shot_name(
     match shot.mount {
         omdurman_rules::FireMount::Main => name,
         omdurman_rules::FireMount::GunboatMaxims => format!("{name} Maxims"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tally_names;
+
+    #[test]
+    fn repeated_names_collapse_into_counts_in_first_seen_order() {
+        let names = ["Mulazmin", "Kehena", "Mulazmin", "Mulazmin"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(tally_names(names), ["3\u{d7} Mulazmin", "Kehena"]);
     }
 }

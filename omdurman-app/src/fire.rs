@@ -338,6 +338,7 @@ pub(crate) struct FireTargetCache {
     fire: Option<(FireCacheKey, Vec<HexCoord>)>,
     walls: Option<((UnitId, u64), Vec<WallTarget>)>,
     side: Option<(u64, usize)>,
+    side_firers: Option<(u64, Vec<HexCoord>)>,
     side_walls: Option<(u64, bool)>,
 }
 
@@ -384,6 +385,30 @@ impl FireTargetCache {
         self.side.expect("just cached").1
     }
 
+    /// The hexes holding a unit of the side firing now that may still fire
+    /// at some enemy hex -- what to pick when nothing is selected. Recomputed
+    /// only when the state stamp changed.
+    pub(crate) fn side_firer_hexes(&mut self, gs: &GameState) -> &[HexCoord] {
+        let key = fire_target_stamp(gs);
+        if !matches!(&self.side_firers, Some((k, _)) if *k == key) {
+            let firer = gs.phase_player();
+            let mut hexes: Vec<HexCoord> = gs
+                .units
+                .iter()
+                .filter(|u| u.profile.identity.owner() == firer)
+                .filter(|u| {
+                    fire_kind_for(gs, u.id)
+                        .is_some_and(|kind| !valid_target_hexes(u.id, kind, gs).is_empty())
+                })
+                .map(|u| u.position)
+                .collect();
+            hexes.sort_by_key(|h| (h.q, h.r));
+            hexes.dedup();
+            self.side_firers = Some((key, hexes));
+        }
+        &self.side_firers.as_ref().expect("just cached").1
+    }
+
     /// Whether a battery of the side firing now that has not fired may fire
     /// at a standing wall this sub-phase (§6.63) -- so a phase with no enemy
     /// in range still has work for it. Recomputed only when the state stamp
@@ -420,7 +445,9 @@ impl FireTargetCache {
 }
 
 /// Highlight valid fire targets in red when a unit is selected during a fire
-/// sub-phase.
+/// sub-phase -- and, with nothing selected, outline in green the side's own
+/// units that still have a target, so "1 enemy hex in range" in the rail is
+/// not a hunt across the board for the one counter that can shoot.
 #[derive(Component)]
 pub(crate) struct FireTargetRing;
 
@@ -443,6 +470,8 @@ pub fn fire_target_overlay_mesh(
     mut last: Local<Option<FireOverlayCache>>,
     placed_changed: Query<(), Changed<PlacedUnit>>,
     (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
+    peers: crate::peers::Peers,
+    allocation: Res<crate::fire_allocation::FireAllocationState>,
 ) {
     let invalidated = generation.invalidates(&mut seen_generation);
     if invalidated {
@@ -457,6 +486,7 @@ pub fn fire_target_overlay_mesh(
     let inputs_moved = invalidated
         || game_state.as_ref().is_some_and(|gs| gs.is_changed())
         || state.is_changed()
+        || allocation.is_changed()
         || !placed_changed.is_empty();
     if !inputs_moved {
         return;
@@ -465,10 +495,11 @@ pub fn fire_target_overlay_mesh(
         *last = None;
         return;
     };
-    let drawn = if matches!(
+    let in_fire = matches!(
         gs.0.phase,
         Phase::OffensiveFire(_) | Phase::DefensiveFire(_)
-    ) {
+    );
+    let drawn = if in_fire {
         fire_selection(&state, &placed_units, &gs.0)
             .map(|group| fire_group_kinds(&gs.0, &group))
             .filter(|kinds| !kinds.is_empty())
@@ -479,6 +510,16 @@ pub fn fire_target_overlay_mesh(
     } else {
         None
     };
+    // Nothing selected that has a target: the units that do (no kinds --
+    // the cache entry tells the two drawings apart).
+    let drawn = drawn
+        .filter(|(_, targets)| !targets.is_empty())
+        .or_else(|| {
+            // (Once the sub-phase's fire is resolved nothing more may fire, §6.41.)
+            (in_fire && !allocation.committed && peers.may_act_now(&gs.0))
+                .then(|| (Vec::new(), cache.side_firer_hexes(&gs.0).to_vec()))
+                .filter(|(_, hexes)| !hexes.is_empty())
+        });
     let Some((kinds, targets)) = drawn else {
         // Nothing to highlight: clear any rings left over from a selection
         // that no longer fires (once, not every frame).
@@ -498,19 +539,24 @@ pub fn fire_target_overlay_mesh(
         return;
     }
     let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    let material = if kinds.is_empty() {
+        &hex.assets.green
+    } else {
+        &hex.assets.red
+    };
     for &target in &targets {
-        rings.ring(FireTargetRing, target, 1.5, 1.0, &hex.assets.red);
+        rings.ring(FireTargetRing, target, 1.5, 1.0, material);
     }
     *last = Some((kinds, targets));
 }
 
-// -- Fire direction arrow: orange arrow from firer to hovered target ----------
+// -- Fire direction arrow: red arrow from firer to hovered target ----------
 
 #[derive(Component)]
 pub(crate) struct FireDirectionArrow;
 
 /// Draw an arrow from the firer hex to the hovered valid target hex, giving
-/// the player a visual preview of the fire direction. Same bold-orange look
+/// the player a visual preview of the fire direction. Same bold-red look
 /// as the melee direction arrow (one visual language for combat targeting);
 /// rebuilt only when the arrow's endpoints (or the overlays) change -- the
 /// selection itself survives target allocation, so the arrow keeps previewing
@@ -785,6 +831,7 @@ pub fn fire_combat_preview_ui(
     let net_mod = attack.net_modifier() + terrain_mod + hexside_mod;
 
     // Per-firer detail: identity + fire factor at its range (§6.22).
+    // Identical contributions counted ("4\u{d7} Mulazmin: 3").
     let firer_details: Vec<String> = omdurman_rules::effects::firer_contributions(&gs.0, attack)
         .iter()
         .filter_map(|c| {
@@ -808,6 +855,7 @@ pub fn fire_combat_preview_ui(
             })
         })
         .collect();
+    let firer_details = crate::combat_ui::tally_names(firer_details);
 
     // Modifiers with rulebook sections.
     let mut mod_lines: Vec<(String, String)> = Vec::new();

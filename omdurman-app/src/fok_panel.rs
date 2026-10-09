@@ -11,7 +11,7 @@ use bevy::prelude::{Res, ResMut};
 use bevy_egui::{EguiContexts, egui};
 use omdurman_rules::turn_track::FALL_OF_KHARTOUM_TURN_TRACK;
 use omdurman_rules::{FoKVictoryLevel, GameTurnIndex};
-use omdurman_types::{DayNight, Location, Player, Scenario};
+use omdurman_types::{DayNight, Player, Scenario};
 
 use crate::GameStateResource;
 
@@ -165,10 +165,11 @@ fn fok_turn_track_widget(ui: &mut egui::Ui, current: GameTurnIndex) {
     });
 }
 
-/// Floating GORDON badge anchored top-centre below the top bar: always
-/// visible during a FoK game so both players can see GORDON's fate at a glance
-/// (§9.346). Suppressed during setup (GORDON is auto-placed, not yet at risk)
-/// and once the victory modal takes over.
+/// Floating GORDON badge anchored top-centre below the top bar, once GORDON
+/// has fallen (§9.346): the turn that decides the §9.35 level. While he lives
+/// the rail's "GORDON: alive at the Palace" line says so -- a permanent
+/// "GORDON holds the Palace" chip repeated it and pushed every combat card
+/// below it down the board. Suppressed once the victory modal takes over.
 pub(crate) fn gordon_badge_ui(
     mut contexts: EguiContexts,
     game_state: Option<Res<GameStateResource>>,
@@ -177,50 +178,30 @@ pub(crate) fn gordon_badge_ui(
     let Some(state) = game_state.as_deref() else {
         return;
     };
-    if !is_fok(state) {
+    if !is_fok(state) || state.0.game_over {
         return;
     }
-    if state.0.game_over {
+    let Some(turn) = state.0.gordon_eliminated_turn else {
         return;
-    }
-    if matches!(state.0.phase, omdurman_rules::Phase::Setup) {
-        return;
-    }
+    };
     let Ok(ctx) = contexts.ctx_mut() else {
         return;
     };
-
-    let gs = &state.0;
-    let (label, fg, bg) = if gs.gordon_eliminated_turn.is_none() {
-        let palace = gs
-            .board
-            .hex_of_location(Location::Palace)
-            .map(|h| format!("({}, {})", h.q, h.r))
-            .unwrap_or_else(|| "the Palace".into());
-        (
-            format!("GORDON holds the Palace {palace}"),
-            crate::ui::palette::SUCCESS,
-            crate::ui::palette::CARD_GOOD,
-        )
-    } else {
-        let turn = gs.gordon_eliminated_turn.map(|t| t.value()).unwrap_or(0);
-        (
-            format!("GORDON fallen, turn {turn} (\u{00a7}9.346)"),
-            crate::ui::palette::ALERT,
-            crate::ui::palette::CARD_BAD,
-        )
-    };
-
     crate::ui::stacked_card(
         ctx,
         &mut layout,
         egui::Id::new("gordon_badge"),
         egui::Frame::new()
-            .fill(bg)
+            .fill(crate::ui::palette::CARD_BAD)
             .corner_radius(4.0)
             .inner_margin(egui::Margin::symmetric(10, 4)),
         |ui| {
-            crate::rulebook::refs_label(ui, &label, fg, 13.0);
+            crate::rulebook::refs_label(
+                ui,
+                &format!("GORDON fallen, turn {} (\u{00a7}9.346)", turn.value()),
+                crate::ui::palette::ALERT,
+                13.0,
+            );
         },
     );
 }

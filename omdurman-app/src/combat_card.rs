@@ -299,6 +299,27 @@ fn drain_combat_observations(
     }
 }
 
+/// The table's result, and -- when it was not enough against a fort or a
+/// gunboat (§6.61/§6.62: a destroying result or nothing) -- that it missed:
+/// a bare "Disrupt" on a fort that stands undisrupted read as a bug.
+fn fire_result_label(
+    attack: &FireAttack,
+    result: omdurman_rules::CombatResult,
+    eliminations: &[UnitId],
+    gs: Option<&omdurman_rules::effects::GameState>,
+) -> String {
+    let label = describe_result(result);
+    // A surviving special target is still on the board, so the threshold
+    // reads off the state after the shot.
+    let Some(gs) = gs.filter(|_| eliminations.is_empty()) else {
+        return label;
+    };
+    match omdurman_rules::effects::special_target_threshold(gs, attack) {
+        Some(needed) => format!("{label} \u{2014} a miss (Eliminate {needed}+ needed)"),
+        None => label,
+    }
+}
+
 fn build_fire_card(
     attack: &FireAttack,
     resolution: FireResolution,
@@ -316,19 +337,21 @@ fn build_fire_card(
     } = resolution;
     let attacker = CombatSide {
         player: attack.firing_player,
-        units_label: attack
-            .shots()
-            .into_iter()
-            .map(|shot| crate::combat_ui::shot_name(shot, gs))
-            .collect::<Vec<_>>()
-            .join(", "),
+        units_label: crate::combat_ui::tally_names(
+            attack
+                .shots()
+                .into_iter()
+                .map(|shot| crate::combat_ui::shot_name(shot, gs))
+                .collect(),
+        )
+        .join(", "),
         factor: effective_factor,
         factor_row_label: factor_row.label().to_string(),
         roll,
         modifiers: fire_modifier_lines(attack, total_modifier),
         net_modifier: total_modifier,
         modified_roll,
-        result_label: describe_result(result),
+        result_label: fire_result_label(attack, result, eliminations, gs),
         losses: list_unit_names(eliminations, gs),
     };
     let hex_label = target_hex_label(attack.target_hex, gs);
@@ -391,7 +414,10 @@ fn build_melee_card(
         modifiers: melee_modifier_lines(&attack.attacker_modifiers, attacker_total_modifier),
         net_modifier: attacker_total_modifier,
         modified_roll: attacker_modified_roll,
-        result_label: describe_result(attacker_result),
+        // Melee is simultaneous: each roll strikes the other side, so the
+        // result says whom -- beside "lost:", the side's own casualties, a
+        // bare "→ Disrupt" read as what befell the side itself.
+        result_label: format!("{} on the defenders", describe_result(attacker_result)),
         losses: list_unit_names(attacker_losses, gs),
     };
     let defender_player = attack.attacker_player.opponent();
@@ -404,7 +430,7 @@ fn build_melee_card(
         modifiers: melee_modifier_lines(&attack.defender_modifiers, defender_total_modifier),
         net_modifier: defender_total_modifier,
         modified_roll: defender_modified_roll,
-        result_label: describe_result(defender_result),
+        result_label: format!("{} on the attackers", describe_result(defender_result)),
         losses: list_unit_names(defender_losses, gs),
     };
     let hex_label = target_hex_label(attack.defender_hex, gs);
@@ -493,12 +519,14 @@ fn list_units(ids: &[UnitId], gs: Option<&omdurman_rules::effects::GameState>) -
     list_unit_names(ids, gs).join(", ")
 }
 
-/// Like [`list_units`] but returns the per-unit names separately, for casualty
-/// lists where each loss is its own line item.
+/// Like [`list_units`] but returns the names separately (repeats counted:
+/// "2× Mulazmin"), for casualty lists where each loss is its own line item.
 fn list_unit_names(ids: &[UnitId], gs: Option<&omdurman_rules::effects::GameState>) -> Vec<String> {
-    ids.iter()
-        .map(|id| crate::combat_ui::unit_name(*id, gs))
-        .collect()
+    crate::combat_ui::tally_names(
+        ids.iter()
+            .map(|id| crate::combat_ui::unit_name(*id, gs))
+            .collect(),
+    )
 }
 
 /// A short label for any landmark at the target hex (fort, palace, etc.).

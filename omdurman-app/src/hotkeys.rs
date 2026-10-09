@@ -109,7 +109,11 @@ pub const KEY_HELP: &[(&str, &str)] = &[
     ("C", "Charts & rulebook sheet"),
     ("V", "Event viewer"),
     ("E", "End the current phase"),
-    ("Enter", "Confirm the plotted move"),
+    ("R", "Open the hovered hex's rule in the rulebook"),
+    (
+        "Enter",
+        "Confirm the plotted move / resolve staged fire / resolve the melee",
+    ),
     ("Backspace", "Undo the last movement step"),
     ("Del", "Return the selected unit to the tray (setup)"),
     (

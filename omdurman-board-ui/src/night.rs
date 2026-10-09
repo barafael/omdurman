@@ -1,29 +1,26 @@
-//! Day/night board colour grading (§8.1, §night tint). The
+//! Day/night board tint (§8.1, §night tint). The
 //! *source of truth* for the current time of day is injected via the
 //! [`BoardDayNight`] resource, keeping this crate game-agnostic (the game
 //! mirrors `GameState.day_night` into it with a tiny sync system).
 
 use bevy::prelude::*;
-use bevy::render::view::ColorGrading;
+use omdurman_hexmap::MapPlane;
 
-use crate::camera::RtsCamera;
-
-/// How dark and desaturated the board looks at full night, and how fast it
-/// eases there. The scenario plays across day and night turns (§8.1); we shade
-/// the *rendered board* (not the egui UI, which renders in its own pass) to
-/// make the current time of day legible at a glance. Purely presentational and
-/// derived from the replicated game state, so it needs no networking and stays
-/// identical on every peer.
-const NIGHT_EXPOSURE: f32 = -1.3; // EV stops darker at full night
-const NIGHT_SATURATION: f32 = 0.35; // post_saturation at full night (1.0 = unchanged)
+/// How the board scan looks at full night, and how fast it eases there. The
+/// scenario plays across day and night turns (§8.1); we tint the *board scan*
+/// -- the map plane's material -- to make the current time of day legible at a
+/// glance. Only the scan: counters, hex rings, path arrows and fire lines keep
+/// their colours, since a camera-wide grade (the first version) desaturated
+/// every green ring and red arrow on the board to the same mud at night, just
+/// when movement and fire most need reading. Purely presentational and
+/// derived from the replicated game state, so it needs no networking and
+/// stays identical on every peer.
+///
+/// The map material is unlit, so its base colour multiplies the scan: about
+/// 1.3 EV darker and cooler (the sepia scan has little blue, so a blue-heavy
+/// tint lands on a grey-green night instead of olive).
+const NIGHT_MAP_TINT: LinearRgba = LinearRgba::rgb(0.30, 0.37, 0.50);
 const NIGHT_FADE_PER_SEC: f32 = 0.67; // ~1.5s day<->night crossfade (§night tint)
-// Push colour toward the printed NIGHT-cell green at full night: cooler
-// temperature + green tint. Bevy's convention: negative temperature = cooler,
-// negative tint = toward green. Scaled by the eased `night` factor so day is
-// untouched. UI chrome is unaffected (ColorGrading applies to the camera view
-// only, not egui).
-const NIGHT_TEMPERATURE: f32 = -0.25;
-const NIGHT_TINT: f32 = -0.30;
 
 /// The board-wide time of day the night shading eases toward. `None` (or an
 /// absent resource) means "day / unknown" — grading stays untouched. The game
@@ -38,21 +35,22 @@ pub struct BoardDayNight(pub Option<omdurman_types::DayNight>);
 #[derive(Resource, Default, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NightFading(pub bool);
 
-/// Ease the camera's colour grading toward the day/night target each frame: a
-/// `night` factor of 0 is full daylight (grading untouched), 1 is full night
-/// (darker + desaturated). Interpolated so the transition fades rather than
+/// Ease the board scan's tint toward the day/night target each frame: a
+/// `night` factor of 0 is full daylight (the scan untouched), 1 is full night
+/// ([`NIGHT_MAP_TINT`]). Interpolated so the transition fades rather than
 /// snaps when a turn crosses dawn/dusk.
 pub fn night_shading(
     time: Res<Time>,
     day_night: Option<Res<BoardDayNight>>,
-    mut grading: Query<&mut ColorGrading, With<RtsCamera>>,
+    plane: Query<&MeshMaterial3d<StandardMaterial>, With<MapPlane>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     fading: Option<ResMut<NightFading>>,
     mut night: Local<f32>,
     // Dev: OMDURMAN_FORCE_NIGHT forces the night look for verification. Read
     // once (the environment doesn't change mid-run) instead of every frame.
     mut force_night: Local<Option<bool>>,
 ) {
-    let Ok(mut grading) = grading.single_mut() else {
+    let Ok(material) = plane.single() else {
         return;
     };
     let force_night =
@@ -64,7 +62,7 @@ pub fn night_shading(
     };
     // Frame-rate-independent ease toward the target, clamped so a long frame
     // can't overshoot past the endpoint. Snap once close so the ease settles
-    // and the grading stops being rewritten.
+    // and the material stops being rewritten.
     let step = (NIGHT_FADE_PER_SEC * time.delta_secs()).min(1.0);
     let mut next = *night + (target - *night) * step;
     if (target - next).abs() < 1e-4 {
@@ -75,23 +73,14 @@ pub fn night_shading(
         fading.set_if_neq(NightFading(next != target));
     }
 
-    let exposure = NIGHT_EXPOSURE * next;
-    let post_saturation = 1.0 + (NIGHT_SATURATION - 1.0) * next;
-    // Tint toward the night-cell green as night deepens.
-    let temperature = NIGHT_TEMPERATURE * next;
-    let tint = NIGHT_TINT * next;
-    // Only touch the component when a value actually changes: a `Mut` write
-    // marks `ColorGrading` changed (and re-extracts it) every frame otherwise.
-    let g = &grading.global;
-    if g.exposure != exposure
-        || g.post_saturation != post_saturation
-        || g.temperature != temperature
-        || g.tint != tint
+    let color = Color::LinearRgba(LinearRgba::WHITE.mix(&NIGHT_MAP_TINT, next));
+    // Only touch the asset when the colour actually changes: `get_mut` marks
+    // the material changed (and re-uploads it) every frame otherwise.
+    if materials
+        .get(&material.0)
+        .is_some_and(|m| m.base_color != color)
+        && let Some(mut m) = materials.get_mut(&material.0)
     {
-        let g = &mut grading.global;
-        g.exposure = exposure;
-        g.post_saturation = post_saturation;
-        g.temperature = temperature;
-        g.tint = tint;
+        m.base_color = color;
     }
 }

@@ -501,6 +501,24 @@ fn movement_hint(
             // being built, the unit's next move starts from the path's end,
             // not the unit's current board position.
             let effective_from = movement_path.current_end().unwrap_or(from);
+            // The plotted route's own end: what a click does there is
+            // nothing new (the hint read "Click to plot the cheapest route
+            // here" on the hex just plotted to).
+            if effective_from == hex {
+                return Some(format!(
+                    "End of the plotted route: {} MP, {} left after \u{2014} Enter confirms \
+                     (§5.11).",
+                    movement_path.cost_so_far,
+                    (gs.remaining_movement(unit_id) - movement_path.cost_so_far).max(0),
+                ));
+            }
+            // A hex the route already crosses.
+            if movement_path.legs.iter().any(|&(_, to)| to == hex) {
+                return Some(
+                    "On the plotted route \u{2014} Backspace undoes the last step (§5.11)."
+                        .to_string(),
+                );
+            }
             let adjacent = effective_from.neighbors().contains(&hex);
             let in_zoc = gs.hex_in_enemy_zoc(hex, unit.profile.identity.owner(), unit.profile.kind);
             if !adjacent {

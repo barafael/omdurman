@@ -1301,7 +1301,7 @@ title = "Direct Fire Subphase"
 status = "implemented"
 clause = "The firing player must first allocate all of his fire attacks, combining his units' direct fire combat factors in any manner he wishes. After all fire has been allocated, the firing player then resolves his attacks in any order he wishes."
 witness = "omdurman-rules::src::effects::tests::fire_combat_eliminates_target"
-approximation = "The engine accepts and resolves fire attacks one at a time; allocating all attacks before resolving any is enforced only by the app's allocation tray."
+approximation = "The engine accepts and resolves fire attacks one at a time; allocating all attacks before resolving any is enforced only by the app's allocation tray (which locks once the firing side has resolved fire in the sub-phase, read off the replayed record, so a peer that rejoins cannot reopen it)."
 tests = [
     "omdurman-rules::src::effects::tests::fire_rejects_duplicate_firers_and_a_foreign_firing_player",
     "omdurman-rules::src::effects::tests::disrupted_unit_cannot_fire",

@@ -86,7 +86,7 @@ pub mod palette {
     pub const BAD: Color32 = Color32::from_rgb(200, 120, 120);
     /// Warning / disrupted / danger text.
     pub const RED: Color32 = Color32::from_rgb(200, 100, 100);
-    /// A positive outcome headline (Gordon holds the Palace).
+    /// A positive outcome line (a seat request approved).
     pub const SUCCESS: Color32 = Color32::from_rgb(150, 220, 150);
     /// A negative outcome headline (Gordon fallen, LOS-refusal reason).
     pub const ALERT: Color32 = Color32::from_rgb(230, 145, 135);
@@ -231,8 +231,6 @@ pub mod palette {
 
     /// Fill of an affirmative action button (confirm, resolve, fire).
     pub const BTN_GO: Color32 = Color32::from_rgb(60, 80, 40);
-    /// Fill of a neutral combat button (review allocations).
-    pub const BTN_COMBAT: Color32 = Color32::from_rgb(55, 45, 45);
     /// Fill of a destructive button (remove, discard).
     pub const BTN_DANGER: Color32 = Color32::from_rgb(80, 30, 30);
 

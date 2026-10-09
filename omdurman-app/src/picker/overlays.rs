@@ -42,12 +42,11 @@ pub(crate) struct MovementOverlayCtx<'w> {
     pub movement_path: Res<'w, MovementPath>,
 }
 
-/// Bundle of the three movement-ring marker queries (green reachable, gray
-/// range, yellow ZOC) so [`movement_overlay_mesh`] stays under Bevy's
+/// Bundle of the two movement-ring marker queries (teal reachable, yellow
+/// ZOC) so [`movement_overlay_mesh`] stays under Bevy's
 /// system-parameter limit.
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct MovementRingQueries<'w, 's> {
-    pub existing_green: Query<'w, 's, Entity, With<MovementHexRing>>,
     pub existing_gray: Query<'w, 's, Entity, With<MovementRangeRing>>,
     pub existing_zoc: Query<'w, 's, Entity, With<MovementZocRing>>,
 }
@@ -214,26 +213,28 @@ fn spawn_preview_ring(
 }
 
 /// Tint the cursor hex marker (`SelectionMarker`) by placement legality while
-/// a unit is in hand: green on a legal deploy hex, red on an illegal one (and
-/// red when idle / not placing). `preview_valid` is maintained by
+/// a unit is in hand: green on a legal deploy hex, red on an illegal one, and
+/// a neutral wash when nothing is in hand. `preview_valid` is maintained by
 /// [`placement_preview_mesh`], which must run first -- hence the `.after(...)`.
 pub(crate) fn placement_marker_color(
     state: Res<PickerState>,
     assets: Res<HexRingAssets>,
     mut marker: Query<&mut MeshMaterial3d<StandardMaterial>, With<crate::render::SelectionMarker>>,
 ) {
-    let valid = match &*state {
-        PickerState::Placing { preview_valid, .. } => *preview_valid,
-        _ => false,
+    let wanted = match &*state {
+        PickerState::Placing {
+            preview_valid: true,
+            ..
+        } => &assets.marker_green,
+        PickerState::Placing { .. } => &assets.marker_red,
+        _ => &assets.marker_idle,
     };
     let Ok(mut mat) = marker.single_mut() else {
         return;
     };
-    mat.0 = if valid {
-        assets.marker_green.clone()
-    } else {
-        assets.marker_red.clone()
-    };
+    if mat.0 != *wanted {
+        mat.0 = wanted.clone();
+    }
 }
 
 // -- Click handling: placement + movement ---------------------------------------
@@ -324,6 +325,11 @@ pub(crate) fn movement_path_labels(
             *gunboat != is_gunboat || legs.as_slice() != movement_path.legs.as_slice()
         });
     if labels_stale {
+        // Each chip reads the route's running total at that hex, so the last
+        // one is the order's cost ("6 steps, 7 MP total" in the rail) and a
+        // costly step shows as a jump -- per-step costs ("1 1 2 1 1") left the
+        // player adding up the route themselves.
+        let mut total = 0i16;
         let texts = movement_path
             .legs
             .iter()
@@ -353,7 +359,8 @@ pub(crate) fn movement_path_labels(
                         } else {
                             ""
                         };
-                        format!("{dir}{cost}")
+                        total = total.saturating_add(cost);
+                        format!("{dir}{total}")
                     })
                     .unwrap_or_else(|| "?".into())
             })
@@ -389,10 +396,7 @@ pub(crate) fn movement_path_labels(
     }
 }
 
-// -- Movement overlay: light-green hex outlines ---------------------------------
-
-#[derive(Component)]
-pub(crate) struct MovementHexRing;
+// -- Movement overlay: teal reach / yellow ZOC hex outlines ---------------------
 
 #[derive(Component)]
 pub(crate) struct MovementRangeRing;
@@ -437,7 +441,6 @@ pub fn movement_overlay_mesh(
         placed_units,
     } = selection;
     let MovementRingQueries {
-        existing_green,
         existing_gray,
         existing_zoc,
     } = existing;
@@ -450,10 +453,8 @@ pub fn movement_overlay_mesh(
         .as_ref()
         .is_some_and(|gs| !matches!(gs.0.phase, omdurman_rules::Phase::Movement))
     {
-        let green: Vec<Entity> = existing_green.iter().collect();
         let gray: Vec<Entity> = existing_gray.iter().collect();
         let zoc: Vec<Entity> = existing_zoc.iter().collect();
-        crate::ui::despawn_all(&mut commands, &green);
         crate::ui::despawn_all(&mut commands, &gray);
         crate::ui::despawn_all(&mut commands, &zoc);
         *last_key = None;
@@ -516,10 +517,8 @@ pub fn movement_overlay_mesh(
         _ => None,
     }) else {
         // No selection: clear any leftover rings and reset the cache.
-        let green: Vec<Entity> = existing_green.iter().collect();
         let gray: Vec<Entity> = existing_gray.iter().collect();
         let zoc: Vec<Entity> = existing_zoc.iter().collect();
-        crate::ui::despawn_all(&mut commands, &green);
         crate::ui::despawn_all(&mut commands, &gray);
         crate::ui::despawn_all(&mut commands, &zoc);
         *last_key = None;
@@ -537,10 +536,7 @@ pub fn movement_overlay_mesh(
     let mut rings = crate::overlay::ring_batch(
         &mut commands,
         &hex,
-        existing_green
-            .iter()
-            .chain(existing_gray.iter())
-            .chain(existing_zoc.iter()),
+        existing_gray.iter().chain(existing_zoc.iter()),
     );
 
     let Ok((_, placed)) = placed_units.get(source) else {
@@ -603,7 +599,6 @@ pub fn movement_overlay_mesh(
     }
     let reached: HashSet<HexCoord> = best.keys().map(|&(hex, _)| hex).collect();
 
-    let mut green_spawned = 0u32;
     let mut gray_spawned = 0u32;
     let mut zoc_spawned = 0u32;
     for &reached in reached.iter().filter(|&&h| h != start_coord) {
@@ -611,18 +606,17 @@ pub fn movement_overlay_mesh(
             // Yellow: a terminus inside an enemy ZOC.
             rings.ring(MovementZocRing, reached, 1.5, 1.0, &hex.assets.yellow);
             zoc_spawned += 1;
-        } else if start_coord.neighbors().contains(&reached) {
-            rings.ring(MovementHexRing, reached, 1.5, 1.0, &hex.assets.light_green);
-            green_spawned += 1;
         } else {
+            // One colour for every reachable hex: a second (light green) for
+            // the adjacent ones read as a different kind of move.
             rings.ring(MovementRangeRing, reached, 1.5, 1.0, &hex.assets.reach);
             gray_spawned += 1;
         }
     }
 
     info!(
-        green_spawned,
-        gray_spawned, zoc_spawned, budget, "movement_overlay_mesh: done"
+        gray_spawned,
+        zoc_spawned, budget, "movement_overlay_mesh: done"
     );
     *last_key = Some(key);
 }
@@ -945,21 +939,25 @@ pub fn hover_outline_mesh(
 /// Draw every unit's movement path this turn as directional arrows (start ->
 /// step -> ... -> current hex), so the route each unit took is visible until the
 /// turn ends. The path whose start, end, or any crossed hex is under the cursor
-/// is drawn bright; all others are drawn dim.
+/// is drawn bright; all others are drawn dim. The route being plotted (not yet
+/// confirmed with Enter) is drawn bright too: without it a pending order was
+/// only a scatter of step-cost chips, with nothing joining them.
 ///
 /// Rebuilt only when the paths or the hovered hex change (not every frame): the
 /// arrow entities otherwise churn, and -- as with the reachable-range overlay --
 /// unconditional per-frame despawn/respawn risks a one-frame flash.
+#[allow(clippy::too_many_arguments)]
 pub fn movement_path_arrows(
     mut commands: Commands,
     assets: Res<crate::render::MovementArrowAssets>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     paths: Res<UnitPaths>,
+    pending: Res<MovementPath>,
     hovered: Res<crate::HoveredHex>,
     existing: Query<Entity, With<MovementPathArrow>>,
 ) {
-    if !paths.is_changed() && !hovered.is_changed() {
+    if !paths.is_changed() && !hovered.is_changed() && !pending.is_changed() {
         return;
     }
     let existing: Vec<Entity> = existing.iter().collect();
@@ -968,45 +966,47 @@ pub fn movement_path_arrows(
     let origin = layout.adjusted_origin(&overlay.params);
     let size = overlay.params.hex_size;
 
-    for path in paths.0.values() {
-        // A path needs at least a start and one step to draw an arrow.
-        if path.len() < 2 {
-            continue;
-        }
+    let committed = paths.0.values().flat_map(|path| {
         // Bright if the cursor is on any hex of this path (start/end included).
         let hovered_here = hovered.0.is_some_and(|h| path.contains(&h));
         let material = if hovered_here {
-            assets.bright.clone()
+            &assets.bright
         } else {
-            assets.dim.clone()
+            &assets.dim
         };
-
-        for pair in path.windows(2) {
-            let from = hex_world_pos(pair[0], origin, &overlay.params);
-            let to = hex_world_pos(pair[1], origin, &overlay.params);
-            let delta = Vec3::new(to.x - from.x, 0.0, to.z - from.z);
-            let len = delta.length();
-            if len < f32::EPSILON {
-                continue;
-            }
-            let dir = delta / len;
-            // Shorten slightly at both ends so consecutive arrows read as
-            // separate hops and the head doesn't bury under the next counter.
-            let inset = size * 0.18;
-            let draw_len = (len - inset).max(len * 0.4);
-            let tail = from + dir * ((len - draw_len) * 0.5);
-            // The unit arrow points along +Z; rotate that onto the heading and
-            // scale length (Z) to the segment, width (X) to a fraction of a hex.
-            commands.spawn((
-                MovementPathArrow,
-                Mesh3d(assets.mesh.clone()),
-                MeshMaterial3d(material.clone()),
-                Transform::from_xyz(tail.x, 1.45, tail.z)
-                    .with_rotation(Quat::from_rotation_arc(Vec3::Z, dir))
-                    .with_scale(Vec3::new(size * 0.5, 1.0, draw_len)),
-                Visibility::Visible,
-            ));
+        // (A path needs at least a start and one step to draw an arrow.)
+        path.windows(2)
+            .map(move |pair| (pair[0], pair[1], material))
+    });
+    let plotted = pending
+        .legs
+        .iter()
+        .map(|&(from, to)| (from, to, &assets.bright));
+    for (from, to, material) in committed.chain(plotted) {
+        let from = hex_world_pos(from, origin, &overlay.params);
+        let to = hex_world_pos(to, origin, &overlay.params);
+        let delta = Vec3::new(to.x - from.x, 0.0, to.z - from.z);
+        let len = delta.length();
+        if len < f32::EPSILON {
+            continue;
         }
+        let dir = delta / len;
+        // Shorten slightly at both ends so consecutive arrows read as
+        // separate hops and the head doesn't bury under the next counter.
+        let inset = size * 0.18;
+        let draw_len = (len - inset).max(len * 0.4);
+        let tail = from + dir * ((len - draw_len) * 0.5);
+        // The unit arrow points along +Z; rotate that onto the heading and
+        // scale length (Z) to the segment, width (X) to a fraction of a hex.
+        commands.spawn((
+            MovementPathArrow,
+            Mesh3d(assets.mesh.clone()),
+            MeshMaterial3d(material.clone()),
+            Transform::from_xyz(tail.x, 1.45, tail.z)
+                .with_rotation(Quat::from_rotation_arc(Vec3::Z, dir))
+                .with_scale(Vec3::new(size * 0.5, 1.0, draw_len)),
+            Visibility::Visible,
+        ));
     }
 }
 
@@ -1063,7 +1063,6 @@ type GameplayOverlayEntities<'w, 's> = Query<
     's,
     Entity,
     Or<(
-        With<MovementHexRing>,
         With<MovementRangeRing>,
         With<MovementPathArrow>,
         With<MovementPathShadow>,

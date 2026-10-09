@@ -46,9 +46,11 @@ pub mod overlay_palette {
     pub const RING_ACTED: Color = Color::srgba(0.45, 0.60, 0.80, 0.35);
     /// Cursor-hex fill when placement is legal.
     pub const MARKER_LEGAL: Color = Color::srgba(0.0, 1.0, 0.0, 0.25);
-    /// Cursor-hex fill when placement is illegal / idle; also the selection
-    /// marker.
+    /// Cursor-hex fill when placement is illegal.
     pub const MARKER_ILLEGAL: Color = Color::srgba(1.0, 0.0, 0.0, 0.25);
+    /// Cursor-hex fill with nothing in hand: a neutral wash (the red one
+    /// read as "illegal" over every hex the pointer crossed).
+    pub const MARKER_IDLE: Color = Color::srgba(1.0, 0.97, 0.85, 0.2);
     /// Shadow under a planned movement path.
     pub const PATH_SHADOW: Color = Color::srgba(0.45, 0.55, 0.95, 0.18);
     /// Fire-declaration arrow.
@@ -57,6 +59,10 @@ pub mod overlay_palette {
     pub const MOVE_ARROW: Color = Color::srgba(0.85, 0.5, 0.2, 0.45);
     /// Hovered movement arrow.
     pub const MOVE_ARROW_HOVER: Color = Color::srgba(0.95, 0.55, 0.2, 0.95);
+    /// Combat aim and allocation arrows (fire and melee): the red of the
+    /// target rings, so they never read as one more movement trail (both
+    /// were orange, and a staged shot looked like a unit's route).
+    pub const COMBAT_ARROW: Color = Color::srgba(0.82, 0.1, 0.06, 0.9);
     /// Turn-track grid lines.
     pub const TURN_TRACK_GRID: Color = Color::srgba(0.35, 0.35, 0.35, 0.6);
     /// Turn-track current-turn highlight.
@@ -116,7 +122,7 @@ pub fn spawn_selection_marker(
 ) {
     let mesh = meshes.add(Mesh::from(RegularPolygon::new(1.0, 6)));
     let material = materials.add(StandardMaterial {
-        base_color: overlay_palette::MARKER_ILLEGAL,
+        base_color: overlay_palette::MARKER_IDLE,
         alpha_mode: AlphaMode::Blend,
         unlit: true,
         ..default()
@@ -254,8 +260,10 @@ pub struct HexRingAssets {
     pub hover: Handle<StandardMaterial>,
     /// Translucent fill for the cursor hex when placement is legal.
     pub marker_green: Handle<StandardMaterial>,
-    /// Translucent fill for the cursor hex when placement is illegal / idle.
+    /// Translucent fill for the cursor hex when placement is illegal.
     pub marker_red: Handle<StandardMaterial>,
+    /// Translucent neutral fill for the cursor hex with nothing in hand.
+    pub marker_idle: Handle<StandardMaterial>,
     pub gray: Handle<StandardMaterial>,
     /// Movement-range outline (see `overlay_palette::RING_REACH`).
     pub reach: Handle<StandardMaterial>,
@@ -292,6 +300,7 @@ pub fn spawn_hex_ring_assets(
     let hover = materials.add(unlit_alpha_material(op::RING_HOVER));
     let marker_green = materials.add(unlit_alpha_material(op::MARKER_LEGAL));
     let marker_red = materials.add(unlit_alpha_material(op::MARKER_ILLEGAL));
+    let marker_idle = materials.add(unlit_alpha_material(op::MARKER_IDLE));
     let gray = materials.add(unlit_alpha_material(op::RING_NEUTRAL));
     let reach = materials.add(unlit_alpha_material(op::RING_REACH));
     let yellow = materials.add(unlit_alpha_material(op::RING_YELLOW));
@@ -311,6 +320,7 @@ pub fn spawn_hex_ring_assets(
         hover,
         marker_green,
         marker_red,
+        marker_idle,
         gray,
         reach,
         yellow,
@@ -368,6 +378,8 @@ pub struct MovementArrowAssets {
     pub dim: Handle<StandardMaterial>,
     /// Bright fill for the path under the cursor.
     pub bright: Handle<StandardMaterial>,
+    /// Fill of the combat aim / allocation arrows.
+    pub combat: Handle<StandardMaterial>,
 }
 
 pub fn spawn_movement_arrow_assets(
@@ -379,7 +391,13 @@ pub fn spawn_movement_arrow_assets(
     // Mild orange: dim (faint) for idle paths, brighter for the hovered one.
     let dim = materials.add(unlit_alpha_material(overlay_palette::MOVE_ARROW));
     let bright = materials.add(unlit_alpha_material(overlay_palette::MOVE_ARROW_HOVER));
-    commands.insert_resource(MovementArrowAssets { mesh, dim, bright });
+    let combat = materials.add(unlit_alpha_material(overlay_palette::COMBAT_ARROW));
+    commands.insert_resource(MovementArrowAssets {
+        mesh,
+        dim,
+        bright,
+        combat,
+    });
 }
 
 /// Registers all render-domain resources and systems: the map plane, hex

@@ -116,25 +116,30 @@ pub fn draw_actions_section(
         .filter(|a| !a.committed)
         .map_or(0, |a| a.attacks.len());
     if let Some(allocation) = fire_allocation.filter(|a| !a.committed && !a.attacks.is_empty()) {
+        // A disclosure line, not a button: filled like "Resolve N attacks"
+        // just below, a "Hide staged attacks" button read as a second
+        // primary action.
         let open = allocation.panel_open;
         let s = if staged == 1 { "" } else { "s" };
-        let (label, fill) = if open {
-            (
-                "Hide staged attacks".to_string(),
-                crate::ui::palette::BTN_GO,
-            )
-        } else {
-            (
-                format!("Show {staged} staged attack{s}\u{2026}"),
-                crate::ui::palette::BTN_COMBAT,
-            )
-        };
+        let label = format!(
+            "{} {staged} staged attack{s}",
+            if open { "\u{25be}" } else { "\u{25b8}" }
+        );
         if ui
             .add(
-                egui::Button::new(label)
-                    .fill(fill)
-                    .min_size(egui::Vec2::new(160.0, 26.0)),
+                egui::Label::new(
+                    egui::RichText::new(label)
+                        .color(crate::ui::palette::RAIL_TEXT)
+                        .size(13.0),
+                )
+                .sense(egui::Sense::click()),
             )
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .on_hover_text(if open {
+                "Hide the list"
+            } else {
+                "Show the list"
+            })
             .clicked()
         {
             allocation.panel_open = !open;
@@ -183,15 +188,14 @@ pub fn draw_actions_section(
                         .color(crate::ui::palette::RAIL_TEXT)
                         .size(13.0),
                 );
-                if let Some(d) = &hint.detail {
-                    crate::rulebook::refs_label(
-                        ui,
-                        &format!("({d})"),
-                        crate::ui::palette::RAIL_DIM,
-                        12.0,
-                    );
-                }
             });
+            // The detail on a line of its own: after a wrapped label it got
+            // the sliver of width the label's last line left, one word a line.
+            if let Some(d) = &hint.detail {
+                ui.indent(("hint_detail", &hint.label), |ui| {
+                    crate::rulebook::refs_label(ui, d, crate::ui::palette::RAIL_DIM, 12.0);
+                });
+            }
         }
     }
     // One rules link for the phase, not one per line.
@@ -342,9 +346,18 @@ pub fn draw_actions_section(
         crate::ui::section_header(ui, "Movement path");
         let legs = movement_path.legs.len();
         let total = movement_path.cost_so_far;
+        // What the order leaves: the "N MP remaining" hint above is the
+        // budget before it (for a stack, its slowest member).
+        let left_after = selected_ids
+            .iter()
+            .map(|&id| state.0.remaining_movement(id))
+            .min()
+            .map_or(String::new(), |left| {
+                format!(", {} left after", (left - total).max(0))
+            });
         ui.label(
             egui::RichText::new(format!(
-                "{legs} step{}, {total} MP total",
+                "{legs} step{}, {total} MP total{left_after}",
                 if legs == 1 { "" } else { "s" }
             ))
             .color(crate::ui::palette::RAIL_TEXT)
@@ -406,13 +419,20 @@ fn collect_hints(
     cache.key = Some(key);
     cache.hints.clear();
     let out = &mut cache.hints;
-    let selected = selected_unit_id(picker, placed_units);
+    // Any selection shape: a double-clicked stack or tile is as selected as
+    // a single counter (the stack hint read "Select one of your units"
+    // while a whole stack was in hand).
+    let selected = selected_unit_id(picker, placed_units).or_else(|| {
+        let first = *selected_unit_ids(picker, placed_units).first()?;
+        Some((first, crate::picker::selected_origin_hex(picker)?))
+    });
     let campaign = gs.scenario == omdurman_types::Scenario::Campaign;
     let ae_moving = gs.active_player == omdurman_types::Player::AngloEgyptian;
     let optional = |rule| gs.optional_rules.contains(&rule);
     // A counter still in hand (auto-next keeps one after each placement)
     // takes every board click: say so first, with the way out.
-    if let PickerState::Placing { .. } = picker {
+    let in_hand = matches!(picker, PickerState::Placing { .. });
+    if in_hand {
         out.push(hint(
             "A counter is in hand: click a highlighted hex to place it",
             Some("Esc or right-click puts it back".into()),
@@ -425,7 +445,9 @@ fn collect_hints(
         .count();
     match phase {
         Phase::Setup => {
-            if cx.tray_open {
+            if in_hand {
+                // The in-hand hint above already says what to click.
+            } else if cx.tray_open {
                 out.push(hint("Pick a counter above, then a highlighted hex", None));
             } else {
                 out.push(hint("Nothing (more) to deploy \u{2014} press Ready", None));
@@ -447,13 +469,29 @@ fn collect_hints(
             }
         }
         Phase::Movement => {
-            if cx.tray_open {
+            if cx.tray_open && !in_hand {
                 out.push(hint(
                     "Bring on reinforcements: pick a counter above, then a green hex",
                     None,
                 ));
             }
-            if selected.is_some() {
+            // Every selected unit unable to move (a stack moves whoever can).
+            let ids = selected_unit_ids(picker, placed_units);
+            let all = |f: &dyn Fn(&omdurman_rules::UnitPlacement) -> bool| {
+                !ids.is_empty() && ids.iter().all(|&id| gs.find_unit(id).is_some_and(f))
+            };
+            let stuck = if all(&|u| u.state.disrupted) {
+                Some("Disrupted: cannot move this turn \u{2014} select another unit")
+            } else if all(&|u| u.state.disrupted || gs.remaining_movement(u.id) <= 0) {
+                Some("No movement points left \u{2014} select another unit")
+            } else {
+                None
+            };
+            if let Some(why) = stuck {
+                // (The hint said "Click a destination" over "disrupted --
+                // cannot move" in the panel below.)
+                out.push(hint(why, None));
+            } else if selected.is_some() {
                 out.push(hint(
                     "Click a destination, then Enter",
                     selected_movement_detail(gs, selected),
@@ -481,6 +519,7 @@ fn collect_hints(
             }
         }
         Phase::OffensiveFire(_) | Phase::DefensiveFire(_) => {
+            advance_hint(gs, out);
             if cx.fire_committed {
                 out.push(hint(
                     "Fire resolved",
@@ -502,10 +541,19 @@ fn collect_hints(
                     ));
                 }
             } else if selected.is_some() {
-                out.push(hint(
-                    "Click an enemy hex to aim at it",
-                    fire_target_count(gs, picker, placed_units, fire_targets),
-                ));
+                out.push(
+                    match fire_target_count(gs, picker, placed_units, fire_targets) {
+                        Some(0) => hint(
+                            "No enemy in range of this selection \u{2014} pick a unit outlined \
+                         in green",
+                            None,
+                        ),
+                        n => hint(
+                            "Click an enemy hex to aim at it",
+                            n.map(|n| format!("{n} target hex{}", if n == 1 { "" } else { "es" })),
+                        ),
+                    },
+                );
             } else {
                 let n = fire_targets.side_target_count(gs);
                 out.push(hint(
@@ -518,22 +566,66 @@ fn collect_hints(
             }
         }
         Phase::Melee => {
+            advance_hint(gs, out);
             if let Some(pm) = &gs.pending_melee {
                 let retreat = crate::melee::defenders_may_retreat(gs, &pm.attack);
                 out.push(hint(
-                    "Resolve the pending melee",
+                    "Resolve the declared melee: Enter, or the button in its card",
                     retreat.then(|| "after the defender's reaction window".into()),
                 ));
                 if retreat {
                     out.push(hint("Retreat before melee (defender)", None));
                 }
+            } else if !side_can_melee(gs) {
+                out.push(hint(
+                    "No enemy adjacent to a unit that may melee \u{2014} end the phase (E)",
+                    None,
+                ));
+            } else if selected.is_some() {
+                out.push(match melee_target_count(gs, picker, placed_units) {
+                    Some(0) | None => hint(
+                        "No enemy this selection may melee \u{2014} pick another stack",
+                        None,
+                    ),
+                    Some(n) => hint(
+                        "Click an adjacent enemy (outlined) to melee it",
+                        Some(format!("{n} target hex{}", if n == 1 { "" } else { "es" })),
+                    ),
+                });
             } else {
                 out.push(hint(
                     "Double-click your stack, then an adjacent enemy",
-                    melee_target_count(gs, picker, placed_units),
+                    None,
                 ));
             }
         }
+    }
+}
+
+/// An open advance after combat (§6.82, §7.6): who may advance where, while
+/// one of them still may. Only the combat card said so, and it fades -- the
+/// rail went straight on to "Fire resolved \u{2014} End phase".
+fn advance_hint(gs: &omdurman_rules::effects::GameState, out: &mut Vec<ActionHint>) {
+    for (&hex, eligible) in &gs.vacated_by_combat {
+        let names: Vec<String> = eligible
+            .iter()
+            .filter(|&&id| gs.can_advance_after_combat(id, hex).is_ok())
+            .filter_map(|&id| gs.find_unit(id))
+            .map(|u| u.profile.identity.label_in(gs.scenario))
+            .collect();
+        if names.is_empty() {
+            continue;
+        }
+        out.push(ActionHint {
+            label: format!(
+                "May advance into ({}, {}): select a unit, then click the hex",
+                hex.q, hex.r
+            ),
+            detail: Some(format!(
+                "optional (\u{00a7}6.82): {}",
+                crate::combat_ui::tally_names(names).join(", ")
+            )),
+        });
     }
 }
 
@@ -577,21 +669,36 @@ fn fire_target_count(
     picker: &PickerState,
     placed_units: &bevy::ecs::system::Query<(bevy::prelude::Entity, &PlacedUnit)>,
     cache: &mut crate::fire::FireTargetCache,
-) -> Option<String> {
+) -> Option<usize> {
     let group = crate::fire::fire_selection(picker, placed_units, gs)?;
     let kinds = crate::fire::fire_group_kinds(gs, &group);
     if kinds.is_empty() {
         return None;
     }
-    let count = cache.valid_targets(gs, &kinds).len();
-    Some(format!("{count} target hex(es)"))
+    Some(cache.valid_targets(gs, &kinds).len())
+}
+
+/// Whether any unit of the side meleeing now may attack an adjacent hex --
+/// else the phase has nothing to do (the hint said "double-click your
+/// stack" with no stack able to).
+fn side_can_melee(gs: &omdurman_rules::effects::GameState) -> bool {
+    let side = gs.phase_player();
+    gs.units.iter().any(|u| {
+        u.profile.identity.owner() == side
+            && u.profile.kind.may_melee_attack()
+            && !u.state.disrupted
+            && u.position
+                .neighbors()
+                .into_iter()
+                .any(|hex| gs.can_melee(u.id, hex).is_ok())
+    })
 }
 
 fn melee_target_count(
     gs: &omdurman_rules::effects::GameState,
     picker: &PickerState,
     placed_units: &bevy::ecs::system::Query<(bevy::prelude::Entity, &PlacedUnit)>,
-) -> Option<String> {
+) -> Option<usize> {
     // Any melee-capable member of the selection represents the tile: every
     // co-stacked attacker shares the hex, so adjacency and hexside checks are
     // identical across members (§7; see `build_melee_attack`).
@@ -602,13 +709,13 @@ fn melee_target_count(
                 .is_some_and(|u| u.profile.kind.may_melee_attack() && !u.state.disrupted)
         })?;
     let unit = gs.find_unit(representative)?;
-    let count = unit
-        .position
-        .neighbors()
-        .into_iter()
-        .filter(|hex| gs.can_melee(representative, *hex).is_ok())
-        .count();
-    Some(format!("{count} adjacent target hex(es)"))
+    Some(
+        unit.position
+            .neighbors()
+            .into_iter()
+            .filter(|hex| gs.can_melee(representative, *hex).is_ok())
+            .count(),
+    )
 }
 
 fn movement_label(
@@ -647,13 +754,15 @@ fn weapon_label(unit: &omdurman_rules::UnitPlacement) -> String {
 }
 
 /// The selected unit's factor lines, e.g. "Fire 3 · Melee — · Move 4 MP",
-/// then the weapon ("Rifle") on a line of its own: a named gunboat's "Move
-/// 12 up / 18 down MP" plus "Artillery + Maxims 6×2" is wider than the rail.
+/// then the weapon ("Weapon: Rifle") on a line of its own: a named gunboat's
+/// "Move 12 up / 18 down MP" plus "Artillery + Maxims 6×2" is wider than the
+/// rail. Labelled, since a bare "Melee" under "Melee 6" read as a second,
+/// unexplained melee figure.
 /// A missing factor reads as an em dash rather than `None`.
 fn unit_stats_line(fire: Option<u16>, melee: Option<u16>, movement: &str, weapon: &str) -> String {
     let factor = |v: Option<u16>| v.map_or_else(|| "\u{2014}".to_string(), |v| v.to_string());
     format!(
-        "Fire {} \u{b7} Melee {} \u{b7} Move {movement}\n{weapon}",
+        "Fire {} \u{b7} Melee {} \u{b7} Move {movement}\nWeapon: {weapon}",
         factor(fire),
         factor(melee),
     )
@@ -720,7 +829,10 @@ mod tests {
     #[test]
     fn stats_line_has_no_debug_formatting() {
         let line = unit_stats_line(Some(3), None, "4 MP", "Rifle");
-        assert_eq!(line, "Fire 3 \u{b7} Melee \u{2014} \u{b7} Move 4 MP\nRifle");
+        assert_eq!(
+            line,
+            "Fire 3 \u{b7} Melee \u{2014} \u{b7} Move 4 MP\nWeapon: Rifle"
+        );
         assert!(!line.contains("Some") && !line.contains("None") && !line.contains('"'));
     }
 }

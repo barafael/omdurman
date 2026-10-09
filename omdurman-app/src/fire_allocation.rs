@@ -180,28 +180,13 @@ pub fn handle_fire_allocation_click(
         }
         allocation.attacks.push(attack.clone());
     }
-    let allocated = allocation.attacks.len();
-    if allocated == 0 {
+    if allocation.attacks.is_empty() {
         return;
     }
+    // The staged list in the rail is the confirmation (opened here); a
+    // toast saying the same ("Direct fire allocated to ... 1 attack
+    // pending") only covered the board's corner.
     allocation.panel_open = true;
-
-    let kind_str = match attacks[0].kind {
-        FireKind::Direct if attacks[0].firers.is_empty() => "Gunboat Maxim fire",
-        FireKind::MaximSecondFire if attacks[0].firers.is_empty() => "Gunboat Maxim second fire",
-        FireKind::Direct => "Direct fire",
-        FireKind::MaximSecondFire => "Maxim second fire",
-        FireKind::Howitzer => "Howitzer",
-    };
-    let n = allocated;
-    dispatches.push(
-        "Fire Allocation",
-        format!(
-            "{kind_str} allocated to {}. {n} attack{} pending.",
-            target_label(&gs.0, target),
-            if n == 1 { "" } else { "s" },
-        ),
-    );
 }
 
 /// A player-readable name for a fire target hex: the units standing there
@@ -225,6 +210,7 @@ pub(crate) fn target_label(
         })
         .map(|u| u.profile.identity.label_in(gs.scenario))
         .collect();
+    let names = crate::combat_ui::tally_names(names);
     let what = match names.len() {
         0 => gs
             .board
@@ -323,17 +309,19 @@ fn draw_allocation_row(
     };
     // Each weapon with its printed factor; a named gunboat's Maxims (§2.32)
     // are a weapon of their own.
-    let names: Vec<String> = attack
-        .shots()
-        .into_iter()
-        .filter_map(|shot| {
-            let factor = gs.find_unit(shot.unit)?.fire_factor(shot.mount)?.value();
-            Some(format!(
-                "{} ({factor})",
-                crate::combat_ui::shot_name(shot, Some(gs))
-            ))
-        })
-        .collect();
+    let names = crate::combat_ui::tally_names(
+        attack
+            .shots()
+            .into_iter()
+            .filter_map(|shot| {
+                let factor = gs.find_unit(shot.unit)?.fire_factor(shot.mount)?.value();
+                Some(format!(
+                    "{} ({factor})",
+                    crate::combat_ui::shot_name(shot, Some(gs))
+                ))
+            })
+            .collect(),
+    );
     // Every firer's own range: a merged attack can mix range 1 and 3.
     let ranges: Vec<u32> = attack
         .all_firing_units()
@@ -576,7 +564,7 @@ fn allocation_arrow_key(
 }
 
 /// Persistent arrows from each allocated attack's firer hex to its target
-/// (§6.41). Same bold-orange look as the melee direction arrows and the hover
+/// (§6.41). Same bold-red look as the melee direction arrows and the hover
 /// preview arrow: one visual language for combat targeting. One arrow mesh
 /// per attack at most, rebuilt only when what they describe changed (the
 /// allocation list, the engine state: a firer's hex, the phase) or the
@@ -620,12 +608,36 @@ pub fn fire_allocation_arrows(
     *last = Some(key);
 }
 
+/// Whether the firing side has already resolved fire in the current fire
+/// sub-phase, read off the engine state -- the replayed record, not this
+/// peer's memory. A peer that rejoins mid sub-phase (a crash, a restart, a
+/// reload) loses its local [`FireAllocationState`]; without this it could
+/// allocate fresh attacks after seeing how the first ones went, which §6.41
+/// forbids ("After all fire has been allocated, the firing player then
+/// resolves his attacks"). Defensive fire's markers survive into the
+/// offensive direct fire sub-phase, so only the firing side's count.
+pub(crate) fn fire_resolved_this_subphase(gs: &omdurman_rules::effects::GameState) -> bool {
+    if !matches!(gs.phase, Phase::OffensiveFire(_) | Phase::DefensiveFire(_)) {
+        return false;
+    }
+    let firing = gs.phase_player();
+    gs.units_fired_this_phase
+        .iter()
+        .chain(&gs.gunboat_maxims_fired_this_phase)
+        .any(|&id| {
+            omdurman_rules::unit_profiles::profile_for_unit(id)
+                .is_some_and(|p| p.identity.owner() == firing)
+        })
+}
+
 /// Reset the allocation state whenever the engine phase changes, so an
 /// unexecuted allocation from one fire sub-phase never leaks into the next
 /// (§6.41 allocations are per fire sub-phase). Uses a `Local` snapshot of the
 /// phase so the reset also fires correctly on replay / snapshot convergence,
 /// where no local click precedes the phase advance. Releases the
-/// `committed` lock set by [`execute_fire_allocations`].
+/// `committed` lock set by [`execute_fire_allocations`] -- and sets it again
+/// whenever the engine shows the sub-phase's fire already resolved
+/// ([`fire_resolved_this_subphase`]), so a rejoined peer cannot fire twice.
 pub fn reset_fire_allocation_on_phase_change(
     game_state: Option<Res<GameStateResource>>,
     mut allocation: ResMut<FireAllocationState>,
@@ -640,6 +652,11 @@ pub fn reset_fire_allocation_on_phase_change(
             allocation.execute_requested = false;
         }
         *last_phase = Some(phase);
+    }
+    if gs.is_changed() && !allocation.committed && fire_resolved_this_subphase(&gs.0) {
+        allocation.attacks.clear();
+        allocation.committed = true;
+        allocation.execute_requested = false;
     }
 }
 
@@ -775,5 +792,44 @@ mod arrow_key_tests {
         assert!(allocation_arrow_key(&allocation, Some(&fire_state(Phase::Movement))).is_empty());
         allocation.committed = true;
         assert!(allocation_arrow_key(&allocation, Some(&gs)).is_empty());
+    }
+
+    /// A peer that rejoins after its side resolved fire in this sub-phase
+    /// comes back with a fresh (unlocked) allocation state: the replayed
+    /// engine state locks it again, so it cannot allocate a second round of
+    /// fire after seeing how the first went (§6.41). The other side's
+    /// defensive-fire markers, which survive into offensive fire, do not.
+    #[test]
+    fn a_rejoined_peer_finds_its_resolved_fire_locked() {
+        let phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        let mut gs = fire_state(phase);
+        gs.0.active_player = Player::AngloEgyptian;
+        gs.0.units_fired_this_phase.push(UnitId::Baggara_0_0);
+        assert!(!fire_resolved_this_subphase(&gs.0));
+
+        let mut app = App::new();
+        app.insert_resource(gs)
+            .insert_resource(FireAllocationState {
+                attacks: vec![attack(phase)],
+                ..Default::default()
+            })
+            .add_systems(Update, reset_fire_allocation_on_phase_change);
+        app.update();
+        assert!(!app.world().resource::<FireAllocationState>().committed);
+
+        app.world_mut()
+            .resource_mut::<GameStateResource>()
+            .0
+            .units_fired_this_phase
+            .push(UnitId::BritishArmy_0_0);
+        app.update();
+        let allocation = app.world().resource::<FireAllocationState>();
+        assert!(allocation.committed);
+        assert!(allocation.attacks.is_empty());
+
+        // The next sub-phase opens fire again.
+        app.world_mut().resource_mut::<GameStateResource>().0.phase = Phase::Melee;
+        app.update();
+        assert!(!app.world().resource::<FireAllocationState>().committed);
     }
 }

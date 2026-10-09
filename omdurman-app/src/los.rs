@@ -130,12 +130,14 @@ pub fn los_overlay_mesh(
     }
     crate::ui::despawn_all(&mut commands, &existing);
 
+    // Just under the movement-path arrows (1.45): at their height the two
+    // shared depth wherever an arrow crossed a ring and flickered.
     let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing);
     for target in &analysis.clear {
-        rings.ring(LosRing, *target, 1.45, 1.0, &hex.assets.light_green);
+        rings.ring(LosRing, *target, 1.43, 1.0, &hex.assets.light_green);
     }
     for (target, _) in &analysis.blocked {
-        rings.ring(LosRing, *target, 1.45, 1.0, &hex.assets.marker_red);
+        rings.ring(LosRing, *target, 1.43, 1.0, &hex.assets.marker_red);
     }
     *last = Some(from);
 }

@@ -35,8 +35,11 @@ pub(crate) fn mode_toolbar_ui(
         .interactable(true)
         .show(ctx, |ui| {
             // Full-width chrome: one continuous bar across the top instead of
-            // a floating island (everything below starts under it).
-            ui.set_min_width(ctx.content_rect().width());
+            // a floating island (everything below starts under it). Exactly
+            // the window's width: a minimum alone let the area keep a wider
+            // window's size after a shrink (an un-maximize), and the
+            // right-aligned room name and LOS / ZOC toggles sat off-screen.
+            ui.set_width(ctx.content_rect().width());
             let inner = egui::Frame::new()
                 .fill(crate::ui::palette::TOOLBAR_BG)
                 .corner_radius(0.0)

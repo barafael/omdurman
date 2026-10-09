@@ -84,6 +84,9 @@ pub fn unit_overview_ui(
         }
         // The units off the board for good: the casualties, and the Dervish
         // deserters of the first night (§8.2), listed apart.
+        let scenario = game_state
+            .as_deref()
+            .map_or(omdurman_types::Scenario::Campaign, |gs| gs.0.scenario);
         let off_board = |ids: &[omdurman_rules::UnitId]| {
             let mut gone: std::collections::BTreeMap<(u8, String), usize> =
                 std::collections::BTreeMap::new();
@@ -96,7 +99,7 @@ pub fn unit_overview_ui(
                     omdurman_types::Player::Dervish => 1,
                 };
                 *gone
-                    .entry((side, identity_description(&profile.identity)))
+                    .entry((side, identity_description(&profile.identity, scenario)))
                     .or_default() += 1;
             }
             gone
@@ -192,6 +195,15 @@ pub fn unit_overview_ui(
                                             .units
                                             .iter()
                                             .filter(|u| Some(u.profile.identity.owner()) == side)
+                                            // A scenario's fixed placements
+                                            // (Gordon, the forts) never sat in
+                                            // the tray: no empty slot for them.
+                                            .filter(|u| {
+                                                !omdurman_rules::scenario_setup::is_fixed_placement(
+                                                    state.0.scenario,
+                                                    u.id,
+                                                )
+                                            })
                                             .map(|u| u.id)
                                             .collect()
                                     } else {
@@ -296,7 +308,7 @@ pub fn unit_overview_ui(
                                             );
                                         }
                                     }
-                                    let mut line = format!("{label} \u{00d7}{count}");
+                                    let mut line = counted(label, *count);
                                     if *disrupted > 0 {
                                         line.push_str(&format!(" ({disrupted} disrupted)"));
                                     }
@@ -410,7 +422,7 @@ fn off_board_section(
                 }
             }
             ui.label(
-                egui::RichText::new(format!("{label} \u{00d7}{count}"))
+                egui::RichText::new(counted(label, *count))
                     .size(12.0)
                     .color(crate::ui::palette::TEXT_STRONG),
             );
@@ -443,15 +455,28 @@ fn placed_unit_identity(placed: &PlacedUnit, game_state: Option<&GameStateResour
             placed.row
         );
     };
-    identity_description(&unit.profile.identity)
+    identity_description(&unit.profile.identity, gs.0.scenario)
 }
 
-fn identity_description(identity: &UnitIdentity) -> String {
+/// A force-list name: the scenario's own (the Fall of Khartoum's steamers,
+/// as the counter tooltip and the selection panel call them -- the list said
+/// "Gunboat El Teb" for the "Steamer Bordein" selected beside it).
+fn identity_description(identity: &UnitIdentity, scenario: omdurman_types::Scenario) -> String {
     match identity {
         // The unit list groups battalions under their brigade.
         UnitIdentity::AngloEgyptianInfantry { brigade, battalion } => {
             format!("{brigade} * {battalion} Btn")
         }
-        other => other.short_label(),
+        other => other.label_in(scenario),
+    }
+}
+
+/// A force-list line: "Mulazmin \u{d7}27", and a lone counter bare -- a "\u{d7}1"
+/// on every named battalion was noise.
+fn counted(label: &str, count: usize) -> String {
+    if count == 1 {
+        label.to_string()
+    } else {
+        format!("{label} \u{00d7}{count}")
     }
 }

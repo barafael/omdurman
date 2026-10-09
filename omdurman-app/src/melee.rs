@@ -246,7 +246,12 @@ pub fn melee_reaction_ui(
     peers: Peers,
     mut submit: crate::submit::CheckedSubmit,
     mut layout: ResMut<crate::ScreenLayout>,
+    mut keys: bevy::ecs::message::MessageReader<crate::hotkeys::PickerCommand>,
 ) {
+    // Enter resolves, as it confirms a move and resolves staged fire.
+    let enter = keys
+        .read()
+        .any(|c| *c == crate::hotkeys::PickerCommand::ConfirmMove);
     let Some(gs) = game_state else { return };
     let Some(pm) = &gs.0.pending_melee else {
         return;
@@ -280,7 +285,7 @@ pub fn melee_reaction_ui(
                 } else {
                     "Resolve when ready."
                 });
-                if ui.button("\u{2694} Resolve Melee").clicked() {
+                if ui.button("\u{2694} Resolve melee (Enter)").clicked() || enter {
                     submit.submit(&gs.0, GameEvent::Effect(GameEffect::ResolveMelee));
                 }
             } else if withdrawn {
@@ -366,12 +371,12 @@ pub fn handle_advance_after_combat(
     *state = PickerState::Idle;
 }
 
-// -- Melee direction arrow: translucent orange arrow from attacker to hovered target ---
+// -- Melee direction arrow: red arrow from attacker to hovered target ---
 
 #[derive(Component)]
 pub(crate) struct MeleeDirectionArrow;
 
-/// Draw a translucent orange arrow from the attacker hex to the hovered valid
+/// Draw a red arrow from the attacker hex to the hovered valid
 /// melee target hex, giving the player a visual preview of the melee direction.
 /// Rebuilt only when the arrow's endpoints change (selection, hover, engine
 /// state, or the overlays were cleared) -- not every frame.
@@ -462,7 +467,8 @@ pub fn melee_combat_preview_ui(
         return;
     };
 
-    // Collect attacker and defender details.
+    // Collect attacker and defender details (identical counters counted:
+    // "4\u{d7} Kehena: 6", not four lines of it).
     let atk_details: Vec<String> = attack
         .attackers
         .iter()
@@ -472,6 +478,7 @@ pub fn melee_combat_preview_ui(
             format!("{}: {}", u.profile.identity.label_in(gs.0.scenario), mf)
         })
         .collect();
+    let atk_details = crate::combat_ui::tally_names(atk_details);
     let def_details: Vec<String> = attack
         .defenders
         .iter()
@@ -487,6 +494,7 @@ pub fn melee_combat_preview_ui(
             }
         })
         .collect();
+    let def_details = crate::combat_ui::tally_names(def_details);
 
     // The engine's own totals (§7.7): disrupted units add nothing.
     let atk_total = omdurman_rules::effects::melee_strength(&gs.0, &attack.attackers);
@@ -901,6 +909,7 @@ mod tests {
             hover: default(),
             marker_green: default(),
             marker_red: default(),
+            marker_idle: default(),
             gray: default(),
             reach: default(),
             yellow: default(),

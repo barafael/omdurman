@@ -95,11 +95,11 @@ pub fn zoc_overlay_mesh(
     // The union drives the rebuild cache; per-side rings are rebuilt from
     // scratch whenever the union changes.
     let mut union = HashSet::new();
-    let mut spawns: Vec<(HexCoord, Handle<StandardMaterial>)> = Vec::new();
-    for (side, material) in &projecting {
+    let mut spawns: Vec<(HexCoord, Handle<StandardMaterial>, f32)> = Vec::new();
+    for (i, (side, material)) in projecting.iter().enumerate() {
         for hex in compute_enemy_zoc(&gs.0, *side, side.opponent()) {
             union.insert(hex);
-            spawns.push((hex, material.clone()));
+            spawns.push((hex, material.clone(), i as f32));
         }
     }
 
@@ -108,8 +108,12 @@ pub fn zoc_overlay_mesh(
     }
 
     let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing);
-    for (hex, material) in spawns {
-        rings.ring(ZocRing, hex, 1.5, 1.0, &material);
+    // Inset inside the hex edge, each side on its own ring: drawn on the
+    // edge at the movement / fire / melee rings' height, the overlay fought
+    // them (and, spectating, the other side's ring) for the same pixels and
+    // flickered between the two colours.
+    for (hex, material, nth) in spawns {
+        rings.ring(ZocRing, hex, 1.47 - 0.01 * nth, 0.9 - 0.08 * nth, &material);
     }
 
     *last_zoc = Some(union);
