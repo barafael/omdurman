@@ -26,9 +26,12 @@ license = "MIT"
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
 
 [workspace.dependencies]
-# `webp` added on top of default features so the asset server can decode the
-# WebP map/unit/sprite textures (photo scans re-encoded lossily to shrink load).
-bevy = { version = "0.20", features = ["webp"] }
+# Bevy's default features minus `audio` (the game plays no sound; an audio
+# output only cost an ALSA log flood on broken devices, and on Windows a second
+# one in a test process crashed it), plus `webp` so the asset server can decode
+# the WebP map/unit/sprite textures (photo scans re-encoded lossily to shrink
+# load).
+bevy = { version = "0.20", default-features = false, features = ["2d", "3d", "ui", "webp"] }
 bevy_egui = "0.43.1"
 bevy_matchbox = { git = "https://github.com/barafael/matchbox.git", branch = "main" }
 matchbox_socket = { git = "https://github.com/barafael/matchbox.git", branch = "main" }
