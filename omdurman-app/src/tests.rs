@@ -1676,7 +1676,11 @@ pub(crate) fn headless_game_app(window: bool) -> bevy::app::App {
                 ..default()
             })
             .disable::<bevy::winit::WinitPlugin>()
-            .disable::<bevy::log::LogPlugin>(),
+            .disable::<bevy::log::LogPlugin>()
+            // The game plays no sound, and on Windows a second audio output
+            // in one process -- the next test's app, after an earlier one
+            // was dropped -- crashes it (STATUS_ACCESS_VIOLATION).
+            .disable::<bevy::audio::AudioPlugin>(),
     );
     crate::add_game(&mut app, "headless".into());
     app
