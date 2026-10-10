@@ -25,7 +25,7 @@ use super::params::*;
 #[cfg(test)]
 const NEAR_LIMIT: f32 = 0.05;
 
-/// Most taps per axis of the shader's blur kernel (handed to `backdrop.wgsl`
+/// Most taps per axis of the shader's blur kernel (handed to `backdrop.wesl`
 /// as its `MAX_TAPS`).
 pub(super) const MAX_TAPS: usize = 12;
 

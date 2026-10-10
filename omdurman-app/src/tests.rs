@@ -1656,7 +1656,7 @@ mod mode_transition_tests {
 
 /// The whole game, headless: no window server (`primary_window` optional,
 /// no winit), no GPU, no global log subscriber (tests share a process).
-fn headless_game_app(window: bool) -> bevy::app::App {
+pub(crate) fn headless_game_app(window: bool) -> bevy::app::App {
     use bevy::prelude::*;
     let mut app = App::new();
     crate::picker::register_sprite_source(&mut app);

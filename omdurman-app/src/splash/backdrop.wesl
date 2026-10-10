@@ -8,7 +8,7 @@
 // from `backdrop.rs` (see `splash::map` and `splash::params` for the
 // meanings), the array sizes too (`MAX_TAPS`, `MAX_STOPS`: shader defs).
 
-#import bevy_ui::ui_vertex_output::UiVertexOutput
+import bevy_ui_render::ui_vertex_output::UiVertexOutput;
 
 const MODE_WIDE: u32 = 0u;
 const MODE_NARROW: u32 = 1u;
@@ -27,7 +27,7 @@ struct MapSampling {
     uv_size: vec2<f32>,
     texel: vec2<f32>,
     tap_count: u32,
-    taps: array<vec4<f32>, #{MAX_TAPS}>,
+    taps: array<vec4<f32>, constants::MAX_TAPS>,
 }
 
 struct Params {
@@ -46,9 +46,9 @@ struct Params {
     current: MapSampling,
     next: MapSampling,
     // (x: position, y: value) stops of the fade, the scrims and the glow.
-    fade_stops: array<vec4<f32>, #{MAX_STOPS}>,
-    scrim_stops: array<vec4<f32>, #{MAX_STOPS}>,
-    glow_stops: array<vec4<f32>, #{MAX_STOPS}>,
+    fade_stops: array<vec4<f32>, constants::MAX_STOPS>,
+    scrim_stops: array<vec4<f32>, constants::MAX_STOPS>,
+    glow_stops: array<vec4<f32>, constants::MAX_STOPS>,
     stop_counts: vec4<u32>,
     // Rows produce r, g, b (as CSS `sepia(1)`).
     sepia_matrix: mat3x3<f32>,

@@ -28,11 +28,11 @@ unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
 [workspace.dependencies]
 # `webp` added on top of default features so the asset server can decode the
 # WebP map/unit/sprite textures (photo scans re-encoded lossily to shrink load).
-bevy = { version = "0.19", features = ["webp"] }
-bevy_egui = "0.42"
-bevy_matchbox = { git = "https://github.com/barafael/matchbox.git", branch = "bevy-0.19-socket-hardening" }
-matchbox_socket = { git = "https://github.com/barafael/matchbox.git", branch = "bevy-0.19-socket-hardening" }
-matchbox_signaling = { git = "https://github.com/barafael/matchbox.git", branch = "bevy-0.19-socket-hardening" }
+bevy = { version = "0.20", features = ["webp"] }
+bevy_egui = "0.43.1"
+bevy_matchbox = { git = "https://github.com/barafael/matchbox.git", branch = "main" }
+matchbox_socket = { git = "https://github.com/barafael/matchbox.git", branch = "main" }
+matchbox_signaling = { git = "https://github.com/barafael/matchbox.git", branch = "main" }
 # `rc` lets `GameState.board` be an `Arc<BoardInfo>`: the board is
 # copy-on-write-shared instead of deep-cloned on every clone-and-try
 # validation. Serialisation stays transparent (`Arc<T>` == `T` on the wire).
@@ -100,19 +100,18 @@ opt-level = 2
 # Strip all debugging information from the binary to slightly reduce file size.
 strip = "debuginfo"
 
-# We depend on the barafael/matchbox fork, branch bevy-0.19-socket-hardening
-# (upstream PR johanhelsing/matchbox#558: the Bevy 0.19 port of #557 plus
-# robustness fixes). The ones that matter here: the message loop no longer
-# panics (killing every connection of the socket) when an outgoing packet
-# races a peer teardown — it drops the packet and logs instead (the network
-# reliability harness, omdurman-net/tests/replay_reliability.rs, triggers this
-# race routinely around rejoins); a data-channel on_open callback no longer
-# panics after handshake teardown; a signaling-loop failure after the initial
-# connect no longer tears down a socket with connected peers — their
-# connections live on the data channels, so a signaling server restart
-# mid-game is survived instead of silently ending every in-progress session
-# (a socket with no peer still ends, so a lone player learns the server is
-# gone); peers whose WebRTC connection fails are reported Disconnected (after
-# ~30 s) even when the signaling server can no longer report them; and the
-# socket no longer aborts the process at exit with Bevy's single-threaded
-# task pool.
+# We depend on the barafael/matchbox fork, branch main: matchbox on Bevy 0.20
+# with the robustness fixes of upstream PR johanhelsing/matchbox#558. The ones
+# that matter here: the message loop no longer panics (killing every connection
+# of the socket) when an outgoing packet races a peer teardown — it drops the
+# packet and logs instead (the network reliability harness,
+# omdurman-net/tests/replay_reliability.rs, triggers this race routinely around
+# rejoins); a data-channel on_open callback no longer panics after handshake
+# teardown; a signaling-loop failure after the initial connect no longer tears
+# down a socket with connected peers — their connections live on the data
+# channels, so a signaling server restart mid-game is survived instead of
+# silently ending every in-progress session (a socket with no peer still ends,
+# so a lone player learns the server is gone); peers whose WebRTC connection
+# fails are reported Disconnected (after ~30 s) even when the signaling server
+# can no longer report them; and the socket no longer aborts the process at
+# exit with Bevy's single-threaded task pool.

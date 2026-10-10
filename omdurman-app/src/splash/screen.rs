@@ -1,24 +1,26 @@
 //! The title screen and the lobby's backdrop as native Bevy UI: one root
-//! node, spawned once and shown while either screen is up, holding the
-//! backdrop (the [`BackdropMaterial`] shader), the lobby's panel, the menu
-//! column (wide layout) or the centred column (narrow windows), the map
-//! credits and the disabled "Game" button's hint. The lobby's own widgets are
-//! egui, drawn over it.
+//! node, spawned once from one BSN scene ([`splash_screen`]) and shown while
+//! either screen is up, holding the backdrop (the [`BackdropMaterial`]
+//! shader), the lobby's panel, the menu column (wide layout) or the centred
+//! column (narrow windows), the map credits and the disabled "Game" button's
+//! hint. The lobby's own widgets are egui, drawn over it.
 //!
 //! Layout (design 2a): the menu column on the dark left third, and on the
 //! right two thirds the period map, fading into the backdrop. Every
 //! look-and-feel number is in [`super::params`].
 
+use bevy::asset::uuid_handle;
 use bevy::picking::hover::Hovered;
-use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
-use bevy::text::{FontSize, FontSource, LetterSpacing, LineHeight};
+use bevy::text::{FontSize, FontSourceTemplate, LetterSpacing, LineHeight};
+use bevy::ui::{InteractionDisabled, Pressed};
+use bevy::ui_widgets::Activate;
 use bevy::window::PrimaryWindow;
 
 use super::backdrop::{BackdropLayout, BackdropMaterial};
 use super::map::SplashMaps;
 use super::params::*;
-use super::{Destination, SplashData, palette_color};
+use super::{Destination, Quote, SplashData, palette_color};
 use crate::ui::palette;
 use crate::ui_plugin::EguiPointerOverUi;
 use crate::{AppMode, AppState, Screen};
@@ -33,55 +35,52 @@ const NO_GAME_HINT: &str = "No game in progress — start one from the Lobby";
 /// shows (egui's tooltip delay).
 const HINT_DELAY_SECS: f32 = 0.5;
 
-/// The screen's fonts, the same embedded faces egui uses
-/// (`ui_plugin::faces`).
-#[derive(Resource)]
-pub(super) struct SplashFonts {
-    serif: Handle<Font>,
-    serif_italic: Handle<Font>,
-    serif_bold: Handle<Font>,
-    sans: Handle<Font>,
-}
+/// The screen's faces, the same embedded faces egui uses
+/// (`ui_plugin::faces`), at fixed ids so a scene names them directly.
+const SERIF: Handle<Font> = uuid_handle!("fce019ea-f33e-4939-a91b-45c8adaaa849");
+const SERIF_ITALIC: Handle<Font> = uuid_handle!("26c7054c-1f33-45e9-93b3-83c2a6e9de1f");
+const SERIF_BOLD: Handle<Font> = uuid_handle!("f544a4a4-2ce0-4bfb-a39f-b94cf48e90b7");
+const SANS: Handle<Font> = uuid_handle!("3a4a2252-6355-447b-96e5-171cb9e6e7b0");
 
 /// The backdrop material the root node draws with.
 #[derive(Resource)]
 pub(super) struct SplashBackdrop(Handle<BackdropMaterial>);
 
 /// The root node: the backdrop.
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 pub(super) struct SplashRoot;
 
 /// The wide layout's menu column.
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 pub(super) struct WideColumn;
 
 /// The narrow layout's centred column.
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 pub(super) struct NarrowColumn;
 
 /// A narrow-layout text block that wraps at the narrow wrap width.
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 pub(super) struct NarrowWrap;
 
 /// "Loading…", standing in for the buttons until the board is ready.
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 pub(super) struct LoadingLabel;
 
 /// The buttons, shown once the board is ready.
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 pub(super) struct ButtonGroup;
 
-/// A menu button: where it sends the player, which layout's it is, and
-/// whether a press is held on it. Driven by picking events (a touch is a
-/// pointer like the mouse) and gated, like the board, on
-/// [`EguiPointerOverUi`]: egui draws over the native UI, and a pointer over
-/// an egui surface (a seat vote, a tooltip) must not reach the button
-/// beneath it.
-#[derive(Component)]
+/// A menu button: where it sends the player and which layout's it is. The
+/// press, release and click handling is Bevy's headless
+/// [`Button`](bevy::ui_widgets::Button) widget (a touch is a pointer like
+/// the mouse); "Game" is [`InteractionDisabled`] while it leads nowhere.
+/// Its activation is gated, like the board, on [`EguiPointerOverUi`]: egui
+/// draws over the native UI, and a pointer over an egui surface (a seat
+/// vote, a tooltip) must not reach the button beneath it.
+#[derive(Component, Clone)]
 pub(super) struct MenuButton {
     destination: Destination,
     narrow: bool,
-    pressed: bool,
 }
 
 impl MenuButton {
@@ -100,29 +99,29 @@ enum ButtonLook {
 }
 
 /// A menu button's label.
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 pub(super) struct MenuButtonLabel;
 
 /// The lobby's floating panel.
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 pub(super) struct LobbyPanel;
 
 /// The credit of the showing map (`incoming: false`) or of the one
 /// crossfading in.
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 pub(super) struct Credit {
     incoming: bool,
 }
 
 /// One of a credit's texts: the credit itself, or a copy of its shadow.
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 pub(super) struct CreditText {
     shadow: bool,
 }
 
 /// The disabled "Game" button's hint, and how long the pointer has rested on
 /// the button.
-#[derive(Component, Default)]
+#[derive(Component, Default, Clone)]
 pub(super) struct GameHint {
     hovered_secs: f32,
 }
@@ -137,420 +136,405 @@ pub(super) fn emphasis_runs(text: &str, base_italic: bool) -> Vec<(&str, bool)> 
         .collect()
 }
 
-pub(super) fn load_fonts(mut commands: Commands, mut fonts: ResMut<Assets<Font>>) {
+/// Register the faces under their fixed ids.
+pub(super) fn load_fonts(mut fonts: ResMut<Assets<Font>>) {
     use crate::ui_plugin::faces;
-    let mut add = |bytes: &'static [u8]| fonts.add(Font::from_bytes(bytes.to_vec()));
-    commands.insert_resource(SplashFonts {
-        serif: add(faces::MERRIWEATHER_REGULAR),
-        serif_italic: add(faces::MERRIWEATHER_ITALIC),
-        serif_bold: add(faces::MERRIWEATHER_BOLD),
-        sans: add(faces::INTER_MEDIUM),
-    });
+    for (face, bytes) in [
+        (SERIF, faces::MERRIWEATHER_REGULAR),
+        (SERIF_ITALIC, faces::MERRIWEATHER_ITALIC),
+        (SERIF_BOLD, faces::MERRIWEATHER_BOLD),
+        (SANS, faces::INTER_MEDIUM),
+    ] {
+        fonts
+            .insert(face.id(), Font::from_bytes(bytes.to_vec()))
+            .expect("a uuid asset id has no generation to be stale");
+    }
 }
 
-fn font(handle: &Handle<Font>, size: f32) -> TextFont {
-    TextFont {
-        font: FontSource::from(handle),
-        font_size: FontSize::Px(size),
-        ..default()
+/// Text in `face` at `size` points.
+fn font(face: Handle<Font>, size: f32) -> impl Scene {
+    bsn! {
+        TextFont { font: FontSourceTemplate::Handle(face), font_size: FontSize::Px(size) }
+    }
+}
+
+/// Text in `face` at `size` points, `line_height` times the size apart.
+fn typeface(face: Handle<Font>, size: f32, line_height: f32) -> impl Scene {
+    bsn! {
+        @font(face, size)
+        LineHeight::RelativeToFont(line_height)
     }
 }
 
 /// A text block of `text` with `*...*` runs in italic, `size` points,
 /// `line_height` times the size apart.
-fn emphasis_text(
-    parent: &mut ChildSpawnerCommands,
-    fonts: &SplashFonts,
-    text: &str,
-    style: (f32, f32, Color, bool, Justify),
-    node: impl Bundle,
-) {
+fn emphasis_text(text: &str, style: (f32, f32, Color, bool, Justify)) -> impl Scene + use<> {
     let (size, line_height, color, base_italic, justify) = style;
-    parent
-        .spawn((
-            Text::default(),
-            font(&fonts.serif, size),
-            TextColor(color),
-            LineHeight::RelativeToFont(line_height),
-            TextLayout::justify(justify),
-            node,
-        ))
-        .with_children(|text_block| {
-            for (run, italic) in emphasis_runs(text, base_italic) {
-                let face = if italic {
-                    &fonts.serif_italic
-                } else {
-                    &fonts.serif
-                };
-                text_block.spawn((
-                    TextSpan::new(run),
-                    font(face, size),
-                    TextColor(color),
-                    LineHeight::RelativeToFont(line_height),
-                ));
+    let runs: Vec<_> = emphasis_runs(text, base_italic)
+        .into_iter()
+        .map(|(run, italic)| {
+            let run = run.to_string();
+            let face = if italic { SERIF_ITALIC } else { SERIF };
+            bsn! {
+                TextSpan(run)
+                @typeface(face, size, line_height)
+                TextColor(color)
             }
-        });
+        })
+        .collect();
+    bsn! {
+        Text
+        @typeface(SERIF, size, line_height)
+        TextColor(color)
+        TextLayout { justify }
+        Children [ {runs} ]
+    }
+}
+
+/// The epigraph's lines: the quote in curly quotes, and its attribution
+/// after a dash if it has one.
+fn epigraph(quote: Option<&Quote>) -> (Option<String>, Option<String>) {
+    let text = quote.map(|quote| format!("\u{201c}{}\u{201d}", quote.text));
+    let attribution = quote
+        .filter(|quote| !quote.attribution.is_empty())
+        .map(|quote| format!("\u{2014} {}", quote.attribution));
+    (text, attribution)
 }
 
 pub(super) fn spawn_splash_screen(
     mut commands: Commands,
-    fonts: Res<SplashFonts>,
     splash: Res<SplashData>,
     mut materials: ResMut<Assets<BackdropMaterial>>,
 ) {
     let material = materials.add(BackdropMaterial::default());
     commands.insert_resource(SplashBackdrop(material.clone()));
-    let full = Node {
-        position_type: PositionType::Absolute,
-        width: Val::Percent(100.0),
-        height: Val::Percent(100.0),
-        ..default()
-    };
-    commands
-        .spawn((
-            SplashRoot,
-            full.clone(),
-            MaterialNode(material),
-            GlobalZIndex(SPLASH_Z),
-            Visibility::Hidden,
-        ))
-        .with_children(|root| {
-            root.spawn((
-                LobbyPanel,
-                Node {
-                    position_type: PositionType::Absolute,
-                    border: UiRect::all(Val::Px(1.0)),
-                    border_radius: BorderRadius::all(Val::Px(LOBBY_PANEL_RADIUS)),
-                    display: Display::None,
-                    ..default()
-                },
-                BackgroundColor(palette_color(palette::NEUTRAL_BG)),
-                BorderColor::all(palette_color(palette::LOBBY_PANEL_BORDER)),
-            ));
-            spawn_wide_column(root, &fonts, &splash);
-            spawn_narrow_column(root, &fonts, &splash);
-            for incoming in [false, true] {
-                spawn_credit(root, &fonts, incoming);
+    commands.spawn_scene(splash_screen(material, splash.quote.as_ref()));
+}
+
+/// The whole screen: the backdrop, and over it the lobby's panel, both
+/// layouts' columns, the two credits and the hint.
+fn splash_screen(material: Handle<BackdropMaterial>, quote: Option<&Quote>) -> impl Scene + use<> {
+    bsn! {
+        SplashRoot
+        Node {
+            position_type: PositionType::Absolute,
+            width: percent(100),
+            height: percent(100),
+        }
+        MaterialNode<BackdropMaterial>(material)
+        GlobalZIndex(SPLASH_Z)
+        Visibility::Hidden
+        Children [
+            LobbyPanel
+            Node {
+                position_type: PositionType::Absolute,
+                border: UiRect::all(px(1)),
+                border_radius: BorderRadius::all(px(LOBBY_PANEL_RADIUS)),
+                display: Display::None,
             }
-            root.spawn((
-                GameHint::default(),
-                Node {
-                    position_type: PositionType::Absolute,
-                    padding: UiRect::axes(Val::Px(HINT_PAD.x), Val::Px(HINT_PAD.y)),
-                    border: UiRect::all(Val::Px(1.0)),
-                    border_radius: BorderRadius::all(Val::Px(HINT_RADIUS)),
-                    display: Display::None,
-                    ..default()
-                },
-                BackgroundColor(palette_color(palette::theme::WINDOW_BG)),
-                BorderColor::all(Color::srgb_u8(60, 60, 60)),
-                BoxShadow::new(
-                    Color::srgba(0.0, 0.0, 0.0, 0.38),
-                    Val::Px(6.0),
-                    Val::Px(10.0),
-                    Val::Px(0.0),
-                    Val::Px(8.0),
-                ),
-                children![(
-                    Text::new(NO_GAME_HINT),
-                    font(&fonts.sans, HINT_SIZE),
-                    TextColor(Color::srgb_u8(140, 140, 140)),
-                )],
-            ));
-        });
+            BackgroundColor(palette_color(palette::NEUTRAL_BG))
+            BorderColor::all(palette_color(palette::LOBBY_PANEL_BORDER))
+            --
+            @wide_column(quote)
+            --
+            @narrow_column(quote)
+            --
+            @credit(false)
+            --
+            @credit(true)
+            --
+            @game_hint()
+        ]
+    }
 }
 
 /// The wide layout's menu column: kicker, two-line title, quote, attribution
 /// and the entry buttons, left-aligned in the left third and vertically
 /// centred. The buttons' height is reserved while "Loading…" stands in for
 /// them, so the column does not jump when they appear.
-fn spawn_wide_column(root: &mut ChildSpawnerCommands, fonts: &SplashFonts, splash: &SplashData) {
-    root.spawn((
-        WideColumn,
+fn wide_column(quote: Option<&Quote>) -> impl Scene + use<> {
+    let (text, attribution) = epigraph(quote);
+    let wrap = |gap: f32| {
+        bsn! {
+            Node { margin: UiRect::top(px(gap)), max_width: px(QUOTE_WRAP) }
+        }
+    };
+    let text = text.map(|text| {
+        bsn_list! {
+            @emphasis_text(&text, (
+                QUOTE_SIZE,
+                QUOTE_LINE_HEIGHT,
+                palette_color(palette::TEXT_STRONG),
+                true,
+                Justify::Left,
+            ))
+            @wrap(GAP_TITLE_QUOTE)
+        }
+    });
+    // Upright; `*Title*` runs render italic.
+    let attribution = attribution.map(|attribution| {
+        bsn_list! {
+            @emphasis_text(&attribution, (
+                ATTR_SIZE,
+                SERIF_LINE_HEIGHT,
+                palette_color(palette::TEXT_MUTED),
+                false,
+                Justify::Left,
+            ))
+            @wrap(GAP_QUOTE_ATTR)
+        }
+    });
+    bsn! {
+        WideColumn
         Node {
             position_type: PositionType::Absolute,
-            left: Val::Percent(COL_LEFT_REL * 100.0),
-            width: Val::Percent(COL_W_REL * 100.0),
-            height: Val::Percent(100.0),
+            left: percent(COL_LEFT_REL * 100.0),
+            width: percent(COL_W_REL * 100.0),
+            height: percent(100),
             flex_direction: FlexDirection::Column,
             justify_content: JustifyContent::Center,
             align_items: AlignItems::FlexStart,
-            ..default()
-        },
-    ))
-    .with_children(|column| {
-        column.spawn((
-            Text::new(KICKER),
-            font(&fonts.serif, KICKER_SIZE),
-            TextColor(palette_color(palette::SPLASH_KICKER)),
-            LetterSpacing::Px(KICKER_SIZE * KICKER_TRACKING),
-            LineHeight::RelativeToFont(SERIF_LINE_HEIGHT),
-        ));
-        column.spawn((
-            Text::new("REMEMBER\nGORDON!"),
-            font(&fonts.serif_bold, TITLE_SIZE),
-            TextColor(palette_color(palette::SPLASH_TITLE)),
-            LineHeight::RelativeToFont(TITLE_LINE_HEIGHT),
-            Node {
-                margin: UiRect::top(Val::Px(GAP_KICKER_TITLE)),
-                ..default()
-            },
-        ));
-        if let Some(quote) = &splash.quote {
-            let wrap = |gap: f32| Node {
-                margin: UiRect::top(Val::Px(gap)),
-                max_width: Val::Px(QUOTE_WRAP),
-                ..default()
-            };
-            emphasis_text(
-                column,
-                fonts,
-                &format!("\u{201c}{}\u{201d}", quote.text),
-                (
-                    QUOTE_SIZE,
-                    QUOTE_LINE_HEIGHT,
-                    palette_color(palette::TEXT_STRONG),
-                    true,
-                    Justify::Left,
-                ),
-                wrap(GAP_TITLE_QUOTE),
-            );
-            if !quote.attribution.is_empty() {
-                // Upright; `*Title*` runs render italic.
-                emphasis_text(
-                    column,
-                    fonts,
-                    &format!("\u{2014} {}", quote.attribution),
-                    (
-                        ATTR_SIZE,
-                        SERIF_LINE_HEIGHT,
-                        palette_color(palette::TEXT_MUTED),
-                        false,
-                        Justify::Left,
-                    ),
-                    wrap(GAP_QUOTE_ATTR),
-                );
-            }
         }
-        column
-            .spawn(Node {
-                margin: UiRect::top(Val::Px(GAP_ATTR_BUTTONS)),
-                height: Val::Px(2.0 * BUTTON_SIZE.y + GAP_BUTTONS),
+        Children [
+            Text(KICKER)
+            @typeface(SERIF, KICKER_SIZE, SERIF_LINE_HEIGHT)
+            TextColor(palette_color(palette::SPLASH_KICKER))
+            LetterSpacing::Px({KICKER_SIZE * KICKER_TRACKING})
+            --
+            Text("REMEMBER\nGORDON!")
+            @typeface(SERIF_BOLD, TITLE_SIZE, TITLE_LINE_HEIGHT)
+            TextColor(palette_color(palette::SPLASH_TITLE))
+            Node { margin: UiRect::top(px(GAP_KICKER_TITLE)) }
+            --
+            {text}
+            --
+            {attribution}
+            --
+            Node {
+                margin: UiRect::top(px(GAP_ATTR_BUTTONS)),
+                height: px(2.0 * BUTTON_SIZE.y + GAP_BUTTONS),
                 flex_direction: FlexDirection::Column,
-                ..default()
-            })
-            .with_children(|block| {
-                block.spawn((
-                    LoadingLabel,
-                    Text::new("Loading\u{2026}"),
-                    font(&fonts.serif, BUTTON_TEXT),
-                    TextColor(palette_color(palette::TEXT_FAINT)),
-                    LineHeight::RelativeToFont(SERIF_LINE_HEIGHT),
-                ));
-                block
-                    .spawn((
-                        ButtonGroup,
-                        Node {
-                            flex_direction: FlexDirection::Column,
-                            row_gap: Val::Px(GAP_BUTTONS),
-                            display: Display::None,
-                            ..default()
-                        },
-                    ))
-                    .with_children(|buttons| {
-                        for destination in [Destination::Lobby, Destination::Game] {
-                            spawn_button(buttons, fonts, destination, false);
-                        }
-                    });
-            });
-    });
+            }
+            Children [
+                LoadingLabel
+                Text("Loading\u{2026}")
+                @typeface(SERIF, BUTTON_TEXT, SERIF_LINE_HEIGHT)
+                TextColor(palette_color(palette::TEXT_FAINT))
+                --
+                ButtonGroup
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(GAP_BUTTONS),
+                    display: Display::None,
+                }
+                Children [
+                    @wide_button(Destination::Lobby)
+                    --
+                    @wide_button(Destination::Game)
+                ]
+            ]
+        ]
+    }
 }
 
 /// The narrow-window layout: one centred column (title, quote, attribution,
 /// buttons) over the full-bleed map.
-fn spawn_narrow_column(root: &mut ChildSpawnerCommands, fonts: &SplashFonts, splash: &SplashData) {
-    root.spawn((
-        NarrowColumn,
+fn narrow_column(quote: Option<&Quote>) -> impl Scene + use<> {
+    let (text, attribution) = epigraph(quote);
+    let wrap = |gap: f32| {
+        bsn! {
+            NarrowWrap
+            Node { margin: UiRect::top(px(gap)) }
+        }
+    };
+    // Italic throughout; `*...*` runs stay italic too.
+    let text = text.map(|text| {
+        bsn_list! {
+            @emphasis_text(&text, (
+                NARROW_QUOTE_SIZE,
+                SERIF_LINE_HEIGHT,
+                palette_color(palette::TEXT_STRONG),
+                true,
+                Justify::Center,
+            ))
+            @wrap(NARROW_GAP_LARGE)
+        }
+    });
+    // Upright; `*Title*` runs render italic.
+    let attribution = attribution.map(|attribution| {
+        bsn_list! {
+            @emphasis_text(&attribution, (
+                NARROW_SMALL_SIZE,
+                SERIF_LINE_HEIGHT,
+                palette_color(palette::TEXT_MUTED),
+                false,
+                Justify::Center,
+            ))
+            @wrap(NARROW_GAP_ATTR)
+        }
+    });
+    bsn! {
+        NarrowColumn
         Node {
             position_type: PositionType::Absolute,
-            top: Val::Percent(NARROW_TOP_REL * 100.0),
-            width: Val::Percent(100.0),
+            top: percent(NARROW_TOP_REL * 100.0),
+            width: percent(100),
             flex_direction: FlexDirection::Column,
             align_items: AlignItems::Center,
             display: Display::None,
-            ..default()
-        },
-    ))
-    .with_children(|column| {
-        column.spawn((
-            Text::new("REMEMBER GORDON!"),
-            font(&fonts.serif, NARROW_TITLE_SIZE),
-            TextColor(palette_color(palette::SPLASH_TITLE)),
-            LineHeight::RelativeToFont(SERIF_LINE_HEIGHT),
-        ));
-        if let Some(quote) = &splash.quote {
-            let wrap = |gap: f32| {
-                (
-                    NarrowWrap,
-                    Node {
-                        margin: UiRect::top(Val::Px(gap)),
-                        ..default()
-                    },
-                )
-            };
-            // Italic throughout; `*...*` runs stay italic too.
-            emphasis_text(
-                column,
-                fonts,
-                &format!("\u{201c}{}\u{201d}", quote.text),
-                (
-                    NARROW_QUOTE_SIZE,
-                    SERIF_LINE_HEIGHT,
-                    palette_color(palette::TEXT_STRONG),
-                    true,
-                    Justify::Center,
-                ),
-                wrap(NARROW_GAP_LARGE),
-            );
-            if !quote.attribution.is_empty() {
-                // Upright; `*Title*` runs render italic.
-                emphasis_text(
-                    column,
-                    fonts,
-                    &format!("\u{2014} {}", quote.attribution),
-                    (
-                        NARROW_SMALL_SIZE,
-                        SERIF_LINE_HEIGHT,
-                        palette_color(palette::TEXT_MUTED),
-                        false,
-                        Justify::Center,
-                    ),
-                    wrap(NARROW_GAP_ATTR),
-                );
-            }
         }
-        column.spawn((
-            LoadingLabel,
-            Text::new("Loading\u{2026}"),
-            font(&fonts.serif, NARROW_SMALL_SIZE),
-            TextColor(palette_color(palette::TEXT_FAINT)),
-            LineHeight::RelativeToFont(SERIF_LINE_HEIGHT),
+        Children [
+            Text("REMEMBER GORDON!")
+            @typeface(SERIF, NARROW_TITLE_SIZE, SERIF_LINE_HEIGHT)
+            TextColor(palette_color(palette::SPLASH_TITLE))
+            --
+            {text}
+            --
+            {attribution}
+            --
+            LoadingLabel
+            Text("Loading\u{2026}")
+            @typeface(SERIF, NARROW_SMALL_SIZE, SERIF_LINE_HEIGHT)
+            TextColor(palette_color(palette::TEXT_FAINT))
+            Node { margin: UiRect::top(px(NARROW_GAP_LARGE)) }
+            --
+            ButtonGroup
             Node {
-                margin: UiRect::top(Val::Px(NARROW_GAP_LARGE)),
-                ..default()
-            },
-        ));
-        column
-            .spawn((
-                ButtonGroup,
-                Node {
-                    margin: UiRect::top(Val::Px(NARROW_GAP_LARGE)),
-                    flex_direction: FlexDirection::Column,
-                    row_gap: Val::Px(NARROW_GAP_BUTTONS),
-                    display: Display::None,
-                    ..default()
-                },
-            ))
-            .with_children(|buttons| {
-                for destination in [Destination::Lobby, Destination::Game] {
-                    spawn_button(buttons, fonts, destination, true);
-                }
-            });
-    });
+                margin: UiRect::top(px(NARROW_GAP_LARGE)),
+                flex_direction: FlexDirection::Column,
+                row_gap: px(NARROW_GAP_BUTTONS),
+                display: Display::None,
+            }
+            Children [
+                @narrow_button(Destination::Lobby)
+                --
+                @narrow_button(Destination::Game)
+            ]
+        ]
+    }
 }
 
-/// A menu button: the wide layout's label is left-aligned, the narrow
-/// layout's centred.
-fn spawn_button(
-    parent: &mut ChildSpawnerCommands,
-    fonts: &SplashFonts,
-    destination: Destination,
-    narrow: bool,
-) {
+/// A menu button with its label at `label_size` points; the layouts place
+/// the label ([`wide_button`], [`narrow_button`]).
+fn menu_button(destination: Destination, narrow: bool, label_size: f32) -> impl Scene {
     let label = match destination {
         Destination::Lobby => "Lobby",
         Destination::Game => "Game",
     };
-    parent.spawn((
-        MenuButton {
-            destination,
-            narrow,
-            pressed: false,
-        },
-        Hovered::default(),
+    let button = MenuButton {
+        destination,
+        narrow,
+    };
+    // The button takes the pointer, not its label.
+    let label_ignores_pointer = Pickable::IGNORE;
+    bsn! {
+        button
+        bevy::ui_widgets::Button
+        Hovered
         Node {
-            width: Val::Px(BUTTON_SIZE.x),
-            height: Val::Px(BUTTON_SIZE.y),
-            border: UiRect::all(Val::Px(1.0)),
-            border_radius: BorderRadius::all(Val::Px(BUTTON_RADIUS)),
-            padding: if narrow {
-                UiRect::ZERO
-            } else {
-                UiRect::left(Val::Px(BUTTON_PAD_X - 1.0))
-            },
+            width: px(BUTTON_SIZE.x),
+            height: px(BUTTON_SIZE.y),
+            border: UiRect::all(px(1)),
+            border_radius: BorderRadius::all(px(BUTTON_RADIUS)),
             align_items: AlignItems::Center,
-            justify_content: if narrow {
-                JustifyContent::Center
-            } else {
-                JustifyContent::FlexStart
-            },
-            ..default()
-        },
-        children![(
-            MenuButtonLabel,
-            // The button takes the pointer, not its label.
-            Pickable::IGNORE,
-            Text::new(label),
-            font(
-                &fonts.serif,
-                if narrow {
-                    NARROW_SMALL_SIZE
-                } else {
-                    BUTTON_TEXT
-                },
-            ),
-            LineHeight::RelativeToFont(SERIF_LINE_HEIGHT),
-        )],
-    ));
+        }
+        on(activate_menu_button)
+        Children [
+            MenuButtonLabel
+            label_ignores_pointer
+            Text(label)
+            @typeface(SERIF, label_size, SERIF_LINE_HEIGHT)
+        ]
+    }
+}
+
+/// The wide column's buttons: the label left-aligned.
+fn wide_button(destination: Destination) -> impl Scene {
+    bsn! {
+        @menu_button(destination, false, BUTTON_TEXT)
+        Node {
+            padding: UiRect::left(px(BUTTON_PAD_X - 1.0)),
+            justify_content: JustifyContent::FlexStart,
+        }
+    }
+}
+
+/// The narrow column's buttons: the label centred.
+fn narrow_button(destination: Destination) -> impl Scene {
+    bsn! {
+        @menu_button(destination, true, NARROW_SMALL_SIZE)
+        Node { justify_content: JustifyContent::Center }
+    }
 }
 
 /// A map credit, bottom-right, over a soft shadow: dark copies on two rings
 /// plus the centre, each faint enough that the overlapping core reaches the
 /// shadow's peak opacity.
-fn spawn_credit(root: &mut ChildSpawnerCommands, fonts: &SplashFonts, incoming: bool) {
+fn credit(incoming: bool) -> impl Scene {
     let text = || {
-        (
-            Text::default(),
-            font(&fonts.serif_italic, CREDIT_SIZE),
-            LineHeight::RelativeToFont(SERIF_LINE_HEIGHT),
-        )
+        bsn! {
+            Text
+            @typeface(SERIF_ITALIC, CREDIT_SIZE, SERIF_LINE_HEIGHT)
+            TextColor(Color::NONE)
+        }
     };
-    root.spawn((
-        Credit { incoming },
-        Node {
-            position_type: PositionType::Absolute,
-            right: Val::Px(CREDIT_MARGIN.x),
-            bottom: Val::Px(CREDIT_MARGIN.y),
-            ..default()
-        },
-        Visibility::Hidden,
-    ))
-    .with_children(|credit| {
-        for offset in shadow_offsets() {
-            credit.spawn((
-                CreditText { shadow: true },
-                text(),
-                TextColor(Color::NONE),
+    let shadow: Vec<_> = shadow_offsets()
+        .into_iter()
+        .map(|offset| {
+            bsn! {
+                CreditText { shadow: true }
+                @text()
                 Node {
                     position_type: PositionType::Absolute,
-                    left: Val::Px(offset.x),
-                    top: Val::Px(offset.y),
-                    ..default()
-                },
-            ));
+                    left: px(offset.x),
+                    top: px(offset.y),
+                }
+            }
+        })
+        .collect();
+    bsn! {
+        Credit { incoming }
+        Node {
+            position_type: PositionType::Absolute,
+            right: px(CREDIT_MARGIN.x),
+            bottom: px(CREDIT_MARGIN.y),
         }
-        credit.spawn((CreditText { shadow: false }, text(), TextColor(Color::NONE)));
-    });
+        Visibility::Hidden
+        Children [
+            {shadow}
+            --
+            CreditText { shadow: false }
+            @text()
+        ]
+    }
+}
+
+/// The disabled "Game" button's hint, placed by the pointer.
+fn game_hint() -> impl Scene {
+    bsn! {
+        GameHint
+        Node {
+            position_type: PositionType::Absolute,
+            padding: UiRect::axes(px(HINT_PAD.x), px(HINT_PAD.y)),
+            border: UiRect::all(px(1)),
+            border_radius: BorderRadius::all(px(HINT_RADIUS)),
+            display: Display::None,
+        }
+        BackgroundColor(palette_color(palette::theme::WINDOW_BG))
+        BorderColor::all(Color::srgb_u8(60, 60, 60))
+        BoxShadow::new(
+            Color::srgba(0.0, 0.0, 0.0, 0.38),
+            px(6),
+            px(10),
+            px(0),
+            px(8),
+        )
+        Children [
+            Text(NO_GAME_HINT)
+            @font(SANS, HINT_SIZE)
+            TextColor(Color::srgb_u8(140, 140, 140))
+        ]
+    }
 }
 
 /// Where the credit shadow's copies sit: the centre and two rings of eight.
@@ -744,17 +728,24 @@ pub(super) fn sync_credits(
     }
 }
 
-/// The buttons' visuals for the pointer, and the disabled "Game" button's
-/// hint after the pointer rests on it. (The clicks are observers:
-/// [`press_menu_button`], [`release_menu_button`], [`click_menu_button`].)
+/// The buttons' visuals for the pointer, "Game"'s [`InteractionDisabled`]
+/// while it leads nowhere, and the disabled "Game" button's hint after the
+/// pointer rests on it. (A click is the [`Button`](bevy::ui_widgets::Button)
+/// widget's [`Activate`], observed per button: [`activate_menu_button`].)
 #[allow(clippy::type_complexity)]
 pub(super) fn menu_buttons(
+    (mut commands, mut activity): (Commands, ResMut<crate::activity::Activity>),
     (time, over_egui): (Res<Time>, Res<EguiPointerOverUi>),
     progress: (Res<crate::TurnState>, Res<crate::game_record::GameRecorder>),
     window: Query<&Window, With<PrimaryWindow>>,
     mut buttons: Query<(
-        &Hovered,
-        &mut MenuButton,
+        Entity,
+        (
+            &Hovered,
+            &MenuButton,
+            Has<Pressed>,
+            Has<InteractionDisabled>,
+        ),
         &mut BackgroundColor,
         &mut BorderColor,
         &Children,
@@ -762,21 +753,29 @@ pub(super) fn menu_buttons(
     )>,
     mut labels: Query<&mut TextColor, With<MenuButtonLabel>>,
     mut hint: Query<(&mut GameHint, &mut Node)>,
-    mut activity: ResMut<crate::activity::Activity>,
 ) {
     let game_enabled = crate::game_in_progress(&progress.0, &progress.1);
     let mut hint_hovered = false;
-    for (hovered, mut button, mut fill, mut border, children, node) in &mut buttons {
+    for (entity, (hovered, button, pressed, disabled), mut fill, mut border, children, node) in
+        &mut buttons
+    {
+        let enabled = button.enabled(game_enabled);
+        if enabled == disabled {
+            if enabled {
+                commands.entity(entity).remove::<InteractionDisabled>();
+            } else {
+                commands.entity(entity).insert(InteractionDisabled);
+            }
+        }
         if node.size().x <= 0.0 {
             // Laid out away (the other layout's, or the screen is down).
-            if button.pressed {
-                button.pressed = false;
+            if pressed {
+                commands.entity(entity).remove::<Pressed>();
             }
             continue;
         }
-        let enabled = button.enabled(game_enabled);
         let hovered = hovered.get() && !over_egui.0;
-        let look = match (hovered, button.pressed) {
+        let look = match (hovered, pressed) {
             (true, true) => ButtonLook::Pressed,
             (true, false) => ButtonLook::Hovered,
             (false, _) => ButtonLook::Idle,
@@ -816,69 +815,20 @@ pub(super) fn menu_buttons(
     }
 }
 
-/// A primary press on a menu button holds it down (its pressed look).
-pub(super) fn press_menu_button(
-    mut press: On<Pointer<Press>>,
-    mut buttons: Query<&mut MenuButton>,
-    over_egui: Res<EguiPointerOverUi>,
-) {
-    if let Ok(mut button) = buttons.get_mut(press.entity) {
-        press.propagate(false);
-        if press.button == PointerButton::Primary && !over_egui.0 {
-            button.pressed = true;
-        }
-    }
-}
-
-/// The press ends: released over the button, dragged off it, or cancelled.
-pub(super) fn release_menu_button(
-    mut release: On<Pointer<Release>>,
-    mut buttons: Query<&mut MenuButton>,
-) {
-    if let Ok(mut button) = buttons.get_mut(release.entity) {
-        release.propagate(false);
-        button.pressed = false;
-    }
-}
-
-/// See [`release_menu_button`].
-pub(super) fn end_menu_button_drag(
-    mut drag_end: On<Pointer<DragEnd>>,
-    mut buttons: Query<&mut MenuButton>,
-) {
-    if let Ok(mut button) = buttons.get_mut(drag_end.entity) {
-        drag_end.propagate(false);
-        button.pressed = false;
-    }
-}
-
-/// See [`release_menu_button`].
-pub(super) fn cancel_menu_button(
-    mut cancel: On<Pointer<Cancel>>,
-    mut buttons: Query<&mut MenuButton>,
-) {
-    if let Ok(mut button) = buttons.get_mut(cancel.entity) {
-        cancel.propagate(false);
-        button.pressed = false;
-    }
-}
-
-/// A primary click (a press and a release on the button) sends the player
-/// on, if the button leads somewhere.
-pub(super) fn click_menu_button(
-    mut click: On<Pointer<Click>>,
+/// An activated menu button (a press and a release on it, unless it is
+/// [`InteractionDisabled`]) sends the player on -- unless the pointer is
+/// over an egui surface drawn above it.
+fn activate_menu_button(
+    activate: On<Activate>,
     buttons: Query<&MenuButton>,
-    progress: (Res<crate::TurnState>, Res<crate::game_record::GameRecorder>),
     over_egui: Res<EguiPointerOverUi>,
     mut next_app_state: ResMut<NextState<AppState>>,
     mut next_app_mode: ResMut<NextState<AppMode>>,
 ) {
-    let Ok(button) = buttons.get(click.entity) else {
+    let Ok(button) = buttons.get(activate.entity) else {
         return;
     };
-    click.propagate(false);
-    let game_enabled = crate::game_in_progress(&progress.0, &progress.1);
-    if click.button != PointerButton::Primary || over_egui.0 || !button.enabled(game_enabled) {
+    if over_egui.0 {
         return;
     }
     match button.destination {
@@ -953,5 +903,81 @@ mod tests {
             .map(|o| (*o - CREDIT_SHADOW_OFFSET).length())
             .fold(0.0, f32::max);
         assert!((reach - CREDIT_SHADOW_RADIUS).abs() < 1e-5);
+    }
+
+    /// The screen's scene spawned into a bare world (no window, no
+    /// renderer): the scene alone, without the systems that lay it out.
+    fn spawned(quote: Option<&Quote>) -> App {
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            bevy::asset::AssetPlugin::default(),
+            bevy::scene::ScenePlugin,
+        ))
+        .insert_resource(EguiPointerOverUi(false))
+        .init_resource::<NextState<AppState>>()
+        .init_resource::<NextState<AppMode>>();
+        app.world_mut()
+            .spawn_scene(splash_screen(Handle::default(), quote))
+            .expect("the scene has no assets to wait for");
+        app
+    }
+
+    fn children_of<C: Component>(app: &mut App) -> usize {
+        let world = app.world_mut();
+        let column = world
+            .query_filtered::<Entity, With<C>>()
+            .single(world)
+            .expect("one column");
+        world.get::<Children>(column).map_or(0, |c| c.len())
+    }
+
+    /// The epigraph's blocks are list entries that may be absent: an absent
+    /// one spawns no entity (no empty node in the column's flow).
+    #[test]
+    fn the_columns_hold_only_the_epigraph_lines_there_are() {
+        let quote = |attribution: &str| Quote {
+            text: "War is *the* father.".into(),
+            attribution: attribution.into(),
+        };
+        for (quote, lines) in [
+            (Some(quote("Heraclitus, *Fragments*")), 2),
+            (Some(quote("")), 1),
+            (None, 0),
+        ] {
+            let mut app = spawned(quote.as_ref());
+            // Kicker, title and the buttons' block; title, "Loading…" and
+            // the buttons.
+            assert_eq!(children_of::<WideColumn>(&mut app), 3 + lines);
+            assert_eq!(children_of::<NarrowColumn>(&mut app), 3 + lines);
+        }
+    }
+
+    /// Each menu button observes its own activation: "Lobby" enters the
+    /// lobby, unless the pointer is over an egui surface above it.
+    #[test]
+    fn a_menu_button_activation_enters_its_destination() {
+        for over_egui in [false, true] {
+            let mut app = spawned(None);
+            app.world_mut().resource_mut::<EguiPointerOverUi>().0 = over_egui;
+            let world = app.world_mut();
+            let buttons: Vec<(Entity, Destination)> = world
+                .query::<(Entity, &MenuButton)>()
+                .iter(world)
+                .map(|(entity, button)| (entity, button.destination))
+                .collect();
+            assert_eq!(buttons.len(), 4, "two buttons in each layout");
+            let lobby = buttons
+                .iter()
+                .find(|(_, destination)| *destination == Destination::Lobby)
+                .expect("a Lobby button")
+                .0;
+            world.trigger(Activate { entity: lobby });
+            let entered = matches!(
+                *world.resource::<NextState<AppMode>>(),
+                NextState::Pending(AppMode::Lobby)
+            );
+            assert_eq!(entered, !over_egui);
+        }
     }
 }

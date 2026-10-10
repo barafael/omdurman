@@ -41,19 +41,16 @@ thiserror = { workspace = true }
 ron = { workspace = true }
 
 uuid = { workspace = true }
-bevy-inspector-egui = { version = "0.37", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 dotenvy = { workspace = true }
 
 [dev-dependencies]
+# Validates the WGSL the backdrop shader compiles to (`splash::backdrop`); the
+# naga that Bevy's wgpu builds with.
+naga = { version = "30", features = ["wgsl-in"] }
 tempfile = "3"
 traceability-macro = { path = "../traceability-macro" }
-
-[features]
-# Development tooling: in-app Bevy world/resource inspector (egui-based).
-# Never enabled for release or wasm builds.
-dev = ["dep:bevy-inspector-egui"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { workspace = true, features = ["wasm_js"] }

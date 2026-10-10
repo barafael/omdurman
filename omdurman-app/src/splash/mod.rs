@@ -19,7 +19,7 @@ mod params;
 mod screen;
 mod tuning;
 
-use bevy::asset::{LoadState, load_internal_asset};
+use bevy::asset::{LoadState, embedded_asset};
 use bevy::prelude::*;
 use bevy::ui_render::prelude::UiMaterialPlugin;
 use bevy_egui::{EguiPrimaryContextPass, egui};
@@ -55,12 +55,7 @@ pub struct SplashPlugin;
 
 impl Plugin for SplashPlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(
-            app,
-            backdrop::BACKDROP_SHADER,
-            "backdrop.wgsl",
-            Shader::from_wgsl
-        );
+        embedded_asset!(app, "backdrop.wesl");
         app.add_plugins(UiMaterialPlugin::<BackdropMaterial>::default())
             .insert_resource(SplashData {
                 quote: pick_quote(),
@@ -72,7 +67,8 @@ impl Plugin for SplashPlugin {
                 Startup,
                 (
                     map::load_splash_maps,
-                    (screen::load_fonts, screen::spawn_splash_screen).chain(),
+                    screen::load_fonts,
+                    screen::spawn_splash_screen,
                 ),
             )
             .add_systems(
@@ -87,11 +83,6 @@ impl Plugin for SplashPlugin {
                 )
                     .chain(),
             )
-            .add_observer(screen::press_menu_button)
-            .add_observer(screen::release_menu_button)
-            .add_observer(screen::end_menu_button_drag)
-            .add_observer(screen::cancel_menu_button)
-            .add_observer(screen::click_menu_button)
             .add_systems(EguiPrimaryContextPass, tuning::tuning_pane_ui);
     }
 }
