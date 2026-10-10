@@ -307,9 +307,10 @@ mod tests {
     fn the_shader_compiles() {
         use bevy::shader::{ShaderCache, ShaderCacheSource};
 
+        // Not `finish()`ed: the asset server loads without it, and on Windows
+        // a finished-and-run game app crashed the next game app the test
+        // binary built (STATUS_ACCESS_VIOLATION in a later headless test).
         let mut app = crate::tests::headless_game_app(false);
-        app.finish();
-        app.cleanup();
         let server = app.world().resource::<AssetServer>().clone();
         let ShaderRef::Path(path) = BackdropMaterial::fragment_shader() else {
             panic!("the backdrop shader is an asset path");
