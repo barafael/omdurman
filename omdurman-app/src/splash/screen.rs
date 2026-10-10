@@ -9,6 +9,9 @@
 //! right two thirds the period map, fading into the backdrop. Every
 //! look-and-feel number is in [`super::params`].
 
+use bevy::picking::events::{
+    PointerCancel, PointerClick, PointerDragEnd, PointerPress, PointerRelease,
+};
 use bevy::picking::hover::Hovered;
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
@@ -818,7 +821,7 @@ pub(super) fn menu_buttons(
 
 /// A primary press on a menu button holds it down (its pressed look).
 pub(super) fn press_menu_button(
-    mut press: On<Pointer<Press>>,
+    mut press: On<PointerPress>,
     mut buttons: Query<&mut MenuButton>,
     over_egui: Res<EguiPointerOverUi>,
 ) {
@@ -832,7 +835,7 @@ pub(super) fn press_menu_button(
 
 /// The press ends: released over the button, dragged off it, or cancelled.
 pub(super) fn release_menu_button(
-    mut release: On<Pointer<Release>>,
+    mut release: On<PointerRelease>,
     mut buttons: Query<&mut MenuButton>,
 ) {
     if let Ok(mut button) = buttons.get_mut(release.entity) {
@@ -843,7 +846,7 @@ pub(super) fn release_menu_button(
 
 /// See [`release_menu_button`].
 pub(super) fn end_menu_button_drag(
-    mut drag_end: On<Pointer<DragEnd>>,
+    mut drag_end: On<PointerDragEnd>,
     mut buttons: Query<&mut MenuButton>,
 ) {
     if let Ok(mut button) = buttons.get_mut(drag_end.entity) {
@@ -854,7 +857,7 @@ pub(super) fn end_menu_button_drag(
 
 /// See [`release_menu_button`].
 pub(super) fn cancel_menu_button(
-    mut cancel: On<Pointer<Cancel>>,
+    mut cancel: On<PointerCancel>,
     mut buttons: Query<&mut MenuButton>,
 ) {
     if let Ok(mut button) = buttons.get_mut(cancel.entity) {
@@ -866,7 +869,7 @@ pub(super) fn cancel_menu_button(
 /// A primary click (a press and a release on the button) sends the player
 /// on, if the button leads somewhere.
 pub(super) fn click_menu_button(
-    mut click: On<Pointer<Click>>,
+    mut click: On<PointerClick>,
     buttons: Query<&MenuButton>,
     progress: (Res<crate::TurnState>, Res<crate::game_record::GameRecorder>),
     over_egui: Res<EguiPointerOverUi>,
