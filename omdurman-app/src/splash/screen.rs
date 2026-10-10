@@ -9,9 +9,6 @@
 //! right two thirds the period map, fading into the backdrop. Every
 //! look-and-feel number is in [`super::params`].
 
-use bevy::picking::events::{
-    PointerCancel, PointerClick, PointerDragEnd, PointerPress, PointerRelease,
-};
 use bevy::picking::hover::Hovered;
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;

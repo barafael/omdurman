@@ -5,7 +5,8 @@
 //! mirrors the replicated day/night into [`BoardDayNight`], and registers the
 //! shared night shading.
 
-use bevy::{prelude::*, render::view::ColorGrading};
+use bevy::prelude::*;
+use bevy::render::view::{ColorGrading, Tonemapping};
 use omdurman_board_ui::night::{BoardDayNight, NightFading, night_shading};
 
 pub use omdurman_board_ui::camera::{
@@ -63,14 +64,15 @@ fn spawn_camera(mut commands: Commands) {
         RtsCameraState::default(),
         Camera3d::default(),
         Projection::Perspective(PerspectiveProjection::default()),
-        Tonemapping::None,
+        // The identity tone curve: the board scan keeps its own colours,
+        // still dithered.
+        Tonemapping::Linear,
         ColorGrading::default(),
         // Picking marker: the mesh backend only casts from marked cameras.
         crate::picking::picking_camera(),
     ));
 }
 
-use bevy::core_pipeline::tonemapping::Tonemapping;
 use omdurman_board_ui::camera::camera_control;
 
 /// Mirror the replicated rules state's time of day into the shared resource

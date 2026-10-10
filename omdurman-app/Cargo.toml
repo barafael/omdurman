@@ -46,6 +46,9 @@ uuid = { workspace = true }
 dotenvy = { workspace = true }
 
 [dev-dependencies]
+# Validates the WGSL the backdrop shader compiles to (`splash::backdrop`); the
+# naga that Bevy's wgpu builds with.
+naga = { version = "30", features = ["wgsl-in"] }
 tempfile = "3"
 traceability-macro = { path = "../traceability-macro" }
 

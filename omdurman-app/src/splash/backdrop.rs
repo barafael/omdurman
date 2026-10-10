@@ -1,9 +1,9 @@
 //! The backdrop material: one full-screen UI node whose shader
-//! (`backdrop.wgsl`) draws the period map and every overlay over it, for the
+//! (`backdrop.wesl`) draws the period map and every overlay over it, for the
 //! title screen and for the lobby. This module turns the show's state and the
 //! screen's layout into the shader's parameters.
 
-use bevy::asset::uuid_handle;
+use bevy::asset::{AssetPath, embedded_path};
 use bevy::prelude::*;
 use bevy::render::render_resource::{AsBindGroup, RenderPipelineDescriptor, ShaderType};
 use bevy::shader::{ShaderDefVal, ShaderRef};
@@ -11,10 +11,6 @@ use bevy::ui_render::prelude::{UiMaterial, UiMaterialKey};
 
 use super::map::{self, MAX_TAPS, MapImage, MapVariant, SplashMaps};
 use super::params::*;
-
-/// The backdrop shader, embedded (see the plugin).
-pub(super) const BACKDROP_SHADER: Handle<Shader> =
-    uuid_handle!("6b0f5e8e-0c8f-4d9e-9a51-5a3f2b7c1d42");
 
 /// Most stops of one gradient (the shader's `MAX_STOPS`).
 const MAX_STOPS: usize = 8;
@@ -51,20 +47,27 @@ pub(super) struct BackdropMaterial {
 }
 
 impl UiMaterial for BackdropMaterial {
+    /// The shader the plugin embeds next to this file.
     fn fragment_shader() -> ShaderRef {
-        BACKDROP_SHADER.into()
+        AssetPath::from_path_buf(embedded_path!("backdrop.wesl"))
+            .with_source("embedded")
+            .into()
     }
 
-    /// The shader's array sizes come from here, so the uniform layouts on
-    /// both sides cannot drift apart.
     fn specialize(descriptor: &mut RenderPipelineDescriptor, _key: UiMaterialKey<Self>) {
         if let Some(fragment) = descriptor.fragment.as_mut() {
-            fragment.shader_defs.extend([
-                ShaderDefVal::UInt("MAX_TAPS".into(), MAX_TAPS as u32),
-                ShaderDefVal::UInt("MAX_STOPS".into(), MAX_STOPS as u32),
-            ]);
+            fragment.shader_defs.extend(shader_defs());
         }
     }
+}
+
+/// The shader's array sizes (`constants::MAX_TAPS`, `constants::MAX_STOPS`)
+/// come from here, so the uniform layouts on both sides cannot drift apart.
+fn shader_defs() -> [ShaderDefVal; 2] {
+    [
+        ShaderDefVal::UInt("MAX_TAPS".into(), MAX_TAPS as u32),
+        ShaderDefVal::UInt("MAX_STOPS".into(), MAX_STOPS as u32),
+    ]
 }
 
 /// One slide's map: see `MapSampling` in the shader.
@@ -294,5 +297,52 @@ mod tests {
         for list in [&FADE_STOPS[..], &SCRIM_STOPS, &LOBBY_GLOW_STOPS] {
             assert!(list.len() <= MAX_STOPS);
         }
+    }
+
+    /// The shader compiles as the UI material pipeline compiles it -- its
+    /// import of the UI vertex output resolved, the array sizes substituted
+    /// -- and the WGSL that comes out validates. Only the GPU would otherwise
+    /// find out, at the title screen.
+    #[test]
+    fn the_shader_compiles() {
+        use bevy::shader::{ShaderCache, ShaderCacheSource};
+
+        let mut app = crate::tests::headless_game_app(false);
+        app.finish();
+        app.cleanup();
+        let server = app.world().resource::<AssetServer>().clone();
+        let ShaderRef::Path(path) = BackdropMaterial::fragment_shader() else {
+            panic!("the backdrop shader is an asset path");
+        };
+        let backdrop: Handle<Shader> = server.load(path);
+        let vertex_output: Handle<Shader> =
+            server.load("embedded://bevy_ui_render/ui_vertex_output.wesl");
+        for _ in 0..1000 {
+            if server.is_loaded(&backdrop) && server.is_loaded(&vertex_output) {
+                break;
+            }
+            app.update();
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        let shaders = app.world().resource::<Assets<Shader>>();
+        let mut cache = ShaderCache::<String, ()>::new((), |_, source, _| match source {
+            ShaderCacheSource::Wgsl(wgsl) => Ok(wgsl),
+            ShaderCacheSource::SpirV(_) => panic!("the backdrop shader is WESL"),
+        });
+        for handle in [&vertex_output, &backdrop] {
+            let shader = shaders.get(handle).expect("the shader loaded");
+            cache.set_shader(handle.id(), shader.clone());
+        }
+        let wgsl = cache
+            .get(0, backdrop.id(), &shader_defs())
+            .unwrap_or_else(|error| panic!("the backdrop shader compiles: {error}"));
+        let module = naga::front::wgsl::parse_str(&wgsl)
+            .unwrap_or_else(|error| panic!("{}", error.emit_to_string(&wgsl)));
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::default(),
+        )
+        .validate(&module)
+        .unwrap_or_else(|error| panic!("{}", error.emit_to_string(&wgsl)));
     }
 }
