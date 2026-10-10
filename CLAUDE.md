@@ -77,8 +77,8 @@ time), so the job is gated to `workflow_dispatch` — run it manually when wante
 locally via the script above (the authoritative check). CI builds with
 `trunk build --release` for the `wasm32-unknown-unknown` target — keep that working
 when changing dependencies.
-The toolchain is pinned via `rust-toolchain.toml` (stable 1.98.0 + `wasm32-unknown-unknown` target;
-the Aug-2026 nightly breaks bevy_render). Bump it deliberately, after a full
+The toolchain is pinned via `rust-toolchain.toml` (stable 1.98.0 + `wasm32-unknown-unknown` target).
+Bump it deliberately, after a full
 `cargo test --workspace` + `trunk build --release`.
 The signalling server URL is bakeable via the `MATCHBOX_SERVER` env var at build time (see `omdurman-net/src/lib.rs`).
 
