@@ -170,7 +170,7 @@ launch)
   [ -n "${OMDURMAN_ROOM:-}" ] && { net=(); room=(-- "$OMDURMAN_ROOM"); }
   env -u WAYLAND_DISPLAY "${net[@]}" OMDURMAN_START_MODE="$mode" \
     OMDURMAN_HEX_PROBE="$D/probe" OMDURMAN_PLAYER_SLOT=${OMDURMAN_PLAYER_SLOT:-7} \
-    RUST_LOG=${RUST_LOG:-warn,omdurman=info,rodio=off,cpal=off} \
+    RUST_LOG=${RUST_LOG:-warn,omdurman=info} \
     setsid -w nohup cargo run -q -p omdurman-app "${room[@]}" >"$D/app.log" 2>&1 < /dev/null &
   pid=$!
   # A cold build takes many minutes: wait as long as cargo (then the game)

@@ -168,10 +168,6 @@ signalling server.
   logical viewport coordinates by the window's scale factor), the same
   space as `shot` and the input tools. On a HiDPI setup (scale 1.5 here)
   a probe from before that fix is off by the scale.
-- **The audio backend can flood the log**: with a broken ALSA stream rodio
-  logs `alsa::poll() returned POLLERR` thousands of times a second (7 GB in
-  ten minutes filled the `/tmp` tmpfs). The driver's default `RUST_LOG`
-  turns `rodio` and `cpal` off; keep that if you override `RUST_LOG`.
 - **Unset `WAYLAND_DISPLAY`** (the driver does) or winit opens a native
   Wayland window that `xdotool` cannot touch.
 - **Screenshots from outside are stale under XWayland**; use the probe's
