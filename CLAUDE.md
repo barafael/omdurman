@@ -292,8 +292,11 @@ never on one axis alone -- the menu shows in every `AppState`, and a system gate
 draws over it.
 The splash screen provides the primary mode-switching UI. It (and the lobby's map backdrop and
 panel) is native Bevy UI over a GPU backdrop shader (`omdurman-app/src/splash/`), not egui; the
-lobby's egui widgets draw over it. Its buttons take picking events and, like the board, ignore the
-pointer while it is over an egui surface (`EguiPointerOverUi`): egui draws over the native UI.
+lobby's egui widgets draw over it. Its node tree is one BSN scene (`bsn!`, `splash::screen::
+splash_screen`) whose fonts are fixed `uuid_handle!` ids; its buttons are Bevy's headless
+`bevy::ui_widgets::Button` (`Pressed`, `InteractionDisabled`), each observing its own `Activate`,
+and like the board they ignore the pointer while it is over an egui surface (`EguiPointerOverUi`):
+egui draws over the native UI.
 `OMDURMAN_SPLASH_FREEZE=<map>,<pan time>` and `OMDURMAN_SPLASH_QUOTE=<index>` pin the screen for
 screenshots that compare across builds; tapping Shift on the title screen toggles an egui pane to
 tune its look live.

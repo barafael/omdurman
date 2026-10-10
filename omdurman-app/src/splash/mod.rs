@@ -67,7 +67,8 @@ impl Plugin for SplashPlugin {
                 Startup,
                 (
                     map::load_splash_maps,
-                    (screen::load_fonts, screen::spawn_splash_screen).chain(),
+                    screen::load_fonts,
+                    screen::spawn_splash_screen,
                 ),
             )
             .add_systems(
@@ -82,11 +83,6 @@ impl Plugin for SplashPlugin {
                 )
                     .chain(),
             )
-            .add_observer(screen::press_menu_button)
-            .add_observer(screen::release_menu_button)
-            .add_observer(screen::end_menu_button_drag)
-            .add_observer(screen::cancel_menu_button)
-            .add_observer(screen::click_menu_button)
             .add_systems(EguiPrimaryContextPass, tuning::tuning_pane_ui);
     }
 }
