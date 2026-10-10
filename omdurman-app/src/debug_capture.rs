@@ -78,8 +78,8 @@ fn capture_then_exit(
 /// (physical) pixels under the current camera -- so an external driver
 /// (xdotool, ydotool) can click a hex by coordinate. Creating `<path>.shot` requests a
 /// window screenshot, written to `<path>.png` (the request file is removed).
-/// Writing `<path>.input` requests pointer input served by the app itself --
-/// one step per line, one step per frame, in window (physical) pixels:
+/// Writing `<path>.input` requests input served by the app itself -- one
+/// step per line, one step per frame, in window (physical) pixels:
 ///
 /// ```text
 /// move X Y      the pointer to (X, Y)
@@ -87,15 +87,20 @@ fn capture_then_exit(
 /// up [1|2|3]    release it
 /// click [1|2|3] down, then up on the next frame
 /// wheel DY      one scroll of DY lines (+ up / zoom in, - down)
+/// keydown K     press key K, named like an X keysym: a letter or digit,
+///               Return, Escape, Tab, space, BackSpace, Delete, Home, End,
+///               Prior, Next, Up, Down, Left, Right, Shift_L, Control_L, ...
+/// keyup K       release it
+/// key K         keydown, then keyup on the next frame
 /// wait N        N idle frames
 /// ```
 ///
 /// The file is removed once read. The steps go through the same messages
-/// winit's would (`CursorMoved`, `MouseButtonInput`, `MouseWheel`, and the
-/// `WindowEvent` stream egui reads), so egui widgets, the board picking and
-/// the camera see them as real input -- for a desktop whose compositor
-/// ignores pointer warps, and they can reach no other window. Inert when
-/// unset.
+/// winit's would (`CursorMoved`, `MouseButtonInput`, `MouseWheel`,
+/// `KeyboardInput`, and the `WindowEvent` stream), so egui widgets, the
+/// board picking, the camera and the key bindings see them as real input --
+/// for a compositor that ignores or drops synthetic input, and they can
+/// reach no other window. Inert when unset.
 pub struct HexProbePlugin;
 
 #[derive(Resource)]
@@ -238,16 +243,121 @@ fn probe_screenshot(
 }
 
 /// One step of a `<probe>.input` request (see [`HexProbePlugin`]).
-enum PointerStep {
+enum InputStep {
     /// To a window position, in physical pixels.
     Move(Vec2),
     Down(MouseButton),
     Up(MouseButton),
     Wheel(f32),
+    KeyDown(ProbeKey),
+    KeyUp(ProbeKey),
     Wait,
 }
 
-fn parse_pointer_steps(text: &str) -> Vec<PointerStep> {
+/// A key as a probe step names it: the physical code, the logical key and
+/// the text it types.
+#[derive(Clone)]
+struct ProbeKey {
+    code: KeyCode,
+    logical: bevy::input::keyboard::Key,
+    text: Option<String>,
+}
+
+/// A key from its X keysym name (as `xdotool key` takes it), on a US layout.
+fn probe_key(name: &str) -> Option<ProbeKey> {
+    use bevy::input::keyboard::Key;
+    let named = |code, logical| {
+        Some(ProbeKey {
+            code,
+            logical,
+            text: None,
+        })
+    };
+    let mut chars = name.chars();
+    if let (Some(c), None) = (chars.next(), chars.next()) {
+        let c = c.to_ascii_lowercase();
+        let code = match c {
+            'a'..='z' => KEY_LETTERS[(c as u8 - b'a') as usize],
+            '0'..='9' => KEY_DIGITS[(c as u8 - b'0') as usize],
+            _ => return None,
+        };
+        return Some(ProbeKey {
+            code,
+            logical: Key::Character(c.to_string().into()),
+            text: Some(c.to_string()),
+        });
+    }
+    match name {
+        "Return" => named(KeyCode::Enter, Key::Enter),
+        "KP_Enter" => named(KeyCode::NumpadEnter, Key::Enter),
+        "Escape" => named(KeyCode::Escape, Key::Escape),
+        "Tab" => named(KeyCode::Tab, Key::Tab),
+        "space" => Some(ProbeKey {
+            code: KeyCode::Space,
+            logical: Key::Space,
+            text: Some(" ".into()),
+        }),
+        "BackSpace" => named(KeyCode::Backspace, Key::Backspace),
+        "Delete" => named(KeyCode::Delete, Key::Delete),
+        "Home" => named(KeyCode::Home, Key::Home),
+        "End" => named(KeyCode::End, Key::End),
+        "Prior" | "Page_Up" => named(KeyCode::PageUp, Key::PageUp),
+        "Next" | "Page_Down" => named(KeyCode::PageDown, Key::PageDown),
+        "Up" => named(KeyCode::ArrowUp, Key::ArrowUp),
+        "Down" => named(KeyCode::ArrowDown, Key::ArrowDown),
+        "Left" => named(KeyCode::ArrowLeft, Key::ArrowLeft),
+        "Right" => named(KeyCode::ArrowRight, Key::ArrowRight),
+        "Shift_L" => named(KeyCode::ShiftLeft, Key::Shift),
+        "Shift_R" => named(KeyCode::ShiftRight, Key::Shift),
+        "Control_L" => named(KeyCode::ControlLeft, Key::Control),
+        "Control_R" => named(KeyCode::ControlRight, Key::Control),
+        _ => None,
+    }
+}
+
+const KEY_LETTERS: [KeyCode; 26] = [
+    KeyCode::KeyA,
+    KeyCode::KeyB,
+    KeyCode::KeyC,
+    KeyCode::KeyD,
+    KeyCode::KeyE,
+    KeyCode::KeyF,
+    KeyCode::KeyG,
+    KeyCode::KeyH,
+    KeyCode::KeyI,
+    KeyCode::KeyJ,
+    KeyCode::KeyK,
+    KeyCode::KeyL,
+    KeyCode::KeyM,
+    KeyCode::KeyN,
+    KeyCode::KeyO,
+    KeyCode::KeyP,
+    KeyCode::KeyQ,
+    KeyCode::KeyR,
+    KeyCode::KeyS,
+    KeyCode::KeyT,
+    KeyCode::KeyU,
+    KeyCode::KeyV,
+    KeyCode::KeyW,
+    KeyCode::KeyX,
+    KeyCode::KeyY,
+    KeyCode::KeyZ,
+];
+
+const KEY_DIGITS: [KeyCode; 10] = [
+    KeyCode::Digit0,
+    KeyCode::Digit1,
+    KeyCode::Digit2,
+    KeyCode::Digit3,
+    KeyCode::Digit4,
+    KeyCode::Digit5,
+    KeyCode::Digit6,
+    KeyCode::Digit7,
+    KeyCode::Digit8,
+    KeyCode::Digit9,
+];
+
+fn parse_input_steps(text: &str) -> Vec<InputStep> {
     let button = |word: Option<&str>| match word {
         Some("2") => MouseButton::Middle,
         Some("3") => MouseButton::Right,
@@ -261,27 +371,38 @@ fn parse_pointer_steps(text: &str) -> Vec<PointerStep> {
                 let x = words.next().and_then(|w| w.parse::<f32>().ok());
                 let y = words.next().and_then(|w| w.parse::<f32>().ok());
                 match (x, y) {
-                    (Some(x), Some(y)) => steps.push(PointerStep::Move(Vec2::new(x, y))),
+                    (Some(x), Some(y)) => steps.push(InputStep::Move(Vec2::new(x, y))),
                     _ => warn!(line, "hex probe: malformed move"),
                 }
             }
-            Some("down") => steps.push(PointerStep::Down(button(words.next()))),
-            Some("up") => steps.push(PointerStep::Up(button(words.next()))),
+            Some("down") => steps.push(InputStep::Down(button(words.next()))),
+            Some("up") => steps.push(InputStep::Up(button(words.next()))),
             Some("click") => {
                 let b = button(words.next());
-                steps.push(PointerStep::Down(b));
-                steps.push(PointerStep::Up(b));
+                steps.push(InputStep::Down(b));
+                steps.push(InputStep::Up(b));
             }
             Some("wheel") => match words.next().and_then(|w| w.parse::<f32>().ok()) {
-                Some(dy) => steps.push(PointerStep::Wheel(dy)),
+                Some(dy) => steps.push(InputStep::Wheel(dy)),
                 None => warn!(line, "hex probe: malformed wheel"),
+            },
+            Some(verb @ ("key" | "keydown" | "keyup")) => match words.next().and_then(probe_key) {
+                Some(key) => {
+                    if verb != "keyup" {
+                        steps.push(InputStep::KeyDown(key.clone()));
+                    }
+                    if verb != "keydown" {
+                        steps.push(InputStep::KeyUp(key));
+                    }
+                }
+                None => warn!(line, "hex probe: unknown key"),
             },
             Some("wait") => {
                 let n = words
                     .next()
                     .and_then(|w| w.parse::<usize>().ok())
                     .unwrap_or(1);
-                steps.extend(std::iter::repeat_with(|| PointerStep::Wait).take(n));
+                steps.extend(std::iter::repeat_with(|| InputStep::Wait).take(n));
             }
             Some(_) => warn!(line, "hex probe: unknown input step"),
             None => {}
@@ -290,19 +411,20 @@ fn parse_pointer_steps(text: &str) -> Vec<PointerStep> {
     steps
 }
 
-/// Serve a `<probe>.input` pointer request (see [`HexProbePlugin`]): one
-/// step per frame, through the messages winit's input would arrive by.
+/// Serve a `<probe>.input` request (see [`HexProbePlugin`]): one step per
+/// frame, through the messages winit's input would arrive by.
 #[allow(clippy::too_many_arguments)]
 fn probe_input(
     path: Res<HexProbePath>,
     time: Res<Time>,
     mut last_poll: Local<f64>,
-    mut queue: Local<std::collections::VecDeque<PointerStep>>,
+    mut queue: Local<std::collections::VecDeque<InputStep>>,
     mut windows: Query<(Entity, &mut Window), With<bevy::window::PrimaryWindow>>,
     mut window_events: MessageWriter<bevy::window::WindowEvent>,
     mut moved: MessageWriter<bevy::window::CursorMoved>,
     mut buttons: MessageWriter<bevy::input::mouse::MouseButtonInput>,
     mut wheel: MessageWriter<bevy::input::mouse::MouseWheel>,
+    mut keys: MessageWriter<bevy::input::keyboard::KeyboardInput>,
     mut activity: ResMut<crate::activity::Activity>,
 ) {
     use bevy::input::ButtonState;
@@ -320,11 +442,11 @@ fn probe_input(
             return;
         };
         let _ = std::fs::remove_file(&request);
-        queue.extend(parse_pointer_steps(&text));
+        queue.extend(parse_input_steps(&text));
         if queue.is_empty() {
             return;
         }
-        info!(steps = queue.len(), "hex probe: pointer input requested");
+        info!(steps = queue.len(), "hex probe: input requested");
     }
     let Ok((window_entity, mut window)) = windows.single_mut() else {
         queue.clear();
@@ -337,7 +459,7 @@ fn probe_input(
         return;
     };
     match step {
-        PointerStep::Move(physical) => {
+        InputStep::Move(physical) => {
             window.set_physical_cursor_position(Some(physical.as_dvec2()));
             let position = physical / window.scale_factor();
             let event = CursorMoved {
@@ -348,8 +470,8 @@ fn probe_input(
             moved.write(event.clone());
             window_events.write(WindowEvent::CursorMoved(event));
         }
-        PointerStep::Down(button) | PointerStep::Up(button) => {
-            let state = if matches!(step, PointerStep::Down(_)) {
+        InputStep::Down(button) | InputStep::Up(button) => {
+            let state = if matches!(step, InputStep::Down(_)) {
                 ButtonState::Pressed
             } else {
                 ButtonState::Released
@@ -362,7 +484,7 @@ fn probe_input(
             buttons.write(event);
             window_events.write(WindowEvent::MouseButtonInput(event));
         }
-        PointerStep::Wheel(dy) => {
+        InputStep::Wheel(dy) => {
             let event = MouseWheel {
                 unit: MouseScrollUnit::Line,
                 x: 0.0,
@@ -373,6 +495,33 @@ fn probe_input(
             wheel.write(event);
             window_events.write(WindowEvent::MouseWheel(event));
         }
-        PointerStep::Wait => {}
+        InputStep::KeyDown(key) => {
+            let event = key_input(key, ButtonState::Pressed, window_entity);
+            keys.write(event.clone());
+            window_events.write(WindowEvent::KeyboardInput(event));
+        }
+        InputStep::KeyUp(key) => {
+            let event = key_input(key, ButtonState::Released, window_entity);
+            keys.write(event.clone());
+            window_events.write(WindowEvent::KeyboardInput(event));
+        }
+        InputStep::Wait => {}
+    }
+}
+
+/// The `KeyboardInput` winit would send for a probe key step; only a press
+/// types its text.
+fn key_input(
+    key: ProbeKey,
+    state: bevy::input::ButtonState,
+    window: Entity,
+) -> bevy::input::keyboard::KeyboardInput {
+    bevy::input::keyboard::KeyboardInput {
+        key_code: key.code,
+        logical_key: key.logical,
+        state,
+        text: key.text.filter(|_| state.is_pressed()).map(Into::into),
+        repeat: false,
+        window,
     }
 }

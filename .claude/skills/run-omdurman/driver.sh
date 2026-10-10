@@ -5,10 +5,15 @@
 # State lives in $OMDURMAN_PLAY (default /tmp/omdurman-play): app.log, the
 # probe files, screenshots, and the instance's window id. Two instances run
 # side by side with distinct OMDURMAN_PLAY dirs and OMDURMAN_PLAYER_SLOTs,
-# online (OMDURMAN_ROOM=<room>) instead of offline.
+# online (OMDURMAN_ROOM=<room>) instead of offline. OMDURMAN_VIRTUAL=1 (or
+# =WxH) launches onto a headless display of its own (virt.sh) instead of the
+# desktop.
 set -u
 D=${OMDURMAN_PLAY:-/tmp/omdurman-play}
 mkdir -p "$D"
+# A virtual instance lives on the display its launch recorded.
+desktop_display=${DISPLAY:-}
+[ -s "$D/display" ] && export DISPLAY=$(cat "$D/display")
 
 # This instance's window: the one `launch` recorded, while it still exists.
 win() {
@@ -17,8 +22,8 @@ win() {
 }
 all_wins() { xdotool search --name '^omdurman$' 2>/dev/null | sort; }
 need_win() { W=$(win); [ -n "$W" ] || { echo "no omdurman window (run: launch)" >&2; exit 1; }; }
-# Pointer input served by the app itself (`<probe>.input`, see
-# debug_capture.rs): with OMDURMAN_INPUT=probe, or after a warp the
+# Input served by the app itself (`<probe>.input`, see debug_capture.rs):
+# with OMDURMAN_INPUT=probe, on a headless display, or after a warp the
 # compositor ignored (`$D/input_probe` is left behind then). Such input can
 # reach no other window, so the active-window guard does not apply to it.
 probe_input() { [ "${OMDURMAN_INPUT:-}" = probe ] || [ -e "$D/input_probe" ]; }
@@ -64,21 +69,26 @@ moveto() {
   # lands at request x scale. Warp, measure that scale (cached per state
   # dir), and re-warp at target / scale; within a pixel is on target.
   near() { local a=$(( $1 - $3 )) b=$(( $2 - $4 )); [ "${a#-}" -le 1 ] && [ "${b#-}" -le 1 ]; }
-  local sx sy
+  # The pointer can read back a few frames after a warp (KWin): poll
+  # briefly; x y hold the last reading. A one-shot read mistook a late
+  # pointer for a scaled warp and cached a bogus scale.
+  landed() { local k; for k in 1 2 3 4 5 6 7 8; do
+    sleep 0.05; read -r x y < <(mouse); near "$x" "$y" "$tx" "$ty" && return 0; done; return 1; }
+  local sx sy px py
   read -r sx sy 2>/dev/null < "$D/warp_scale" || { sx=1; sy=1; }
   xdotool mousemove "$(awk -v t=$tx -v s=$sx 'BEGIN{printf "%d", t/s+0.5}')" \
-    "$(awk -v t=$ty -v s=$sy 'BEGIN{printf "%d", t/s+0.5}')"; sleep 0.05
-  read -r x y < <(mouse); near "$x" "$y" "$tx" "$ty" && return 0
+    "$(awk -v t=$ty -v s=$sy 'BEGIN{printf "%d", t/s+0.5}')"
+  landed && return 0
   if [ "$tx" -gt 100 ] && [ "$ty" -gt 100 ]; then
-    xdotool mousemove "$tx" "$ty"; sleep 0.05; read -r x y < <(mouse)
-    if [ "$x $y" != "$tx $ty" ] && [ "$x" -gt 0 ] && [ "$y" -gt 0 ]; then
+    px=$x; py=$y
+    xdotool mousemove "$tx" "$ty"; landed && { rm -f "$D/warp_scale"; return 0; }
+    if [ "$x $y" != "$px $py" ] && [ "$x" -gt 0 ] && [ "$y" -gt 0 ]; then
       sx=$(awk -v a=$x -v b=$tx 'BEGIN{print a/b}'); sy=$(awk -v a=$y -v b=$ty 'BEGIN{print a/b}')
       echo "$sx $sy" > "$D/warp_scale"
       xdotool mousemove "$(awk -v t=$tx -v s=$sx 'BEGIN{printf "%d", t/s+0.5}')" \
-        "$(awk -v t=$ty -v s=$sy 'BEGIN{printf "%d", t/s+0.5}')"; sleep 0.05
-      read -r x y < <(mouse)
+        "$(awk -v t=$ty -v s=$sy 'BEGIN{printf "%d", t/s+0.5}')"
+      landed && return 0
     fi
-    near "$x" "$y" "$tx" "$ty" && return 0
   fi
   if [ ! -S "$YDOTOOL_SOCKET" ]; then
     # No uinput either: let the app serve the input itself from now on.
@@ -106,6 +116,8 @@ moveto() {
   # window (a terminal, a notification) covering the target freezes it.
   echo "pointer stuck at $x,$y, wanted $tx,$ty: is a non-game window covering that part of the game?" >&2; exit 3
 }
+# keystroke <keysym>  -- press and release a key in the game.
+keystroke() { if probe_input; then inject "key $1"; else xdotool key --window "$W" "$1"; fi; }
 # click with button 1|2|3 (left|middle|right) at the current pointer.
 press() {
   probe_input && { inject "click ${1:-1}"; return 0; }
@@ -142,7 +154,16 @@ launch)
   # launch [Lobby|Menu]  -- offline self-host, XWayland, probe armed.
   mode=${1:-Lobby}
   [ -n "$(win)" ] && { echo "already running"; exit 0; }
-  rm -f "$D/probe" "$D/probe.state" "$D/probe.png" "$D/probe.input" "$D/input_probe" "$D/win"
+  rm -f "$D/probe" "$D/probe.state" "$D/probe.png" "$D/probe.input" "$D/input_probe" "$D/win" "$D/warp_scale"
+  "$(dirname "$0")/virt.sh" stop "$D"; export DISPLAY=$desktop_display
+  if [ -n "${OMDURMAN_VIRTUAL:-}" ]; then
+    size=$OMDURMAN_VIRTUAL; [ "$size" = 1 ] && size=1920x1080
+    DISPLAY=$("$(dirname "$0")/virt.sh" start "$D" "$size") || exit 1
+    export DISPLAY; echo "headless display $DISPLAY ($size)"
+    # The nested Xwayland now and then drops XTest input (warps, keys) for a
+    # second or more: input goes through the app unless OMDURMAN_INPUT=xdotool.
+    [ "${OMDURMAN_INPUT:-}" = xdotool ] || touch "$D/input_probe"
+  fi
   before=$(all_wins)
   # Offline self-host, unless OMDURMAN_ROOM names an online room.
   net=(OMDURMAN_OFFLINE=1); room=()
@@ -222,8 +243,10 @@ zoom)
 pan)
   # pan <Up|Down|Left|Right> [seconds]  -- hold an arrow key: the camera
   # pans (0.4 s at the default zoom moves ~700 px).
-  need_input; xdotool keydown --window "$W" "$1"; sleep "${2:-0.2}"
-  xdotool keyup --window "$W" "$1"; sleep 1
+  need_input
+  if probe_input; then inject "keydown $1"; sleep "${2:-0.2}"; inject "keyup $1"
+  else xdotool keydown --window "$W" "$1"; sleep "${2:-0.2}"; xdotool keyup --window "$W" "$1"; fi
+  sleep 1
   ;;
 scroll)
   # scroll <x> <y> <notches>  -- mouse wheel at a window pixel (the sidebar,
@@ -232,7 +255,7 @@ scroll)
   ;;
 key)
   # key <keysym>  -- e.g. e (End phase), Return (dismiss telegram), Escape.
-  need_input; xdotool key --window "$W" "$1"
+  need_input; keystroke "$1"
   ;;
 state)
   # state  -- turn/phase line, then unit counts per side and disrupted.
@@ -263,8 +286,9 @@ ff)
     case "$s" in *"$target"*) exit 0;; *game_over*) echo "game over"; exit 0;; esac
     if echo "$s" | grep -q "active=$2"; then
       [ $(( $(date +%s) - since )) -gt 25 ] && { echo "stuck: take a shot"; exit 1; }
-      [ "$(xdotool getactivewindow 2>/dev/null)" = "$W" ] || { echo "refusing input: game window no longer active" >&2; exit 2; }
-      xdotool key --window "$W" Return; sleep 0.5; xdotool key --window "$W" e; sleep 4
+      probe_input || [ "$(xdotool getactivewindow 2>/dev/null)" = "$W" ] ||
+        { echo "refusing input: game window no longer active" >&2; exit 2; }
+      keystroke Return; sleep 0.5; keystroke e; sleep 4
     else
       [ $(( $(date +%s) - since )) -gt 900 ] && { echo "AI stuck"; exit 1; }
       sleep 3
@@ -276,13 +300,17 @@ log)
   sed 's/\x1b\[[0-9;]*m//g' "$D/app.log" | grep -E "${1:-.}"
   ;;
 stop)
-  # This instance only: the process owning its window.
-  W=$(win); [ -n "$W" ] || { echo stopped; exit 0; }
-  pid=$(xdotool getwindowpid "$W" 2>/dev/null)
-  [ -n "$pid" ] && kill "$pid"; sleep 1
+  # This instance only: the process owning its window, then its headless
+  # display if it has one.
+  W=$(win)
+  if [ -n "$W" ]; then
+    pid=$(xdotool getwindowpid "$W" 2>/dev/null)
+    [ -n "$pid" ] && kill "$pid"; sleep 1
+  fi
   [ -n "$(win)" ] && echo "still running" || echo stopped
+  "$(dirname "$0")/virt.sh" stop "$D"
   ;;
 *)
-  sed -n '2,8p' "$0"; grep -E '^  [a-z]+\)$' "$0" | tr -d ' )'
+  sed -n '2,10p' "$0"; grep -E '^  [a-z]+\)$' "$0" | tr -d ' )'
   ;;
 esac

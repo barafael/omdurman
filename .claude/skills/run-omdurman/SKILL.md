@@ -1,6 +1,6 @@
 ---
 name: run-omdurman
-description: Run, launch, play, screenshot or click-test the native omdurman Bevy game (Remember Gordon!) — start a solo game against the AI, drive it by real mouse/keyboard input, read the rules state back, fast-forward turns. Use for rules play-throughs, UI checks and reproducing in-game bugs.
+description: Run, launch, play, screenshot or click-test the native omdurman Bevy game (Remember Gordon!) — start a solo game against the AI, drive it by real mouse/keyboard input, read the rules state back, fast-forward turns; on the desktop or headless (several instances, no windows on screen). Use for rules play-throughs, UI checks and reproducing in-game bugs.
 ---
 
 # Run omdurman (native, driven by clicks)
@@ -22,7 +22,8 @@ instead (see Prerequisites) -- automatically, whenever a warp does not land.
 
 `xdotool` and ImageMagick (`magick`) on `PATH`, a desktop session with
 XWayland (`DISPLAY` set). There is no software Vulkan driver here, so
-`Xvfb` cannot host the game.
+`Xvfb` cannot host the game (RADV cannot present without DRI3); run it
+headless in a nested KWin instead (see "Run headless").
 
 On a compositor that ignores pointer warps (COSMIC, GNOME), also `ydotool`
 (1.x, kernel uinput: the user needs write access to `/dev/uinput`) with its
@@ -52,7 +53,9 @@ takes, needs neither focus nor the pointer, and can touch no other window
 active-window guard below does not apply to it. XWayland can only warp
 the pointer while it sits over an X window: the moment the user's pointer
 rests on a native window, `xdotool` warps are ignored and the switch
-happens. Keys (`key`, `pan`) still go through `xdotool`.
+happens. Keys (`key`, `pan`, `ff`) go the same way as the pointer: in-app
+(`key K` / `keydown K` / `keyup K` steps, X keysym names) once in-app input
+is on, through `xdotool` before.
 
 ## Run (agent path)
 
@@ -221,6 +224,41 @@ signalling server.
 - `hex q,r not on screen` → the hex is outside the camera; `zoom` with a
   negative count, or `zoom` at a visible hex nearer the target.
 - `shot` prints "no screenshot" → the app is not running (`$D launch`).
+
+## Run headless (several instances, nothing on the desktop)
+
+`OMDURMAN_VIRTUAL=1` (or `=WxH`, default 1920x1080) makes `launch` start
+the game on a display of its own: a nested KWin on a virtual output
+(`virt.sh`), rendered on the GPU and never shown, with its own Xwayland,
+D-Bus session and config dir (nothing reaches the desktop's KWin or
+`~/.config`). Every later driver call for that `OMDURMAN_PLAY` finds the
+display in `$OMDURMAN_PLAY/display`; `stop` tears it down too. Input is
+in-app from the start (see "Two ways to deliver input"); `shot` works as
+on the desktop. Instances are independent -- give each its own state dir
+and player slot, and run them in parallel:
+
+```bash
+OMDURMAN_PLAY=/tmp/omd-a OMDURMAN_PLAYER_SLOT=21 OMDURMAN_VIRTUAL=1 $D launch
+OMDURMAN_PLAY=/tmp/omd-b OMDURMAN_PLAYER_SLOT=22 OMDURMAN_VIRTUAL=1600x900 $D launch
+OMDURMAN_PLAY=/tmp/omd-a $D click 626 386     # each call addresses its own instance
+OMDURMAN_PLAY=/tmp/omd-a $D stop; OMDURMAN_PLAY=/tmp/omd-b $D stop
+```
+
+- The window is the virtual output less KWin's title bar (1920x1052 for
+  1920x1080); lobby pixels for that size: Anglo-Egyptian 626 386, then AI
+  Khalifa 894 676, Start Battle 972 760; the rail's Ready 32 128.
+- `OMDURMAN_INPUT=xdotool` keeps `xdotool` instead. The nested Xwayland
+  sends XTest input through EIS to KWin and now and then drops it (warps
+  and keys alike) for a second or more -- intermittently, under load; the
+  driver still falls back by itself when a warp does not land, but a lost
+  key goes unnoticed.
+- Under heavy load (a build running next to two instances) the first lobby
+  clicks right after `launch` were once lost; `shot` before the first click
+  (as for any lobby click) and check the result.
+- ~0.7 GB RAM and a quarter of a core per idle instance.
+- A bare `kwin_wayland --virtual` (without `virt.sh`) shares `~/.config`
+  with the desktop's KWin and writes into `kwinrc` /
+  `kwinoutputconfig.json` -- always go through `virt.sh`.
 
 ## Run inside the gnome-boxes VM (no host-desktop interference)
 
