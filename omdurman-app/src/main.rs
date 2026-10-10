@@ -12,7 +12,6 @@ mod combat_predict;
 mod combat_ui;
 mod debug_capture;
 mod desertion;
-mod dev_inspector;
 mod dispatch;
 mod event_viewer;
 mod events;
@@ -153,9 +152,6 @@ fn add_game(app: &mut App, room: String) {
         .add_plugins(hover_tooltip::HoverTooltipPlugin)
         .add_plugins(debug_capture::DebugCapturePlugin)
         .add_plugins(debug_capture::HexProbePlugin)
-        // Dev-only egui world inspector: `cargo run -p omdurman-app --features dev`.
-        // Never part of release or wasm builds (off by default).
-        .add_plugins(dev_inspector::DevInspectorPlugin)
         .init_state::<AppState>()
         .init_state::<AppMode>()
         // The screen that is up, derived from the two (see `state::Screen`).
