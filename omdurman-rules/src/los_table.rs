@@ -1733,7 +1733,7 @@ mod tests {
     #[rulebook("§6.3")]
     #[test]
     fn los_ray_is_the_straight_line_on_the_campaign_board() {
-        let board = crate::board::BoardInfo::from_map_data(&crate::board_data::campaign_map_data());
+        let board = crate::board::BoardInfo::from_map_data(crate::board_data::campaign_map_data());
         assert!(matches!(
             board.terrain_at(HexCoord::new(35, 19)),
             Some(Terrain::Rough { .. })

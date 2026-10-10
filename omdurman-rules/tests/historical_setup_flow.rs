@@ -50,7 +50,7 @@ fn deploy_first(
 #[test]
 fn historical_setup_completes_on_the_campaign_board() {
     let map = campaign_map_data();
-    let board = BoardInfo::from_map_data(&map);
+    let board = BoardInfo::from_map_data(map);
 
     // §9.212: the lettered hexes as printed on the mapsheet, once each.
     let mut letters: Vec<(SetupLetter, HexCoord)> = map

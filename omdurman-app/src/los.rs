@@ -15,8 +15,8 @@ use std::collections::HashSet;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_hexmap::hex_world_pos;
-use omdurman_rules::los_table::{LosFeature, LosLevel, LosStepResult, los_path_analysis};
-use omdurman_rules::{FireKind, Phase};
+use omdurman_rules::FireKind;
+use omdurman_rules::los_table::{LosFeature, LosStepResult, los_path_analysis};
 use omdurman_types::HexCoord;
 
 use crate::GameStateResource;
@@ -64,12 +64,7 @@ pub fn update_los_analysis(
 ) {
     let hovered_from = hovered.0;
     let from = match game_state.as_deref() {
-        Some(gs)
-            if matches!(
-                gs.0.phase,
-                Phase::OffensiveFire(_) | Phase::DefensiveFire(_)
-            ) =>
-        {
+        Some(gs) if gs.0.phase.is_fire() => {
             fire_selection(&picker, &placed_units, &gs.0).map(|g| g.firer_hex)
         }
         _ => hovered_from,
@@ -251,16 +246,9 @@ fn los_from(gs: &omdurman_rules::effects::GameState, from: HexCoord) -> LosParti
     if gs.board.terrain_at(from).is_none() {
         return LosPartition { clear, blocked };
     }
-    let level_at = |hex: HexCoord| {
-        gs.units.iter().find(|u| u.position == hex).map_or_else(
-            || {
-                gs.board
-                    .terrain_at(hex)
-                    .map_or(LosLevel::Ground, omdurman_rules::los_table::los_level)
-            },
-            |u| omdurman_rules::los_table::los_level_for_unit(u.profile.kind, hex, &gs.board),
-        )
-    };
+    let from_level = gs.target_los_level(from);
+    // Built once: the blocker indexes the board's units when it is made.
+    let unit_blocker = gs.los_unit_blocker();
     for dq in -(MAX_RANGE as i32)..=(MAX_RANGE as i32) {
         for dr in -(MAX_RANGE as i32)..=(MAX_RANGE as i32) {
             let to = HexCoord::new(from.q + dq, from.r + dr);
@@ -272,9 +260,9 @@ fn los_from(gs: &omdurman_rules::effects::GameState, from: HexCoord) -> LosParti
                 from,
                 to,
                 FireKind::Direct,
-                level_at(from),
-                level_at(to),
-                gs.los_unit_blocker(),
+                from_level,
+                gs.target_los_level(to),
+                &unit_blocker,
                 |a, b| gs.wall_is_breached(a, b),
             );
             let mut blocking: Vec<LosFeature> = Vec::new();

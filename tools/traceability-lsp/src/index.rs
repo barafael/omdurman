@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use crate::checks::read_traceability;
 use crate::manual::{self, ManualSection};
 use crate::resolve::resolve_symbol;
-use crate::scan::{Citation, collect_rs_files};
+use crate::scan::{Citation, collect_rs_files, section_refs};
 use crate::tests::{TestEntry, scan_test_entries};
 use crate::{manual_path, traceability_path};
 
@@ -156,25 +156,6 @@ impl TraceIndex {
             .filter(move |t| t.sections.contains(section))
     }
 
-    /// Does a position in `path` sit on a `§N` citation? Returns the section.
-    pub fn citation_at(&self, path: &Path, line: usize, byte_col: usize) -> Option<String> {
-        let text = self.file_texts.get(path)?;
-        self.citations
-            .iter()
-            .filter(|c| c.file == path && c.line == line)
-            .find(|c| {
-                let key = format!("§{}", c.section.trim_start_matches('§'));
-                match text.lines().nth(line.saturating_sub(1)) {
-                    Some(line_str) => {
-                        let seg_end = (c.byte_col + key.len()).min(line_str.len());
-                        byte_col >= c.byte_col && byte_col <= seg_end
-                    }
-                    None => false,
-                }
-            })
-            .map(|c| c.section.clone())
-    }
-
     /// Which impl-site symbol sits at `path`/`line`/`byte_col`? Returns
     /// `(section, symbol)`.
     pub fn impl_symbol_at(
@@ -200,27 +181,15 @@ impl TraceIndex {
 }
 
 fn collect_citations_from_text(path: &Path, text: &str) -> Vec<Citation> {
-    let mut out = Vec::new();
-    for (line_idx, line) in text.lines().enumerate() {
-        let mut search_start = 0;
-        while let Some(pos) = line[search_start..].find('§') {
-            let abs_pos = search_start + pos;
-            let after = &line[abs_pos + '§'.len_utf8()..];
-            let section_num: String = after
-                .chars()
-                .take_while(|c| c.is_alphanumeric() || *c == '.')
-                .collect();
-            let clean = section_num.trim_end_matches('x').trim_end_matches('.');
-            if !clean.is_empty() {
-                out.push(Citation {
-                    section: format!("§{}", clean),
-                    file: path.to_path_buf(),
-                    line: line_idx + 1,
-                    byte_col: abs_pos,
-                });
-            }
-            search_start = abs_pos + '§'.len_utf8();
-        }
-    }
-    out
+    text.lines()
+        .enumerate()
+        .flat_map(|(line_idx, line)| {
+            section_refs(line).map(move |(byte_col, _, section)| Citation {
+                section,
+                file: path.to_path_buf(),
+                line: line_idx + 1,
+                byte_col,
+            })
+        })
+        .collect()
 }

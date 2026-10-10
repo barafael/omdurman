@@ -8,8 +8,6 @@
 //! etc.) use clone-and-try: clone the state, call `apply_effect`, keep the
 //! candidate if it succeeds.
 
-use std::collections::HashMap;
-
 use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
 use omdurman_rules::terrain_chart::movement_cost;
 use omdurman_rules::unit_profiles::profile_for_unit;
@@ -52,38 +50,7 @@ const MAX_DEEP_SETUP_CANDIDATES: usize = 400;
 /// Setup while deployment candidates remain -- see below). The caller picks
 /// one at random and applies it.
 pub fn legal_actions(state: &GameState, rng: &mut BotRng) -> Vec<GameEffect> {
-    // §10.12: a struck mine is rolled for before anything else happens.
-    if let Some(effect) = river_mine_action(state, rng) {
-        return vec![effect];
-    }
-    let mut out = Vec::new();
-    match state.phase {
-        Phase::Setup => setup_actions(state, rng, &mut out, 1),
-        Phase::Movement => movement_actions(state, rng, &mut out),
-        Phase::OffensiveFire(_) | Phase::DefensiveFire(_) => fire_actions(state, rng, &mut out),
-        Phase::Melee => melee_actions(state, rng, &mut out),
-    }
-    // Allow the player to end the phase -- but never while mandatory setup
-    // or scheduled arrivals are still on the table: leaving Setup with a
-    // skeleton force makes agent playthroughs vacuous (the engine's
-    // `setup_complete` is only a minimum), and a Movement phase ended before
-    // the §9.112/§9.113 wave (or the once-per-game §8.2 desertion roll) is
-    // applied loses those units forever -- the arrival schedule is not
-    // optional. A declared-but-unresolved melee (§7.5) also blocks the phase
-    // end -- the engine rejects the advance, so never offer it.
-    let deploying =
-        state.phase == Phase::Setup && out.iter().any(|e| matches!(e, GameEffect::DeployUnit(_)));
-    let mandatory_arrival = state.phase == Phase::Movement
-        && out.iter().any(|e| {
-            matches!(
-                e,
-                GameEffect::PlaceReinforcements(_) | GameEffect::DervishDesertion { .. }
-            )
-        });
-    let melee_pending = state.phase == Phase::Melee && state.pending_melee.is_some();
-    if !deploying && !mandatory_arrival && !melee_pending {
-        out.push(GameEffect::AdvancePhase);
-    }
+    let (mut out, may_end) = enumerate_actions(state, rng, 1);
     // Trim if the list exploded.
     if out.len() > MAX_CANDIDATES {
         rng.shuffle(&mut out);
@@ -93,7 +60,7 @@ pub fn legal_actions(state: &GameState, rng: &mut BotRng) -> Vec<GameEffect> {
         // mid-melee), the §8.2 desertion roll, and one §9.112/§9.113
         // reinforcement batch -- losing a mandatory arrival to truncation
         // would skip a rules step.
-        if !deploying && !mandatory_arrival && !melee_pending {
+        if may_end {
             out.push(GameEffect::AdvancePhase);
         }
         if !out
@@ -119,16 +86,47 @@ pub fn legal_actions(state: &GameState, rng: &mut BotRng) -> Vec<GameEffect> {
 /// strategies that care *where* to stand (the historical commanders, the
 /// app's AI); random playthroughs keep using [`legal_actions`].
 pub fn legal_actions_deep_setup(state: &GameState, rng: &mut BotRng) -> Vec<GameEffect> {
+    let (mut out, may_end) = enumerate_actions(state, rng, SETUP_HEX_OPTIONS);
+    // Deep setup lists are deterministic per-unit rankings, so no shuffle is
+    // needed to keep seeds reproducible; only cap the size.
+    if out.len() > MAX_DEEP_SETUP_CANDIDATES {
+        out.truncate(MAX_DEEP_SETUP_CANDIDATES);
+        if may_end {
+            out.push(GameEffect::AdvancePhase);
+        }
+    }
+    out
+}
+
+/// The enumeration both entry points share, before their size caps: the
+/// phase's candidates (`hex_options` deploy hexes per undeployed unit in
+/// Setup), then `AdvancePhase` when the phase may end. Returns the list and
+/// whether ending the phase is offered. A struck mine's roll comes alone
+/// (one candidate, no cap touches it).
+fn enumerate_actions(
+    state: &GameState,
+    rng: &mut BotRng,
+    hex_options: usize,
+) -> (Vec<GameEffect>, bool) {
+    // §10.12: a struck mine is rolled for before anything else happens.
     if let Some(effect) = river_mine_action(state, rng) {
-        return vec![effect];
+        return (vec![effect], false);
     }
     let mut out = Vec::new();
     match state.phase {
-        Phase::Setup => setup_actions(state, rng, &mut out, SETUP_HEX_OPTIONS),
+        Phase::Setup => setup_actions(state, rng, &mut out, hex_options),
         Phase::Movement => movement_actions(state, rng, &mut out),
         Phase::OffensiveFire(_) | Phase::DefensiveFire(_) => fire_actions(state, rng, &mut out),
         Phase::Melee => melee_actions(state, rng, &mut out),
     }
+    // Allow the player to end the phase -- but never while mandatory setup
+    // or scheduled arrivals are still on the table: leaving Setup with a
+    // skeleton force makes agent playthroughs vacuous (the engine's
+    // `setup_complete` is only a minimum), and a Movement phase ended before
+    // the §9.112/§9.113 wave (or the once-per-game §8.2 desertion roll) is
+    // applied loses those units forever -- the arrival schedule is not
+    // optional. A declared-but-unresolved melee (§7.5) also blocks the phase
+    // end -- the engine rejects the advance, so never offer it.
     let deploying =
         state.phase == Phase::Setup && out.iter().any(|e| matches!(e, GameEffect::DeployUnit(_)));
     let mandatory_arrival = state.phase == Phase::Movement
@@ -139,18 +137,11 @@ pub fn legal_actions_deep_setup(state: &GameState, rng: &mut BotRng) -> Vec<Game
             )
         });
     let melee_pending = state.phase == Phase::Melee && state.pending_melee.is_some();
-    if !deploying && !mandatory_arrival && !melee_pending {
+    let may_end = !deploying && !mandatory_arrival && !melee_pending;
+    if may_end {
         out.push(GameEffect::AdvancePhase);
     }
-    // Deep setup lists are deterministic per-unit rankings, so no shuffle is
-    // needed to keep seeds reproducible; only cap the size.
-    if out.len() > MAX_DEEP_SETUP_CANDIDATES {
-        out.truncate(MAX_DEEP_SETUP_CANDIDATES);
-        if !deploying && !mandatory_arrival && !melee_pending {
-            out.push(GameEffect::AdvancePhase);
-        }
-    }
-    out
+    (out, may_end)
 }
 
 // ---------------------------------------------------------------------------
@@ -224,10 +215,10 @@ fn setup_actions(
             });
         }
         let mut placed = 0usize;
-        // The generic placement preference of every hex, computed once per
-        // enumeration: it depends on the state alone, and every unit's
-        // option set ranks by it.
-        let mut preferences: Option<HashMap<HexCoord, i32>> = None;
+        // The board's hexes ranked by generic placement preference, computed
+        // once per enumeration: the ranking depends on the state alone, and
+        // every unit's option set is its legal prefix.
+        let mut ranked: Option<Vec<HexCoord>> = None;
         let unit_take = if hex_options <= 1 {
             MAX_SETUP_CANDIDATES
         } else {
@@ -242,8 +233,8 @@ fn setup_actions(
                     .into_iter()
                     .collect()
             } else {
-                let preferences = preferences.get_or_insert_with(|| placement_preferences(state));
-                deploy_hex_options(state, *id, profile, hex_options, preferences)
+                let ranked = ranked.get_or_insert_with(|| ranked_deploy_hexes(state));
+                deploy_hex_options(state, *id, profile, hex_options, ranked)
             };
             for hex in options {
                 out.push(GameEffect::DeployUnit(omdurman_rules::UnitPlacement {
@@ -645,18 +636,17 @@ fn find_deploy_hex(
 /// enumerations and processes). Preference: stacking with compatible occupants
 /// (build full 4-stacks, §5.51), wall-adjacent and garrison terrain (the FoK
 /// line, §9.321), garrison landmarks. Legality is `can_deploy_unit` — the
-/// engine's deployment zones (§9.32) already bound the pool.
+/// engine's deployment zones (§9.32) already bound the pool. `ranked` is
+/// [`ranked_deploy_hexes`]: the first `n` legal hexes of it.
 fn deploy_hex_options(
     state: &GameState,
     id: UnitId,
     profile: omdurman_rules::UnitProfile,
     n: usize,
-    preferences: &HashMap<HexCoord, i32>,
+    ranked: &[HexCoord],
 ) -> Vec<HexCoord> {
-    let mut legal: Vec<HexCoord> = state
-        .board
-        .terrain
-        .keys()
+    ranked
+        .iter()
         .copied()
         .filter(|h| {
             let placement = omdurman_rules::UnitPlacement {
@@ -667,32 +657,22 @@ fn deploy_hex_options(
             };
             state.can_deploy_unit(&placement).is_ok()
         })
-        .collect();
-    sort_dedup_hexes(&mut legal);
-    // Stable, so hexes of equal preference keep their sorted order; the
-    // memo is looked up only, never iterated, so the ranking stays
-    // deterministic across processes.
-    legal.sort_by_cached_key(|h| {
-        -preferences
-            .get(h)
-            .copied()
-            .unwrap_or_else(|| placement_preference(state, *h))
-    });
-    legal.truncate(n);
-    legal
+        .take(n)
+        .collect()
 }
 
-/// [`placement_preference`] of every hex of the board, for one enumeration
-/// (see [`setup_actions`]). It walks 42 hexside lookups per hex, and used to
-/// be recomputed per comparison of every unit's sort of the same hexes --
-/// seven tenths of a Fall of Khartoum game's time went there.
-fn placement_preferences(state: &GameState) -> HashMap<HexCoord, i32> {
-    state
-        .board
-        .terrain
-        .keys()
-        .map(|hex| (*hex, placement_preference(state, *hex)))
-        .collect()
+/// Every hex of the board, best [`placement_preference`] first, for one
+/// enumeration (see [`setup_actions`]). The board order (`q`, then `r`)
+/// breaks ties: the sort is stable, so the ranking is deterministic across
+/// processes (`terrain` is a `HashMap`). The preference walks 42 hexside
+/// lookups per hex, so it is computed once per hex here (cached key), not
+/// per comparison of every unit's sort of the same hexes -- that once took
+/// seven tenths of a Fall of Khartoum game's time.
+fn ranked_deploy_hexes(state: &GameState) -> Vec<HexCoord> {
+    let mut hexes: Vec<HexCoord> = state.board.terrain.keys().copied().collect();
+    sort_dedup_hexes(&mut hexes);
+    hexes.sort_by_cached_key(|h| -placement_preference(state, *h));
+    hexes
 }
 
 /// Generic placement desirability of `hex` for any deploying land unit:
@@ -1167,7 +1147,7 @@ fn melee_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>)
             }
         }
         let probe = GameEffect::ResolveMelee;
-        if try_legal(state, &probe) {
+        if engine_accepts(state, &probe) {
             out.push(probe);
         }
         advance_after_combat_actions(state, out);
@@ -1266,9 +1246,11 @@ fn advance_after_combat_actions(state: &GameState, out: &mut Vec<GameEffect>) {
     }
 }
 
-/// Clone-and-try: return true if `effect` is legal in `state`. Used for the
-/// variants with no `can_*` predicate.
-fn try_legal(state: &GameState, effect: &GameEffect) -> bool {
+/// Clone-and-try: whether the engine would take `effect` in `state` (a dry
+/// run of `apply_effect` on a copy). Used here for the variants with no
+/// `can_*` predicate, and by the app's AI driver as its last check before
+/// submitting.
+pub fn engine_accepts(state: &GameState, effect: &GameEffect) -> bool {
     let mut clone = state.clone();
     apply_effect(&mut clone, effect).is_ok()
 }
@@ -1289,7 +1271,7 @@ fn demolition_actions(state: &GameState, out: &mut Vec<GameEffect>) {
                 unit_id: eng.id,
                 target,
             };
-            if try_legal(state, &e) {
+            if engine_accepts(state, &e) {
                 out.push(e);
             }
         }
@@ -1352,7 +1334,7 @@ fn artillery_breach_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<G
                 target,
                 roll: rng.roll_d10(),
             };
-            if try_legal(state, &e) {
+            if engine_accepts(state, &e) {
                 out.push(e);
             }
         }
@@ -1457,7 +1439,7 @@ mod campaign_schedule_tests {
     fn campaign_movement(player: Player) -> GameState {
         let mut state = GameState::with_board(
             Scenario::Campaign,
-            BoardInfo::from_map_data(&campaign_map_data()),
+            BoardInfo::from_map_data(campaign_map_data()),
         );
         state.phase = Phase::Movement;
         state.active_player = player;

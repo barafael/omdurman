@@ -136,10 +136,6 @@ const FACTIONS: [(Player, &str); 2] = [
     (Player::Dervish, crate::ui::faction_name(Player::Dervish)),
 ];
 
-fn faction_label(p: Player) -> &'static str {
-    crate::ui::faction_name(p)
-}
-
 /// One row of the lobby roster. Remote fields (name/colour/pick/command/
 /// spectating) come from the peer entity components; the local row is
 /// synthesized from the local settings + pick resources.
@@ -711,7 +707,7 @@ fn setup_tab(
                     } else {
                         match entry.pick {
                             Some(f) => ui.label(
-                                egui::RichText::new(faction_label(f))
+                                egui::RichText::new(crate::ui::faction_name(f))
                                     .color(crate::ui::palette::GOLD),
                             ),
                             None => ui.label(egui::RichText::new("undecided").weak()),
@@ -757,7 +753,10 @@ fn setup_tab(
                     let claimed = human_picked(faction);
                     let mut toggled = effective_ai.contains(&faction);
                     ui.add_enabled_ui(!claimed, |ui| {
-                        let label = format!("AI \u{b7} {commander} ({})", faction_label(faction));
+                        let label = format!(
+                            "AI \u{b7} {commander} ({})",
+                            crate::ui::faction_name(faction)
+                        );
                         if ui.checkbox(&mut toggled, label).changed() {
                             if toggled {
                                 if !local_ai.0.contains(&faction) {
@@ -805,7 +804,7 @@ fn setup_tab(
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(
-                        egui::RichText::new(faction_label(*faction))
+                        egui::RichText::new(crate::ui::faction_name(*faction))
                             .color(crate::ui::palette::GOLD),
                     );
                 });

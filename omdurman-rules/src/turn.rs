@@ -38,6 +38,12 @@ impl Phase {
             Phase::Melee => "Melee",
         }
     }
+
+    /// Whether this is either fire phase (offensive or defensive, any
+    /// sub-phase).
+    pub fn is_fire(self) -> bool {
+        matches!(self, Phase::OffensiveFire(_) | Phase::DefensiveFire(_))
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]

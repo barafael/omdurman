@@ -111,25 +111,18 @@ pub struct TurnSummary {
     pub events: Vec<TurnEventRecord>,
 }
 
-/// A unit's player-facing name ("Mulazmin", "1B First Btn") from its counter
-/// id -- the dispatch lines feed players and the flavour-text model, which
-/// must never see internal ids like `MulazminII_5_1`.
-fn unit_name(id: &UnitId) -> String {
-    crate::unit_profiles::profile_for_unit(*id)
-        .map_or_else(|| format!("{id:?}"), |p| p.identity.short_label())
-}
-
-/// Names of several units, comma-separated ("none" when empty).
+/// Names of several units, comma-separated ("none" when empty). Units and
+/// hexes print through their `Display` -- the dispatch lines feed players and
+/// the flavour-text model, which must never see internal ids like
+/// `MulazminII_5_1`.
 fn unit_names(ids: &[UnitId]) -> String {
     if ids.is_empty() {
         return "none".into();
     }
-    ids.iter().map(unit_name).collect::<Vec<_>>().join(", ")
-}
-
-/// A hex as players read it: "(13, 5)".
-fn hex(h: &HexCoord) -> String {
-    format!("({}, {})", h.q, h.r)
+    ids.iter()
+        .map(UnitId::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 impl TurnEventRecord {
@@ -151,7 +144,7 @@ impl TurnEventRecord {
                 };
                 format!(
                     "{attacker} fire at {}: rolled {} -> {result:?}{elim_str}",
-                    hex(target),
+                    target,
                     roll.value(),
                 )
             }
@@ -167,7 +160,7 @@ impl TurnEventRecord {
             } => {
                 format!(
                     "Melee at {}: {attacker} {:?} / {defender} {:?} (losses: {attacker} {}, {defender} {})",
-                    self::hex(hex),
+                    hex,
                     attacker_result,
                     defender_result,
                     unit_names(attacker_losses),
@@ -175,26 +168,16 @@ impl TurnEventRecord {
                 )
             }
             TurnEventRecord::Retreat { unit, from, to } => {
-                format!(
-                    "{} retreated from {} to {}",
-                    unit_name(unit),
-                    hex(from),
-                    hex(to)
-                )
+                format!("{} retreated from {} to {}", unit, from, to)
             }
             TurnEventRecord::AdvanceAfterCombat { unit, from, to } => {
-                format!(
-                    "{} advanced from {} to {}",
-                    unit_name(unit),
-                    hex(from),
-                    hex(to)
-                )
+                format!("{} advanced from {} to {}", unit, from, to)
             }
             TurnEventRecord::Reinforcements { units, player, at } => {
                 format!(
                     "{player} reinforcements ({}) placed at {}",
                     unit_names(units),
-                    hex(at)
+                    at
                 )
             }
             TurnEventRecord::Demolition {
@@ -203,10 +186,7 @@ impl TurnEventRecord {
                 success,
             } => {
                 let outcome = if *success { "succeeded" } else { "failed" };
-                format!(
-                    "Demolition by {} on {target:?} {outcome}",
-                    unit_name(engineer)
-                )
+                format!("Demolition by {} on {target:?} {outcome}", engineer)
             }
             TurnEventRecord::Desertion { units, roll } => {
                 format!(
@@ -216,7 +196,7 @@ impl TurnEventRecord {
                 )
             }
             TurnEventRecord::UnitEliminated { unit, cause } => {
-                format!("{} eliminated ({cause})", unit_name(unit))
+                format!("{} eliminated ({cause})", unit)
             }
             TurnEventRecord::HowitzerImpact {
                 at,
@@ -224,14 +204,11 @@ impl TurnEventRecord {
                 lost,
             } => {
                 if *lost {
-                    format!(
-                        "Howitzer shell scattered off the map at {} (§6.64)",
-                        hex(at)
-                    )
+                    format!("Howitzer shell scattered off the map at {} (§6.64)", at)
                 } else if *scattered {
-                    format!("Howitzer shell scattered to {} (§6.64)", hex(at))
+                    format!("Howitzer shell scattered to {} (§6.64)", at)
                 } else {
-                    format!("Howitzer shell on target at {}", hex(at))
+                    format!("Howitzer shell on target at {}", at)
                 }
             }
             TurnEventRecord::VpScored {
@@ -248,13 +225,13 @@ impl TurnEventRecord {
                 eliminated,
                 ..
             } => {
-                let at = format!("{}-{}", hex(&hexside.a), hex(&hexside.b));
+                let at = format!("{}-{}", hexside.a, hexside.b);
                 match (breached, eliminated) {
                     (false, _) => format!("{attacker} artillery failed to breach the wall at {at}"),
                     (true, None) => format!("{attacker} artillery breached the wall at {at}"),
                     (true, Some(victim)) => format!(
                         "{attacker} artillery breached the wall at {at}; {} caught in the breach",
-                        unit_name(victim)
+                        victim
                     ),
                 }
             }

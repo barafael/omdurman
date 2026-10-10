@@ -22,7 +22,7 @@ fn main() {
         eprintln!("usage: historical_hidden_hexes <state file>");
         std::process::exit(2);
     };
-    let board = BoardInfo::from_map_data(&campaign_map_data());
+    let board = BoardInfo::from_map_data(campaign_map_data());
     let mut state = GameState::with_board(Scenario::Historical, board);
     let text = std::fs::read_to_string(&path).expect("readable state file");
     for line in text.lines() {

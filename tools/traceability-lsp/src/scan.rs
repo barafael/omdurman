@@ -23,23 +23,27 @@ pub fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// Every `§N.M` reference in `text`, as `(start, end, section)`.
+///
+/// `start` is the byte offset of the `§`, `end` the byte offset just past the
+/// raw token (the alphanumerics and `.` that follow it), and `section` the
+/// token with trailing junk normalised away (`§10.11x`, `§6.3.` -> `§10.11`,
+/// `§6.3`). A `§` with nothing left after normalising yields nothing.
+pub fn section_refs(text: &str) -> impl Iterator<Item = (usize, usize, String)> + '_ {
+    text.match_indices('§').filter_map(move |(start, sign)| {
+        let after = &text[start + sign.len()..];
+        let raw_len = after
+            .find(|c: char| !(c.is_alphanumeric() || c == '.'))
+            .unwrap_or(after.len());
+        let clean = after[..raw_len].trim_end_matches('x').trim_end_matches('.');
+        (!clean.is_empty()).then(|| (start, start + sign.len() + raw_len, format!("§{clean}")))
+    })
+}
+
 /// Extract `§N.M` references from a string, normalising trailing junk
 /// (`§10.11x`, `§6.3.` -> `§10.11`, `§6.3`).
 pub fn extract_section_refs_from_str(body: &str, out: &mut BTreeSet<String>) {
-    let mut search_start = 0;
-    while let Some(pos) = body[search_start..].find('§') {
-        let abs_pos = search_start + pos;
-        let after = &body[abs_pos + '§'.len_utf8()..];
-        let section_num: String = after
-            .chars()
-            .take_while(|c| c.is_alphanumeric() || *c == '.')
-            .collect();
-        let clean = section_num.trim_end_matches('x').trim_end_matches('.');
-        if !clean.is_empty() {
-            out.insert(format!("§{}", clean));
-        }
-        search_start = abs_pos + '§'.len_utf8();
-    }
+    out.extend(section_refs(body).map(|(_, _, section)| section));
 }
 
 /// A `§N` citation at a precise position in a source file (1-based line,
@@ -50,37 +54,6 @@ pub struct Citation {
     pub file: PathBuf,
     pub line: usize,
     pub byte_col: usize,
-}
-
-/// Scan a single file for all `§N` citations with their positions.
-pub fn collect_citations(path: &Path) -> Vec<Citation> {
-    let content = match fs::read_to_string(path) {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
-    };
-    let mut out = Vec::new();
-    for (line_idx, line) in content.lines().enumerate() {
-        let mut search_start = 0;
-        while let Some(pos) = line[search_start..].find('§') {
-            let abs_pos = search_start + pos;
-            let after = &line[abs_pos + '§'.len_utf8()..];
-            let section_num: String = after
-                .chars()
-                .take_while(|c| c.is_alphanumeric() || *c == '.')
-                .collect();
-            let clean = section_num.trim_end_matches('x').trim_end_matches('.');
-            if !clean.is_empty() {
-                out.push(Citation {
-                    section: format!("§{}", clean),
-                    file: path.to_path_buf(),
-                    line: line_idx + 1,
-                    byte_col: abs_pos,
-                });
-            }
-            search_start = abs_pos + '§'.len_utf8();
-        }
-    }
-    out
 }
 
 /// Aggregate `§` references across every `.rs` file under `root` except the
@@ -130,4 +103,18 @@ pub fn collect_section_refs(root: &Path) -> std::collections::HashMap<String, Ve
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::section_refs;
+
+    #[test]
+    fn section_refs_normalise_and_span_the_raw_token() {
+        let refs: Vec<_> = section_refs("see §10.11x, § and §6.3.").collect();
+        assert_eq!(
+            refs,
+            vec![(4, 12, "§10.11".to_string()), (21, 27, "§6.3".to_string())]
+        );
+    }
 }

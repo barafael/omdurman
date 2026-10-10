@@ -8,8 +8,9 @@ impl GameState {
     /// The player whose fire attacks are legal right now (§4): the active
     /// player during Offensive Fire, their opponent during Defensive Fire.
     /// `Err(WrongPhase)` outside both fire phases. Shared by
-    /// [`Self::can_fire_at`] and [`Self::can_fire_at_wall`].
-    fn fire_phase_player(&self) -> Result<Player, RuleError> {
+    /// [`Self::can_fire_at`], [`Self::can_fire_at_wall`] and the fire and
+    /// wall-breach resolvers.
+    pub(crate) fn fire_phase_player(&self) -> Result<Player, RuleError> {
         match self.phase {
             Phase::OffensiveFire(_) => Ok(self.active_player),
             Phase::DefensiveFire(_) => Ok(self.active_player.opponent()),
@@ -378,32 +379,9 @@ impl GameState {
         if unit.profile.identity.owner() != firing_player {
             return Err(RuleError::NotYourTurn);
         }
-        // §6.41/§6.42: batteries fire in the Direct Fire subphase; the
-        // second subphase belongs to the Maxims and the howitzers.
-        if !matches!(
-            self.phase,
-            Phase::OffensiveFire(FireSubPhase::DirectFire)
-                | Phase::DefensiveFire(FireSubPhase::DirectFire)
-        ) {
-            return Err(RuleError::WrongPhase);
-        }
-        if !matches!(
-            unit.profile.weapon,
-            WeaponClass::Artillery | WeaponClass::Howitzer
-        ) {
-            return Err(RuleError::OnlyArtilleryMayBreachWall(firer));
-        }
+        let fire_factor = self.battery_ready_to_fire(firer, unit)?;
         // §6.22/§6.52/§9.343: the Range Effects Table this battery fires on.
         let table_player = range_table_player_for(self.scenario, unit);
-        if unit.state.disrupted {
-            return Err(RuleError::Disrupted(firer));
-        }
-        let Some(fire_factor) = unit.profile.fire else {
-            return Err(RuleError::NoFireFactor(firer));
-        };
-        if self.units_fired_this_phase.contains(&firer) {
-            return Err(RuleError::AlreadyFired(firer));
-        }
 
         // §6.63 range and LOS to a wall hexside, taken to whichever of its
         // two hexes the battery can see, nearest first (§6.3). The wall under
@@ -490,22 +468,16 @@ impl GameState {
         Ok((fire_factor, effective_range, nearer_hex))
     }
 
-    /// Read-only check of whether `firer` may fire at the river chain
-    /// (§10.23 b: "firing at the chain with artillery"): British artillery
-    /// of the player whose fire phase it is, in the Direct Fire subphase,
-    /// undisrupted and not yet fired, in range and in sight of a hex of the
-    /// unsunk chain -- the nearest such hex. Returns the firer's factor, its
-    /// range and that hex.
-    pub fn can_fire_at_chain(
+    /// The battery preconditions shared by [`Self::can_fire_at_wall`] and
+    /// [`Self::can_fire_at_chain`], checked after the owner: the Direct Fire
+    /// subphase (§6.41/§6.42: the second subphase belongs to the Maxims and
+    /// the howitzers), artillery- or howitzer-class, undisrupted, a printed
+    /// fire factor (returned) and not yet fired this phase.
+    fn battery_ready_to_fire(
         &self,
         firer: UnitId,
-    ) -> Result<(FireFactor, HexDistance, HexCoord), RuleError> {
-        let unit = self.unit_or_err(firer)?;
-        let firing_player = self.fire_phase_player()?;
-        if unit.profile.identity.owner() != firing_player || firing_player != Player::AngloEgyptian
-        {
-            return Err(RuleError::NotYourTurn);
-        }
+        unit: &UnitPlacement,
+    ) -> Result<FireFactor, RuleError> {
         if !matches!(
             self.phase,
             Phase::OffensiveFire(FireSubPhase::DirectFire)
@@ -528,6 +500,26 @@ impl GameState {
         if self.units_fired_this_phase.contains(&firer) {
             return Err(RuleError::AlreadyFired(firer));
         }
+        Ok(fire_factor)
+    }
+
+    /// Read-only check of whether `firer` may fire at the river chain
+    /// (§10.23 b: "firing at the chain with artillery"): British artillery
+    /// of the player whose fire phase it is, in the Direct Fire subphase,
+    /// undisrupted and not yet fired, in range and in sight of a hex of the
+    /// unsunk chain -- the nearest such hex. Returns the firer's factor, its
+    /// range and that hex.
+    pub fn can_fire_at_chain(
+        &self,
+        firer: UnitId,
+    ) -> Result<(FireFactor, HexDistance, HexCoord), RuleError> {
+        let unit = self.unit_or_err(firer)?;
+        let firing_player = self.fire_phase_player()?;
+        if unit.profile.identity.owner() != firing_player || firing_player != Player::AngloEgyptian
+        {
+            return Err(RuleError::NotYourTurn);
+        }
+        let fire_factor = self.battery_ready_to_fire(firer, unit)?;
         let Some(chain) = self.chain.as_ref().filter(|c| !c.sunk) else {
             return Err(RuleError::NoChainPlaced);
         };

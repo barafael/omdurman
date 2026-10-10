@@ -778,18 +778,13 @@ pub fn selection_outline_mesh(
     let crate::HexRender {
         assets, overlay, ..
     } = hex;
-    let sources: Vec<Entity> = match &*state {
-        PickerState::Selected { source, .. } => vec![*source],
-        PickerState::SelectedStack(sel) => sel.sources.clone(),
-        PickerState::SelectedTile(sel) => sel.sources.clone(),
-        _ => Vec::new(),
-    };
-    if last_sources.as_deref() == Some(sources.as_slice()) {
+    let sources = state.sources();
+    if last_sources.as_deref() == Some(sources) {
         return;
     }
     let old: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &old);
-    *last_sources = Some(sources.clone());
+    *last_sources = Some(sources.to_vec());
     let Some(&first) = sources.first() else {
         return;
     };
@@ -904,15 +899,8 @@ pub fn hover_outline_mesh(
         assets, overlay, ..
     } = hex;
     // Don't show the hover square on an already-selected unit (a stack
-    // selection marks all of them). Membership is checked without building
-    // the selected set.
-    let selected_contains = |entity: Entity| match &*state {
-        PickerState::Selected { source, .. } => *source == entity,
-        PickerState::SelectedStack(sel) => sel.sources.contains(&entity),
-        PickerState::SelectedTile(sel) => sel.sources.contains(&entity),
-        _ => false,
-    };
-    let target = hovered.0.filter(|e| !selected_contains(*e));
+    // selection marks all of them).
+    let target = hovered.0.filter(|e| !state.sources().contains(e));
     if *last == target {
         return;
     }

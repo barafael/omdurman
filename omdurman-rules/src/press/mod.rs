@@ -396,7 +396,7 @@ type Place = (HexCoord, String, Vec<HexCoord>);
 fn places(scenario: Scenario) -> &'static [Place] {
     static CAMPAIGN: OnceLock<Vec<Place>> = OnceLock::new();
     static KHARTOUM: OnceLock<Vec<Place>> = OnceLock::new();
-    let build = |map: omdurman_types::MapData, printed: &[(&str, (i32, i32))]| {
+    let build = |map: &omdurman_types::MapData, printed: &[(&str, (i32, i32))]| {
         let mut by_name: std::collections::BTreeMap<String, Vec<HexCoord>> = Default::default();
         for ((q, r), tile) in &map.tiles {
             if let Some(name) = tile.name.as_deref().filter(|n| !n.is_empty()) {

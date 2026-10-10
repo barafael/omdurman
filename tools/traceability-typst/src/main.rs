@@ -475,14 +475,11 @@ mod tests {
     /// are not committed; CI builds them and publishes the PDF on Pages.)
     #[test]
     fn the_report_generates_from_the_real_matrix() {
-        let root = workspace_root();
+        let root = traceability_lsp::workspace_root();
         let toml_content =
             fs::read_to_string(root.join("docs/traceability.toml")).expect("read toml");
         let table: Traceability = toml::from_str(&toml_content).expect("parse toml");
-        let manual_path = root
-            .join("Boardgame - Remember_Gordon/Manual")
-            .join("RememberGordonManual.md");
-        let manual_sections = parse_manual_sections(&manual_path);
+        let manual_sections = parse_manual_sections(&traceability_lsp::manual_path());
         let data = build_data(&table, &manual_sections, &root);
         assert_eq!(data.total_mappings, table.mappings.len());
         serde_json::to_string_pretty(&data).expect("serialize data JSON");
@@ -1583,7 +1580,7 @@ fn build_data(
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let root = workspace_root();
+    let root = traceability_lsp::workspace_root();
 
     let toml_path = if args.len() > 1 {
         root.join(&args[1])
@@ -1611,9 +1608,7 @@ fn main() {
     let table: Traceability = toml::from_str(&toml_content).expect("Invalid traceability.toml");
 
     // Read and parse manual
-    let manual_root = root.join("Boardgame - Remember_Gordon/Manual");
-    let manual_path = manual_root.join("RememberGordonManual.md");
-    let manual_sections = parse_manual_sections(&manual_path);
+    let manual_sections = parse_manual_sections(&traceability_lsp::manual_path());
 
     // Generate Typst
     let output = generate_typst(&table, &manual_sections, &root);
@@ -1635,9 +1630,4 @@ fn main() {
             .unwrap_or_else(|e| panic!("Cannot write {}: {e}", json_path.display()));
         eprintln!("Wrote {}", json_path.display());
     }
-}
-
-fn workspace_root() -> PathBuf {
-    let this = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    this.parent().unwrap().parent().unwrap().to_path_buf()
 }

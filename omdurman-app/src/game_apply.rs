@@ -14,7 +14,6 @@
 use bevy::prelude::*;
 use omdurman_net::GameEvent;
 use omdurman_rules::OptionalRule;
-use omdurman_rules::board::BoardInfo;
 use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
 use omdurman_rules::{Phase, UnitId, UnitPlacement, UnitState};
 use omdurman_types::{HexCoord, MapKind, Scenario, SpriteRef};
@@ -85,9 +84,7 @@ pub(crate) fn apply_start_game(fields: StartGameFields<'_>, sinks: &mut EventSin
         .optional_rules
         .extend_from_slice(optional_rules);
     let map_kind = crate::scenario_setup::map_kind_for_scenario(scenario);
-    sinks.game_state.board = std::sync::Arc::new(BoardInfo::from_map_data(
-        sinks.loaded_annotations.map(map_kind),
-    ));
+    sinks.game_state.board = omdurman_rules::board_data::board_info(map_kind);
     sinks.pending_map_load.0 = Some(map_kind);
     // Movement routes and the press belong to the previous game.
     sinks.unit_paths.0.clear();

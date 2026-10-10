@@ -70,9 +70,9 @@ pub(crate) fn floor_movement_cost(
 /// §5.24: a gunboat's whole turn is capped at the upstream allowance once any
 /// step of the pending path (or an earlier move this turn) went upstream. A
 /// scalar `remaining_mp` budget can't express that cap for a mixed route, so
-/// the click gate re-derives it exactly like the engine's `can_move_gunboat`:
-/// spent so far + plotted cost so far + this leg must fit the allowance that
-/// binds once this leg is on the path. Land movers always pass (their scalar
+/// the click gate checks it like the engine's `can_move_gunboat`, through
+/// [`GunboatBudget`]: spent so far + plotted cost so far + this leg must fit
+/// the allowance that binds once this leg is on the path. Land movers always pass (their scalar
 /// budget already matches the engine's cumulative check).
 pub(crate) fn gunboat_cap_ok(
     game_state: Option<&crate::GameStateResource>,
@@ -82,31 +82,18 @@ pub(crate) fn gunboat_cap_ok(
     to: HexCoord,
     leg_cost: i16,
 ) -> bool {
-    let Some(uid) = placed.unit_id else {
+    let (Some(gs), Some(budget)) = (
+        game_state,
+        GunboatBudget::of(game_state, placed, movement_path),
+    ) else {
         return true;
     };
-    let Some(gs) = game_state else {
-        return true;
-    };
-    let Some(unit) = gs.0.find_unit(uid) else {
-        return true;
-    };
-    // The night-halved allowances (§8.1).
-    let Some(g) = gs.0.gunboat_allowances(unit) else {
-        return true;
-    };
-    let upstream = |a: HexCoord, b: HexCoord| {
-        gs.0.board.step_direction(a, b) == Some(omdurman_rules::board::StepDirection::Upstream)
-    };
-    let leg_upstream = upstream(from, to);
-    let pending_upstream = movement_path.legs.iter().any(|&(f, t)| upstream(f, t));
-    let sticky = gs.0.gunboats_upstream_this_turn.contains(&uid);
-    if !leg_upstream && !pending_upstream && !sticky {
+    if !budget.upstream_already && !step_is_upstream(&gs.0, from, to) {
         // Pure-downstream route: the downstream allowance binds, and
         // `remaining_mp` already encodes it.
         return true;
     }
-    gs.0.mp_spent(uid) + movement_path.cost_so_far + leg_cost <= g.upstream.value() as i16
+    leg_cost <= budget.left(true)
 }
 
 /// A gunboat's §5.24 budget for a route plotted onward from the pending

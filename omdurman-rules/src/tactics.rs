@@ -211,12 +211,12 @@ pub fn all_scripts() -> Vec<TacticsScript> {
 
 /// The Campaign board as a `BoardInfo`.
 fn campaign_board() -> BoardInfo {
-    BoardInfo::from_map_data(&campaign_map_data())
+    BoardInfo::from_map_data(campaign_map_data())
 }
 
 /// The Fall-of-Khartoum board as a `BoardInfo`.
 fn fall_of_khartoum_board() -> BoardInfo {
-    BoardInfo::from_map_data(&fall_of_khartoum_map_data())
+    BoardInfo::from_map_data(fall_of_khartoum_map_data())
 }
 
 /// A Campaign `GameState` in the given phase, with `active_player` set.

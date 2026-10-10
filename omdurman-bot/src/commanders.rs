@@ -234,13 +234,10 @@ pub fn pick_setup_validated(
         })
         .cloned()
         .collect();
-    for candidate in rank_setup(state, &owned) {
-        let mut test = state.clone();
-        if omdurman_rules::effects::apply_effect(&mut test, &candidate).is_ok() {
-            return candidate;
-        }
-    }
-    GameEffect::AdvancePhase
+    rank_setup(state, &owned)
+        .into_iter()
+        .find(|candidate| crate::actions::engine_accepts(state, candidate))
+        .unwrap_or(GameEffect::AdvancePhase)
 }
 
 /// The Khalifa's choice of deserters (§8.2: "of the Dervish player's
@@ -843,7 +840,8 @@ const KITCHENER_SHOT_WEIGHT: f32 = 2.0;
 const LANE_FEAR: f32 = 3.0;
 
 /// Kitchener's value of `unit` standing on `at`: progress to its goal, minus
-/// the fire it would stand in, plus the company it would keep.
+/// the fire it would stand in, plus the company it would keep. `goal` is
+/// [`kitchener_goal`]'s for `unit`.
 fn kitchener_position_value(
     state: &GameState,
     unit: &omdurman_rules::UnitPlacement,
@@ -881,7 +879,10 @@ fn kitchener_position_value(
     // column pays the price (§9.14). (Historical: the army fights from the
     // Zariba hedge, §9.231, against a Dervish fire too weak to kite from.)
     if palace.is_none() && state.scenario != Scenario::Historical {
-        let marching = tomb_objective(state, unit).is_some();
+        // `goal` is `kitchener_goal`'s, whose only `March` is the Tomb column
+        // (`tomb_objective`): the column, read off the goal rather than
+        // re-planned for every hex scored.
+        let marching = matches!(goal, Some(Goal::March(_)));
         let weight = if marching {
             0.05
         } else if is_leader {

@@ -345,9 +345,7 @@ fn commit_fire_attack(
     // are shared with `can_fire_at` so validation and resolution cannot
     // disagree.
     let contributions = firer_contributions(state, attack);
-    let effective_total: u16 = contributions
-        .iter()
-        .fold(0u16, |sum, c| sum.saturating_add(c.factor));
+    let effective_total = total_fire_factor(&contributions);
     // Representative values for the `FireResolved` observation (first firer's
     // distance/band); with per-firer bands there is no single attack-wide one.
     let representative_range = contributions.first().map(|c| c.distance.value());
@@ -387,6 +385,38 @@ fn commit_fire_attack(
     });
     let on_target_shell = attack.kind == FireKind::Howitzer && target_hex == attack.target_hex;
     commit_fired_markers(state, attack, target_units, on_target_shell);
+    // The turn record (the telegrams, the newspaper, the bot's log) holds
+    // every fire combat; the observation feeds the UI's resolution card.
+    let record_fire =
+        |state: &mut GameState, eliminations: Vec<UnitId>, special: Option<UnitKind>| {
+            state.turn_events.push(TurnEventRecord::FireCombat {
+                attacker: attack.firing_player,
+                firers: attack.all_firing_units(),
+                target: target_hex,
+                roll,
+                modifiers: attack.modifiers.clone(),
+                total_modifier: total_mod,
+                result,
+                kind: attack.kind,
+                eliminated: eliminations.clone(),
+            });
+            state.observations.push(Observation::FireResolved {
+                // Deliberate clone: observations are self-contained records for
+                // replay/UI and must own their attack, not borrow it.
+                attack: attack.clone(),
+                roll,
+                total_modifier: total_mod,
+                modified_roll,
+                factor_row: row,
+                effective_factor: effective_total,
+                result,
+                eliminations,
+                range: representative_range,
+                band: representative_band.map(|b| format!("{b:?}")),
+                impact,
+                paragraphs: fire_paragraphs(attack.kind, special),
+            });
+        };
 
     if let Some((special_id, special_kind, needed)) = special {
         let destroyed = matches!(result, CombatResult::Eliminate(n) if n >= needed);
@@ -430,33 +460,7 @@ fn commit_fire_attack(
             open_advance_window(state, target_hex, &attack.all_firing_units(), paragraphs);
         }
         let eliminations: Vec<UnitId> = diff_eliminated(state, pre_units);
-        state.turn_events.push(TurnEventRecord::FireCombat {
-            attacker: attack.firing_player,
-            firers: attack.all_firing_units(),
-            target: target_hex,
-            roll,
-            modifiers: attack.modifiers.clone(),
-            total_modifier: total_mod,
-            result,
-            kind: attack.kind,
-            eliminated: eliminations.clone(),
-        });
-        state.observations.push(Observation::FireResolved {
-            // Deliberate clone: observations are self-contained records for
-            // replay/UI and must own their attack, not borrow it.
-            attack: attack.clone(),
-            roll,
-            total_modifier: total_mod,
-            modified_roll,
-            factor_row: row,
-            effective_factor: effective_total,
-            result,
-            eliminations,
-            range: representative_range,
-            band: representative_band.map(|b| format!("{b:?}")),
-            impact,
-            paragraphs: fire_paragraphs(attack.kind, Some(special_kind)),
-        });
+        record_fire(state, eliminations, Some(special_kind));
         return;
     }
 
@@ -464,35 +468,7 @@ fn commit_fire_attack(
     let target_units = leaders_last(state, target_units);
     apply_combat_results_table_result(state, result, &target_units, disruption);
     let eliminations: Vec<UnitId> = diff_eliminated(state, pre_units);
-    // The turn record (the telegrams, the newspaper, the bot's log) holds
-    // every fire combat, not only the special targets above.
-    state.turn_events.push(TurnEventRecord::FireCombat {
-        attacker: attack.firing_player,
-        firers: attack.all_firing_units(),
-        target: target_hex,
-        roll,
-        modifiers: attack.modifiers.clone(),
-        total_modifier: total_mod,
-        result,
-        kind: attack.kind,
-        eliminated: eliminations.clone(),
-    });
-    state.observations.push(Observation::FireResolved {
-        // Deliberate clone: observations are self-contained records for
-        // replay/UI and must own their attack, not borrow it.
-        attack: attack.clone(),
-        roll,
-        total_modifier: total_mod,
-        modified_roll,
-        factor_row: row,
-        effective_factor: effective_total,
-        result,
-        eliminations,
-        range: representative_range,
-        band: representative_band.map(|b| format!("{b:?}")),
-        impact,
-        paragraphs: fire_paragraphs(attack.kind, None),
-    });
+    record_fire(state, eliminations, None);
     // §6.82 (offensive fire only -- §6.7: "There is no advance after combat
     // as a result of defensive fires"): if offensive fire left the target
     // hex without enemy units, the participating firers may advance into it.
@@ -651,6 +627,15 @@ pub fn firer_contributions(state: &GameState, attack: &FireAttack) -> Vec<FirerC
             }
         })
         .collect()
+}
+
+/// The attack's effective fire factor -- the sum of its firers' banded
+/// contributions ([`firer_contributions`]), the Combat Results Table row's
+/// input (§6.22). Saturating: the shot list arrives over the network.
+pub fn total_fire_factor(contributions: &[FirerContribution]) -> u16 {
+    contributions
+        .iter()
+        .fold(0u16, |sum, c| sum.saturating_add(c.factor))
 }
 
 /// The defensive die-roll modifier of fire at `target_hex` on `target_units`
@@ -1064,11 +1049,7 @@ pub fn validate_fire_attack(state: &GameState, attack: &FireAttack) -> Result<()
     // Every firer belongs to the phase player (checked above), so the
     // attack's `firing_player` -- which decides the targets, the table and
     // the modifiers -- must name that player too.
-    let phase_player = match state.phase {
-        Phase::OffensiveFire(_) => state.active_player,
-        Phase::DefensiveFire(_) => state.active_player.opponent(),
-        _ => return Err(RuleError::WrongPhase),
-    };
+    let phase_player = state.fire_phase_player()?;
     if attack.firing_player != phase_player {
         return Err(RuleError::FiringPlayerMismatch);
     }
@@ -1243,11 +1224,7 @@ pub fn apply_artillery_breach_wall(
     // Phase must be a fire-combat phase (defensive or offensive; either
     // sub-phase is fine -- artillery breaching is not tied to the
     // Maxim/Howitzer sub-phase the way Maxims are).
-    let firing_player = match state.phase {
-        Phase::OffensiveFire(_) => state.active_player,
-        Phase::DefensiveFire(_) => state.active_player.opponent(),
-        _ => return Err(RuleError::WrongPhase),
-    };
+    let firing_player = state.fire_phase_player()?;
 
     // The target hexside must currently be a standing Wall. (If it's already
     // a Breach — authored or §6.63-breached — or a Gate there's nothing to

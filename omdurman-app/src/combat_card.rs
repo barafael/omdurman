@@ -482,7 +482,7 @@ fn fire_modifier_lines(attack: &FireAttack, total_modifier: i16) -> Vec<Modifier
         .iter()
         .map(|m| describe_fire_modifier(*m))
         .collect();
-    let app_supplied: i16 = attack.modifiers.iter().map(|m| m.die_modifier()).sum();
+    let app_supplied = attack.net_modifier();
     let terrain_mod = total_modifier - app_supplied;
     if terrain_mod != 0 {
         out.push(ModifierLine {

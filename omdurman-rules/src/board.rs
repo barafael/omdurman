@@ -267,7 +267,7 @@ impl BoardInfo {
             .iter()
             .filter_map(|loc| self.hex_of_location(*loc))
             .collect();
-        seeds.sort_by_key(|h| (h.q, h.r));
+        seeds.sort();
         seeds.dedup();
         if seeds.is_empty() {
             return Default::default();

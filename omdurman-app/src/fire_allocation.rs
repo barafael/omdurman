@@ -35,14 +35,6 @@ pub struct FireAllocationState {
 #[derive(Component)]
 pub struct AllocationArrow;
 
-/// True while the engine is in a fire sub-phase.
-fn in_fire_phase(gs: &GameStateResource) -> bool {
-    matches!(
-        gs.0.phase,
-        Phase::OffensiveFire(_) | Phase::DefensiveFire(_)
-    )
-}
-
 /// Replace the old per-click fire resolution: build a `FireAttack` and store
 /// it in the allocation list instead of pre-rolling and broadcasting.
 ///
@@ -68,7 +60,7 @@ pub fn handle_fire_allocation_click(
         return;
     };
     let Some(gs) = game_state else { return };
-    if !in_fire_phase(&gs) {
+    if !gs.0.phase.is_fire() {
         return;
     }
     let firing_player = gs.0.phase_player();
@@ -221,7 +213,7 @@ pub(crate) fn target_label(
         1 | 2 => names.join(", "),
         n => format!("{}, {} +{} more", names[0], names[1], n - 2),
     };
-    format!("{what} ({}, {})", hex.q, hex.r)
+    format!("{what} {hex}")
 }
 
 /// The staged attacks, drawn in the command rail under the "Next step"
@@ -452,10 +444,7 @@ pub fn resolve_fire_on_enter(
     let Some(gs) = game_state else { return };
     if allocation.attacks.is_empty()
         || allocation.committed
-        || !matches!(
-            gs.0.phase,
-            Phase::OffensiveFire(_) | Phase::DefensiveFire(_)
-        )
+        || !gs.0.phase.is_fire()
         || !peers.may_act(gs.0.phase_player())
     {
         return;
@@ -547,7 +536,7 @@ fn allocation_arrow_key(
     gs: Option<&GameStateResource>,
 ) -> Vec<(HexCoord, HexCoord)> {
     let Some(gs) = gs else { return Vec::new() };
-    if allocation.committed || !in_fire_phase(gs) {
+    if allocation.committed || !gs.0.phase.is_fire() {
         return Vec::new();
     }
     allocation
@@ -617,7 +606,7 @@ pub fn fire_allocation_arrows(
 /// resolves his attacks"). Defensive fire's markers survive into the
 /// offensive direct fire sub-phase, so only the firing side's count.
 pub(crate) fn fire_resolved_this_subphase(gs: &omdurman_rules::effects::GameState) -> bool {
-    if !matches!(gs.phase, Phase::OffensiveFire(_) | Phase::DefensiveFire(_)) {
+    if !gs.phase.is_fire() {
         return false;
     }
     let firing = gs.phase_player();

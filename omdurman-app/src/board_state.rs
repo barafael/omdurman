@@ -39,9 +39,7 @@ pub(crate) fn apply_map_selection(
     let Some(kind) = omdurman_board_ui::board_store::take_pending(&mut ctx.shared) else {
         return;
     };
-    let map = ctx.shared.loaded.map(kind);
-    ctx.game_state.0.board =
-        std::sync::Arc::new(omdurman_rules::board::BoardInfo::from_map_data(map));
+    ctx.game_state.0.board = omdurman_rules::board_data::board_info(kind);
     omdurman_board_ui::board_store::load_board(
         &mut ctx.shared,
         kind,

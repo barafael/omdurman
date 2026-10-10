@@ -271,10 +271,7 @@ pub fn melee_reaction_ui(
         |ui| {
             ui.colored_label(
                 crate::ui::palette::DEFENDER,
-                format!(
-                    "\u{2694} {attacker_player} melee on hex ({}, {})",
-                    target.q, target.r
-                ),
+                format!("\u{2694} {attacker_player} melee on hex {target}"),
             );
             let withdrawn = gs.0.melee_defenders_now(&pm.attack).is_empty();
             if local_is_attacker {

@@ -20,11 +20,12 @@
 
 use bevy::prelude::*;
 
+use omdurman_bot::actions::engine_accepts;
 use omdurman_bot::commanders::{self, Commander};
 use omdurman_bot::rng::BotRng;
 use omdurman_net::{GameEvent, NetState};
 use omdurman_rules::Phase;
-use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
+use omdurman_rules::effects::{GameEffect, GameState};
 use omdurman_types::Player;
 
 use crate::{GameStateResource, PendingEdits, net_plugin};
@@ -222,8 +223,10 @@ pub fn bot_player_act(
     let effect = next_ai_action(state, chooser, &ai, &mut driver.rng, &mut driver.memory);
     // The commanders fall back to `AdvancePhase` when nothing else is legal;
     // if even that is refused, submitting it would only be rejected on the
-    // echo, and the AI would pick it again and again.
-    if !engine_accepts(state, &effect) {
+    // echo, and the AI would pick it again and again. Every other decision
+    // was already dry-run against this very state (see `next_ai_action`), so
+    // only the unvalidated fallback is checked again.
+    if effect == GameEffect::AdvancePhase && !engine_accepts(state, &effect) {
         if !driver.stuck {
             warn!(?chooser, ?effect, "AI: no legal action; standing down");
             driver.stuck = true;
@@ -241,11 +244,6 @@ pub fn bot_player_act(
     activity.keep_running();
 }
 
-/// Whether the engine would take `effect` in `state` (a dry run on a copy).
-fn engine_accepts(state: &GameState, effect: &GameEffect) -> bool {
-    apply_effect(&mut state.clone(), effect).is_ok()
-}
-
 /// The side whose decision the AI would make now: the Dervish player's roll
 /// for a mine a British gunboat struck (§10.12); during set-up the side
 /// deploying -- set-up is sequential and in the Campaign the Dervish deploy
@@ -259,7 +257,8 @@ fn ai_chooser(state: &GameState) -> Option<Player> {
     }
 }
 
-/// One AI decision for `chooser` in `state`, engine-validated. Setup is
+/// One AI decision for `chooser` in `state`, engine-validated -- all but the
+/// `AdvancePhase` fallback, which is returned unchecked. Setup is
 /// special: the candidates mix both sides' deployments, so when both sides
 /// are AI they are scored per owning commander; when a human holds the other
 /// faction, the AI only touches its own units (a human's deployment, ready
@@ -326,6 +325,7 @@ pub fn commander_name_for(player: Player, scenario: omdurman_types::Scenario) ->
 mod tests {
     use super::*;
     use omdurman_bot::agent::{AgentStrategy, Agents};
+    use omdurman_rules::effects::apply_effect;
 
     /// Set-up is sequential and its order is not the turn order: in the
     /// Campaign the Dervish deploy first (§9.111) though the Anglo-Egyptians
@@ -417,7 +417,7 @@ mod tests {
         for seed in [7u64, 2026] {
             let board: BoardInfo = {
                 let map = omdurman_rules::board_data::fall_of_khartoum_map_data();
-                BoardInfo::from_map_data(&map)
+                BoardInfo::from_map_data(map)
             };
             let mut state = GameState::with_board(Scenario::FallOfKhartoum, board);
             let mut rng = BotRng::from_seed(seed);

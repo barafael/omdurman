@@ -1958,12 +1958,7 @@ pub(crate) fn select_stack_member(
     };
     let coord = placed.coord;
     let remaining_mp = unit_remaining_mp(game_state.as_deref(), placed);
-    let previous: Vec<Entity> = match &*picker_ctx.state {
-        PickerState::Selected { source, .. } => vec![*source],
-        PickerState::SelectedStack(sel) => sel.sources.clone(),
-        PickerState::SelectedTile(sel) => sel.sources.clone(),
-        _ => Vec::new(),
-    };
+    let previous: Vec<Entity> = picker_ctx.state.sources().to_vec();
     for entity in previous {
         if entity != member {
             picker_ctx.commands.entity(entity).remove::<Selected>();

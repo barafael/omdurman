@@ -60,7 +60,8 @@ fn hex_corner(i: usize, radius: f32) -> Vec3 {
     Vec3::new(radius * a.cos(), 0.0, radius * a.sin())
 }
 
-fn flat_mesh(positions: Vec<Vec3>, indices: Vec<u32>) -> Mesh {
+/// A flat, upward-facing triangle-list mesh (normals +Y, zero UVs).
+pub(crate) fn flat_mesh(positions: Vec<Vec3>, indices: Vec<u32>) -> Mesh {
     let n = positions.len();
     Mesh::new(
         PrimitiveTopology::TriangleList,

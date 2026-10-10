@@ -16,7 +16,7 @@ use traceability_macro::rulebook;
 
 /// A Campaign movement phase for `player` with `id` standing on `at`.
 fn with_unit(player: Player, id: UnitId, at: HexCoord) -> GameState {
-    let board = BoardInfo::from_map_data(&campaign_map_data());
+    let board = BoardInfo::from_map_data(campaign_map_data());
     let mut state = GameState::with_board(Scenario::Campaign, board);
     state.phase = Phase::Movement;
     state.active_player = player;
@@ -33,7 +33,7 @@ fn with_unit(player: Player, id: UnitId, at: HexCoord) -> GameState {
 #[rulebook("§5.23")]
 #[test]
 fn only_the_khalifas_men_pass_the_gates_of_omdurman() {
-    let board = BoardInfo::from_map_data(&campaign_map_data());
+    let board = BoardInfo::from_map_data(campaign_map_data());
     // The north gate: the Mahdi's Tomb inside, the town outside.
     let (outside, tomb) = (HexCoord::new(30, 38), HexCoord::new(30, 39));
     assert_eq!(

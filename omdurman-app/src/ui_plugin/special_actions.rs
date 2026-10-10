@@ -56,7 +56,7 @@ pub(crate) fn friendlies_transport_ui(
                         )
                     }
                     omdurman_rules::FriendliesAction::Disembark { to, .. } => {
-                        format!("Disembark to ({}, {})", to.q, to.r)
+                        format!("Disembark to {to}")
                     }
                 };
                 if ui.button(label).clicked() {
@@ -259,7 +259,7 @@ pub(crate) fn special_actions_ui(
                 for &fort_id in &adjacent_forts {
                     let label = format!("Fort at {}", {
                         if let Some(f) = gs.0.find_unit(fort_id) {
-                            format!("({}, {})", f.position.q, f.position.r)
+                            f.position.to_string()
                         } else {
                             "?".to_string()
                         }

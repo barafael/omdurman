@@ -373,9 +373,8 @@ pub mod text {
     }
 }
 
-/// Full display name of a side ("Anglo-Egyptian" / "Dervish"). The derived
-/// `Display` on `Player` prints the Rust identifier ("AngloEgyptian"), which
-/// is not for players' eyes.
+/// Full display name of a side ("Anglo-Egyptian" / "Dervish"): `Player`'s
+/// `Display` as a `const fn`, for const tables and `&'static str` labels.
 pub const fn faction_name(player: omdurman_types::Player) -> &'static str {
     match player {
         omdurman_types::Player::AngloEgyptian => "Anglo-Egyptian",

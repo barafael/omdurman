@@ -319,7 +319,7 @@ pub fn board_for_scenario(scenario: Scenario) -> BoardInfo {
         Scenario::Campaign | Scenario::Historical => campaign_map_data(),
         Scenario::FallOfKhartoum => fall_of_khartoum_map_data(),
     };
-    BoardInfo::from_map_data(&map_data)
+    BoardInfo::from_map_data(map_data)
 }
 
 /// Hard ceiling on [`playthrough`] driver iterations. A full game is a few

@@ -4,6 +4,7 @@
 use lsp_types::{Position, Range, Uri};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use traceability_lsp::scan::section_refs;
 
 /// Percent-encode a filesystem path into a `file://` URI.
 pub fn path_to_uri(path: &Path) -> Uri {
@@ -113,20 +114,7 @@ pub fn full_line(text: &str, line_1based: usize) -> Range {
 
 /// Extract a `§N.M` token spanning byte `col` on a line, if any.
 pub fn section_token_at(line: &str, col: usize) -> Option<String> {
-    let mut search = 0;
-    while let Some(pos) = line[search..].find('§') {
-        let abs = search + pos;
-        let after = &line[abs + '§'.len_utf8()..];
-        let num: String = after
-            .chars()
-            .take_while(|c| c.is_alphanumeric() || *c == '.')
-            .collect();
-        let clean = num.trim_end_matches('x').trim_end_matches('.');
-        let end_byte = abs + '§'.len_utf8() + num.len();
-        if !clean.is_empty() && col >= abs && col <= end_byte {
-            return Some(format!("§{clean}"));
-        }
-        search = end_byte;
-    }
-    None
+    section_refs(line)
+        .find(|&(start, end, _)| (start..=end).contains(&col))
+        .map(|(_, _, section)| section)
 }

@@ -70,24 +70,6 @@ fn qualified_name(root: &Path, entry: &TestEntry) -> String {
     format!("{module_prefix}::{}", entry.name)
 }
 
-/// Like `collect_test_annotations`, but keys by `module_prefix::fn_name`.
-pub fn collect_test_annotations_full(root: &Path) -> HashMap<String, BTreeSet<String>> {
-    let mut result: HashMap<String, BTreeSet<String>> = HashMap::new();
-    for entry in scan_test_entries(root) {
-        let relative = entry
-            .file
-            .strip_prefix(root)
-            .unwrap_or(&entry.file)
-            .display()
-            .to_string()
-            .replace('\\', "/");
-        let module_prefix = relative.trim_end_matches(".rs").replace('/', "::");
-        let full_path = format!("{module_prefix}::{}", entry.name);
-        result.entry(full_path).or_default().extend(entry.sections);
-    }
-    result
-}
-
 /// Whether an annotated entry is an ordinary test or a Kani proof harness.
 ///
 /// Proofs are tracked separately from tests so the matrix can report

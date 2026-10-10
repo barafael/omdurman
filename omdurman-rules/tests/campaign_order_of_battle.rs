@@ -11,7 +11,7 @@ use omdurman_types::{HexCoord, Location, NamedArea, Player, Scenario};
 use traceability_macro::rulebook;
 
 fn campaign() -> GameState {
-    let board = BoardInfo::from_map_data(&campaign_map_data());
+    let board = BoardInfo::from_map_data(campaign_map_data());
     GameState::with_board(Scenario::Campaign, board)
 }
 

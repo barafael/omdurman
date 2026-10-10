@@ -70,7 +70,7 @@ fn valid_retreat_hexes(unit: UnitId, gs: &GameState) -> Vec<HexCoord> {
         .filter(|h| u.position.distance(*h) == 2)
         .filter(|h| gs.can_retreat_before_melee(unit, *h).is_ok())
         .collect();
-    out.sort_by_key(|h| (h.q, h.r));
+    out.sort();
     out.dedup();
     out
 }

@@ -18,20 +18,20 @@ use omdurman_types::{HexCoord, MapData, MapKind};
 /// (§dual-map). Seeded from the RON data files at startup.
 #[derive(Resource)]
 pub struct LoadedAnnotations {
-    pub fall_of_khartoum: MapData,
-    pub campaign: MapData,
+    pub fall_of_khartoum: &'static MapData,
+    pub campaign: &'static MapData,
 }
 
 impl LoadedAnnotations {
     pub fn map(&self, kind: MapKind) -> &MapData {
         match kind {
-            MapKind::FallOfKhartoum => &self.fall_of_khartoum,
-            MapKind::Campaign => &self.campaign,
+            MapKind::FallOfKhartoum => self.fall_of_khartoum,
+            MapKind::Campaign => self.campaign,
         }
     }
 
-    /// Seed both boards from the embedded RON data (via the rules crate's
-    /// board-data accessors, which own the single embedded copy).
+    /// Seed both boards from the embedded RON data (borrowed from the rules
+    /// crate's board-data accessors, which own the single parsed copy).
     pub fn from_board_ron() -> Self {
         Self {
             fall_of_khartoum: omdurman_rules::board_data::fall_of_khartoum_map_data(),
@@ -64,10 +64,7 @@ pub struct PendingMapLoad(pub Option<MapKind>);
 /// pasted into each `main.rs`; they now derive from the one embedded
 /// [`MapData`].
 pub fn default_layout() -> HexLayout {
-    let map = LoadedAnnotations::from_board_ron()
-        .map(MapKind::FallOfKhartoum)
-        .clone();
-    calibrated_layout(&map)
+    calibrated_layout(omdurman_rules::board_data::fall_of_khartoum_map_data())
 }
 
 /// The `HexLayout` calibrated against a board's pixel anchors (§dual-map):

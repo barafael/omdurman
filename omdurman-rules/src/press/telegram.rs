@@ -609,7 +609,7 @@ mod tests {
     fn campaign() -> GameState {
         GameState::with_board(
             Scenario::Campaign,
-            BoardInfo::from_map_data(&crate::board_data::campaign_map_data()),
+            BoardInfo::from_map_data(crate::board_data::campaign_map_data()),
         )
     }
 

@@ -3024,7 +3024,7 @@ mod tests {
     #[test]
     fn fok_ae_may_set_up_behind_a_gate() {
         let board =
-            crate::board::BoardInfo::from_map_data(&crate::board_data::fall_of_khartoum_map_data());
+            crate::board::BoardInfo::from_map_data(crate::board_data::fall_of_khartoum_map_data());
         let mut state = GameState::new(Scenario::FallOfKhartoum);
         state.board = Arc::new(board);
         for gate_hex in [HexCoord::new(19, 11), HexCoord::new(16, 11)] {
@@ -5409,7 +5409,7 @@ mod tests {
     #[test]
     fn a_fort_is_one_work_with_one_minus_three() {
         let board =
-            crate::board::BoardInfo::from_map_data(&crate::board_data::fall_of_khartoum_map_data());
+            crate::board::BoardInfo::from_map_data(crate::board_data::fall_of_khartoum_map_data());
         let mut state = GameState::new(Scenario::FallOfKhartoum);
         state.board = Arc::new(board);
         state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
@@ -6336,7 +6336,7 @@ mod tests {
     fn fall_of_khartoum_board_excludes_no_hexes() {
         let map = crate::board_data::fall_of_khartoum_map_data();
         assert!(map.excluded.is_empty(), "FoK excludes hexes (§9.342)");
-        let board = crate::board::BoardInfo::from_map_data(&map);
+        let board = crate::board::BoardInfo::from_map_data(map);
         assert_eq!(board.terrain.len(), map.tiles.len());
     }
 
@@ -6937,7 +6937,7 @@ mod tests {
     #[test]
     fn nile_mouths_are_where_the_rivers_leave_the_map() {
         let board =
-            crate::board::BoardInfo::from_map_data(&crate::board_data::fall_of_khartoum_map_data());
+            crate::board::BoardInfo::from_map_data(crate::board_data::fall_of_khartoum_map_data());
         let mut state = GameState::new(Scenario::FallOfKhartoum);
         state.board = Arc::new(board);
         state.phase = Phase::Movement;
@@ -10797,7 +10797,7 @@ mod tests {
     #[test]
     fn artillery_may_fire_at_the_wall_it_faces() {
         let board =
-            crate::board::BoardInfo::from_map_data(&crate::board_data::fall_of_khartoum_map_data());
+            crate::board::BoardInfo::from_map_data(crate::board_data::fall_of_khartoum_map_data());
         let mut state = GameState::new(Scenario::FallOfKhartoum);
         state.board = Arc::new(board);
         state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
@@ -10837,7 +10837,7 @@ mod tests {
     #[test]
     fn khartoum_rampart_projects_zoc_outward_only() {
         let board =
-            crate::board::BoardInfo::from_map_data(&crate::board_data::fall_of_khartoum_map_data());
+            crate::board::BoardInfo::from_map_data(crate::board_data::fall_of_khartoum_map_data());
         let mut state = GameState::new(Scenario::FallOfKhartoum);
         state.board = Arc::new(board);
         state.phase = Phase::Movement;
@@ -10876,7 +10876,7 @@ mod tests {
     #[test]
     fn fire_through_a_gate_beside_a_wall_is_not_charged_the_wall() {
         let board =
-            crate::board::BoardInfo::from_map_data(&crate::board_data::fall_of_khartoum_map_data());
+            crate::board::BoardInfo::from_map_data(crate::board_data::fall_of_khartoum_map_data());
         let mut state = GameState::new(Scenario::FallOfKhartoum);
         state.board = Arc::new(board);
         state.phase = Phase::DefensiveFire(FireSubPhase::DirectFire);
@@ -11996,7 +11996,7 @@ mod tests {
     #[test]
     fn river_obstacles_lie_south_of_the_khor_shambat() {
         let map = crate::board_data::campaign_map_data();
-        let board = BoardInfo::from_map_data(&map);
+        let board = BoardInfo::from_map_data(map);
         let row = board
             .khor_shambat_mouth_row()
             .expect("the Khor Shambat meets the Nile");

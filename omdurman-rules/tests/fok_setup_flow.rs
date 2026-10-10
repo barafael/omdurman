@@ -82,7 +82,7 @@ fn fixed_ids(scenario: Scenario) -> Vec<UnitId> {
 #[test]
 fn fok_setup_completes_with_sprite_backed_counters() {
     let scenario = Scenario::FallOfKhartoum;
-    let board = BoardInfo::from_map_data(&fall_of_khartoum_map_data());
+    let board = BoardInfo::from_map_data(fall_of_khartoum_map_data());
     let mut state = GameState::with_board(scenario, board);
 
     // Deploy a counter on a legal hex (deployment zone + §5.51/§5.52 stacking).

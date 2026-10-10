@@ -486,38 +486,18 @@ fn clear_per_turn_tracking(state: &mut GameState) {
 /// in `units_fired_this_phase` or `mp_spent_this_turn` (they are cleared
 /// wholesale at phase end, but kept tidy mid-phase).
 fn prune_dead_trackers(state: &mut GameState) {
-    if state.units_fired_this_phase.is_empty()
-        && state.gunboat_maxims_fired_this_phase.is_empty()
-        && state.units_fired_at_this_phase.is_empty()
-        && state.units_shelled_this_phase.is_empty()
-        && state.zoc_stopped_this_turn.is_empty()
-        && state.mp_spent_this_turn.is_empty()
-        && state.vacated_by_combat.is_empty()
-    {
-        return;
-    }
-    state
-        .units_fired_this_phase
-        .retain(|id| state.units.iter().any(|u| &u.id == id));
-    state
-        .gunboat_maxims_fired_this_phase
-        .retain(|id| state.units.iter().any(|u| &u.id == id));
-    state
-        .units_fired_at_this_phase
-        .retain(|id| state.units.iter().any(|u| &u.id == id));
-    state
-        .units_shelled_this_phase
-        .retain(|id| state.units.iter().any(|u| &u.id == id));
-    state
-        .zoc_stopped_this_turn
-        .retain(|id| state.units.iter().any(|u| &u.id == id));
-    state
-        .mp_spent_this_turn
-        .retain(|id, _| state.units.iter().any(|u| &u.id == id));
+    let units = &state.units;
+    let alive = |id: &UnitId| units.iter().any(|u| u.id == *id);
+    state.units_fired_this_phase.retain(|id| alive(id));
+    state.gunboat_maxims_fired_this_phase.retain(|id| alive(id));
+    state.units_fired_at_this_phase.retain(|id| alive(id));
+    state.units_shelled_this_phase.retain(|id| alive(id));
+    state.zoc_stopped_this_turn.retain(|id| alive(id));
+    state.mp_spent_this_turn.retain(|id, _| alive(id));
     // Advance-after-combat windows never reference eliminated units
     // (§6.82/§7.6); drop them, and drop emptied windows whole.
     for eligible in state.vacated_by_combat.values_mut() {
-        eligible.retain(|id| state.units.iter().any(|u| &u.id == id));
+        eligible.retain(|id| alive(id));
     }
     state
         .vacated_by_combat
@@ -579,16 +559,8 @@ pub fn first_player(scenario: Scenario) -> Player {
 pub fn finish_game(state: &mut GameState) {
     // Snapshot any remaining turn events before marking game over (handles
     // mid-turn endings like FoK GORDON death).
-    let events = std::mem::take(&mut state.turn_events);
-    if !events.is_empty() {
-        let current_entry = scenario_turn(state.scenario, state.current_turn);
-        state.turn_summaries.push(TurnSummary {
-            turn: state.current_turn,
-            time: current_entry.map_or(crate::turn_track::GameTime::Noon, |e| e.time),
-            day_night: state.day_night,
-            first_player: first_player(state.scenario),
-            events,
-        });
+    if !state.turn_events.is_empty() {
+        snapshot_turn(state);
     }
     state.game_over = true;
     // §9.14 Mahdi's Tomb: score the 25-VP shrine to whoever controls it at the

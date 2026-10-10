@@ -262,7 +262,7 @@ fn valid_target_hexes(firer: UnitId, kind: FireKind, gs: &GameState) -> Vec<HexC
                     .is_some_and(|mk| gs.can_fire_gunboat_maxims_at(firer, *hex, mk).is_ok())
         })
         .collect();
-    targets.sort_by_key(|h| (h.q, h.r));
+    targets.sort();
     targets.dedup();
     targets
 }
@@ -357,7 +357,7 @@ impl FireTargetCache {
                 .iter()
                 .flat_map(|&(firer, kind)| valid_target_hexes(firer, kind, gs))
                 .collect();
-            targets.sort_by_key(|h| (h.q, h.r));
+            targets.sort();
             targets.dedup();
             self.fire = Some((key, targets));
         }
@@ -378,7 +378,7 @@ impl FireTargetCache {
                 .filter_map(|u| fire_kind_for(gs, u.id).map(|kind| (u.id, kind)))
                 .flat_map(|(id, kind)| valid_target_hexes(id, kind, gs))
                 .collect();
-            targets.sort_by_key(|h| (h.q, h.r));
+            targets.sort();
             targets.dedup();
             self.side = Some((key, targets.len()));
         }
@@ -402,7 +402,7 @@ impl FireTargetCache {
                 })
                 .map(|u| u.position)
                 .collect();
-            hexes.sort_by_key(|h| (h.q, h.r));
+            hexes.sort();
             hexes.dedup();
             self.side_firers = Some((key, hexes));
         }
@@ -495,10 +495,7 @@ pub fn fire_target_overlay_mesh(
         *last = None;
         return;
     };
-    let in_fire = matches!(
-        gs.0.phase,
-        Phase::OffensiveFire(_) | Phase::DefensiveFire(_)
-    );
+    let in_fire = gs.0.phase.is_fire();
     let drawn = if in_fire {
         fire_selection(&state, &placed_units, &gs.0)
             .map(|group| fire_group_kinds(&gs.0, &group))
@@ -597,12 +594,7 @@ pub fn fire_direction_arrow(
     }
     let arrow = game_state
         .as_deref()
-        .filter(|gs| {
-            matches!(
-                gs.0.phase,
-                Phase::OffensiveFire(_) | Phase::DefensiveFire(_)
-            )
-        })
+        .filter(|gs| gs.0.phase.is_fire())
         .filter(|_| peers.may_act(gs_phase_player(game_state.as_deref())))
         .and_then(|gs| {
             let group = fire_selection(&state, &placed_units, &gs.0)?;
@@ -832,7 +824,8 @@ pub fn fire_combat_preview_ui(
 
     // Per-firer detail: identity + fire factor at its range (§6.22).
     // Identical contributions counted ("4\u{d7} Mulazmin: 3").
-    let firer_details: Vec<String> = omdurman_rules::effects::firer_contributions(&gs.0, attack)
+    let contributions = omdurman_rules::effects::firer_contributions(&gs.0, attack);
+    let firer_details: Vec<String> = contributions
         .iter()
         .filter_map(|c| {
             let u = gs.0.find_unit(c.unit)?;
@@ -893,16 +886,13 @@ pub fn fire_combat_preview_ui(
     // CRT row + outcome bands: every firer banded exactly as resolution
     // bands it (§6.22 per firer, §6.52/§9.343 tables, §8.1 night cap).
     use omdurman_rules::combat_results_table::FireFactorRow;
-    let effective_total: u16 = omdurman_rules::effects::firer_contributions(&gs.0, attack)
-        .iter()
-        .map(|c| c.factor)
-        .sum();
+    let effective_total = omdurman_rules::effects::total_fire_factor(&contributions);
     let factor_row = FireFactorRow::from_total(effective_total);
     let row_label = factor_row.label();
     let is_night = gs.0.day_night == omdurman_types::DayNight::Night;
     // The first firer's band, for the header line (each firer's own is in
     // the per-firer detail).
-    let band = omdurman_rules::effects::firer_contributions(&gs.0, attack)
+    let band = contributions
         .first()
         .map_or(omdurman_rules::RangeBand::OutOfRange, |c| c.band);
     let bands = crate::combat_predict::outcome_bands(factor_row, net_mod);
@@ -1022,7 +1012,7 @@ pub fn fire_combat_preview_ui(
                         _,
                         omdurman_rules::los_table::LosStepResult::Blocked { feature, hex },
                     )) => {
-                        format!("LOS: Blocked by {feature} at ({}, {})", hex.q, hex.r)
+                        format!("LOS: Blocked by {feature} at {hex}")
                     }
                     Some((
                         _,

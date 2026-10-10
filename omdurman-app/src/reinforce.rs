@@ -58,7 +58,7 @@ fn entrance_hexes(gs: &GameState) -> Vec<HexCoord> {
         .iter()
         .flat_map(|area| gs.board.entrance_hexes(*area))
         .collect();
-    out.sort_by_key(|h| (h.q, h.r));
+    out.sort();
     out.dedup();
     out
 }
@@ -165,7 +165,7 @@ pub fn reinforce_entry_overlay_mesh(
     } else {
         Vec::new()
     };
-    targets.sort_by_key(|h| (h.q, h.r));
+    targets.sort();
     if last.as_ref() == Some(&targets) {
         return;
     }

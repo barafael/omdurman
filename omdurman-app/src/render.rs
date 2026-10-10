@@ -1,10 +1,6 @@
 use std::f32::consts::PI;
 
-use bevy::{
-    asset::RenderAssetUsages,
-    mesh::{Indices, PrimitiveTopology},
-    prelude::*,
-};
+use bevy::prelude::*;
 use omdurman_hexmap::{GameMap, HexLayout};
 
 use omdurman_hexmap::{hex_ring_mesh, hex_world_pos, hit_to_hex};
@@ -358,16 +354,7 @@ fn arrow_mesh() -> Mesh {
     ];
     // Wind both faces CCW when viewed from +Y (top); cull_mode is None anyway.
     let indices = vec![0u32, 2, 1, 0, 3, 2, 4, 6, 5];
-    let n = positions.len();
-
-    Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::default(),
-    )
-    .with_inserted_indices(Indices::U32(indices))
-    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![Vec3::Y; n])
-    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, vec![Vec2::ZERO; n])
+    crate::fx::transient::flat_mesh(positions, indices)
 }
 
 /// Shared arrow mesh + dim/highlight materials for movement-path rendering.

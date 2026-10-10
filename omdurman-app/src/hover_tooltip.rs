@@ -124,13 +124,10 @@ fn draw_hover_tooltip(
                         // Header line: coord + terrain name + (optional) landmark.
                         let terrain_str = terrain_label(terrain);
                         ui.label(
-                            egui::RichText::new(format!(
-                                "({}, {})  ·  {}",
-                                hex.q, hex.r, terrain_str
-                            ))
-                            .color(crate::ui::palette::INK)
-                            .strong()
-                            .size(13.0),
+                            egui::RichText::new(format!("{hex}  ·  {terrain_str}"))
+                                .color(crate::ui::palette::INK)
+                                .strong()
+                                .size(13.0),
                         );
                         if let Some(landmark) = landmark_label(&game_map, hex) {
                             ui.colored_label(crate::ui::palette::FAINT_INK, landmark);

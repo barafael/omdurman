@@ -61,7 +61,7 @@ pub(crate) fn update_hex_coord_display(
         return;
     };
     let new = match hovered.0 {
-        Some(coord) => format!("({}, {})", coord.q, coord.r),
+        Some(coord) => coord.to_string(),
         None => String::new(),
     };
     if text.as_str() != new {

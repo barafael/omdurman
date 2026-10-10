@@ -28,19 +28,27 @@ pub fn selected_unit_ids(
     state: &PickerState,
     placed_units: &Query<(Entity, &PlacedUnit)>,
 ) -> Vec<UnitId> {
-    let sources: &[Entity] = match state {
-        PickerState::Selected { source, .. } => std::slice::from_ref(source),
-        PickerState::SelectedStack(sel) => &sel.sources,
-        PickerState::SelectedTile(sel) => &sel.sources,
-        _ => &[],
-    };
-    let mut ids: Vec<UnitId> = sources
+    let mut ids: Vec<UnitId> = state
+        .sources()
         .iter()
         .filter_map(|&e| placed_units.get(e).ok().and_then(|(_, p)| p.unit_id))
         .collect();
     ids.sort_unstable();
     ids.dedup();
     ids
+}
+
+impl PickerState {
+    /// The selected counters' entities, for any selection shape (empty when
+    /// nothing is selected).
+    pub fn sources(&self) -> &[Entity] {
+        match self {
+            PickerState::Selected { source, .. } => std::slice::from_ref(source),
+            PickerState::SelectedStack(sel) => &sel.sources,
+            PickerState::SelectedTile(sel) => &sel.sources,
+            _ => &[],
+        }
+    }
 }
 
 /// The hex the active selection was made on, for any selection shape.

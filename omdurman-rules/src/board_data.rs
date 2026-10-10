@@ -9,9 +9,11 @@
 //! this workspace are never published, so the cross-crate reach is confined to
 //! the repository.
 
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
-use omdurman_types::MapData;
+use omdurman_types::{MapData, MapKind};
+
+use crate::board::BoardInfo;
 
 const CAMPAIGN_RON: &str = include_str!("../../omdurman-app/assets/boards/campaign.ron");
 const FOK_RON: &str = include_str!("../../omdurman-app/assets/boards/fall_of_khartoum.ron");
@@ -29,13 +31,25 @@ static CAMPAIGN: OnceLock<MapData> = OnceLock::new();
 static FOK: OnceLock<MapData> = OnceLock::new();
 
 /// The Campaign board (also used by the Historical scenario, §9.1/§9.2).
-pub fn campaign_map_data() -> MapData {
-    CAMPAIGN.get_or_init(|| parse(CAMPAIGN_RON)).clone()
+pub fn campaign_map_data() -> &'static MapData {
+    CAMPAIGN.get_or_init(|| parse(CAMPAIGN_RON))
 }
 
 /// The Fall-of-Khartoum board (§9.3).
-pub fn fall_of_khartoum_map_data() -> MapData {
-    FOK.get_or_init(|| parse(FOK_RON)).clone()
+pub fn fall_of_khartoum_map_data() -> &'static MapData {
+    FOK.get_or_init(|| parse(FOK_RON))
+}
+
+/// A board's rules topology ([`BoardInfo`]), built once per board and shared:
+/// every `StartGame` (live, replayed or installed) attaches the same `Arc`.
+pub fn board_info(kind: MapKind) -> Arc<BoardInfo> {
+    static CAMPAIGN_INFO: OnceLock<Arc<BoardInfo>> = OnceLock::new();
+    static FOK_INFO: OnceLock<Arc<BoardInfo>> = OnceLock::new();
+    let (cell, map): (_, fn() -> &'static MapData) = match kind {
+        MapKind::Campaign => (&CAMPAIGN_INFO, campaign_map_data),
+        MapKind::FallOfKhartoum => (&FOK_INFO, fall_of_khartoum_map_data),
+    };
+    Arc::clone(cell.get_or_init(|| Arc::new(BoardInfo::from_map_data(map()))))
 }
 #[cfg(test)]
 mod wall_ring_tests {
@@ -52,7 +66,7 @@ mod wall_ring_tests {
     #[traceability_macro::rulebook("§9.231", "§9.232", "§9.233")]
     #[test]
     fn the_zariba_is_trench_in_the_north_and_hedge_in_the_south() {
-        let board = BoardInfo::from_map_data(&campaign_map_data());
+        let board = BoardInfo::from_map_data(campaign_map_data());
         let side = |a: (i32, i32), b: (i32, i32)| {
             board.hexside_between(HexCoord::new(a.0, a.1), HexCoord::new(b.0, b.1))
         };
@@ -89,7 +103,7 @@ mod wall_ring_tests {
     #[traceability_macro::rulebook("§5.44")]
     #[test]
     fn every_khartoum_wall_hexside_has_one_city_side() {
-        let board = BoardInfo::from_map_data(&fall_of_khartoum_map_data());
+        let board = BoardInfo::from_map_data(fall_of_khartoum_map_data());
         let mut walls = 0;
         for (side, kind) in &board.hexsides {
             if !matches!(kind, HexsideKind::Wall | HexsideKind::Gate) {
@@ -112,7 +126,7 @@ mod wall_ring_tests {
         assert!(board.is_inside_of_wall(bastion, HexCoord::new(12, 12)));
         // Omdurman's wall encloses its city: no per-hexside table there.
         assert!(
-            BoardInfo::from_map_data(&campaign_map_data())
+            BoardInfo::from_map_data(campaign_map_data())
                 .palace_steps
                 .is_empty()
         );
@@ -124,7 +138,7 @@ mod wall_ring_tests {
     #[traceability_macro::rulebook("§5.23")]
     #[test]
     fn campaign_walled_city_is_enclosed_by_walls() {
-        let board = BoardInfo::from_map_data(&campaign_map_data());
+        let board = BoardInfo::from_map_data(campaign_map_data());
         let palace = board.hex_of_location(Location::Palace).unwrap();
         let tomb = board.hex_of_location(Location::MahdisTomb).unwrap();
         assert!(board.is_walled_city(palace) && board.is_walled_city(tomb));
@@ -169,7 +183,7 @@ mod wall_ring_tests {
     #[traceability_macro::rulebook("§6.54")]
     #[test]
     fn fok_forts_are_not_walled_in() {
-        let board = BoardInfo::from_map_data(&fall_of_khartoum_map_data());
+        let board = BoardInfo::from_map_data(fall_of_khartoum_map_data());
         for fort in [
             Location::FortMakran,
             Location::FortBuri,
@@ -191,7 +205,7 @@ mod wall_ring_tests {
         // FoK (§2.1): the washed-away wall section is a legal gap, so the
         // fill is bounded by Building terrain instead -- the 17-hex city
         // block around the palace.
-        let board = BoardInfo::from_map_data(&fall_of_khartoum_map_data());
+        let board = BoardInfo::from_map_data(fall_of_khartoum_map_data());
         let palace = board.hex_of_location(Location::Palace).unwrap();
         assert!(board.is_walled_city(palace));
         assert_eq!(board.walled_city.len(), 17, "compiled FoK walled-city set");

@@ -16,7 +16,7 @@
 use omdurman_rules::combat_results_table::{FireFactorRow, combat_results_table};
 use omdurman_rules::effects::{
     GameEffect, GameState, combine_fire_attacks, fire_target_units, firer_contributions,
-    mandatory_fire_modifiers, target_defence_modifier,
+    mandatory_fire_modifiers, target_defence_modifier, total_fire_factor,
 };
 use omdurman_rules::{
     BritishLeader, CombatResult, DieRoll, FireAttack, FireKind, UnitIdentity, UnitPlacement,
@@ -57,9 +57,7 @@ pub fn unit_value(state: &GameState, u: &UnitPlacement) -> f64 {
 /// of resolving `attack` now. Howitzer fire counts only its on-target chance
 /// (impact 7-10, §6.64).
 pub fn fire_value(state: &GameState, attack: &FireAttack) -> f64 {
-    let total: u16 = firer_contributions(state, attack)
-        .iter()
-        .fold(0u16, |s, c| s.saturating_add(c.factor));
+    let total = total_fire_factor(&firer_contributions(state, attack));
     if total == 0 {
         return 0.0;
     }
