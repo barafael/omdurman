@@ -1587,6 +1587,7 @@ tests = [
     "omdurman-rules::src::effects::tests::walls_are_breached_in_the_direct_fire_subphase_only",
     "omdurman-rules::src::effects::tests::one_unit_losses_take_the_rank_and_file_before_leaders",
     "omdurman-rules::src::effects::tests::demolishing_an_already_breached_wall_takes_no_second_unit",
+    "omdurman-rules::src::effects::tests::a_fort_beside_a_breached_wall_can_be_the_casualty",
 ]
 
 [[mapping.impl]]

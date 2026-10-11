@@ -5858,6 +5858,40 @@ mod tests {
         );
     }
 
+    // §6.63 "one enemy unit is eliminated": a fort counter is a unit like
+    // any other, so a player's fort beside a breached city wall can be the
+    // casualty. (The wall is never a fort's own: no printed fort borders a
+    // city wall -- `board_data::wall_ring_tests::fok_forts_are_not_walled_in`.)
+    #[rulebook("§6.63")]
+    #[test]
+    fn a_fort_beside_a_breached_wall_can_be_the_casualty() {
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::AngloEgyptian;
+        let arty = make_ae_artillery(&mut state, HexCoord::new(0, 0));
+        let wall = omdurman_types::HexsideRef::new(HexCoord::new(1, 0), HexCoord::new(2, 0));
+        board_mut(&mut state)
+            .hexsides
+            .insert(wall, HexsideKind::Wall);
+        let fort = make_fort(&mut state, HexCoord::new(2, 0));
+
+        apply_effect(
+            &mut state,
+            &GameEffect::ArtilleryBreachWall {
+                firers: vec![arty],
+                target: wall,
+                roll: DieRoll::Ten,
+            },
+        )
+        .unwrap();
+
+        assert!(state.breaches.contains(&wall));
+        assert!(
+            state.find_unit(fort).is_none(),
+            "the fort beside the breach is the one enemy unit eliminated"
+        );
+    }
+
     // §6.63/§6.3/§5.23: a breach is an *opening* -- the authored board stays
     // static, and every game-time read (effective hexside kind, LOS) treats
     // the breached wall as passable.

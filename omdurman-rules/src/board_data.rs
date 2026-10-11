@@ -191,9 +191,11 @@ mod wall_ring_tests {
         ] {
             let hex = board.hex_of_location(fort).unwrap();
             for n in hex.neighbors() {
-                assert_ne!(
-                    board.hexside_between(hex, n),
-                    Some(HexsideKind::Wall),
+                assert!(
+                    !matches!(
+                        board.hexside_between(hex, n),
+                        Some(HexsideKind::Wall | HexsideKind::Gate)
+                    ),
                     "{fort:?} {hex:?} is walled off from {n:?}"
                 );
             }
