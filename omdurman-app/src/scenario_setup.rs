@@ -144,6 +144,22 @@ fn placement_already_on_board(ev: &GameEvent, gs: &omdurman_rules::effects::Game
         .any(|u| u.position == *coord && u.profile.identity == profile.identity)
 }
 
+/// Identity of one game: its (latest) `StartGame` event's seq *and*
+/// submission identity (uid, and the record timestamp for records without
+/// uids). The seq alone does not do: a new room restarts the seqs at 0, so a
+/// second game of the same scenario in another room would match the first
+/// game's key and never get its fixed placements.
+pub(crate) type StartGameKey = (u32, Option<u64>, chrono::DateTime<chrono::Utc>);
+
+pub(crate) fn start_game_key(record: &omdurman_net::GameRecord) -> Option<StartGameKey> {
+    record
+        .events
+        .iter()
+        .rev()
+        .find(|e| matches!(e.payload, GameEvent::StartGame { .. }))
+        .map(|e| (e.seq, e.uid, e.utc))
+}
+
 /// Auto-emit the fixed-hex scenario setup on the host when the game begins.
 ///
 /// For Campaign there are no fixed placements so this is a no-op. For Historical
@@ -153,8 +169,9 @@ fn placement_already_on_board(ev: &GameEvent, gs: &omdurman_rules::effects::Game
 /// their echo arrives), so the latch never re-submits: a re-submission gets a
 /// fresh uid and the host would sequence it as a second event.
 ///
-/// A game is identified by the sequence number of the `StartGame` it began
-/// with, so a restart in the same scenario re-arms the latch.
+/// A game is identified by the `StartGame` it began with ([`StartGameKey`]),
+/// so a restart in the same scenario re-arms the latch -- in the same room or
+/// in a new one, whose seqs start again at 0.
 pub(crate) fn auto_trigger_scenario_setup(
     game_state: Res<crate::GameStateResource>,
     board: (
@@ -165,7 +182,7 @@ pub(crate) fn auto_trigger_scenario_setup(
     net: Res<omdurman_net::NetState>,
     recorder: Res<crate::game_record::GameRecorder>,
     mut pending: ResMut<crate::PendingEdits>,
-    mut submitted_for: Local<Option<(Scenario, Option<u32>)>>,
+    mut submitted_for: Local<Option<(Scenario, Option<StartGameKey>)>>,
 ) {
     let (map, active_map, pending_map) = board;
     // Only the host auto-triggers.
@@ -177,16 +194,7 @@ pub(crate) fn auto_trigger_scenario_setup(
         return;
     }
     let scenario = game_state.0.scenario;
-    let game_key = (
-        scenario,
-        recorder.record.as_ref().and_then(|r| {
-            r.events
-                .iter()
-                .rev()
-                .find(|e| matches!(e.payload, GameEvent::StartGame { .. }))
-                .map(|e| e.seq)
-        }),
-    );
+    let game_key = (scenario, recorder.record.as_ref().and_then(start_game_key));
     if *submitted_for == Some(game_key) {
         return;
     }
@@ -220,6 +228,30 @@ mod tests {
     use super::*;
     use omdurman_types::SectionName;
     use omdurman_types::{HexData, Road, Terrain};
+
+    /// A second game of the same scenario in a new room starts at seq 0
+    /// again; its key must still differ from the first game's.
+    #[test]
+    fn a_new_rooms_game_has_a_new_key() {
+        let record = |uid| omdurman_net::GameRecord {
+            initial_state: omdurman_net::InitialGameState { seed: 1 },
+            events: vec![omdurman_net::RecordedEvent {
+                utc: chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+                sender_idx: None,
+                seq: 0,
+                uid: Some(uid),
+                payload: GameEvent::StartGame {
+                    seats: vec![],
+                    scenario: Scenario::FallOfKhartoum,
+                    optional_rules: vec![],
+                },
+            }],
+        };
+        let first = start_game_key(&record(7)).expect("a StartGame");
+        let second = start_game_key(&record(8)).expect("a StartGame");
+        assert_ne!(first, second);
+        assert_eq!(start_game_key(&record(7)), Some(first));
+    }
 
     fn map_with(letters: &[(i32, i32, SetupLetter)]) -> GameMap {
         let mut m = GameMap::default();
