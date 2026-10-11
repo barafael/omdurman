@@ -102,6 +102,10 @@ git history if a large re-authoring is ever needed).
 ### Fully engine-authoritative (every check in `apply_effect` / `can_*`)
 - **Line of sight (§6.3, §6.21)** — `has_los` in `los_table.rs` ray-casts through
   `BoardInfo` terrain and hexsides; `can_fire_at` enforces it. Howitzer fire bypasses.
+  The ray is the exact segment between the hex centres (`los_ray_sides`, integer
+  geometry): every hex it passes through, clipped corners included, and every hexside it
+  crosses; a ray touching hex corners (along hexsides, or through a corner) is clear if
+  either side of it is.
 - **Terrain defence modifiers (§6.23)** — `commit_fire_attack` derives the modifier from
   `state.board`: `terrain_chart::defense_modifier` for the target hex plus
   `target_hexside_fire_modifier` for a Crest (−1) or City Wall (−4) hexside the fire crosses.

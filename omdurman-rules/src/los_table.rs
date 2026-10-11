@@ -30,7 +30,9 @@
 //! 3. Look up the blocking rules for that `(firer, target)` pair.
 //! 4. Walk the LOS ray hex by hex. For each intervening hex and hexside,
 //!    check whether it matches a blocking feature and whether all positional
-//!    conditions are satisfied.
+//!    conditions are satisfied. The ray is the exact segment between the two
+//!    hex centres ([`los_ray_sides`]): every hex it passes through, a clipped
+//!    corner included (note f), and every hexside it crosses.
 //!
 //! ## The three terrain levels
 //!
@@ -62,6 +64,9 @@
 //! - **(f)** Terrain types fill their entire hex for LOS purposes.
 
 use omdurman_types::{AlongHexside, HexCoord, HexsideKind, Terrain, UnitKind};
+
+mod ray;
+pub use ray::los_ray_sides;
 
 // ─── Types ──────────────────────────────────────────────────────────────
 
@@ -257,13 +262,13 @@ pub fn blocking_rules(firer: LosLevel, target: LosLevel) -> &'static [BlockingRu
 
 /// Context for evaluating positional conditions at a specific hex on the ray.
 struct CondCtx {
-    /// Twice this feature's position along the ray (0 = firer): `2k` for
-    /// the hex at step `k`, `2k + 1` for the hexside between steps `k` and
-    /// `k + 1` -- a hexside sits half a step past its near hex, which is
-    /// what "halfway between" (details 3/4) weighs.
-    pos2: usize,
-    /// Total number of steps in the ray.
-    total_steps: usize,
+    /// Twice this feature's distance from the firer, in hexes: `2d` for a
+    /// hex at distance `d`, the sum of its two hexes' distances for a
+    /// hexside -- which sits halfway between them, what "halfway between"
+    /// (details 3/4) weighs.
+    from_firer2: u32,
+    /// Twice this feature's distance from the target, likewise.
+    from_target2: u32,
     /// Cumulative count of hexes of this hex's feature (huts, or trees)
     /// seen so far, including this one (detail 1).
     hut_tree_count: usize,
@@ -295,9 +300,9 @@ fn conditions_met(conditions: &[LosCondition], ctx: &CondCtx) -> bool {
             LosCondition::MoreThanTwo => ctx.hut_tree_count > 2,
             LosCondition::CrestAdjacency => !ctx.crest_adjacency_exception,
             // Detail 3: "if closer to firing unit, or halfway between".
-            LosCondition::CloserToFirer => ctx.pos2 <= ctx.total_steps,
+            LosCondition::CloserToFirer => ctx.from_firer2 <= ctx.from_target2,
             // Detail 4: "if closer to target unit, or half way between".
-            LosCondition::CloserToTarget => ctx.pos2 >= ctx.total_steps,
+            LosCondition::CloserToTarget => ctx.from_firer2 >= ctx.from_target2,
             LosCondition::AdjSameLevelFirer => {
                 ctx.adjacent_to_firer && ctx.hex_level == ctx.firer_level
             }
@@ -355,9 +360,10 @@ fn adjacent_to_hexside(hex: HexCoord, a: HexCoord, b: HexCoord) -> bool {
 /// (§6.21, §6.3). Returns the ray path `[from, intervening..., to]` and, if
 /// the ray is blocked, where and by what.
 ///
-/// `line` is one side of the straight line's hexside ties (see
-/// [`HexCoord::line_between`]); `along` the hexsides the line runs along
-/// ([`HexCoord::hexsides_along_line`]), the same for either side.
+/// `path` is one side of the exact ray ([`los_ray_sides`]): every hex it
+/// passes through, consecutive hexes sharing the hexside it crosses; `along`
+/// the hexsides the line runs along ([`HexCoord::hexsides_along_line`]), the
+/// same for either side.
 ///
 /// `breached` reports whether the wall hexside between two hexes has been
 /// breached (§6.53/§6.63): a breached wall is an opening and does not block.
@@ -371,7 +377,7 @@ fn los_walk(
     board: &crate::board::BoardInfo,
     from: HexCoord,
     to: HexCoord,
-    line: Vec<HexCoord>,
+    path: Vec<HexCoord>,
     along: &[AlongHexside],
     firer_level: LosLevel,
     target_level: LosLevel,
@@ -396,15 +402,13 @@ fn los_walk(
         })
     };
 
-    // Build the ray path: [from, intervening..., to].
-    let mut path = vec![from];
-    path.extend(line);
-    path.push(to);
-
-    let total_steps = path.len().saturating_sub(1);
-    if total_steps == 0 {
+    if path.len() < 2 {
         return (path, None); // same hex
     }
+
+    // A hex's doubled distances from the firer and the target (details 3
+    // and 4 weigh them; see [`CondCtx::from_firer2`]).
+    let distances2 = |hex: HexCoord| (2 * from.distance(hex), 2 * to.distance(hex));
 
     // Every crest hexside "fired through" (detail 2): those the ray crosses,
     // between consecutive ray hexes, and those it runs along (note e:
@@ -429,13 +433,13 @@ fn los_walk(
         adjacent_to_all(from) || adjacent_to_all(to)
     };
 
-    // The conditions context of a hexside feature: `pos2` its position
-    // along the ray (see [`CondCtx::pos2`]), `beyond` the hex across it
-    // from this ray's own hex. Detail 1 is a hex feature's; no hexside
-    // entry carries it.
-    let hexside_ctx = |pos2: usize, beyond: HexCoord| CondCtx {
-        pos2,
-        total_steps,
+    // The conditions context of the hexside between `a` and `b`: halfway
+    // between the two along the ray (see [`CondCtx::from_firer2`]),
+    // `beyond` the one across it from this ray's own hex. Detail 1 is a hex
+    // feature's; no hexside entry carries it.
+    let hexside_ctx = |a: HexCoord, b: HexCoord, beyond: HexCoord| CondCtx {
+        from_firer2: from.distance(a) + from.distance(b),
+        from_target2: to.distance(a) + to.distance(b),
         hut_tree_count: 0,
         hex_level: los_level(board.terrain_at(beyond).unwrap_or_default()),
         firer_level,
@@ -453,13 +457,9 @@ fn los_walk(
     let mut huts_count = 0usize;
     let mut trees_count = 0usize;
 
-    // Walk the ray, checking each intervening hex (skip endpoints).
-    for (i, &hex) in path.iter().enumerate() {
-        // Skip firer and target hexes — they are not "intervening".
-        if hex == from || hex == to {
-            continue;
-        }
-
+    // Walk the ray, checking each intervening hex (the firer's and the
+    // target's are not).
+    for &hex in &path[1..path.len() - 1] {
         let terrain = board.terrain_at(hex).unwrap_or_default();
         let hex_level = los_level(terrain);
         let unit_level = unit_level_at(hex);
@@ -477,9 +477,10 @@ fn los_walk(
             _ => 0,
         };
 
+        let (from_firer2, from_target2) = distances2(hex);
         let ctx = CondCtx {
-            pos2: 2 * i,
-            total_steps,
+            from_firer2,
+            from_target2,
             hut_tree_count,
             hex_level,
             firer_level,
@@ -532,21 +533,20 @@ fn los_walk(
     };
 
     // Check crossed hexsides between consecutive ray hexes.
-    for (a_index, w) in path.windows(2).enumerate() {
+    for w in path.windows(2) {
         let (a, b) = (w[0], w[1]);
         let Some(BlockingRule(feature, conditions)) = hexside_kind(a, b).and_then(hexside_rule)
         else {
             continue;
         };
-        // The hexside lies half a step past `a`.
-        if conditions_met(conditions, &hexside_ctx(2 * a_index + 1, b)) {
+        if conditions_met(conditions, &hexside_ctx(a, b, b)) {
             return (path, Some(LosBlock::Hexside { a, b, feature }));
         }
     }
 
     // Check the hexsides the ray runs along (notes d and e). Each sits
-    // between this ray's hex at its step and the hex across it, its midpoint
-    // exactly at that step.
+    // between this ray's hex at its step and the hex across it, on the
+    // line's other side.
     let mut walls_along = 0usize;
     for ah in along {
         let Some(BlockingRule(feature, conditions)) =
@@ -554,9 +554,11 @@ fn los_walk(
         else {
             continue;
         };
-        let near = path[ah.step];
-        debug_assert!(near == ah.a || near == ah.b);
-        let beyond = if near == ah.a { ah.b } else { ah.a };
+        let (near, beyond) = if path.contains(&ah.a) {
+            (ah.a, ah.b)
+        } else {
+            (ah.b, ah.a)
+        };
         let blocks = match feature {
             // Note d: "units may fire down, i.e. along the length of, ONE
             // wall hexside" -- the second one blocks.
@@ -567,7 +569,7 @@ fn los_walk(
             // Note e: the same effect as a crest fired through.
             _ => true,
         };
-        if blocks && conditions_met(conditions, &hexside_ctx(2 * ah.step, beyond)) {
+        if blocks && conditions_met(conditions, &hexside_ctx(near, beyond, beyond)) {
             return (
                 path,
                 Some(LosBlock::Hexside {
@@ -626,26 +628,13 @@ pub fn has_los(
     .is_none()
 }
 
-/// The other side of the ray's hexside ties, when it has any: the hexes
-/// [`HexCoord::line_between_other_side`] walks, where they differ from the
-/// walked `path` (`[from, intervening..., to]`). A ray hits ties when it
-/// runs along hexsides (notes d and e) or crosses one exactly at its
-/// midpoint.
-fn other_side_line(path: &[HexCoord], from: HexCoord, to: HexCoord) -> Option<Vec<HexCoord>> {
-    // Same or adjacent hexes: nothing in between to tie on.
-    if path.len() <= 2 {
-        return None;
-    }
-    let other = from.line_between_other_side(to);
-    (path[1..path.len() - 1] != other[..]).then_some(other)
-}
-
-/// Walk the LOS ray from `from` to `to` (§6.3). A ray that hits hexside
-/// ties has two candidate hex paths, one on either side; it is clear if
-/// either is clear (as note d lets units fire down the length of a wall
-/// hexside), which also keeps line of sight reciprocal. Returns the path
-/// walked -- the clear one if any -- and the block on the first path when
-/// both are blocked.
+/// Walk the LOS ray from `from` to `to` (§6.3). A ray that touches hex
+/// corners -- it runs along hexsides (notes d and e), or passes exactly
+/// through a corner -- has two candidate hex paths, one on either side
+/// ([`los_ray_sides`]); it is clear if either is clear (as note d lets units
+/// fire down the length of a wall hexside), which also keeps line of sight
+/// reciprocal. Returns the path walked -- the clear one if any -- and the
+/// block on the first path when both are blocked.
 fn los_rays(
     board: &crate::board::BoardInfo,
     from: HexCoord,
@@ -656,23 +645,21 @@ fn los_rays(
     breached: impl Fn(HexCoord, HexCoord) -> bool,
 ) -> (Vec<HexCoord>, Option<LosBlock>) {
     let along = from.hexsides_along_line(to);
+    let [side, other_side] = los_ray_sides(from, to);
     let first = los_walk(
         board,
         from,
         to,
-        from.line_between(to),
+        side,
         &along,
         firer_level,
         target_level,
         &unit_level_at,
         &breached,
     );
-    if first.1.is_none() {
+    if first.1.is_none() || other_side == first.0 {
         return first;
     }
-    let Some(other_side) = other_side_line(&first.0, from, to) else {
-        return first;
-    };
     let second = los_walk(
         board,
         from,
@@ -688,15 +675,16 @@ fn los_rays(
 }
 
 /// The clear ray(s) from `from` to `to` (§6.21, §6.3), each as the path
-/// `[from, intervening..., to]`: the straight line's hexes, or, where the
-/// line hits hexside ties, whichever of its two sides is clear -- both when
-/// both are. Empty when line of sight is blocked. Howitzer fire ignores LOS
-/// (§6.64): the straight line, always.
+/// `[from, intervening..., to]`: the hexes the straight line passes
+/// through, or, where it touches hex corners, whichever of its two sides
+/// ([`los_ray_sides`]) is clear -- both when both are. Empty when line of
+/// sight is blocked. Howitzer fire ignores LOS (§6.64): the line's first
+/// side, always.
 ///
 /// This is what a fire modifier that reads the line of fire -- the hexside
 /// it enters the target through (§6.23), a thorn hedge it crosses (§9.231)
-/// -- must look along: the shot is seen along a clear ray, which may be the
-/// other side of a tie than [`HexCoord::line_between`] walks.
+/// -- must look along: the shot is seen along a clear ray, which may be
+/// either side of a tie.
 #[allow(clippy::too_many_arguments)]
 pub fn los_clear_rays(
     board: &crate::board::BoardInfo,
@@ -710,43 +698,27 @@ pub fn los_clear_rays(
 ) -> Vec<Vec<HexCoord>> {
     use crate::FireKind;
 
+    let [side, other_side] = los_ray_sides(from, to);
     if kind == FireKind::Howitzer {
-        let mut path = vec![from];
-        path.extend(from.line_between(to));
-        path.push(to);
-        return vec![path];
+        return vec![side];
     }
     let along = from.hexsides_along_line(to);
-    let first = los_walk(
-        board,
-        from,
-        to,
-        from.line_between(to),
-        &along,
-        firer_level,
-        target_level,
-        &unit_level_at,
-        &breached,
-    );
-    let other_side = other_side_line(&first.0, from, to);
+    let tied = side != other_side;
     let mut rays = Vec::with_capacity(2);
-    if first.1.is_none() {
-        rays.push(first.0);
-    }
-    if let Some(other_side) = other_side {
-        let second = los_walk(
+    for path in std::iter::once(side).chain(tied.then_some(other_side)) {
+        let (path, block) = los_walk(
             board,
             from,
             to,
-            other_side,
+            path,
             &along,
             firer_level,
             target_level,
             &unit_level_at,
             &breached,
         );
-        if second.1.is_none() {
-            rays.push(second.0);
+        if block.is_none() {
+            rays.push(path);
         }
     }
     rays
@@ -780,12 +752,9 @@ pub fn los_path_analysis(
 ) -> Vec<(HexCoord, LosStepResult)> {
     use crate::FireKind;
 
-    let mut path = vec![from];
-    path.extend(from.line_between(to));
-
     // Howitzer fire bypasses LOS (§6.64); every step is `Clear`.
     if kind == FireKind::Howitzer {
-        path.push(to);
+        let [path, _] = los_ray_sides(from, to);
         return path
             .into_iter()
             .map(|h| (h, LosStepResult::Clear))
@@ -1657,6 +1626,362 @@ mod tests {
             ),
             vec![vec![from, HexCoord::new(1, 0), HexCoord::new(2, 0)]]
         );
+    }
+
+    // ── The exact ray (note f): every hex passed, every hexside crossed ──
+
+    /// A unit standing at any of `hexes`, at ground level.
+    fn units_at(hexes: &[HexCoord]) -> impl Fn(HexCoord) -> Option<LosLevel> + '_ {
+        move |h| hexes.contains(&h).then_some(LosLevel::Ground)
+    }
+
+    /// (0,0) -> (1,4) crosses the (0,1)|(1,2) hexside, then the
+    /// (1,2)|(0,2) hexside exactly at its midpoint. It passes through both
+    /// of those hexes -- a unit in either blocks -- and a wall on the
+    /// hexside it crosses blocks, whatever the hexside the sampled line's
+    /// "other side" would have stepped through (a gate here). The Campaign
+    /// fire from (30,37) into Omdurman at (31,41) is this ray.
+    #[rulebook("§6.3")]
+    #[test]
+    fn a_ray_through_a_hexside_midpoint_passes_both_hexes_and_crosses_it() {
+        let from = HexCoord::new(0, 0);
+        let to = HexCoord::new(1, 4);
+        let g = LosLevel::Ground;
+        let open = BoardInfo::default();
+        let sees = |board: &BoardInfo, units: &[HexCoord]| {
+            has_los(
+                board,
+                from,
+                to,
+                FireKind::Direct,
+                g,
+                g,
+                units_at(units),
+                |_, _| false,
+            )
+        };
+        assert!(sees(&open, &[]));
+        assert!(!sees(&open, &[HexCoord::new(1, 2)]));
+        assert!(!sees(&open, &[HexCoord::new(0, 2)]));
+        let walled = board_with_hexsides(
+            &[],
+            &[
+                (HexCoord::new(0, 1), HexCoord::new(1, 2), HexsideKind::Wall),
+                (HexCoord::new(0, 1), HexCoord::new(0, 2), HexsideKind::Gate),
+            ],
+        );
+        assert!(!sees(&walled, &[]));
+        let steps = los_path_analysis(
+            &walled,
+            from,
+            to,
+            FireKind::Direct,
+            g,
+            g,
+            no_units(),
+            |_, _| false,
+        );
+        assert_eq!(
+            steps.last().map(|s| s.1),
+            Some(LosStepResult::BlockedHexside {
+                a: HexCoord::new(0, 1),
+                b: HexCoord::new(1, 2),
+                feature: LosFeature::Wall,
+            })
+        );
+    }
+
+    /// The same ray on the Campaign board: Ground→Ground fire at range 4
+    /// from (30,37), outside Omdurman's wall, at (31,41) inside the city
+    /// crosses the wall hexside (30,38)|(31,39) and is blocked (the sampled
+    /// line walked (30,38)->(30,39) through the gate beside it). Reciprocal.
+    #[rulebook("§6.3")]
+    #[test]
+    fn campaign_fire_into_omdurman_through_the_wall_is_blocked() {
+        let board = crate::board::BoardInfo::from_map_data(crate::board_data::campaign_map_data());
+        let (outside, inside) = (HexCoord::new(30, 37), HexCoord::new(31, 41));
+        let (a, b) = (HexCoord::new(30, 38), HexCoord::new(31, 39));
+        assert_eq!(board.hexside_between(a, b), Some(HexsideKind::Wall));
+        let g = LosLevel::Ground;
+        let steps = los_path_analysis(
+            &board,
+            outside,
+            inside,
+            FireKind::Direct,
+            g,
+            g,
+            no_units(),
+            |_, _| false,
+        );
+        assert!(
+            steps.iter().any(|s| matches!(
+                s.1,
+                LosStepResult::BlockedHexside {
+                    feature: LosFeature::Wall,
+                    ..
+                }
+            )),
+            "{steps:?}"
+        );
+        let sees = |x, y| {
+            has_los(&board, x, y, FireKind::Direct, g, g, no_units(), |_, _| {
+                false
+            })
+        };
+        assert!(!sees(outside, inside));
+        assert!(!sees(inside, outside));
+        // Breach the wall hexside (§6.63) and the shot is clear.
+        assert!(has_los(
+            &board,
+            outside,
+            inside,
+            FireKind::Direct,
+            g,
+            g,
+            no_units(),
+            |x, y| HexsideRef::new(x, y) == HexsideRef::new(a, b),
+        ));
+    }
+
+    /// At range 7 the ray (0,0) -> (1,7) clips the corners of hexes the
+    /// one-sample-per-hex line skips; terrain fills its whole hex (note f),
+    /// so rough ground in a clipped hex blocks Ground→Ground fire. Likewise
+    /// at ranges 9 and 10.
+    #[rulebook("§6.3")]
+    #[test]
+    fn rough_ground_in_a_clipped_corner_blocks() {
+        let from = HexCoord::new(0, 0);
+        for to in [
+            HexCoord::new(1, 7),
+            HexCoord::new(1, 9),
+            HexCoord::new(1, 10),
+        ] {
+            let [ray, _] = los_ray_sides(from, to);
+            let sampled = from.line_between(to);
+            let other = from.line_between_other_side(to);
+            let clipped: Vec<HexCoord> = ray[1..ray.len() - 1]
+                .iter()
+                .copied()
+                .filter(|h| !sampled.contains(h) && !other.contains(h))
+                .collect();
+            assert!(!clipped.is_empty(), "{to}");
+            for h in clipped {
+                let board = board_with_terrain(&[(h.q, h.r, Terrain::ground(GroundKind::Rough))]);
+                assert!(
+                    !has_los_auto(&board, from, to, FireKind::Direct, no_units()),
+                    "{to}: rough at {h}"
+                );
+            }
+        }
+    }
+
+    /// A ray along hexsides passes either side of them: a unit on one side
+    /// leaves the other side clear; units on both sides block. A ray
+    /// exactly through a hex corner is the same tie: the hexes only one of
+    /// its two sides passes do not block alone, one on each side does.
+    #[rulebook("§6.3")]
+    #[test]
+    fn a_tied_ray_is_blocked_only_when_both_sides_are() {
+        let open = BoardInfo::default();
+        let g = LosLevel::Ground;
+        let sees = |from, to, units: &[HexCoord]| {
+            has_los(
+                &open,
+                from,
+                to,
+                FireKind::Direct,
+                g,
+                g,
+                units_at(units),
+                |_, _| false,
+            )
+        };
+        // Along hexsides: (0,0) -> (2,1) runs along (1,1)|(1,0).
+        let (from, to) = (HexCoord::new(0, 0), HexCoord::new(2, 1));
+        let (left, right) = (HexCoord::new(1, 1), HexCoord::new(1, 0));
+        assert!(sees(from, to, &[left]));
+        assert!(sees(from, to, &[right]));
+        assert!(!sees(from, to, &[left, right]));
+        // Through a corner: (0,0) -> (1,5), at range 5, runs along no
+        // hexside but passes exactly through hex corners.
+        let to = HexCoord::new(1, 5);
+        assert!(!from.line_runs_along_hexsides(to));
+        let [one, other] = los_ray_sides(from, to);
+        let only = |a: &[HexCoord], b: &[HexCoord]| -> Vec<HexCoord> {
+            a.iter().copied().filter(|h| !b.contains(h)).collect()
+        };
+        let (one_only, other_only) = (only(&one, &other), only(&other, &one));
+        assert!(!one_only.is_empty() && !other_only.is_empty());
+        for &h in one_only.iter().chain(&other_only) {
+            assert!(sees(from, to, &[h]), "{h} alone");
+        }
+        assert!(!sees(from, to, &[one_only[0], other_only[0]]));
+        // A hex both sides pass blocks alone.
+        let common = one[1..one.len() - 1]
+            .iter()
+            .copied()
+            .find(|h| other.contains(h))
+            .unwrap();
+        assert!(!sees(from, to, &[common]));
+    }
+
+    /// Line of sight is reciprocal on any board in the Ground→Ground box
+    /// (whose entries carry no positional footnote): pseudo-random terrain,
+    /// walls, gates and units, every pair within range 8 -- along hexsides,
+    /// through corners, clipping them -- sees both ways or neither.
+    #[rulebook("§6.3")]
+    #[test]
+    fn ground_to_ground_los_is_reciprocal_on_a_random_board() {
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let mut board = BoardInfo::default();
+        let mut units = Vec::new();
+        let kinds = [
+            GroundKind::Clear,
+            GroundKind::Clear,
+            GroundKind::Clear,
+            GroundKind::Huts,
+            GroundKind::Trees,
+            GroundKind::Building,
+            GroundKind::Rough,
+        ];
+        for q in -2..=12 {
+            for r in -2..=12 {
+                let h = HexCoord::new(q, r);
+                let roll = next();
+                board
+                    .terrain
+                    .insert(h, Terrain::ground(kinds[(roll % 7) as usize]));
+                if roll % 23 == 0 {
+                    units.push(h);
+                }
+                for n in [HexCoord::new(q + 1, r), HexCoord::new(q, r + 1)] {
+                    match next() % 17 {
+                        0 => board
+                            .hexsides
+                            .insert(HexsideRef::new(h, n), HexsideKind::Wall),
+                        1 => board
+                            .hexsides
+                            .insert(HexsideRef::new(h, n), HexsideKind::Gate),
+                        _ => None,
+                    };
+                }
+            }
+        }
+        let g = LosLevel::Ground;
+        let sees = |a, b| {
+            has_los(
+                &board,
+                a,
+                b,
+                FireKind::Direct,
+                g,
+                g,
+                units_at(&units),
+                |_, _| false,
+            )
+        };
+        let hexes: Vec<HexCoord> = (0..=10)
+            .flat_map(|q| (0..=10).map(move |r| HexCoord::new(q, r)))
+            .collect();
+        let (mut clear, mut blocked) = (0, 0);
+        for &a in &hexes {
+            for &b in &hexes {
+                if a.distance(b) > 8 || a >= b {
+                    continue;
+                }
+                let ab = sees(a, b);
+                assert_eq!(ab, sees(b, a), "{a} <-> {b}");
+                if ab { clear += 1 } else { blocked += 1 }
+            }
+        }
+        assert!(
+            clear > 100 && blocked > 100,
+            "{clear} clear, {blocked} blocked"
+        );
+    }
+
+    /// Not a check: how many ordered pairs at range 2-10 on each board the
+    /// exact ray judges differently from the one-sample-per-hex line it
+    /// replaced (levels from the terrain, no units). Run with
+    /// `cargo test -p omdurman-rules --lib exact_ray_scan -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "a report, not a check"]
+    fn exact_ray_scan() {
+        let boards = [
+            ("Campaign", crate::board_data::campaign_map_data()),
+            (
+                "Fall of Khartoum",
+                crate::board_data::fall_of_khartoum_map_data(),
+            ),
+        ];
+        for (name, data) in boards {
+            let board = BoardInfo::from_map_data(data);
+            let hexes: Vec<HexCoord> = board.terrain.keys().copied().collect();
+            let level = |h| los_level(board.terrain_at(h).unwrap_or_default());
+            let sampled = |from: HexCoord, to: HexCoord| {
+                let with_ends = |line: Vec<HexCoord>| {
+                    let mut path = vec![from];
+                    path.extend(line);
+                    path.push(to);
+                    path
+                };
+                let along = from.hexsides_along_line(to);
+                let walk = |path| {
+                    los_walk(
+                        &board,
+                        from,
+                        to,
+                        path,
+                        &along,
+                        level(from),
+                        level(to),
+                        no_units(),
+                        |_, _| false,
+                    )
+                    .1
+                };
+                walk(with_ends(from.line_between(to))).is_none()
+                    || walk(with_ends(from.line_between_other_side(to))).is_none()
+            };
+            let (mut now_blocked, mut by_wall, mut now_clear) = (0, 0, 0);
+            for &a in &hexes {
+                for &b in &hexes {
+                    if !(2..=10).contains(&a.distance(b)) {
+                        continue;
+                    }
+                    let (old, new) = (
+                        sampled(a, b),
+                        los_rays(&board, a, b, level(a), level(b), no_units(), |_, _| false),
+                    );
+                    match (old, new.1) {
+                        (true, Some(block)) => {
+                            now_blocked += 1;
+                            if matches!(
+                                block,
+                                LosBlock::Hexside {
+                                    feature: LosFeature::Wall,
+                                    ..
+                                }
+                            ) {
+                                by_wall += 1;
+                            }
+                        }
+                        (false, None) => now_clear += 1,
+                        _ => {}
+                    }
+                }
+            }
+            println!(
+                "{name}: {now_blocked} pairs clear before are blocked now ({by_wall} by a wall), \
+                 {now_clear} blocked before are clear now"
+            );
+        }
     }
 
     // ── Property tests: reflexivity + symmetry ───────────────────────────

@@ -104,9 +104,7 @@ impl GameState {
         if !rays.is_empty() {
             return rays;
         }
-        let mut path = vec![firer.position];
-        path.extend(firer.position.line_between(target_hex));
-        path.push(target_hex);
+        let [path, _] = crate::los_table::los_ray_sides(firer.position, target_hex);
         vec![path]
     }
 
