@@ -169,6 +169,10 @@ pub fn pick_validated(
     _rng: &mut BotRng,
     memory: &mut crate::move_memory::MoveMemory,
 ) -> GameEffect {
+    // Only `player`'s own decisions: never the other side's §7.5 retreat
+    // (or its "no"), nor the attacker's resolution for the defender.
+    let own = crate::actions::own_decisions(state, player, candidates);
+    let candidates = &own[..];
     // Fire phases: merge the per-stack shots into planned combined attacks
     // (§6.14) before ranking -- see `crate::fire_plan`. Movement: a unit
     // steps only onto a hex worth more to it ("position values" below), and

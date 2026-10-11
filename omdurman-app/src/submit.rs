@@ -12,7 +12,7 @@
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use omdurman_net::GameEvent;
-use omdurman_rules::effects::{GameState, RuleError, apply_effect};
+use omdurman_rules::effects::{GameEffect, GameState, RuleError, apply_effect};
 
 use crate::PendingEdits;
 use crate::dispatch::Dispatches;
@@ -93,18 +93,63 @@ pub(crate) fn submit_checked(
     }
 }
 
+/// Whether the local seat may submit `event` as far as *whose decision* it
+/// is goes: the engine takes a §7.5 retreat (or its decline) and a melee
+/// resolution from anyone, so the submit path checks that a retreat is the
+/// local seat's own unit (faction and §1.1 command scope), the decline its
+/// own side's, and the resolution or an advance the attacker's
+/// ([`omdurman_bot::actions::effect_actor`]). Every other event passes: the
+/// turn/faction gates at the input sites cover them.
+pub(crate) fn decision_is_local(
+    gs: &GameState,
+    event: &GameEvent,
+    seats: &[omdurman_net::Seat],
+    key: omdurman_net::PlayerKey,
+) -> bool {
+    let GameEvent::Effect(effect) = event else {
+        return true;
+    };
+    let Some(actor) = omdurman_bot::actions::effect_actor(gs, effect) else {
+        return true;
+    };
+    let unit_in_scope = match effect {
+        GameEffect::RetreatBeforeMelee { unit_id, .. }
+        | GameEffect::AdvanceAfterCombat { unit_id, .. } => gs
+            .find_unit(*unit_id)
+            .is_none_or(|u| crate::seats::scope_allows(seats, key, &u.profile.identity)),
+        _ => true,
+    };
+    crate::seats::may_act(seats, key, actor) && unit_in_scope
+}
+
 /// System-param bundle for [`submit_checked`]: the outbound queue plus the
 /// dispatch queue that carries refusals. `Dispatches` is optional so headless
-/// test apps without the dispatch plugin still submit.
+/// test apps without the dispatch plugin still submit; so are the seat
+/// table and the local key the [`decision_is_local`] guard reads.
 #[derive(SystemParam)]
 pub(crate) struct CheckedSubmit<'w> {
     pub pending: ResMut<'w, PendingEdits>,
     pub dispatches: Option<ResMut<'w, Dispatches>>,
+    seats: Option<Res<'w, crate::seats::Seats>>,
+    key: Option<Res<'w, crate::seats::LocalPlayerKey>>,
 }
 
 impl CheckedSubmit<'_> {
-    /// See [`submit_checked`].
+    /// See [`submit_checked`]; first refuses another side's decision (see
+    /// [`decision_is_local`]).
     pub(crate) fn submit(&mut self, gs: &GameState, event: GameEvent) -> bool {
+        if let (Some(seats), Some(key)) = (self.seats.as_deref(), self.key.as_deref())
+            && !decision_is_local(gs, &event, &seats.0, key.0)
+        {
+            info!(?event, "local action refused: not this seat's decision");
+            if let Some(dispatches) = self.dispatches.as_deref_mut() {
+                dispatches.push(
+                    REFUSED_HEADER,
+                    "That is the other side's decision.".to_string(),
+                );
+            }
+            return false;
+        }
         submit_checked(&mut self.pending, self.dispatches.as_deref_mut(), gs, event)
     }
 }
@@ -167,6 +212,61 @@ mod tests {
             optional_rules: vec![],
         };
         assert!(dry_run(&gs, &[], &event).is_ok());
+    }
+
+    /// §7.5: the engine takes a retreat before melee from anyone, so the
+    /// submit path makes sure it is the local seat's own unit -- and the
+    /// decline its own side's, the resolution the attacker's.
+    #[test]
+    fn only_the_defender_submits_the_defenders_reaction() {
+        use omdurman_net::{PlayerKey, Seat, SeatHolder};
+        use omdurman_types::Player;
+        let script = omdurman_rules::tactics::all_scripts()
+            .into_iter()
+            .find(|s| s.name == "retreat_before_melee")
+            .expect("the §7.5 vignette");
+        let mut gs = script.state;
+        let omdurman_rules::tactics::ScriptStep::Legal { effect, .. } = &script.steps[0] else {
+            panic!("the vignette opens with the declaration");
+        };
+        apply_effect(&mut gs, effect).unwrap();
+        // An Anglo-Egyptian infantry attack on a Dervish camel unit.
+        let camel = gs.pending_melee.as_ref().unwrap().attack.defenders[0];
+        let (attacker, defender) = (PlayerKey(1), PlayerKey(2));
+        let seats = vec![
+            Seat {
+                faction: Player::AngloEgyptian,
+                scope: None,
+                holder: SeatHolder::Human(attacker),
+            },
+            Seat {
+                faction: Player::Dervish,
+                scope: None,
+                holder: SeatHolder::Human(defender),
+            },
+        ];
+        let retreat = GameEvent::Effect(GameEffect::RetreatBeforeMelee {
+            unit_id: camel,
+            to: omdurman_types::HexCoord::new(33, 13),
+        });
+        let decline = GameEvent::Effect(GameEffect::DeclineRetreatBeforeMelee);
+        let resolve = GameEvent::Effect(GameEffect::ResolveMelee);
+        assert!(decision_is_local(&gs, &retreat, &seats, defender));
+        assert!(decision_is_local(&gs, &decline, &seats, defender));
+        assert!(!decision_is_local(&gs, &resolve, &seats, defender));
+        assert!(!decision_is_local(&gs, &retreat, &seats, attacker));
+        assert!(!decision_is_local(&gs, &decline, &seats, attacker));
+        assert!(decision_is_local(&gs, &resolve, &seats, attacker));
+        // A spectator decides nothing; an unbound session (no seats) anything.
+        assert!(!decision_is_local(&gs, &retreat, &seats, PlayerKey(3)));
+        assert!(decision_is_local(&gs, &retreat, &[], attacker));
+        // Other events are left to the input sites' gates.
+        assert!(decision_is_local(
+            &gs,
+            &GameEvent::Effect(GameEffect::AdvancePhase),
+            &seats,
+            PlayerKey(3)
+        ));
     }
 
     #[test]

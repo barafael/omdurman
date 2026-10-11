@@ -80,6 +80,7 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
             target,
             roll,
         } => apply_artillery_breach_wall(state, firers, *target, *roll),
+        GameEffect::DeclineRetreatBeforeMelee => apply_decline_retreat_before_melee(state),
     };
     // Post-condition: per-phase trackers never reference eliminated units.
     if result.is_ok() {
@@ -144,6 +145,7 @@ fn check_effect_coords(effect: &GameEffect) -> Result<(), RuleError> {
     match effect {
         GameEffect::AdvancePhase
         | GameEffect::ResolveMelee
+        | GameEffect::DeclineRetreatBeforeMelee
         | GameEffect::DervishDesertion { .. }
         | GameEffect::SinkChain { .. }
         | GameEffect::RemoveDeployedUnit { .. }

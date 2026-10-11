@@ -177,7 +177,10 @@ pub fn playthrough(scenario: Scenario, seed: u64, cfg: PlayConfig, agents: Agent
             // During Setup the candidates mix both sides' deployments, so a
             // commander pair scores each candidate by its owner's doctrine
             // (see `commanders::pick_setup`).
-            let chooser = state.player_to_act().unwrap_or(state.phase_player());
+            // (The defender of a declared melee decides its §7.5 retreat
+            // first, and nobody picks the other side's decisions.)
+            let chooser = crate::actions::decider(&state).unwrap_or(state.phase_player());
+            let candidates = crate::actions::own_decisions(&state, chooser, &candidates);
             if state.phase == Phase::Setup && agents.any_commander() {
                 crate::commanders::pick_setup(&state, &candidates, &agents, &mut rng)
             } else if agents.is_aggressive(chooser) {
@@ -213,6 +216,10 @@ pub fn playthrough(scenario: Scenario, seed: u64, cfg: PlayConfig, agents: Agent
                 attack.firing_player
             }
             GameEffect::DeclareMelee { attack, .. } => attack.attacker_player,
+            // The §7.5 reaction is the defender's.
+            GameEffect::RetreatBeforeMelee { .. } | GameEffect::DeclineRetreatBeforeMelee => {
+                crate::actions::effect_actor(&state, &pick).unwrap_or(state.phase_player())
+            }
             GameEffect::ArtilleryBreachWall { firers, .. } => firers
                 .first()
                 .and_then(|id| state.find_unit(*id))

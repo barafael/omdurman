@@ -365,7 +365,25 @@ pub fn apply_declare_melee(
         attacker_roll,
         defender_roll,
         disruption,
+        retreat_declined: false,
     });
+    Ok(())
+}
+
+/// The defender declines the §7.5 retreat from the pending melee (see
+/// [`GameEffect::DeclineRetreatBeforeMelee`]): no unit retreats from this
+/// attack any more.
+pub fn apply_decline_retreat_before_melee(state: &mut GameState) -> Result<(), RuleError> {
+    if !matches!(state.phase, Phase::Melee) {
+        return Err(RuleError::WrongPhase);
+    }
+    let Some(pending) = state.pending_melee.as_mut() else {
+        return Err(RuleError::NoMeleePending);
+    };
+    if pending.retreat_declined {
+        return Err(RuleError::RetreatDeclined);
+    }
+    pending.retreat_declined = true;
     Ok(())
 }
 

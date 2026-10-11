@@ -227,6 +227,7 @@ pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
             describe_melee(attack, *attacker_roll, *defender_roll)
         ),
         GameEffect::ResolveMelee => "resolve declared melee".to_string(),
+        GameEffect::DeclineRetreatBeforeMelee => "the defenders stand (no retreat)".to_string(),
         GameEffect::RetreatBeforeMelee { unit_id, to } => {
             let from = state
                 .find_unit(*unit_id)

@@ -243,7 +243,7 @@ pub fn handle_melee_combat(
 pub fn melee_reaction_ui(
     mut contexts: EguiContexts,
     game_state: Option<Res<GameStateResource>>,
-    peers: Peers,
+    (peers, seats): (Peers, Res<crate::seats::Seats>),
     mut submit: crate::submit::CheckedSubmit,
     mut layout: ResMut<crate::ScreenLayout>,
     mut keys: bevy::ecs::message::MessageReader<crate::hotkeys::PickerCommand>,
@@ -262,6 +262,10 @@ pub fn melee_reaction_ui(
     let local_is_attacker = peers.may_act(attacker_player);
     let target = pm.attack.defender_hex;
     let retreat_possible = defenders_may_retreat(&gs.0, &pm.attack);
+    // An AI defender reacts first (§7.5): the host's AI retreats or stands
+    // within moments, and the attacker resolves after it.
+    let ai_defender_deciding = retreat_possible
+        && crate::seats::ai_factions(&seats.0).contains(&attacker_player.opponent());
 
     crate::ui::stacked_card(
         ctx,
@@ -274,11 +278,15 @@ pub fn melee_reaction_ui(
                 format!("\u{2694} {attacker_player} melee on hex {target}"),
             );
             let withdrawn = gs.0.melee_defenders_now(&pm.attack).is_empty();
-            if local_is_attacker {
+            if local_is_attacker && ai_defender_deciding {
+                ui.label("The defenders are deciding whether to retreat (§7.5)...");
+            } else if local_is_attacker {
                 ui.label(if withdrawn {
                     "The defenders withdrew (§7.5): resolving ends the attack."
                 } else if retreat_possible {
                     "Defenders may retreat. Resolve when ready."
+                } else if pm.retreat_declined {
+                    "The defenders stand (§7.5). Resolve when ready."
                 } else {
                     "Resolve when ready."
                 });
@@ -287,10 +295,19 @@ pub fn melee_reaction_ui(
                 }
             } else if withdrawn {
                 ui.label("Your units withdrew (§7.5). Waiting for the attacker.");
-            } else if retreat_possible {
+            } else if retreat_possible && peers.may_act(attacker_player.opponent()) {
                 ui.label("You may retreat threatened cavalry/camel: click the");
                 ui.label("attacked hex, then a highlighted hex two away.");
-                ui.label("Or wait for the attacker to resolve.");
+                // The defender's "no": the attacker (an AI attacker waits
+                // for it) may resolve at once.
+                if ui.button("Stand fast (no retreat)").clicked() {
+                    submit.submit(
+                        &gs.0,
+                        GameEvent::Effect(GameEffect::DeclineRetreatBeforeMelee),
+                    );
+                }
+            } else if retreat_possible {
+                ui.label("The defenders may retreat before the attack (§7.5).");
             } else {
                 ui.label("Waiting for the attacker to resolve.");
             }

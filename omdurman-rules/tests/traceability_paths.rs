@@ -146,9 +146,9 @@ mod rules_effects_paths {
     use omdurman_rules::effects::{GameState, MAX_CHAIN_HEXES, PendingMelee};
     // GameEffect variants (§4, §5, §6, §7, §8, §10).
     use omdurman_rules::effects::GameEffect::{
-        AdvanceAfterCombat, AdvancePhase, ArtilleryBreachWall, ConstructZariba, Demolition,
-        DervishDesertion, FireCombat, FriendliesTransport, HowitzerFire, PlaceReinforcements,
-        ResolveMelee, RetreatBeforeMelee, RiverMine,
+        AdvanceAfterCombat, AdvancePhase, ArtilleryBreachWall, ConstructZariba,
+        DeclineRetreatBeforeMelee, Demolition, DervishDesertion, FireCombat, FriendliesTransport,
+        HowitzerFire, PlaceReinforcements, ResolveMelee, RetreatBeforeMelee, RiverMine,
     };
 
     #[test]
@@ -164,6 +164,7 @@ mod rules_effects_paths {
         let _ = omdurman_rules::effects::apply_resolve_melee;
         let _ = omdurman_rules::effects::apply_place_reinforcements;
         let _ = omdurman_rules::effects::apply_retreat_before_melee;
+        let _ = omdurman_rules::effects::apply_decline_retreat_before_melee;
         let _ = omdurman_rules::effects::apply_place_mine;
         let _ = omdurman_rules::effects::apply_place_chain;
         let _ = omdurman_rules::effects::apply_river_mine;

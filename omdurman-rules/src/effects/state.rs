@@ -227,6 +227,11 @@ pub struct PendingMelee {
     pub defender_roll: DieRoll,
     /// Which units each side's `D` result disrupts (§CombatResults).
     pub disruption: DisruptionDraw,
+    /// The defender has declined the §7.5 retreat
+    /// ([`GameEffect::DeclineRetreatBeforeMelee`]): its reaction is over, and
+    /// no unit retreats from this attack any more.
+    #[serde(default)]
+    pub retreat_declined: bool,
 }
 
 impl GameState {

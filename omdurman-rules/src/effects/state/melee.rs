@@ -114,6 +114,15 @@ impl GameState {
                 return Err(RuleError::NoInfantryMeleeThreatens(unit_id));
             }
         }
+        // The defender may decline the retreat (§7.5 "may"); once it has, its
+        // reaction to this attack is over.
+        if self
+            .pending_melee
+            .as_ref()
+            .is_some_and(|p| p.retreat_declined)
+        {
+            return Err(RuleError::RetreatDeclined);
+        }
         if !unit.profile.kind.may_retreat_before_melee() {
             return Err(RuleError::MayNotRetreatBeforeMelee(unit_id));
         }
