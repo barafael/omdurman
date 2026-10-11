@@ -123,12 +123,16 @@ pub fn los_ray_sides(from: HexCoord, to: HexCoord) -> [Vec<HexCoord>; 2] {
     // keeps the shifted line on its boundary. Oriented like the tie-break
     // nudge of `HexLine`, the cube vector (1, 2, -3) -- (-1, 9) on this
     // lattice -- so that the first side is the one `line_between` walks.
-    let perp = [-d[1], d[0]];
-    let side = if 9 * d[0] + d[1] >= 0 { 1 } else { -1 };
-    let shift = |s: i64| [perp[0] * s, perp[1] * s];
+    let left = [-d[1], d[0]];
+    let right = [d[1], -d[0]];
+    let (first, second) = if 9 * d[0] + d[1] >= 0 {
+        (left, right)
+    } else {
+        (right, left)
+    };
     [
-        walk_side(from, to, d, shift(side)),
-        walk_side(from, to, d, shift(-side)),
+        walk_side(from, to, d, first),
+        walk_side(from, to, d, second),
     ]
 }
 
