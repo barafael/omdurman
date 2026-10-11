@@ -160,7 +160,15 @@ seq-conflict / seq-gap healing, stall auto-reconnect — is specified in CLAUDE.
 - **`NetMsg`** — `Game { uid, event }` (unsequenced, peer→host; `uid` is the submission
   identity), `Sequenced { seq, uid, event }` (host→all, the *only* form applied locally),
   `Ephemeral` (unreliable, never recorded), `Control` (snapshot handshake, seat requests and
-  votes).
+  votes, chunks).
+- **Large messages** — a data channel refuses messages over its SCTP maximum (64 KiB for
+  webrtc-rs under matchbox's defaults; matchbox only logs the refusal, after `try_send`
+  returned `Ok`), and a game record outgrows that after about a thousand events. Every message
+  whose encoding exceeds `CHUNK_BYTES` (16 KiB) is sent as a run of `Control::Chunk { transfer_id,
+  index, total, bytes }` packets (`omdurman_net::enc_packets`, used by `flush_pending` for every
+  reliable send) and reassembled per sender by `NetState::chunks` (`ChunkAssembler`) before it
+  enters the receive path; out-of-order, duplicate and interleaved chunks are tolerated, and an
+  older incomplete transfer is superseded once a newer one of the same sender completes.
 - **`GameEvent`** — the only enum whose variants are recorded/replayed: `StartGame`,
   `Effect(GameEffect)` (every game mutation), the sprite-keyed `PlaceUnit` / `RemoveUnit` /
   `MoveUnit`, and the seat events `SeatAssigned` / `SeatCarved`. Non-persistent messages
@@ -184,7 +192,17 @@ seq-conflict / seq-gap healing, stall auto-reconnect — is specified in CLAUDE.
   the lock when the process exits, so a relaunch reclaims the same key while a second concurrent
   window gets its own); the web keeps it in `sessionStorage["omdurman.player_key"]` (a reload
   keeps it); it rides in `Ephemeral::PlayerInfo`, sent reliably to each peer on connect, and
-  lands on the peer entity as `PeerPlayerKey`.
+  lands on the peer entity as `PeerPlayerKey`. A *duplicated* browser tab inherits a copy of
+  `sessionStorage`, so a web key is only announced once `seats::PlayerKeyClaim` settled it: the
+  tab writes a `localStorage` probe, a live tab holding the same key answers it from its
+  `storage` listener, and an answered probe makes the new tab take a fresh key (unanswered for
+  `KEY_PROBE_SECS`, the key is its own -- a reload keeps the seat). As a fallback, an instance
+  not yet in a game that hears its own key from another peer takes a fresh one.
+- **Lobby picks on connect.** Besides `PlayerInfo`, each peer announces its faction, spectator
+  and command-scope (§1.1) picks to every newly connected peer; the host also announces its
+  `ScenarioChoice` and `HostLobbyRules` (optional rules, AI commanders), to newcomers and to
+  everyone when it is promoted. Guests adopt the current host's settings, so a guest promoted
+  to host carries on with them and every lobby view converges.
 - **Seat table.** `StartGame { seats, scenario, optional_rules }` commits `Seat { faction, scope:
   Option<CommandScope>, holder: Human(PlayerKey) | Ai }`. The app mirrors it in `seats::Seats`,
   written *only* by `game_apply::apply_game_event` (live echo and replay alike). `peers::Peers`
@@ -205,7 +223,9 @@ seq-conflict / seq-gap healing, stall auto-reconnect — is specified in CLAUDE.
   denies; zero voters approve). The host then submits `GameEvent::SeatAssigned { seat, previous,
   holder }` or `SeatCarved { faction, scope, holder }`, whose apply arms re-check the table
   deterministically (a stale `previous`, a double seat, or an empty/mismatched scope is rejected
-  on every peer). A host failover drops open votes; clients expire their ballots at the deadline.
+  on every peer). A `HandToAi` vote is called off as soon as the seat's holder is back (and the
+  approved hand-over re-checks it), so a returning player keeps their seat. A host failover
+  drops open votes; clients expire their ballots at the deadline.
 - **Wire format.** The seat `Control` and `GameEvent` variants are appended, but `StartGame`'s
   shape and `PlayerInfo` changed, so every peer must run the same build. Old JSON saved games
   still load (their `assignments`/`ai`/`commands` are ignored: seatless, reviewable).

@@ -56,4 +56,4 @@ traceability-macro = { path = "../traceability-macro" }
 getrandom = { workspace = true, features = ["wasm_js"] }
 wasm-bindgen = { version = "0.2" }
 js-sys = { version = "0.3" }
-web-sys = { workspace = true, features = ["Window", "Location", "Blob", "Url", "HtmlAnchorElement", "Document", "Storage", "MediaQueryList"] }
+web-sys = { workspace = true, features = ["Window", "Location", "Blob", "Url", "HtmlAnchorElement", "Document", "Storage", "MediaQueryList", "EventTarget"] }

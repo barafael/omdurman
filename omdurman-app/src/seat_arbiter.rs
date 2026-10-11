@@ -165,10 +165,17 @@ pub(crate) fn seat_control(time: Res<Time>, mut traffic: SeatTraffic, mut books:
         }));
     }
 
-    // Host: votes past their deadline are denied.
+    // Host: votes past their deadline are denied, and so are votes whose
+    // change no longer stands (the holder of a seat about to go to the AI
+    // came back).
     if is_host {
-        for outcome in books.book.tick(now) {
-            resolve(&mut traffic.pending, &books.view.seats.0, outcome, &mut out);
+        let presence = &books.view.presence;
+        let cancelled = books.book.cancel_invalid(
+            |event| seats::vote_still_stands(event, |k| presence.abandoned(k)),
+            "The seat holder is back.",
+        );
+        for outcome in cancelled.into_iter().chain(books.book.tick(now)) {
+            resolve(&mut traffic.pending, &books.view, outcome, &mut out);
         }
     }
 
@@ -236,12 +243,9 @@ pub(crate) fn seat_control(time: Res<Time>, mut traffic: SeatTraffic, mut books:
                             seats::vote_voters(&projected, requester, |k| presence.is_connected(k));
                         info!(request_id, ?voters, %summary, "host: seat vote opened");
                         match books.book.open(request_id, event, voters.clone(), now) {
-                            Some(outcome) => resolve(
-                                &mut traffic.pending,
-                                &books.view.seats.0,
-                                outcome,
-                                &mut out,
-                            ),
+                            Some(outcome) => {
+                                resolve(&mut traffic.pending, &books.view, outcome, &mut out)
+                            }
                             None if books.book.is_open(request_id) => {
                                 out.push(Route::All(Control::SeatVoteOpen {
                                     request_id,
@@ -262,7 +266,7 @@ pub(crate) fn seat_control(time: Res<Time>, mut traffic: SeatTraffic, mut books:
                 approve,
             } => {
                 if let Some(outcome) = books.book.vote(request_id, voter, approve) {
-                    resolve(&mut traffic.pending, &books.view.seats.0, outcome, &mut out);
+                    resolve(&mut traffic.pending, &books.view, outcome, &mut out);
                 }
             }
             Control::SeatVoteOpen {
@@ -330,7 +334,10 @@ pub(crate) fn seat_control(time: Res<Time>, mut traffic: SeatTraffic, mut books:
                 }
             }
             // Only seat controls are buffered for this system.
-            Control::RequestSnapshot | Control::SnapshotReceived | Control::GameHistory(_) => {}
+            Control::RequestSnapshot
+            | Control::SnapshotReceived
+            | Control::GameHistory(_)
+            | Control::Chunk { .. } => {}
         }
     }
 
@@ -358,18 +365,26 @@ fn closed(request_id: u64, approved: bool, reason: &str) -> Control {
 
 /// Host: act on a decided vote. An approved change is re-checked against the
 /// seat table as it is *now* (plus our unconfirmed seat events) -- the seats
-/// may have moved during the vote -- and submitted if it still applies.
+/// may have moved during the vote -- and against who is present now (a
+/// holder who came back keeps their seat), and submitted if it still
+/// applies.
 fn resolve(
     pending: &mut PendingEdits,
-    seats: &[omdurman_net::Seat],
+    view: &seats::SeatView,
     outcome: VoteOutcome,
     out: &mut Vec<Route>,
 ) {
     match outcome {
         VoteOutcome::Approved { request_id, event } => {
             let projected =
-                seats::projected_seats(seats, pending.unconfirmed.iter().map(|(_, e)| e));
-            if seats::apply_seat_event(&mut projected.clone(), &event) {
+                seats::projected_seats(&view.seats.0, pending.unconfirmed.iter().map(|(_, e)| e));
+            if !seats::vote_still_stands(&event, |k| view.presence.abandoned(k)) {
+                out.push(Route::All(closed(
+                    request_id,
+                    false,
+                    "The seat holder is back.",
+                )));
+            } else if seats::apply_seat_event(&mut projected.clone(), &event) {
                 info!(request_id, ?event, "host: seat vote passed");
                 pending.submit_game(event);
                 out.push(Route::All(closed(request_id, true, "Approved.")));
@@ -549,6 +564,66 @@ mod tests {
                 )
             });
         assert!(closed, "the denial is broadcast");
+    }
+
+    /// A vote to hand an abandoned seat to the AI is called off when its
+    /// holder comes back while it is open: the returning player keeps the
+    /// seat, whatever the ballots say.
+    #[test]
+    fn a_hand_to_ai_vote_is_cancelled_when_the_holder_returns() {
+        let mut app = host_app();
+        guest_request(&mut app, 9, SeatRequestKind::HandToAi { seat: 1 });
+        app.update();
+        assert!(app.world().resource::<VoteBook>().is_open(9), "voting");
+        // AWAY reconnects mid-vote.
+        let back: HashSet<PlayerKey> = [HOST, NEWCOMER, AWAY].into_iter().collect();
+        app.world_mut()
+            .resource_mut::<seats::SeatPresence>()
+            .update(&table(), &back, seats::SEAT_ABANDON_SECS + 2.0, false);
+        app.update();
+        assert!(!app.world().resource::<VoteBook>().is_open(9));
+        let cancelled = app
+            .world()
+            .resource::<PendingEdits>()
+            .outgoing_broadcast
+            .iter()
+            .any(|m| {
+                matches!(
+                    m,
+                    NetMsg::Control(Control::SeatVoteClosed {
+                        request_id: 9,
+                        approved: false,
+                        ..
+                    })
+                )
+            });
+        assert!(cancelled, "the vote is closed as denied");
+        // A late approval changes nothing.
+        app.world_mut()
+            .resource_mut::<SeatClient>()
+            .cast
+            .push((9, true));
+        app.update();
+        assert!(submitted(&app).is_empty(), "the holder keeps the seat");
+    }
+
+    /// The decision-time re-check on its own: an approved hand-over whose
+    /// holder is back is refused.
+    #[test]
+    fn an_approved_hand_to_ai_rechecks_presence() {
+        let hand_over = GameEvent::SeatAssigned {
+            seat: 1,
+            previous: SeatHolder::Human(AWAY),
+            holder: SeatHolder::Ai,
+        };
+        assert!(seats::vote_still_stands(&hand_over, |k| k == AWAY));
+        assert!(!seats::vote_still_stands(&hand_over, |_| false));
+        let carve = GameEvent::SeatCarved {
+            faction: Player::Dervish,
+            scope: CommandScope::Tribes(BTreeSet::from([DervishTribe::Jaalin])),
+            holder: NEWCOMER,
+        };
+        assert!(seats::vote_still_stands(&carve, |_| false));
     }
 
     #[test]

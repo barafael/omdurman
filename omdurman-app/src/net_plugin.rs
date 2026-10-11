@@ -5,7 +5,7 @@ use crate::state::AppState;
 use bevy::prelude::*;
 use bevy_egui::egui;
 use bevy_matchbox::prelude::{MatchboxSocket, PeerId};
-use omdurman_net::{CH_RELIABLE, Ephemeral, GameEvent, NetMsg, NetState, enc_msg, open_socket};
+use omdurman_net::{CH_RELIABLE, Ephemeral, GameEvent, NetMsg, NetState, enc_packets, open_socket};
 
 // -- Net resources (moved from main.rs) -------------------------------------
 
@@ -64,6 +64,10 @@ pub struct PendingEdits {
     /// Seconds since the `unconfirmed` queue was last empty. Nonzero stall
     /// means our submissions are not reaching a sequencing host.
     pub stall_secs: f32,
+    /// Id of the next chunked transfer this instance sends (see
+    /// `omdurman_net::enc_packets`). Only ever increases: the receiver treats
+    /// an older incomplete transfer as superseded once a newer one completes.
+    pub next_transfer_id: u64,
 }
 
 impl PendingEdits {
@@ -72,6 +76,8 @@ impl PendingEdits {
         Self {
             next_uid: base,
             uid_base: base,
+            // A random start far from wrapping around.
+            next_transfer_id: base >> 32,
             ..Default::default()
         }
     }
@@ -208,6 +214,30 @@ pub struct PendingIncoming {
     /// Seat claim / vote `Control` messages buffered by `handle_socket` for
     /// `seat_arbiter::seat_control` (host arbitration + client ballots).
     pub seat_control: Vec<(omdurman_net::Control, PeerId)>,
+    /// Host-only: submissions held while sequencing is not allowed, in the
+    /// order they arrived (one entry per uid). `handle_socket` re-examines
+    /// them first every frame, ahead of anything that arrived since, so the
+    /// hold never reorders a player's actions.
+    pub held: Vec<HeldSubmission>,
+}
+
+/// A submission the host holds (see [`PendingIncoming::held`]).
+#[derive(Clone, Debug)]
+pub struct HeldSubmission {
+    pub uid: u64,
+    pub event: GameEvent,
+    /// The host's own submission (from its loopback), not a guest's.
+    pub own: bool,
+}
+
+impl PendingIncoming {
+    /// Hold a submission at the back of the queue; a uid already held keeps
+    /// its place (a retransmission arriving during the hold).
+    pub fn hold(&mut self, uid: u64, event: GameEvent, own: bool) {
+        if !self.held.iter().any(|h| h.uid == uid) {
+            self.held.push(HeldSubmission { uid, event, own });
+        }
+    }
 }
 
 // -- NetPlugin --------------------------------------------------------------
@@ -219,6 +249,9 @@ pub struct NetPlugin;
 
 impl Plugin for NetPlugin {
     fn build(&self, app: &mut App) {
+        // Stable identity: persisted slot file (native) / per tab (web,
+        // settled by `PlayerKeyClaim` against duplicated tabs).
+        let local_key = crate::seats::LocalPlayerKey::load_or_create();
         app
             // -- Resources ----------------------------------------------
             .insert_resource(NetState::default())
@@ -233,8 +266,8 @@ impl Plugin for NetPlugin {
             .insert_resource(crate::seats::SeatPresence::default())
             .insert_resource(crate::seats::VoteBook::default())
             .insert_resource(crate::seat_arbiter::SeatClient::default())
-            // Stable identity: persisted slot file (native) / per tab (web).
-            .insert_resource(crate::seats::LocalPlayerKey::load_or_create())
+            .insert_resource(crate::seats::PlayerKeyClaim::start(local_key.0))
+            .insert_resource(local_key)
             .insert_resource(crate::LocalFaction::default())
             .insert_resource(crate::LocalSpectator::default())
             .insert_resource(crate::lobby::LocalCommand::default())
@@ -274,6 +307,7 @@ impl Plugin for NetPlugin {
                         .after(sync_peer_entities),
                     crate::game_record::init_game_record.after(crate::net_socket::handle_socket),
                     crate::game_record::flush_game_record.after(crate::net_socket::handle_socket),
+                    crate::seats::settle_player_key.before(send_player_info_on_connect),
                     send_player_info_on_connect.after(crate::net_socket::handle_socket),
                     crate::seat_arbiter::seat_control
                         .after(crate::net_socket::handle_socket)
@@ -348,48 +382,97 @@ pub(crate) fn broadcast_cursor(
     );
 }
 
-/// Send our PlayerInfo (with the stable player key) to every connected peer
-/// once, on the reliable channel (targeted sends are always reliable).
 /// The local player's announced state, bundled for
 /// [`send_player_info_on_connect`].
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct LocalAnnouncement<'w> {
     settings: Res<'w, crate::settings::LocalPlayerSettings>,
     key: Res<'w, crate::seats::LocalPlayerKey>,
+    /// Web: the key is announced only once it is known to be this tab's.
+    claim: Res<'w, crate::seats::PlayerKeyClaim>,
     faction: Res<'w, crate::LocalFaction>,
     spectator: Res<'w, crate::LocalSpectator>,
+    command: Res<'w, crate::lobby::LocalCommand>,
     setup_ready: Res<'w, crate::peers::LocalSetupReady>,
+    /// The host's lobby settings, announced while we host.
+    scenario: Res<'w, crate::LobbyScenario>,
+    optional_rules: Res<'w, crate::LocalOptionalRule>,
+    ai_commanders: Res<'w, crate::lobby::LocalAiCommanders>,
+}
+
+/// Who [`send_player_info_on_connect`] has told what: the id and key we
+/// announced under, the peers told, and whether we were the host.
+#[derive(Default)]
+pub(crate) struct Announced {
+    as_id: Option<PeerId>,
+    key: Option<omdurman_net::PlayerKey>,
+    notified: Vec<PeerId>,
+    was_host: bool,
+}
+
+/// The host's lobby settings as the messages that announce them: the
+/// scenario pick and the optional rules + AI commanders.
+pub(crate) fn host_lobby_settings(
+    scenario: &crate::LobbyScenario,
+    optional_rules: &crate::LocalOptionalRule,
+    ai_commanders: &crate::lobby::LocalAiCommanders,
+) -> [NetMsg; 2] {
+    [
+        NetMsg::Ephemeral(Ephemeral::ScenarioChoice(scenario.0)),
+        NetMsg::Ephemeral(Ephemeral::HostLobbyRules {
+            optional_rules: optional_rules.0.clone(),
+            ai_commanders: ai_commanders.0.clone(),
+        }),
+    ]
 }
 
 /// Announce ourselves (identity, picks, readiness) to every peer we have not
 /// announced ourselves to on its current connection. `notified` is our own
 /// id plus the peers told under it: a peer that disconnects is forgotten (it
 /// is told again if it comes back), and our own reconnect -- a fresh id the
-/// others have never heard from -- starts over. (It used to only grow: after
-/// a reconnect the others never learned our player key again, so our seat
-/// read as absent, which pauses the game and finally frees the seat.)
+/// others have never heard from -- starts over, as does a new player key.
+/// (It used to only grow: after a reconnect the others never learned our
+/// player key again, so our seat read as absent, which pauses the game and
+/// finally frees the seat.) The lobby picks are announced too -- the
+/// command scope (§1.1) and, while we host, the host's lobby settings --
+/// since they are otherwise only broadcast when they change: a joiner would
+/// show its own defaults as the host's choice. A peer just promoted to host
+/// announces its settings to everyone.
 pub(crate) fn send_player_info_on_connect(
     net: Res<NetState>,
     me: LocalAnnouncement,
     mut pending: ResMut<PendingEdits>,
-    mut notified: Local<(Option<PeerId>, Vec<PeerId>)>,
+    mut told: Local<Announced>,
 ) {
     let LocalAnnouncement {
         settings: local,
         key: local_key,
+        claim,
         faction: local_faction,
         spectator: local_spectator,
+        command: local_command,
         setup_ready: local_setup_ready,
+        scenario,
+        optional_rules,
+        ai_commanders,
     } = me;
-    let (announced_as, notified) = &mut *notified;
-    if *announced_as != net.my_id() {
-        *announced_as = net.my_id();
-        notified.clear();
+    if !claim.is_settled() {
+        return;
     }
-    notified.retain(|peer| net.peers().contains(peer));
+    let told = &mut *told;
+    if told.as_id != net.my_id() || told.key != Some(local_key.0) {
+        told.as_id = net.my_id();
+        told.key = Some(local_key.0);
+        told.notified.clear();
+    }
+    told.notified.retain(|peer| net.peers().contains(peer));
+    let promoted = net.is_host && !told.was_host;
+    told.was_host = net.is_host;
+    let host_settings = host_lobby_settings(&scenario, &optional_rules, &ai_commanders);
     for &peer in net.peers() {
-        if !notified.contains(&peer) {
-            notified.push(peer);
+        let new_peer = !told.notified.contains(&peer);
+        if new_peer {
+            told.notified.push(peer);
             let (r, g, b) = local.color_u8();
             pending.outgoing_targeted.push((
                 NetMsg::Ephemeral(Ephemeral::PlayerInfo {
@@ -414,14 +497,35 @@ pub(crate) fn send_player_info_on_connect(
                 NetMsg::Ephemeral(Ephemeral::SpectatorChoice(local_spectator.0)),
                 peer,
             ));
+            pending.outgoing_targeted.push((
+                NetMsg::Ephemeral(Ephemeral::CommandChoice(local_command.0.clone())),
+                peer,
+            ));
+        }
+        if net.is_host && (new_peer || promoted) {
+            for msg in host_settings.iter().cloned() {
+                pending.outgoing_targeted.push((msg, peer));
+            }
         }
     }
+}
+
+/// What [`apply_ephemeral`] adopts from other peers besides the peer
+/// entities: the host's lobby settings, and our own key (a duplicate).
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct EphemeralSinks<'w> {
+    remote_scenario: ResMut<'w, crate::lobby::RemoteScenario>,
+    lobby_scenario: ResMut<'w, crate::LobbyScenario>,
+    optional_rules: ResMut<'w, crate::LocalOptionalRule>,
+    ai_commanders: ResMut<'w, crate::lobby::LocalAiCommanders>,
+    local_key: ResMut<'w, crate::seats::LocalPlayerKey>,
+    turn: Res<'w, TurnState>,
 }
 
 pub(crate) fn apply_ephemeral(
     mut incoming: ResMut<PendingIncoming>,
     mut commands: Commands,
-    mut remote_scenario: ResMut<crate::lobby::RemoteScenario>,
+    mut sinks: EphemeralSinks,
     peers: crate::peers::PeerRouteQuery,
     mut event_viewer: Option<ResMut<crate::event_viewer::EventViewerState>>,
     time: Res<Time>,
@@ -459,6 +563,16 @@ pub(crate) fn apply_ephemeral(
                 color: [cr, cg, cb],
                 key,
             } => {
+                // Another live instance announcing *our* key: a duplicated
+                // browser tab that copied our `sessionStorage` (the probe in
+                // `PlayerKeyClaim` missed it). One faction would be left
+                // with nobody who can act: an instance not yet in a game
+                // (the duplicate, typically) takes a fresh key; one playing
+                // keeps its seat.
+                if key == sinks.local_key.0 && net.my_id() != Some(peer) && !sinks.turn.game_started
+                {
+                    sinks.local_key.regenerate();
+                }
                 if let Some(&(entity, _, _)) = by_id.get(&peer) {
                     commands.entity(entity).try_insert((
                         PeerName(name),
@@ -505,8 +619,23 @@ pub(crate) fn apply_ephemeral(
                         .try_insert(crate::peers::SetupReadyFlag(ready));
                 }
             }
+            // The host's lobby settings. Only the current host's count (a
+            // demoted host's last word may still be in flight); guests adopt
+            // them, so a guest promoted to host carries on with them.
             Ephemeral::ScenarioChoice(scenario) => {
-                remote_scenario.0 = Some(scenario);
+                if net.host_id() == Some(peer) && !net.is_host {
+                    sinks.remote_scenario.0 = Some(scenario);
+                    sinks.lobby_scenario.0 = scenario;
+                }
+            }
+            Ephemeral::HostLobbyRules {
+                optional_rules,
+                ai_commanders,
+            } => {
+                if net.host_id() == Some(peer) && !net.is_host {
+                    sinks.optional_rules.0 = optional_rules;
+                    sinks.ai_commanders.0 = ai_commanders;
+                }
             }
             Ephemeral::SpectatorChoice(spectating) => {
                 if let Some(&(entity, _, _)) = by_id.get(&peer) {
@@ -581,12 +710,13 @@ pub(crate) fn flush_pending(
             }
             NetMsg::Game { uid, event } => {
                 let submission = NetMsg::Game { uid, event };
-                let sent = match (host, enc_msg(&submission), socket.as_deref_mut()) {
-                    (Some(host), Some(encoded), Some(socket)) => socket
-                        .channel_mut(CH_RELIABLE)
-                        .try_send(encoded, host)
-                        .inspect_err(|e| warn!(error = %e, "submit to host failed; will retry"))
-                        .is_ok(),
+                let packets = enc_packets(&submission, &mut pending.next_transfer_id);
+                let sent = match (host, packets, socket.as_deref_mut()) {
+                    (Some(host), Some(packets), Some(socket)) => {
+                        send_packets(socket, &packets, host)
+                            .inspect_err(|e| warn!(error = %e, "submit to host failed; will retry"))
+                            .is_ok()
+                    }
                     _ => false,
                 };
                 if !sent {
@@ -634,10 +764,9 @@ pub(crate) fn flush_pending(
             debug!(%peer, "dropping targeted message to a peer that is not connected");
             continue;
         }
-        let sent = match (enc_msg(&msg), socket.as_deref_mut()) {
-            (Some(encoded), Some(socket)) => socket
-                .channel_mut(CH_RELIABLE)
-                .try_send(encoded, peer)
+        let packets = enc_packets(&msg, &mut pending.next_transfer_id);
+        let sent = match (packets, socket.as_deref_mut()) {
+            (Some(packets), Some(socket)) => send_packets(socket, &packets, peer)
                 .inspect_err(|e| warn!(error = %e, "reliable targeted send failed; will retry"))
                 .is_ok(),
             _ => false,
@@ -666,16 +795,15 @@ pub(crate) fn flush_pending(
             retained_broadcast.push(msg);
             continue;
         };
-        let Some(encoded) = enc_msg(&msg) else {
+        let Some(packets) = enc_packets(&msg, &mut pending.next_transfer_id) else {
             // Encoding failed (OOM) -- retain for a later retry rather than
             // emit an empty packet that WebRTC may silently drop.
             retained_broadcast.push(msg);
             continue;
         };
-        let channel = socket.channel_mut(CH_RELIABLE);
         let mut all_ok = true;
         for &peer in net.peers() {
-            if let Err(e) = channel.try_send(encoded.clone(), peer) {
+            if let Err(e) = send_packets(socket, &packets, peer) {
                 warn!(error = %e, "reliable broadcast send failed; will retry");
                 all_ok = false;
             }
@@ -687,6 +815,23 @@ pub(crate) fn flush_pending(
 
     pending.outgoing_broadcast = retained_broadcast;
     pending.outgoing_targeted = retained_targeted;
+}
+
+/// Send one message's packets (see `omdurman_net::enc_packets`) to `peer` on
+/// the reliable channel, in order, stopping at the first failure. A message
+/// that failed part-way is resent whole, under a fresh transfer id.
+fn send_packets(
+    socket: &mut MatchboxSocket,
+    packets: &[Box<[u8]>],
+    peer: PeerId,
+) -> Result<(), String> {
+    let channel = socket.channel_mut(CH_RELIABLE);
+    for packet in packets {
+        channel
+            .try_send(packet.clone(), peer)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -765,17 +910,27 @@ mod tests {
     /// reconnect (a fresh id, the others' unchanged) the peers already told
     /// under the old id are told again, and a peer that left and came back
     /// is told again too.
-    #[test]
-    fn identity_is_announced_again_after_a_reconnect() {
+    fn announce_app() -> App {
         let mut app = App::new();
         app.insert_resource(NetState::default())
             .insert_resource(PendingEdits::default())
             .insert_resource(crate::settings::LocalPlayerSettings::default())
             .insert_resource(crate::seats::LocalPlayerKey(omdurman_net::PlayerKey(1)))
+            .insert_resource(crate::seats::PlayerKeyClaim::settled())
             .init_resource::<crate::LocalFaction>()
             .init_resource::<crate::LocalSpectator>()
+            .init_resource::<crate::lobby::LocalCommand>()
             .init_resource::<crate::peers::LocalSetupReady>()
+            .init_resource::<crate::LobbyScenario>()
+            .init_resource::<crate::LocalOptionalRule>()
+            .init_resource::<crate::lobby::LocalAiCommanders>()
             .add_systems(Update, send_player_info_on_connect);
+        app
+    }
+
+    #[test]
+    fn identity_is_announced_again_after_a_reconnect() {
+        let mut app = announce_app();
         let peer = PeerId(uuid::Uuid::from_u128(9));
         let told = |app: &mut App| {
             app.update();
@@ -803,6 +958,97 @@ mod tests {
         assert_eq!(told(&mut app), 0);
         app.world_mut().resource_mut::<NetState>().add_peer(peer);
         assert_eq!(told(&mut app), 1, "told again when it comes back");
+        // A fresh player key (a duplicated tab's) is announced again.
+        app.world_mut()
+            .resource_mut::<crate::seats::LocalPlayerKey>()
+            .regenerate();
+        assert_eq!(told(&mut app), 1, "told the new key");
+    }
+
+    /// The lobby picks reach a joiner without waiting for a change: every
+    /// peer's command scope, and the host's scenario and rules -- also to
+    /// everyone when a peer is promoted to host.
+    #[test]
+    fn lobby_settings_are_announced_on_connect_and_promotion() {
+        let mut app = announce_app();
+        app.world_mut().resource_mut::<crate::LobbyScenario>().0 =
+            omdurman_types::Scenario::FallOfKhartoum;
+        app.world_mut()
+            .resource_mut::<crate::lobby::LocalAiCommanders>()
+            .0 = vec![omdurman_types::Player::Dervish];
+        let peer = PeerId(uuid::Uuid::from_u128(9));
+        let sent = |app: &mut App| -> Vec<NetMsg> {
+            app.update();
+            app.world_mut()
+                .resource_mut::<PendingEdits>()
+                .outgoing_targeted
+                .drain(..)
+                .map(|(m, _)| m)
+                .collect()
+        };
+        let scenario = |msgs: &[NetMsg]| {
+            msgs.iter()
+                .filter(|m| {
+                    matches!(
+                        m,
+                        NetMsg::Ephemeral(Ephemeral::ScenarioChoice(
+                            omdurman_types::Scenario::FallOfKhartoum
+                        ))
+                    )
+                })
+                .count()
+        };
+        {
+            let mut net = app.world_mut().resource_mut::<NetState>();
+            net.set_my_id(Some(PeerId(uuid::Uuid::from_u128(20))));
+            net.add_peer(peer);
+        }
+        let guest = sent(&mut app);
+        assert!(
+            guest
+                .iter()
+                .any(|m| matches!(m, NetMsg::Ephemeral(Ephemeral::CommandChoice(None))))
+        );
+        assert_eq!(scenario(&guest), 0, "a guest's scenario is not the host's");
+        // The host leaves; we are promoted: the remaining peers learn ours.
+        let other = PeerId(uuid::Uuid::from_u128(30));
+        app.world_mut().resource_mut::<NetState>().add_peer(other);
+        app.world_mut().resource_mut::<NetState>().is_host = true;
+        let promoted = sent(&mut app);
+        assert_eq!(scenario(&promoted), 2, "both peers");
+        assert!(promoted.iter().any(|m| matches!(
+            m,
+            NetMsg::Ephemeral(Ephemeral::HostLobbyRules { ai_commanders, .. })
+                if ai_commanders == &[omdurman_types::Player::Dervish]
+        )));
+        assert_eq!(scenario(&sent(&mut app)), 0, "once");
+        let joiner = PeerId(uuid::Uuid::from_u128(40));
+        app.world_mut().resource_mut::<NetState>().add_peer(joiner);
+        assert_eq!(
+            scenario(&sent(&mut app)),
+            1,
+            "a joiner learns the host's pick"
+        );
+    }
+
+    /// Web: an unsettled key (a duplicated tab's probe pending) is not
+    /// announced at all.
+    #[test]
+    fn an_unsettled_key_is_not_announced() {
+        let mut app = announce_app();
+        {
+            let mut net = app.world_mut().resource_mut::<NetState>();
+            net.set_my_id(Some(PeerId(uuid::Uuid::from_u128(1))));
+            net.add_peer(PeerId(uuid::Uuid::from_u128(9)));
+        }
+        app.insert_resource(crate::seats::PlayerKeyClaim::unsettled_for_test());
+        app.update();
+        assert!(
+            app.world()
+                .resource::<PendingEdits>()
+                .outgoing_targeted
+                .is_empty()
+        );
     }
 
     /// Offline self-hosting puts the local player in the sorted peer list:

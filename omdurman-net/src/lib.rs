@@ -8,6 +8,9 @@ use omdurman_rules::effects::GameEffect;
 use omdurman_types::{CommandScope, HexCoord, Player, Scenario, SpriteRef};
 use serde::{Deserialize, Serialize};
 
+mod chunk;
+pub use chunk::{CHUNK_BYTES, ChunkAssembler, MAX_CHUNKED_BYTES, enc_packets};
+
 pub const SIGNALING_SERVER: &str = if let Some(s) = option_env!("MATCHBOX_SERVER") {
     s
 } else {
@@ -232,6 +235,16 @@ pub enum Ephemeral {
     /// separate from `FactionChoice` so peers can distinguish "spectating" from
     /// "undecided" in the lobby roster.
     SpectatorChoice(bool),
+    /// The host's lobby rules (live preview, host-authoritative; appended:
+    /// earlier variant indices are the wire format): the optional rules
+    /// (§10.11, §10.21) and the factions handed to the AI. Guests adopt
+    /// them, so the roster shows the AI commanders and a guest promoted to
+    /// host carries on with the same settings. The committed values travel
+    /// in [`GameEvent::StartGame`].
+    HostLobbyRules {
+        optional_rules: Vec<OptionalRule>,
+        ai_commanders: Vec<Player>,
+    },
 }
 
 /// Snapshot-handshake messages. Always reliable.
@@ -276,6 +289,17 @@ pub enum Control {
         request_id: u64,
         approved: bool,
         reason: String,
+    },
+    /// One slice of a message too large for a single data-channel packet
+    /// (see [`enc_packets`]): `bytes` is part `index` of `total` of the
+    /// encoded `NetMsg`, all parts sharing the sender's `transfer_id`. The
+    /// receiver reassembles the run ([`ChunkAssembler`]) and handles the
+    /// message it carries as if it had arrived whole.
+    Chunk {
+        transfer_id: u64,
+        index: u32,
+        total: u32,
+        bytes: Vec<u8>,
     },
 }
 
@@ -488,6 +512,16 @@ pub struct NetState {
     /// `Sequenced` deliveries that arrived past the next expected seq,
     /// waiting for the gap to fill (see [`ReorderBuffer`]).
     pub reorder: ReorderBuffer,
+    /// Host-only: submissions sequenced whose own loopback echo has not been
+    /// processed yet, by uid -> assigned seq. The record learns a seq only on
+    /// echo, so without this a retransmission arriving between sequencing
+    /// and echo would be sequenced a second time (a hole in the host's line
+    /// that every guest then has to heal). Entries leave when their echo is
+    /// handled -- applied (the record has it), or dropped (the submission is
+    /// free to be sequenced afresh).
+    pub host_in_flight: std::collections::HashMap<u64, u32>,
+    /// Reassembly of chunked messages (see [`ChunkAssembler`]).
+    pub chunks: ChunkAssembler,
 }
 
 impl NetState {

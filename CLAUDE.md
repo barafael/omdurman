@@ -170,13 +170,20 @@ The system is a deterministic event-sourced engine over a peer-to-peer mesh:
    Unconfirmed submissions stay in `PendingEdits::unconfirmed` and are retransmitted
    (`SUBMIT_RETRANSMIT_SECS`) until their echo arrives, so player input survives a host death or an
    in-flight send loss; the host re-echoes already-sequenced uids idempotently instead of
-   double-sequencing them.
+   double-sequencing them (from the record, or -- between sequencing and its own loopback echo --
+   from `NetState::host_in_flight`). Submissions held while sequencing is not allowed wait in
+   `PendingIncoming::held`, in arrival order, and are re-examined ahead of anything newer. A host
+   with no game yet holds guests' game actions and requests the history (a newcomer that won the
+   election on an empty record must not start a rogue line under the guests' canonical one).
+   Messages over 16 KiB (a game history) travel as `Control::Chunk` runs (`enc_packets` /
+   `ChunkAssembler`): a WebRTC data channel refuses messages over 64 KiB.
    Unreliable traffic (cursor positions, ephemeral selections) bypasses staging.
 5. **Election stabilization.** A host only sequences when its peer-set view has been unchanged for
    `SEQ_STABILIZE_SECS` *and* it has session evidence (`NetState::has_ever_peered`: another peer
    seen, offline self-host mode, or registered by the signalling server and alone in the room for
-   `SOLO_ROOM_SECS` — a solo game against the AI; never for a peer rejoining a same-room session,
-   `NetState::rejoining`). Without this gate, two peers joining
+   `SOLO_ROOM_SECS` — a solo game against the AI; never for a peer rejoining a same-room session
+   it shared with others, `NetState::rejoining`. A peer reconnecting to the room it was alone in
+   keeps its record and numbering, `SessionReset::OwnLine`). Without this gate, two peers joining
    near-simultaneously each briefly elect themselves host, self-sequence their own submissions, and
    the colliding seqs are silently dropped by the other side's apply-once dedup — a permanent
    divergence.
@@ -233,7 +240,7 @@ The system is a deterministic event-sourced engine over a peer-to-peer mesh:
   `SeatCarved` (apply arms re-validate deterministically). Seat events and `StartGame` are
   *session events*: accepted unchecked by the submit dry run and never re-queued by
   `PendingEdits::requeue_missing_own`.
-- **Wire format.** New `Control` / `GameEvent` variants are *appended* (postcard encodes the
+- **Wire format.** New `Control` / `GameEvent` / `Ephemeral` variants are *appended* (postcard encodes the
   variant index); the `StartGame` / `PlayerInfo` reshape means all peers must run the same build.
 
 ## Empirical net-reliability harness

@@ -222,18 +222,69 @@ fn build_roster(
         .collect()
 }
 
+/// The running game the lobby may be visited from (M -> Lobby mid-game),
+/// bundled for [`lobby_ui`].
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct LobbyGameProgress<'w> {
+    game_state: Res<'w, crate::GameStateResource>,
+    next_mode: ResMut<'w, NextState<crate::AppMode>>,
+}
+
+/// Whether a battle is being fought: the record holds a `StartGame` and the
+/// game is not over. A new Start Battle would then reset every peer's game.
+pub(crate) fn battle_in_progress(recorder: &GameRecorder, game_over: bool) -> bool {
+    !game_over
+        && recorder.record.as_ref().is_some_and(|r| {
+            r.events
+                .iter()
+                .any(|e| matches!(e.payload, GameEvent::StartGame { .. }))
+        })
+}
+
+/// A click on Start Battle: starts at once when no battle is in progress;
+/// otherwise only asks for the confirmation (the second, explicit click on
+/// "Abandon and start a new battle" starts).
+fn start_clicked(battle_active: bool, confirm_restart: &mut bool) -> bool {
+    if battle_active {
+        *confirm_restart = true;
+        false
+    } else {
+        true
+    }
+}
+
+/// The lobby's view of a battle in progress: whether one is, the host's
+/// pending "abandon it?" confirmation, and the "Return to game" request.
+struct RunningBattle<'a> {
+    active: bool,
+    confirm_restart: &'a mut bool,
+    return_to_game: bool,
+}
+
 /// The lobby screen. Shown only in [`AppState::Lobby`] (gated at the system
 /// registration site).
+#[allow(clippy::too_many_arguments)]
 pub fn lobby_ui(
     mut contexts: EguiContexts,
     mut commands: Commands,
     net: Res<NetState>,
     mut local: ResMut<LocalPlayerSettings>,
     mut ctx: LobbyContext,
+    mut progress: LobbyGameProgress,
     mut editing_session: Local<String>,
+    mut confirm_restart: Local<bool>,
 ) {
     let Ok(egui_ctx) = contexts.ctx_mut() else {
         return;
+    };
+    let active = battle_in_progress(&ctx.recorder, progress.game_state.0.game_over);
+    if !active {
+        *confirm_restart = false;
+    }
+    let mut running = RunningBattle {
+        active,
+        confirm_restart: &mut confirm_restart,
+        return_to_game: false,
     };
     // The period-map background and the floating panel are native UI under
     // egui (`splash`), with their frames from its ambient pacing; an egui
@@ -347,6 +398,7 @@ pub fn lobby_ui(
                                         local_key: ctx.local_key.0,
                                     },
                                     &ctx.recorder,
+                                    &mut running,
                                 );
                             });
                     }
@@ -361,6 +413,9 @@ pub fn lobby_ui(
             });
         },
     );
+    if running.return_to_game {
+        crate::enter_game_view(&mut progress.next_mode, &mut ctx.next_state);
+    }
 }
 
 /// The lobby's centred column width for `avail` points: ~55% of the width,
@@ -413,6 +468,7 @@ fn setup_tab(
     lobby: LobbySetupChoices,
     session: SessionControls,
     recorder: &GameRecorder,
+    running: &mut RunningBattle,
 ) {
     let LocalFactionPick {
         local_faction,
@@ -611,8 +667,16 @@ fn setup_tab(
             }
         });
 
-        // -- Optional rule picker (host only, campaign only) ------------
-        if net.is_host && lobby_scenario.0 == Scenario::Campaign {
+        // -- Optional rule picker (host edits, guests preview; campaign) -
+        let shown_scenario = if net.is_host {
+            lobby_scenario.0
+        } else {
+            remote_scenario.0.unwrap_or(lobby_scenario.0)
+        };
+        // The host's rules (optional rules, AI commanders) changed this
+        // frame: guests preview them (`Ephemeral::HostLobbyRules`).
+        let mut rules_changed = false;
+        if shown_scenario == Scenario::Campaign {
             ui.add_space(4.0);
             ui.group(|ui| {
                 crate::rulebook::refs_rich(ui, "Optional Rules (§10)", 14.0, |t| {
@@ -628,7 +692,12 @@ fn setup_tab(
                 // A checkbox label can't hold a link: the § sits beside it.
                 let toggled = ui
                     .horizontal(|ui| {
-                        let changed = ui.checkbox(&mut mines, "River mines").changed();
+                        let changed = ui
+                            .add_enabled(
+                                net.is_host,
+                                egui::Checkbox::new(&mut mines, "River mines"),
+                            )
+                            .changed();
                         crate::rulebook::ref_link(ui, "10.11", 13.0);
                         changed
                     })
@@ -639,13 +708,19 @@ fn setup_tab(
                         omdurman_rules::OptionalRule::RiverMines,
                         mines,
                     );
+                    rules_changed = true;
                 }
                 let mut chain = opt_rule
                     .0
                     .contains(&omdurman_rules::OptionalRule::RiverChain);
                 let toggled = ui
                     .horizontal(|ui| {
-                        let changed = ui.checkbox(&mut chain, "River chain").changed();
+                        let changed = ui
+                            .add_enabled(
+                                net.is_host,
+                                egui::Checkbox::new(&mut chain, "River chain"),
+                            )
+                            .changed();
                         crate::rulebook::ref_link(ui, "10.21", 13.0);
                         changed
                     })
@@ -656,6 +731,7 @@ fn setup_tab(
                         omdurman_rules::OptionalRule::RiverChain,
                         chain,
                     );
+                    rules_changed = true;
                 }
             });
         }
@@ -758,6 +834,7 @@ fn setup_tab(
                             crate::ui::faction_name(faction)
                         );
                         if ui.checkbox(&mut toggled, label).changed() {
+                            rules_changed = true;
                             if toggled {
                                 if !local_ai.0.contains(&faction) {
                                     local_ai.0.push(faction);
@@ -786,9 +863,18 @@ fn setup_tab(
             });
         }
 
+        if net.is_host && rules_changed {
+            pending
+                .outgoing_broadcast
+                .push(NetMsg::Ephemeral(Ephemeral::HostLobbyRules {
+                    optional_rules: optional_rule.0.clone(),
+                    ai_commanders: local_ai.0.clone(),
+                }));
+        }
+
         // AI commander rows in the roster (every peer sees the host's
-        // committed list via StartGame once started; in the lobby only the
-        // host previews its own toggles).
+        // committed list via StartGame once started; in the lobby guests
+        // preview the host's toggles, adopted from `HostLobbyRules`).
         for faction in &effective_ai {
             ui.horizontal(|ui| {
                 let (rect, _) =
@@ -813,28 +899,75 @@ fn setup_tab(
 
         ui.add_space(16.0);
 
+        // -- A battle in progress (the lobby is reachable mid-game) -------
+        if running.active {
+            ui.group(|ui| {
+                ui.label(
+                    egui::RichText::new("A battle is in progress.").color(crate::ui::palette::GOLD),
+                );
+                if ui
+                    .button(egui::RichText::new("Return to game").size(16.0))
+                    .clicked()
+                {
+                    running.return_to_game = true;
+                }
+            });
+            ui.add_space(8.0);
+        }
+
         // -- Host start control ----------------------------------------
         let ready = all_players_ready_with_ai(roster, &effective_ai);
         let requested_optional_rules = optional_rule.0.clone();
         if net.is_host {
-            ui.add_enabled_ui(ready, |ui| {
-                if ui
-                    .add(egui::Button::new(
-                        egui::RichText::new("\u{2694}  Start Battle").size(18.0),
-                    ))
-                    .clicked()
-                {
-                    let optional_rules = match lobby_scenario.0 {
-                        omdurman_types::Scenario::Campaign => requested_optional_rules,
-                        _ => Vec::new(),
+            // A new StartGame resets every peer's game: while a battle is
+            // being fought, starting another takes an explicit second click.
+            let mut start = false;
+            if *running.confirm_restart {
+                ui.label(
+                    egui::RichText::new(
+                        "Abandon the current game and start a new one? \
+                         Every player's game is replaced.",
+                    )
+                    .color(crate::ui::palette::ALERT),
+                );
+                ui.horizontal(|ui| {
+                    if ui
+                        .add_enabled(ready, egui::Button::new("Abandon and start a new battle"))
+                        .clicked()
+                    {
+                        start = true;
+                        *running.confirm_restart = false;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        *running.confirm_restart = false;
+                    }
+                });
+            } else {
+                ui.add_enabled_ui(ready, |ui| {
+                    let label = if running.active {
+                        "\u{2694}  Start a New Battle"
+                    } else {
+                        "\u{2694}  Start Battle"
                     };
-                    pending.submit_game(GameEvent::StartGame {
-                        seats: collect_seats(roster, &effective_ai),
-                        scenario: lobby_scenario.0,
-                        optional_rules,
-                    });
-                }
-            });
+                    if ui
+                        .add(egui::Button::new(egui::RichText::new(label).size(18.0)))
+                        .clicked()
+                    {
+                        start = start_clicked(running.active, running.confirm_restart);
+                    }
+                });
+            }
+            if start {
+                let optional_rules = match lobby_scenario.0 {
+                    omdurman_types::Scenario::Campaign => requested_optional_rules,
+                    _ => Vec::new(),
+                };
+                pending.submit_game(GameEvent::StartGame {
+                    seats: collect_seats(roster, &effective_ai),
+                    scenario: lobby_scenario.0,
+                    optional_rules,
+                });
+            }
             if !ready {
                 ui.label(
                     egui::RichText::new(
@@ -844,7 +977,7 @@ fn setup_tab(
                     .weak(),
                 );
             }
-        } else {
+        } else if !running.active {
             ui.label(
                 egui::RichText::new("Waiting for the host to start...")
                     .color(crate::ui::palette::TEXT_MUTED),
@@ -1242,6 +1375,37 @@ mod tests {
                 },
             ]
         );
+    }
+
+    /// Start Battle mid-game (the lobby is reachable via M -> Lobby) does
+    /// not reset everyone's game on one click: it asks first. A finished
+    /// game, or none, starts at once.
+    #[test]
+    fn start_battle_mid_game_asks_for_confirmation() {
+        let mut recorder = GameRecorder::default();
+        assert!(!battle_in_progress(&recorder, false), "no record");
+        recorder.install_history(omdurman_net::GameRecord {
+            initial_state: omdurman_net::InitialGameState { seed: 1 },
+            events: vec![omdurman_net::RecordedEvent {
+                utc: chrono::Utc::now(),
+                sender_idx: None,
+                seq: 0,
+                uid: None,
+                payload: GameEvent::StartGame {
+                    seats: Vec::new(),
+                    scenario: Scenario::Campaign,
+                    optional_rules: Vec::new(),
+                },
+            }],
+        });
+        assert!(battle_in_progress(&recorder, false));
+        assert!(!battle_in_progress(&recorder, true), "a finished game");
+        let mut confirm = false;
+        assert!(!start_clicked(true, &mut confirm), "mid-game: not yet");
+        assert!(confirm, "the confirmation is asked");
+        let mut confirm = false;
+        assert!(start_clicked(false, &mut confirm));
+        assert!(!confirm);
     }
 
     #[test]
