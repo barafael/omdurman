@@ -27,38 +27,42 @@ impl GameState {
     /// [`Self::can_fire_at_wall`] and the Historical set-up's out-of-sight
     /// rule (§9.212).
     ///
-    /// The blocking hexes are indexed once, when the closure is built: the
-    /// LOS walk asks for *every intervening hex of every ray*, so a per-call
-    /// scan of all units made one `has_los` query O(ray length × unit count).
-    /// A sorted `Vec` + binary search keeps the index allocation-free to use
-    /// and deterministic (no hasher), like the rest of the engine's lookups.
+    /// The occupied hexes are indexed on the first query: the LOS walk asks
+    /// for *every intervening hex of every ray*, so a per-call scan of all
+    /// units made one `has_los` query O(ray length × unit count). A sorted
+    /// `Vec` + binary search keeps the index deterministic (no hasher), like
+    /// the rest of the engine's lookups. The index holds positions only and
+    /// a hex's level is worked out when a ray asks for it: every
+    /// `can_fire_at` builds its own blocker, so the build must stay cheap
+    /// (deriving every unit's level up front, note b's wall lookups and all,
+    /// cost ~85 µs a call on a late Campaign board), and a ray asks for few
+    /// hexes. Built lazily, a ray with nothing in between costs nothing.
     pub fn los_unit_blocker(&self) -> impl Fn(HexCoord) -> Option<crate::los_table::LosLevel> + '_ {
         // Keyed by hex: the units of a hex share its level (only gunboats
         // and forts have a level of their own, and they never block).
-        let mut blockers: Vec<(HexCoord, crate::los_table::LosLevel)> = self
-            .units
-            .iter()
-            .filter(|u| {
-                !matches!(
-                    u.profile.kind,
-                    crate::UnitKind::Gunboat { .. } | crate::UnitKind::Fort { .. }
-                )
-            })
-            .map(|u| {
-                (
-                    u.position,
-                    los_level_for_unit(u.profile.kind, u.position, &self.board),
-                )
-            })
-            .collect();
-        blockers.sort_unstable();
-        blockers.dedup();
+        let index = std::cell::OnceCell::new();
         move |hex| {
+            let blockers: &Vec<(HexCoord, crate::UnitKind)> = index.get_or_init(|| {
+                let mut blockers: Vec<(HexCoord, crate::UnitKind)> = self
+                    .units
+                    .iter()
+                    .filter(|u| {
+                        !matches!(
+                            u.profile.kind,
+                            crate::UnitKind::Gunboat { .. } | crate::UnitKind::Fort { .. }
+                        )
+                    })
+                    .map(|u| (u.position, u.profile.kind))
+                    .collect();
+                blockers.sort_unstable_by_key(|&(at, _)| at);
+                blockers.dedup_by_key(|&mut (at, _)| at);
+                blockers
+            });
             let i = blockers.binary_search_by_key(&hex, |&(at, _)| at).ok()?;
             if self.is_zariba_entrenched(hex) {
                 return None;
             }
-            Some(blockers[i].1)
+            Some(los_level_for_unit(blockers[i].1, hex, &self.board))
         }
     }
 
