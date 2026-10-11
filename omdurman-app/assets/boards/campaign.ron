@@ -3321,37 +3321,37 @@
             ),
         )),
         ((26, 35), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((26, 36), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((26, 37), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((26, 38), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((26, 39), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((26, 40), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
@@ -3568,49 +3568,49 @@
             ),
         )),
         ((27, 35), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((27, 36), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((27, 37), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((27, 38), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((27, 39), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((27, 40), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((27, 41), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((27, 42), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
@@ -3808,37 +3808,37 @@
             ),
         )),
         ((28, 33), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((28, 34), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((28, 35), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((28, 36), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((28, 37), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((28, 38), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
@@ -3850,31 +3850,31 @@
             name: Some("Palace"),
         )),
         ((28, 40), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((28, 41), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((28, 42), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((28, 43), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((28, 44), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
@@ -4061,37 +4061,37 @@
             ),
         )),
         ((29, 33), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((29, 34), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((29, 35), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((29, 36), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((29, 37), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((29, 38), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
@@ -4109,37 +4109,37 @@
             name: Some("Omdurman"),
         )),
         ((29, 41), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((29, 42), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((29, 43), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((29, 44), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((29, 45), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((29, 46), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
@@ -4317,37 +4317,37 @@
             ),
         )),
         ((30, 33), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((30, 34), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((30, 35), (
-            terrain: Building(
+            terrain: Clear(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((30, 36), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((30, 37), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((30, 38), (
-            terrain: Building(
+            terrain: Clear(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
@@ -4371,31 +4371,31 @@
             name: Some("Arsenal"),
         )),
         ((30, 42), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((30, 43), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((30, 44), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((30, 45), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((30, 46), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
@@ -4567,43 +4567,43 @@
             ),
         )),
         ((31, 32), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((31, 33), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((31, 34), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((31, 35), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((31, 36), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((31, 37), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((31, 38), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
@@ -4621,7 +4621,7 @@
             name: Some("Omdurman"),
         )),
         ((31, 41), (
-            terrain: Building(
+            terrain: Clear(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
@@ -4633,25 +4633,25 @@
             name: Some("Omdurman"),
         )),
         ((31, 43), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((31, 44), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((31, 45), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((31, 46), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
@@ -4822,43 +4822,43 @@
             ),
         )),
         ((32, 32), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((32, 33), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((32, 34), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((32, 35), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((32, 36), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((32, 37), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((32, 38), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
@@ -4882,19 +4882,19 @@
             name: Some("Omdurman"),
         )),
         ((32, 42), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((32, 43), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((32, 44), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
@@ -5078,49 +5078,49 @@
             ),
         )),
         ((33, 32), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((33, 33), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((33, 34), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((33, 35), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((33, 36), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((33, 37), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((33, 38), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((33, 39), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
@@ -5328,49 +5328,49 @@
             ),
         )),
         ((34, 32), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((34, 33), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((34, 34), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((34, 35), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((34, 36), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((34, 37), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((34, 38), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((34, 39), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
@@ -5573,43 +5573,43 @@
             ),
         )),
         ((35, 32), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((35, 33), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((35, 34), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((35, 35), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((35, 36), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((35, 37), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((35, 38), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
@@ -5805,37 +5805,37 @@
             ),
         )),
         ((36, 32), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((36, 33), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((36, 34), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((36, 35), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Omdurman"),
         )),
         ((36, 36), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((36, 37), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
@@ -6026,25 +6026,25 @@
             ),
         )),
         ((37, 32), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((37, 33), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((37, 34), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((37, 35), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
@@ -6242,13 +6242,13 @@
             ),
         )),
         ((38, 33), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
         )),
         ((38, 34), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Omdurman"),
@@ -9022,6 +9022,16 @@
         ((
             a: (
                 q: 22,
+                r: 13,
+            ),
+            b: (
+                q: 23,
+                r: 13,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 22,
                 r: 19,
             ),
             b: (
@@ -9052,11 +9062,51 @@
         ((
             a: (
                 q: 23,
+                r: 5,
+            ),
+            b: (
+                q: 24,
+                r: 6,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 23,
+                r: 6,
+            ),
+            b: (
+                q: 24,
+                r: 6,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 23,
+                r: 6,
+            ),
+            b: (
+                q: 24,
+                r: 7,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 23,
                 r: 7,
             ),
             b: (
                 q: 23,
                 r: 8,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 23,
+                r: 7,
+            ),
+            b: (
+                q: 24,
+                r: 7,
             ),
         ), Crest),
         ((
@@ -9117,6 +9167,26 @@
             b: (
                 q: 24,
                 r: 10,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 23,
+                r: 13,
+            ),
+            b: (
+                q: 23,
+                r: 14,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 23,
+                r: 13,
+            ),
+            b: (
+                q: 24,
+                r: 14,
             ),
         ), Crest),
         ((
@@ -9162,6 +9232,66 @@
         ((
             a: (
                 q: 24,
+                r: 4,
+            ),
+            b: (
+                q: 25,
+                r: 5,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 24,
+                r: 5,
+            ),
+            b: (
+                q: 24,
+                r: 6,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 24,
+                r: 5,
+            ),
+            b: (
+                q: 25,
+                r: 5,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 24,
+                r: 5,
+            ),
+            b: (
+                q: 25,
+                r: 6,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 24,
+                r: 7,
+            ),
+            b: (
+                q: 24,
+                r: 8,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 24,
+                r: 8,
+            ),
+            b: (
+                q: 25,
+                r: 8,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 24,
                 r: 8,
             ),
             b: (
@@ -9212,6 +9342,66 @@
         ((
             a: (
                 q: 24,
+                r: 10,
+            ),
+            b: (
+                q: 25,
+                r: 11,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 24,
+                r: 11,
+            ),
+            b: (
+                q: 25,
+                r: 11,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 24,
+                r: 11,
+            ),
+            b: (
+                q: 25,
+                r: 12,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 24,
+                r: 12,
+            ),
+            b: (
+                q: 25,
+                r: 12,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 24,
+                r: 13,
+            ),
+            b: (
+                q: 24,
+                r: 14,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 24,
+                r: 14,
+            ),
+            b: (
+                q: 25,
+                r: 14,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 24,
                 r: 20,
             ),
             b: (
@@ -9252,6 +9442,86 @@
         ((
             a: (
                 q: 25,
+                r: 4,
+            ),
+            b: (
+                q: 25,
+                r: 5,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 25,
+                r: 4,
+            ),
+            b: (
+                q: 26,
+                r: 5,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 25,
+                r: 5,
+            ),
+            b: (
+                q: 25,
+                r: 6,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 25,
+                r: 5,
+            ),
+            b: (
+                q: 26,
+                r: 6,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 25,
+                r: 8,
+            ),
+            b: (
+                q: 25,
+                r: 9,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 25,
+                r: 9,
+            ),
+            b: (
+                q: 26,
+                r: 9,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 25,
+                r: 14,
+            ),
+            b: (
+                q: 25,
+                r: 15,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 25,
+                r: 15,
+            ),
+            b: (
+                q: 26,
+                r: 15,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 25,
                 r: 21,
             ),
             b: (
@@ -9292,6 +9562,96 @@
         ((
             a: (
                 q: 26,
+                r: 4,
+            ),
+            b: (
+                q: 26,
+                r: 5,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 26,
+                r: 4,
+            ),
+            b: (
+                q: 27,
+                r: 5,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 26,
+                r: 5,
+            ),
+            b: (
+                q: 26,
+                r: 6,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 26,
+                r: 5,
+            ),
+            b: (
+                q: 27,
+                r: 5,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 26,
+                r: 5,
+            ),
+            b: (
+                q: 27,
+                r: 6,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 26,
+                r: 9,
+            ),
+            b: (
+                q: 26,
+                r: 10,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 26,
+                r: 9,
+            ),
+            b: (
+                q: 27,
+                r: 10,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 26,
+                r: 15,
+            ),
+            b: (
+                q: 26,
+                r: 16,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 26,
+                r: 16,
+            ),
+            b: (
+                q: 27,
+                r: 16,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 26,
                 r: 22,
             ),
             b: (
@@ -9332,6 +9692,66 @@
         ((
             a: (
                 q: 27,
+                r: 4,
+            ),
+            b: (
+                q: 27,
+                r: 5,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 27,
+                r: 4,
+            ),
+            b: (
+                q: 28,
+                r: 5,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 27,
+                r: 9,
+            ),
+            b: (
+                q: 27,
+                r: 10,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 27,
+                r: 10,
+            ),
+            b: (
+                q: 28,
+                r: 10,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 27,
+                r: 16,
+            ),
+            b: (
+                q: 27,
+                r: 17,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 27,
+                r: 17,
+            ),
+            b: (
+                q: 28,
+                r: 17,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 27,
                 r: 23,
             ),
             b: (
@@ -9389,6 +9809,56 @@
                 r: 47,
             ),
         ), Khor),
+        ((
+            a: (
+                q: 28,
+                r: 4,
+            ),
+            b: (
+                q: 28,
+                r: 5,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 28,
+                r: 4,
+            ),
+            b: (
+                q: 29,
+                r: 5,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 28,
+                r: 10,
+            ),
+            b: (
+                q: 28,
+                r: 11,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 28,
+                r: 17,
+            ),
+            b: (
+                q: 28,
+                r: 18,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 28,
+                r: 18,
+            ),
+            b: (
+                q: 29,
+                r: 18,
+            ),
+        ), Crest),
         ((
             a: (
                 q: 28,
@@ -9469,6 +9939,96 @@
                 r: 47,
             ),
         ), Khor),
+        ((
+            a: (
+                q: 29,
+                r: 4,
+            ),
+            b: (
+                q: 29,
+                r: 5,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 29,
+                r: 16,
+            ),
+            b: (
+                q: 30,
+                r: 16,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 29,
+                r: 16,
+            ),
+            b: (
+                q: 30,
+                r: 17,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 29,
+                r: 17,
+            ),
+            b: (
+                q: 30,
+                r: 17,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 29,
+                r: 17,
+            ),
+            b: (
+                q: 30,
+                r: 18,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 29,
+                r: 18,
+            ),
+            b: (
+                q: 29,
+                r: 19,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 29,
+                r: 18,
+            ),
+            b: (
+                q: 30,
+                r: 18,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 29,
+                r: 18,
+            ),
+            b: (
+                q: 30,
+                r: 19,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 29,
+                r: 19,
+            ),
+            b: (
+                q: 30,
+                r: 19,
+            ),
+        ), Crest),
         ((
             a: (
                 q: 29,
@@ -9539,6 +10099,86 @@
                 r: 48,
             ),
         ), Khor),
+        ((
+            a: (
+                q: 30,
+                r: 18,
+            ),
+            b: (
+                q: 30,
+                r: 19,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 30,
+                r: 19,
+            ),
+            b: (
+                q: 30,
+                r: 20,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 30,
+                r: 19,
+            ),
+            b: (
+                q: 31,
+                r: 19,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 30,
+                r: 19,
+            ),
+            b: (
+                q: 31,
+                r: 20,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 30,
+                r: 20,
+            ),
+            b: (
+                q: 31,
+                r: 20,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 30,
+                r: 20,
+            ),
+            b: (
+                q: 31,
+                r: 21,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 30,
+                r: 21,
+            ),
+            b: (
+                q: 31,
+                r: 21,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 30,
+                r: 21,
+            ),
+            b: (
+                q: 31,
+                r: 22,
+            ),
+        ), Crest),
         ((
             a: (
                 q: 30,
@@ -9659,6 +10299,26 @@
                 r: 42,
             ),
         ), Wall),
+        ((
+            a: (
+                q: 31,
+                r: 19,
+            ),
+            b: (
+                q: 31,
+                r: 20,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 31,
+                r: 19,
+            ),
+            b: (
+                q: 32,
+                r: 20,
+            ),
+        ), Crest),
         ((
             a: (
                 q: 31,
@@ -9802,6 +10462,56 @@
         ((
             a: (
                 q: 32,
+                r: 18,
+            ),
+            b: (
+                q: 33,
+                r: 19,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 32,
+                r: 19,
+            ),
+            b: (
+                q: 32,
+                r: 20,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 32,
+                r: 19,
+            ),
+            b: (
+                q: 33,
+                r: 19,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 32,
+                r: 19,
+            ),
+            b: (
+                q: 33,
+                r: 20,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 32,
+                r: 20,
+            ),
+            b: (
+                q: 33,
+                r: 20,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 32,
                 r: 26,
             ),
             b: (
@@ -9942,6 +10652,46 @@
         ((
             a: (
                 q: 33,
+                r: 18,
+            ),
+            b: (
+                q: 33,
+                r: 19,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 33,
+                r: 18,
+            ),
+            b: (
+                q: 34,
+                r: 19,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 33,
+                r: 20,
+            ),
+            b: (
+                q: 33,
+                r: 21,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 33,
+                r: 21,
+            ),
+            b: (
+                q: 34,
+                r: 21,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 33,
                 r: 27,
             ),
             b: (
@@ -10039,6 +10789,46 @@
                 r: 16,
             ),
         ), ZaribaThornHedge),
+        ((
+            a: (
+                q: 34,
+                r: 18,
+            ),
+            b: (
+                q: 34,
+                r: 19,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 34,
+                r: 18,
+            ),
+            b: (
+                q: 35,
+                r: 19,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 34,
+                r: 21,
+            ),
+            b: (
+                q: 34,
+                r: 22,
+            ),
+        ), Crest),
+        ((
+            a: (
+                q: 34,
+                r: 22,
+            ),
+            b: (
+                q: 35,
+                r: 22,
+            ),
+        ), Crest),
         ((
             a: (
                 q: 34,

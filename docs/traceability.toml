@@ -1098,6 +1098,8 @@ tests = [
     "omdurman-rules::src::terrain_chart::swamp_movement_and_defense",
     "omdurman-rules::src::terrain_chart::hilltop_movement_and_defense",
     "omdurman-rules::src::terrain_chart::huts_movement_and_defense",
+    "omdurman-rules::src::board_data::campaign_town_is_huts_and_only_the_landmarks_are_buildings",
+    "omdurman-rules::src::board_data::campaign_crests_cover_jebel_surgham_and_the_eastern_kerreri_hills",
     "omdurman-rules::src::terrain_chart::defense_modifier_convenience_matches_chart",
     "omdurman-rules::src::terrain_chart::terrain_movement_costs_in_bounds",
     "omdurman-rules::src::terrain_chart::terrain_defense_modifier_non_positive",
