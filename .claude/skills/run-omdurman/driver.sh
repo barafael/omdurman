@@ -210,6 +210,10 @@ dbl)
   # dbl <q> <r>  -- double-click: select the whole tile (combined fire/melee).
   need_input; read -r x y < <(hexpos "$1" "$2")
   [ -n "${x:-}" ] || { echo "hex $1,$2 not on screen" >&2; exit 1; }
+  # In-app input sends the pair in one request, two frames apart: two
+  # requests can land further apart than the app's double-click window
+  # (0.35 s, picker/clicks.rs) on a loaded machine.
+  if probe_input; then inject "move $x $y" "wait 2" "click 1" "wait 2" "click 1"; exit 0; fi
   moveto "$x" "$y"; sleep 0.15; press 1; sleep 0.12; press 1
   ;;
 drag)

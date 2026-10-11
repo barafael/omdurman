@@ -134,9 +134,11 @@ pub fn score_elimination(state: &mut GameState, unit_id: UnitId, cause: ElimCaus
         if matches!(identity, crate::UnitIdentity::DervishLeader(_))
             | matches!(identity, crate::UnitIdentity::AngloEgyptianLeader(_))
         {
+            // The other side killed him -- in the fire phases the moving
+            // player is not always the one shooting (§6.7 defensive fire).
             state.observations.push(Observation::LeaderKilled {
                 id: unit_id,
-                by: state.active_player,
+                by: identity.owner().opponent(),
             });
         }
     }

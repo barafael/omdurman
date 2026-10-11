@@ -183,6 +183,20 @@ pub fn play_until(
     dervish: Version,
     last_turn: u8,
 ) -> ArenaResult {
+    play_observed(scenario, seed, ae, dervish, last_turn, &mut |_, _, _| {})
+}
+
+/// [`play_until`], calling `observe` after every applied effect with the
+/// state before it, the effect, and the state after it (the observation
+/// stream of the engine is drained into the state after's `observations`).
+pub fn play_observed(
+    scenario: Scenario,
+    seed: u64,
+    ae: Version,
+    dervish: Version,
+    last_turn: u8,
+    observe: &mut dyn FnMut(&GameState, &GameEffect, &GameState),
+) -> ArenaResult {
     let board = crate::playthrough::board_for_scenario(scenario);
     let mut state = GameState::with_board(scenario, board);
     let mut rng = BotRng::from_seed(seed);
@@ -238,7 +252,12 @@ pub fn play_until(
         }
         revisit_check.record(&state, &effect);
         max_decision_ms = max_decision_ms.max(decided.elapsed().as_secs_f64() * 1000.0);
-        if apply_effect(&mut state, &effect).is_err() {
+        let before = state.clone();
+        if apply_effect(&mut state, &effect).is_ok() {
+            observe(&before, &effect, &state);
+            state.observations.clear();
+            stuck = 0;
+        } else {
             // The app retries next frame; here, force the phase on after a
             // run of rejections so a bad pick cannot stall the game.
             stuck += 1;
@@ -246,8 +265,6 @@ pub fn play_until(
                 let _ = apply_effect(&mut state, &GameEffect::AdvancePhase);
                 stuck = 0;
             }
-        } else {
-            stuck = 0;
         }
     }
     ArenaResult {

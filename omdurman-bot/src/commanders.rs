@@ -14,9 +14,11 @@
 //! Massed fire over piecemeal shots (§6.14), brigade integrity (§5.54),
 //! Maxims fire twice (§6.42), counter-battery against the enemy artillery that
 //! alone can breach walls, sink gunboats, or destroy forts (§6.61-§6.63);
-//! defensively: hold the wall/gate line and the palace ring in Fall of
-//! Khartoum, make every Dervish assault pay (each kill downgrades their
-//! victory level, §9.35), keep leaders bodyguarded (§6.51); cavalry
+//! defensively: hold the wall/gate line -- the White Nile gap at the
+//! wall's open end included (see [`crate::khartoum`]) -- and keep a guard
+//! with GORDON in Fall of Khartoum, make every Dervish assault pay (each
+//! kill downgrades their victory level, §9.35), keep leaders bodyguarded
+//! (§6.51); cavalry
 //! retreats from hopeless melee (§7.5); take advances only into ground that
 //! is not a death trap (§6.82). On the campaign map the axis is the Mahdi's
 //! Tomb (25 VP, §9.14) behind a formed line.
@@ -25,12 +27,15 @@
 //!
 //! Fall of Khartoum is a race: kill GORDON by turn 4/5/6 or lose (§9.35), so
 //! the assault closes under night cover from turn 1 (§9.341, §8.1), masses by
-//! tribe at one wall, breaches it with artillery (§6.63), storms through with
-//! melee (Dervish +2, §7.7), and pours through every mandatory advance
-//! (§7.6). Losses matter (§9.35) — no suicide melees into unweakened stacks —
+//! tribe on one way in -- the White Nile gap, as on 26 January 1885, else a
+//! wall it breaches with artillery (§6.63) -- storms through with melee
+//! (Dervish +2, §7.7), and pours through every mandatory advance (§7.6). Losses matter (§9.35) — no suicide melees into unweakened stacks —
 //! but speed outranks blood. On the campaign map: swarm in waves, screen with
 //! ZOC crusts (§5.43), guard the Khalifa (10 VP, §9.14), feed each
 //! reinforcement wave straight into the line (§9.112).
+//!
+//! On the Omdurman map both commanders follow the battle plans of 1 and 2
+//! September 1898 ([`crate::battle_plan`]).
 
 use omdurman_rules::effects::{GameEffect, GameState};
 use omdurman_rules::{Phase, UnitId, UnitIdentity};
@@ -196,18 +201,45 @@ pub fn pick_validated(
         if memory.revisits(state, &candidate) {
             continue;
         }
-        let mut test = state.clone();
-        let res = omdurman_rules::effects::apply_effect(&mut test, &candidate);
-        if res.is_err()
-            && let GameEffect::MoveUnit { unit_id, .. } = &candidate
-        {
-            // The planned step is refused (a hex the plan could not foresee
-            // -- walled-city entry, a stack filled meanwhile): hold.
-            memory.abandon_plan(state, *unit_id);
-        }
-        if res.is_ok() {
+        let accepted = |effect: &GameEffect| {
+            let mut test = state.clone();
+            omdurman_rules::effects::apply_effect(&mut test, effect).is_ok()
+        };
+        if accepted(&candidate) {
             memory.record(state, &candidate);
             return candidate;
+        }
+        if let GameEffect::MoveUnit { unit_id, path, .. } = &candidate {
+            // The planned way is refused whole: its longest part the
+            // engine takes -- a gunboat's way upstream ends where the
+            // upstream allowance does (§5.24), a column's where a rule the
+            // plan could not foresee stops it (the walled city, §5.23).
+            for k in (1..path.len()).rev() {
+                let Some(unit) = state.find_unit(*unit_id) else {
+                    break;
+                };
+                let part = path[..k].to_vec();
+                let cost = if unit.profile.kind.is_boat() {
+                    omdurman_rules::MovementPoints::new(k as i16)
+                } else {
+                    match state.movement_cost_for(unit, &part) {
+                        Some(cost) => cost,
+                        None => continue,
+                    }
+                };
+                let shorter = GameEffect::MoveUnit {
+                    unit_id: *unit_id,
+                    to: part[k - 1],
+                    cost,
+                    path: part,
+                };
+                if accepted(&shorter) {
+                    memory.record(state, &shorter);
+                    return shorter;
+                }
+            }
+            // Nothing of it is taken (a stack filled meanwhile): plan again.
+            memory.abandon_plan(state, *unit_id);
         }
     }
     GameEffect::AdvancePhase
@@ -296,6 +328,12 @@ pub fn choose_deserters(state: &GameState, effect: GameEffect) -> GameEffect {
 /// other candidate (reinforcements, demolition, the desertion roll, ending
 /// the phase) keeps its commander score. A unit whose plan is to hold
 /// offers no move, so ending the phase follows once every plan is walked.
+///
+/// The moves are built here for every unit with a plan -- the whole way in
+/// one move -- not looked for among `candidates`: the candidate list is a
+/// capped sample of single steps (`actions::legal_actions`), and a large
+/// army's planned steps fall out of it -- the phase would end with most of
+/// the army halfway.
 fn rank_planned(
     state: &GameState,
     player: Player,
@@ -303,30 +341,70 @@ fn rank_planned(
     memory: &mut crate::move_memory::MoveMemory,
 ) -> Vec<GameEffect> {
     let commander = Commander::for_player(player);
-    let mut scored: Vec<(i32, usize)> = Vec::new();
-    for (i, effect) in candidates.iter().enumerate() {
-        let score = match effect {
-            GameEffect::MoveUnit { unit_id, to, .. } => {
-                let Some(unit) = state.find_unit(*unit_id) else {
-                    continue;
-                };
-                let (next, gain) =
-                    memory.plan_for(state, *unit_id, || plan_move(state, unit, player));
-                if next != Some(*to) {
-                    continue;
-                }
-                10 + gain.clamp(1, 50)
-            }
-            _ => commander.score(effect, state, player),
-        };
-        scored.push((score, i));
+    let mut scored: Vec<(i32, GameEffect)> = Vec::new();
+    for effect in candidates {
+        if matches!(effect, GameEffect::MoveUnit { .. }) {
+            continue;
+        }
+        scored.push((commander.score(effect, state, player), effect.clone()));
     }
+    // Planning is a search per unit; a decision plans at most a batch of
+    // units afresh (the in-game AI decides on the frame), the rest on later
+    // decisions -- but the phase ends only once every unit has planned.
+    let mut fresh = 0usize;
+    let mut deferred: Vec<&omdurman_rules::UnitPlacement> = Vec::new();
+    let mut steps = 0usize;
+    // The whole way in one move: the stacking limit binds only where a
+    // move ends (§5.51), so a column passes through a full friendly stack
+    // that a step-by-step walk would have to stop short of.
+    let plan_step = |unit: &omdurman_rules::UnitPlacement,
+                     memory: &mut crate::move_memory::MoveMemory,
+                     scored: &mut Vec<(i32, GameEffect)>| {
+        let (way, gain) = memory.plan_way(state, unit.id, || plan_move(state, unit, player));
+        let to = *way.last()?;
+        let cost = if unit.profile.kind.is_boat() {
+            omdurman_rules::MovementPoints::new(way.len() as i16)
+        } else {
+            state.movement_cost_for(unit, &way)?
+        };
+        scored.push((
+            10 + gain.clamp(1, 50),
+            GameEffect::MoveUnit {
+                unit_id: unit.id,
+                to,
+                cost,
+                path: way,
+            },
+        ));
+        Some(())
+    };
+    for unit in &state.units {
+        if unit.profile.identity.owner() != player || unit.state.disrupted {
+            continue;
+        }
+        if !memory.has_plan(state, unit.id) {
+            if fresh >= NEW_PLANS_PER_DECISION {
+                deferred.push(unit);
+                continue;
+            }
+            fresh += 1;
+        }
+        steps += usize::from(plan_step(unit, memory, &mut scored).is_some());
+    }
+    for unit in deferred {
+        if steps > 0 {
+            break;
+        }
+        steps += usize::from(plan_step(unit, memory, &mut scored).is_some());
+    }
+    // Stable: equal scores keep the order above (board order of the units).
     scored.sort_by_key(|(s, _)| std::cmp::Reverse(*s));
-    scored
-        .into_iter()
-        .map(|(_, i)| candidates[i].clone())
-        .collect()
+    scored.into_iter().map(|(_, e)| e).collect()
 }
+
+/// How many units a movement decision plans afresh at most (see
+/// [`rank_planned`]).
+const NEW_PLANS_PER_DECISION: usize = 6;
 
 /// `player`'s goal for one unit (its commander's).
 fn goal_for(state: &GameState, unit_id: UnitId, player: Player) -> Option<Goal> {
@@ -582,13 +660,25 @@ fn progress(state: &GameState, unit_id: UnitId, to: HexCoord, goal: Option<HexCo
 }
 
 /// The Khalifa's single assault axis — **static**, derived from board
-/// geometry only (the south-east §9.322 entry corner + the palace), never
-/// from live unit positions: a live centroid moves with the wave, flips the
-/// axis mid-phase, and the assault mills around instead of converging.
-/// One breach, one wave, one corridor — concentration is everything against
-/// a walled city (§9.322, §6.63).
+/// geometry only (the White Nile gap, else the south-east §9.322 entry
+/// corner + the palace), never from live unit positions: a live centroid
+/// moves with the wave, flips the axis mid-phase, and the assault mills
+/// around instead of converging. One way in, one wave, one corridor —
+/// concentration is everything against a walled city (§9.322, §6.63).
 pub fn assault_axis_wall(state: &GameState) -> Option<HexCoord> {
     let palace = palace_hex(state)?;
+    // The White Nile gap (see `crate::khartoum`), the way the Mahdists came
+    // in on the night of 26 January 1885: no wall to breach, no gate to
+    // force -- and as static as the wall front.
+    if let Some(gap) = crate::khartoum::wall_gap(state, palace) {
+        return Some(gap.approach);
+    }
+    wall_axis(state, palace)
+}
+
+/// The wall hex of the assault on the wall front: nearest the board's
+/// south-east corner, on the palace axis.
+fn wall_axis(state: &GameState, palace: HexCoord) -> Option<HexCoord> {
     // The south-east corner of the diamond board: the playable hex with the
     // largest q+r (east = no hex at q+1, south = no hex at r+1).
     let corner = state
@@ -619,6 +709,9 @@ pub fn assault_axis_wall(state: &GameState) -> Option<HexCoord> {
 pub fn assault_corridor(state: &GameState) -> Option<HexCoord> {
     let palace = palace_hex(state)?;
     let axis = assault_axis_wall(state)?;
+    if crate::khartoum::wall_gap(state, palace).is_some_and(|gap| gap.approach == axis) {
+        return Some(axis);
+    }
     let mut best: Option<(i32, HexCoord)> = None;
     for (hr, _) in &state.board.hexsides {
         if !matches!(
@@ -707,6 +800,10 @@ fn corridor_side(state: &GameState, hex: HexCoord, palace: Option<HexCoord>) -> 
             .iter()
             .any(|&n| corridor(h, n) && palace.distance(h) <= palace.distance(n))
     };
+    // The line across the White Nile gap is a gate without a wall.
+    if crate::khartoum::wall_gap(state, palace).is_some_and(|gap| gap.line.contains(&hex)) {
+        return Some(Side::Inside);
+    }
     for &n in hex.neighbors().iter() {
         if corridor(hex, n) {
             return if palace.distance(hex) <= palace.distance(n) {
@@ -726,15 +823,16 @@ fn corridor_side(state: &GameState, hex: HexCoord, palace: Option<HexCoord>) -> 
 }
 
 /// Whether this placement is one of the scenario-fixed units (GORDON in the
-/// palace, the North Fort, §9.321/§9.344): they must come off the list
-/// immediately, before any free deployment can fill their hex.
-fn is_fixed_placement(p: &omdurman_rules::UnitPlacement) -> bool {
-    matches!(
-        p.profile.identity,
-        UnitIdentity::DervishFort
-            | UnitIdentity::AngloEgyptianFort
-            | UnitIdentity::AngloEgyptianLeader(omdurman_rules::BritishLeader::Gordon)
-    )
+/// palace, the forts, §9.321/§9.344; the Historical leaders on their
+/// letters, §9.212): they must come off the list immediately, before any
+/// free deployment can fill their hex -- and the tribes set up round their
+/// leaders.
+fn is_fixed_placement(state: &GameState, p: &omdurman_rules::UnitPlacement) -> bool {
+    omdurman_rules::scenario_setup::is_fixed_placement(state.scenario, p.id)
+        || matches!(
+            p.profile.identity,
+            UnitIdentity::DervishFort | UnitIdentity::AngloEgyptianFort
+        )
 }
 
 // ---------------------------------------------------------------------------
@@ -751,7 +849,7 @@ fn is_fixed_placement(p: &omdurman_rules::UnitPlacement) -> bool {
 
 /// Where a unit wants to stand (see [`Goal::term`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Goal {
+pub(crate) enum Goal {
     /// On this hex.
     Hex(HexCoord),
     /// `standoff` hexes from `target`: closing from farther, backing off
@@ -760,6 +858,10 @@ enum Goal {
     /// On this hex by the movement-point road: walls closed but at gates and
     /// breaches (§5.23), terrain costs (§5.11).
     March(HexCoord),
+    /// Next to this hex, closing on it straight: an assault on a line that
+    /// is not entered (the Zariba hedge, §9.231), where the road in would
+    /// lead round its ends.
+    Close(HexCoord),
 }
 
 impl Goal {
@@ -796,6 +898,7 @@ impl Goal {
                 // Cut off from the goal: worse than any reachable hex.
                 None => -per_hex * 100,
             },
+            Goal::Close(goal) => -per_hex * (at.distance(goal) as i32 - 1).max(0),
         }
     }
 }
@@ -950,6 +1053,10 @@ fn khalifa_position_value(
     value -= if palace.is_some() {
         let exposure = adjacent_enemy_fire(state, at, player);
         if night { exposure / 15 } else { exposure / 8 }
+    } else if matches!(goal, Some(Goal::Close(_))) {
+        // The dawn assault on the Zariba (see `crate::battle_plan`) walks
+        // into the fire it was sent into.
+        lane_cost(state, at, player) / 8
     } else {
         lane_cost(state, at, player)
     };
@@ -973,7 +1080,7 @@ fn kitchener_score(effect: &GameEffect, state: &GameState, player: Player) -> i3
         // Placement matters: build full 4-stacks on the threatened wall line
         // (§5.51, §9.321), guns and leaders behind it.
         DeployUnit(p) => {
-            if is_fixed_placement(p) {
+            if is_fixed_placement(state, p) {
                 return 200;
             }
             let mut s = 60;
@@ -994,6 +1101,12 @@ fn kitchener_score(effect: &GameEffect, state: &GameState, player: Player) -> i3
             s += same_brigade.min(3) * 5;
             if on_city_line(state, p.position) {
                 s += 8;
+            }
+            // The palace guard (§9.346), before the gates.
+            if Some(p.position) == palace
+                && combat_count_in(state, p.position, player) < PALACE_GUARD
+            {
+                s += 40;
             }
             // Corridor geometry decides the whole defence (gates are
             // walkable, §5.23): the INSIDE of a gate is the load-bearing
@@ -1086,8 +1199,16 @@ fn kitchener_score(effect: &GameEffect, state: &GameState, player: Player) -> i3
                 -50
             }
         },
-        // Take vacated ground, but not into a massed counterattack (§6.82).
+        // Take vacated ground, but not into a massed counterattack (§6.82),
+        // and never out of a position the unit is holding (the Zariba,
+        // see `crate::battle_plan`).
         AdvanceAfterCombat { unit_id, to } => {
+            if let Some(unit) = state.find_unit(*unit_id)
+                && kitchener_goal(state, *unit_id, player) == Some(Goal::Hex(unit.position))
+                && *to != unit.position
+            {
+                return -10;
+            }
             let exposure = adjacent_enemy_fire(state, *to, player);
             let heavy = exposure > 24 && !is_night(state);
             if heavy {
@@ -1105,6 +1226,15 @@ fn kitchener_score(effect: &GameEffect, state: &GameState, player: Player) -> i3
             move_score(value(*to) - value(unit.position))
         }
         Demolition { .. } => 45,
+        // The Zariba at El Egeiga (§9.23), built while the army waits in it
+        // for the Dervish attack (see `crate::battle_plan`).
+        ConstructZariba { .. } => {
+            if state.current_turn.value() < crate::battle_plan::CAMPAIGN_ADVANCE_TURN {
+                60
+            } else {
+                -10
+            }
+        }
         DervishDesertion { .. } => 30,
         AdvancePhase => match state.phase {
             Phase::Setup => 12,
@@ -1182,6 +1312,9 @@ fn kitchener_goal(state: &GameState, unit_id: UnitId, player: Player) -> Option<
     if let Some(tomb) = tomb_objective(state, unit) {
         return Some(Goal::March(tomb));
     }
+    if let Some(goal) = crate::battle_plan::kitchener_goal(state, unit) {
+        return Some(goal);
+    }
     match unit.profile.identity {
         // Leaders bodyguard toward the nearest friendly stack (§6.51).
         UnitIdentity::AngloEgyptianLeader(_) => {
@@ -1197,14 +1330,14 @@ fn kitchener_goal(state: &GameState, unit_id: UnitId, player: Player) -> Option<
         // artillery at full strength out to six hexes, beyond the Dervish
         // rifles' four; the Maxims at their normal range of three.
         UnitIdentity::AngloEgyptianArtillery => {
-            let nearest_enemy = nearest_enemy_unit(state, unit.position, enemy);
+            let nearest_enemy = nearest_enemy_on_land(state, unit.position, enemy);
             nearest_enemy.map(|target| Goal::Band {
                 target,
                 standoff: 6,
             })
         }
         UnitIdentity::AngloEgyptianMaxim => {
-            let nearest_enemy = nearest_enemy_unit(state, unit.position, enemy);
+            let nearest_enemy = nearest_enemy_on_land(state, unit.position, enemy);
             nearest_enemy.map(|target| Goal::Band {
                 target,
                 standoff: 5,
@@ -1216,10 +1349,20 @@ fn kitchener_goal(state: &GameState, unit_id: UnitId, player: Player) -> Option<
         UnitIdentity::AngloEgyptianGunboat(_) => {
             // The quarry nearest by water, not by line: the enemy the boat
             // can bring under its guns soonest (see `threat::river_cost`).
+            // The enemy's own gunboats first, while any float: only guns
+            // sink them (§6.61), and loose on the river they shoot into
+            // every stack on the bank.
+            let boats_afloat = state
+                .units
+                .iter()
+                .any(|u| u.profile.identity.owner() == enemy && u.profile.kind.is_boat());
             let mut stacks: Vec<HexCoord> = state
                 .units
                 .iter()
-                .filter(|u| u.profile.identity.owner() == enemy)
+                .filter(|u| {
+                    u.profile.identity.owner() == enemy
+                        && (!boats_afloat || u.profile.kind.is_boat())
+                })
                 .map(|u| u.position)
                 .collect();
             stacks.sort_by_key(|p| (p.q, p.r));
@@ -1247,6 +1390,20 @@ fn kitchener_goal(state: &GameState, unit_id: UnitId, player: Player) -> Option<
                 // 3. The palace ring as the last-line reserve (§9.346).
                 let threat = nearest_enemy_unit(state, palace, enemy)
                     .or_else(|| nearest_enemy_unit(state, unit.position, enemy));
+                // A plug the enemy is coming at keeps the garrison it has:
+                // walking off to fill another opens this corridor.
+                if threat_at(state, unit.position, enemy) > 0
+                    && plug_hexes(state, palace).contains(&unit.position)
+                {
+                    return Some(Goal::Hex(unit.position));
+                }
+                // The palace guard: GORDON dies to the first spearman who
+                // walks into his hex (§9.346); a stack there must be
+                // meleed out first, whatever gate has fallen.
+                let guard = combat_count_in(state, palace, player);
+                if guard < PALACE_GUARD || (unit.position == palace && guard <= PALACE_GUARD) {
+                    return Some(Goal::Hex(palace));
+                }
                 let plug = gate_plug_vacancy(state, player, palace);
                 let corridor = threat.and_then(|t| nearest_corridor_inside(state, t, palace));
                 if let Some(p) = plug {
@@ -1275,6 +1432,7 @@ fn kitchener_goal(state: &GameState, unit_id: UnitId, player: Player) -> Option<
                     .filter(|u| {
                         u.profile.identity.owner() == enemy
                             && u.profile.identity != UnitIdentity::DervishFort
+                            && !u.profile.kind.is_boat()
                             && !state.board.walled_city.contains(&u.position)
                     })
                     .map(|u| u.position)
@@ -1295,10 +1453,15 @@ fn kitchener_goal(state: &GameState, unit_id: UnitId, player: Player) -> Option<
     }
 }
 
-/// The nearest gate/breach inside hex not yet held 4-strong: the continuous
-/// re-plug duty (§5.23, §9.346). Gates are walkable, so a corridor held by
-/// fewer than four defenders is the assault's way in.
-fn gate_plug_vacancy(state: &GameState, player: Player, palace: HexCoord) -> Option<HexCoord> {
+/// The garrison's units kept in the palace with GORDON (§9.346): a full
+/// stack (§5.51; GORDON stacks free). Measured in arena play against both
+/// assaults, through the gates and through the gap, a full guard beat two
+/// and none -- whatever breaks in must melee the palace stack out first.
+const PALACE_GUARD: i32 = 4;
+
+/// The plugs of the city's corridors: the inside hex of every gate and
+/// breach (§5.23, §6.63) and the line across the White Nile gap.
+fn plug_hexes(state: &GameState, palace: HexCoord) -> Vec<HexCoord> {
     let mut plugs: Vec<HexCoord> = Vec::new();
     for (hr, _) in &state.board.hexsides {
         if !matches!(
@@ -1316,12 +1479,40 @@ fn gate_plug_vacancy(state: &GameState, player: Player, palace: HexCoord) -> Opt
             plugs.push(inside);
         }
     }
-    plugs.into_iter().min_by_key(|p| {
-        (
-            combat_count_in(state, *p, player),
-            p.distance(palace) as i32,
-        )
-    })
+    for plug in gap_plugs(state, palace) {
+        if !plugs.contains(&plug) {
+            plugs.push(plug);
+        }
+    }
+    plugs
+}
+
+/// How many of `enemy`'s units stand within a night's march of `hex` (six
+/// hexes): the weight of the assault a plug may meet next turn.
+fn threat_at(state: &GameState, hex: HexCoord, enemy: Player) -> i32 {
+    state
+        .units
+        .iter()
+        .filter(|u| u.profile.identity.owner() == enemy && u.position.distance(hex) <= 6)
+        .count() as i32
+}
+
+/// The plug to fill next, the continuous re-plug duty (§5.23, §9.346): of
+/// those not yet held 4-strong, the one the heaviest assault is coming at,
+/// then the emptiest, then the nearest the palace. `None` when every plug
+/// is full. A garrison of seventeen cannot hold every gate four deep; the
+/// plugs the enemy is massing against come first.
+fn gate_plug_vacancy(state: &GameState, player: Player, palace: HexCoord) -> Option<HexCoord> {
+    plug_hexes(state, palace)
+        .into_iter()
+        .filter(|p| combat_count_in(state, *p, player) < 4)
+        .min_by_key(|p| {
+            (
+                -threat_at(state, *p, player.opponent()),
+                combat_count_in(state, *p, player),
+                p.distance(palace) as i32,
+            )
+        })
 }
 
 /// The gate/breach corridor on the *defended* side (closer to the palace than
@@ -1350,7 +1541,23 @@ fn nearest_corridor_inside(
             best = Some((d, inside));
         }
     }
+    for plug in gap_plugs(state, palace) {
+        let d = from.distance(plug) as i32;
+        if best.is_none_or(|(bd, _)| d < bd) {
+            best = Some((d, plug));
+        }
+    }
     best.map(|(_, hex)| hex)
+}
+
+/// The hexes that close the White Nile gap (see `crate::khartoum`): every
+/// other hex of the line across it, from the wall's end to the bank -- a
+/// stack's zone of control covers the hexes between (§5.41, §5.43), as the
+/// wall would.
+fn gap_plugs(state: &GameState, palace: HexCoord) -> Vec<HexCoord> {
+    crate::khartoum::wall_gap(state, palace)
+        .map(|gap| gap.line.into_iter().step_by(2).collect())
+        .unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------
@@ -1367,7 +1574,7 @@ fn khalifa_score(effect: &GameEffect, state: &GameState, player: Player) -> i32 
         // the chosen wall segment, guns close enough to breach on turn 1
         // (§6.63, §9.322).
         DeployUnit(p) => {
-            if is_fixed_placement(p) {
+            if is_fixed_placement(state, p) {
                 return 200;
             }
             let mut s = 60;
@@ -1538,6 +1745,9 @@ fn lane_cost(state: &GameState, at: HexCoord, player: Player) -> i32 {
 fn khalifa_goal(state: &GameState, unit_id: UnitId, player: Player) -> Option<Goal> {
     let unit = state.find_unit(unit_id)?;
     let enemy = player.opponent();
+    if let Some(goal) = crate::battle_plan::khalifa_goal(state, unit) {
+        return Some(goal);
+    }
     if let Some(palace) = palace_hex(state) {
         let axis = assault_axis_wall(state);
         let is_guns = unit.profile.weapon == omdurman_rules::WeaponClass::Artillery;
@@ -1546,9 +1756,21 @@ fn khalifa_goal(state: &GameState, unit_id: UnitId, player: Player) -> Option<Go
         // everything past this point is a footrace to GORDON (§9.346). The
         // gate is walkable (§5.23), so no melee is needed until a defender
         // appears — the goal just has to stop flapping back outside.
-        let inside = corridor
-            .map(|c| unit.position.distance(palace) < c.distance(palace))
-            .unwrap_or(false)
+        // Through the White Nile gap the city side is measured on the
+        // ground (§5.11): a gate is no wall, so the hexes outside the south
+        // front are as near the palace as the gap's outside is.
+        let gap = corridor.is_some_and(|c| {
+            crate::khartoum::wall_gap(state, palace).is_some_and(|g| g.approach == c)
+        });
+        let closer = |c: HexCoord| {
+            if gap {
+                let cost = |h| crate::threat::path_cost(state, h, palace).unwrap_or(i32::MAX);
+                cost(unit.position) <= cost(c)
+            } else {
+                unit.position.distance(palace) < c.distance(palace)
+            }
+        };
+        let inside = corridor.map(closer).unwrap_or(false)
             || unit.position.neighbors().iter().any(|&n| {
                 matches!(
                     state.hexside_effective(unit.position, n),
@@ -1589,26 +1811,45 @@ fn khalifa_goal(state: &GameState, unit_id: UnitId, player: Player) -> Option<Go
     match unit.profile.identity {
         // The Khalifa stays guarded (10 VP, §9.14): hover behind the line.
         UnitIdentity::DervishLeader(_) => {
-            let nearest_enemy = nearest_enemy_unit(state, unit.position, enemy);
+            let nearest_enemy = nearest_enemy_on_land(state, unit.position, enemy);
             nearest_enemy.map(|target| Goal::Band {
                 target,
                 standoff: 4,
             })
         }
         UnitIdentity::DervishArtillery => {
-            let nearest_enemy = nearest_enemy_unit(state, unit.position, enemy);
+            let nearest_enemy = nearest_enemy_on_land(state, unit.position, enemy);
             nearest_enemy.map(|target| Goal::Band {
                 target,
                 standoff: 3,
             })
         }
-        _ => nearest_enemy_unit(state, unit.position, enemy).map(Goal::Hex),
+        _ => nearest_enemy_on_land(state, unit.position, enemy).map(Goal::Hex),
     }
 }
 
 // ---------------------------------------------------------------------------
 // Geometry helpers shared by both commanders
 // ---------------------------------------------------------------------------
+
+/// Position of the enemy unit a land unit at `from` can go for: the
+/// nearest one off the river (gunboats cannot be reached on foot, §5.22)
+/// with a way to it over land -- the Nile and the walls between closed
+/// (see [`crate::threat::path_cost`]). A goal across the river would leave
+/// every hex of the bank equally far, and the unit would never move.
+fn nearest_enemy_on_land(state: &GameState, from: HexCoord, enemy: Player) -> Option<HexCoord> {
+    let mut targets: Vec<HexCoord> = state
+        .units
+        .iter()
+        .filter(|u| u.profile.identity.owner() == enemy && !u.profile.kind.is_boat())
+        .map(|u| u.position)
+        .collect();
+    targets.sort_by_key(|p| (p.distance(from), p.q, p.r));
+    targets.dedup();
+    targets
+        .into_iter()
+        .find(|&p| crate::threat::path_cost(state, from, p).is_some())
+}
 
 /// Position of the enemy unit closest to `from`.
 fn nearest_enemy_unit(state: &GameState, from: HexCoord, enemy: Player) -> Option<HexCoord> {
@@ -1671,7 +1912,18 @@ fn safest_friendly_stack(state: &GameState, from: HexCoord, player: Player) -> O
         });
         let threat = crate::threat::fire_reaching(state, u.position, enemy) as i32;
         let spears = crate::threat::melee_reaching(state, u.position, enemy) as i32;
-        let key = threat * 2 + spears + i32::from(contact) * 100 + d;
+        // A stack is the leaders' shelter only while it lives (§6.51): one
+        // lucky shot must not take the whole staff, and a thin stack of
+        // guns dies first.
+        let leaders = state
+            .units_in_hex(u.position)
+            .iter()
+            .filter(|o| matches!(o.profile.identity, UnitIdentity::AngloEgyptianLeader(_)))
+            .count() as i32;
+        // (Himself, when he stands there already.)
+        let others = leaders - i32::from(u.position == from);
+        let thin = 4 - combat_count_in(state, u.position, player).min(4);
+        let key = threat * 2 + spears + i32::from(contact) * 100 + d + others * 30 + thin * 6;
         if best.is_none_or(|(k, _)| key < k) {
             best = Some((key, u.position));
         }

@@ -7432,6 +7432,9 @@ mod tests {
     #[test]
     fn observations_pushed_on_elimination() {
         let mut state = playing(Scenario::Campaign);
+        // The Dervish turn: the Khalifa falls to Anglo-Egyptian defensive
+        // fire (§6.7) -- killed by the side that is not moving.
+        state.active_player = Player::Dervish;
         let id = make_unit_with_identity(
             &mut state,
             HexCoord::new(0, 0),
@@ -7456,9 +7459,14 @@ mod tests {
             "UnitEliminated observation"
         );
         assert!(
-            obs.iter()
-                .any(|o| matches!(o, Observation::LeaderKilled { .. })),
-            "LeaderKilled observation"
+            obs.iter().any(|o| matches!(
+                o,
+                Observation::LeaderKilled {
+                    by: Player::AngloEgyptian,
+                    ..
+                }
+            )),
+            "LeaderKilled observation, killed by the Anglo-Egyptians"
         );
     }
 

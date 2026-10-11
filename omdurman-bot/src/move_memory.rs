@@ -75,6 +75,12 @@ impl MoveMemory {
             .any(|h| seen.contains(h))
     }
 
+    /// Whether `unit` has a plan for this phase already (see [`Self::plan_for`]).
+    pub fn has_plan(&mut self, state: &GameState, unit: UnitId) -> bool {
+        self.sync(state);
+        self.plans.contains_key(&unit)
+    }
+
     /// `unit`'s plan for this phase -- the hexes still to enter and the
     /// gain at the end -- made by `make` the first time it is asked for.
     pub fn plan_for(
@@ -86,6 +92,19 @@ impl MoveMemory {
         self.sync(state);
         let (way, gain) = self.plans.entry(unit).or_insert_with(make);
         (way.first().copied(), *gain)
+    }
+
+    /// `unit`'s whole plan for this phase -- the hexes still to enter and
+    /// the gain at the end -- made by `make` the first time it is asked for
+    /// (see [`Self::plan_for`]).
+    pub fn plan_way(
+        &mut self,
+        state: &GameState,
+        unit: UnitId,
+        make: impl FnOnce() -> (Vec<HexCoord>, i32),
+    ) -> (Vec<HexCoord>, i32) {
+        self.sync(state);
+        self.plans.entry(unit).or_insert_with(make).clone()
     }
 
     /// `unit`'s planned step was refused (friends filled the hex it was

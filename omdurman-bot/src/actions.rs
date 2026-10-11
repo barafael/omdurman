@@ -671,7 +671,20 @@ fn deploy_hex_options(
 fn ranked_deploy_hexes(state: &GameState) -> Vec<HexCoord> {
     let mut hexes: Vec<HexCoord> = state.board.terrain.keys().copied().collect();
     sort_dedup_hexes(&mut hexes);
-    hexes.sort_by_cached_key(|h| -placement_preference(state, *h));
+    // The line across the White Nile gap is a corridor like a gate's
+    // (see `crate::khartoum`), and the palace holds GORDON's guard
+    // (§9.346): surface them with the gates.
+    let palace = state
+        .board
+        .hex_of_location(omdurman_types::Location::Palace);
+    let mut key_hexes: Vec<HexCoord> = palace
+        .and_then(|palace| crate::khartoum::wall_gap(state, palace))
+        .map(|gap| gap.line)
+        .unwrap_or_default();
+    key_hexes.extend(palace);
+    hexes.sort_by_cached_key(|h| {
+        -placement_preference(state, *h) - if key_hexes.contains(h) { 18 } else { 0 }
+    });
     hexes
 }
 
@@ -830,45 +843,7 @@ fn movement_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffec
         if unit.profile.identity.owner() != mover {
             continue;
         }
-        if unit.state.disrupted {
-            continue;
-        }
-        // Land units only here; gunboats handled below.
-        let is_boat = unit.profile.kind.is_boat();
-        if is_boat {
-            gunboat_moves(state, unit.id, out);
-            continue;
-        }
-        if !matches!(unit.profile.movement, UnitMovement::Land(_)) {
-            continue;
-        }
-        // Single-hex steps to each neighbour: the path is the one contiguous
-        // step ending at `dest`, and the cost is the engine's own path cost
-        // (terrain + road, plus the §9.233 Zariba entry surcharge), so the
-        // bot never submits a cost the engine would compute differently.
-        for dest in unit.position.neighbors() {
-            if terrain_impassable(state, dest) {
-                continue;
-            }
-            let path = vec![dest];
-            // No board attached: the engine falls back to the supplied cost;
-            // a single step over unknown ground is clear terrain (1 MP).
-            let cost = state
-                .movement_cost_for(unit, &path)
-                .unwrap_or(MovementPoints::new(1));
-            if state
-                .can_move_unit_along(unit.id, dest, &path, cost)
-                .is_ok()
-                && state.check_stacking(unit, dest).is_ok()
-            {
-                out.push(GameEffect::MoveUnit {
-                    unit_id: unit.id,
-                    to: dest,
-                    cost,
-                    path,
-                });
-            }
-        }
+        out.extend(unit_moves(state, unit.id));
     }
 
     // Royal Engineers may commit to a demolition this turn (§6.53). Resolution
@@ -876,6 +851,84 @@ fn movement_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffec
     // we gate on engineer identity + adjacency ourselves to avoid committing
     // to nothing.
     demolition_actions(state, out);
+    zariba_construction_actions(state, out);
+}
+
+/// The Campaign's Zariba (§5.3, §9.23): for every printed Zariba hexside not
+/// yet built, the infantry inside the printed Zariba beside it that may
+/// spend the turn building it (unmoved, undisrupted, not already busy) --
+/// one candidate per hex, all its eligible builders together.
+fn zariba_construction_actions(state: &GameState, out: &mut Vec<GameEffect>) {
+    if state.scenario != Scenario::Campaign || state.active_player != Player::AngloEgyptian {
+        return;
+    }
+    for (hexside, kind) in &state.board.hexsides {
+        if !kind.is_zariba() || state.zariba_hexsides.contains(hexside) {
+            continue;
+        }
+        for hex in [hexside.a, hexside.b] {
+            let builders: Vec<UnitId> = state
+                .units_in_hex(hex)
+                .into_iter()
+                .map(|u| u.id)
+                .filter(|&id| state.can_construct_zariba(&[id], *hexside).is_ok())
+                .collect();
+            if !builders.is_empty() {
+                out.push(GameEffect::ConstructZariba {
+                    unit_ids: builders,
+                    hexside: *hexside,
+                });
+            }
+        }
+    }
+}
+
+/// Every single-step move `unit_id` may make now (§5.11, §5.24): one hex
+/// for a land unit, at the engine's own step cost (terrain, road, the
+/// §9.233 Zariba entry surcharge), within its stacking (§5.5); a gunboat's
+/// step up or down the Nile. Empty for a disrupted unit (§6.3) or a fort.
+pub fn unit_moves(state: &GameState, unit_id: UnitId) -> Vec<GameEffect> {
+    let mut out = Vec::new();
+    let Some(unit) = state.find_unit(unit_id) else {
+        return out;
+    };
+    if unit.state.disrupted {
+        return out;
+    }
+    if unit.profile.kind.is_boat() {
+        gunboat_moves(state, unit.id, &mut out);
+        return out;
+    }
+    if !matches!(unit.profile.movement, UnitMovement::Land(_)) {
+        return out;
+    }
+    // Single-hex steps to each neighbour: the path is the one contiguous
+    // step ending at `dest`, and the cost is the engine's own path cost, so
+    // the bot never submits a cost the engine would compute differently.
+    for dest in unit.position.neighbors() {
+        if terrain_impassable(state, dest) {
+            continue;
+        }
+        let path = vec![dest];
+        // No board attached: the engine falls back to the supplied cost;
+        // a single step over unknown ground is clear terrain (1 MP).
+        let cost = state
+            .movement_cost_for(unit, &path)
+            .unwrap_or(MovementPoints::new(1));
+        if state
+            .can_move_unit_along(unit.id, dest, &path, cost)
+            .is_ok()
+            && state.check_stacking(unit, dest).is_ok()
+        {
+            out.push(GameEffect::MoveUnit {
+                unit_id: unit.id,
+                to: dest,
+                cost,
+                path,
+            });
+        }
+    }
+    out
 }
 
 /// Whether the Terrain Effects Chart forbids land movement into `to` (§5.11).
