@@ -234,7 +234,7 @@ mod rules_submodule_paths {
     use omdurman_rules::howitzer_scatter::{ScatterHexDirection, howitzer_scatter};
     use omdurman_rules::los_table::{
         LosCondition, LosFeature, LosLevel, LosStepResult, blocking_rules, has_los, los_clear_rays,
-        los_level, los_level_for_unit, los_path_analysis,
+        los_level, los_level_for_unit, los_path_analysis, los_ray_sides,
     };
     use omdurman_rules::range_effects::{ae_range_effects, dervish_range_effects, night_max_range};
     use omdurman_rules::reinforcements::{

@@ -1174,7 +1174,7 @@ title = "Line of Sight Table"
 status = "implemented"
 clause = "Locate the terrain type the firing unit is in and cross-index it with the terrain type the target unit is in. Terrain types in the intersecting box block line of sight, with exceptions as footnoted."
 witness = "omdurman-rules::src::los_table::los_blocking_rules_match_reference_table"
-note = "A box entry carrying two footnotes -- Units (3,6), Huts (1,4), Crest (2,3) -- blocks only when both footnotes hold (they compose with 'and'; the table does not say, this is the chosen reading). The Hilltop-fires-on-Ground Units entry is footnote 4 as printed (closer to the target), not 3. A ray in a corner direction runs along hexsides (HexCoord::hexsides_along_line) and may pass either side; it is clear if either side is. Notes d and e read exactly those hexsides: the ray may run along one wall hexside, a second blocks; a crest run along is a crest fired through, its footnote weighed at the step the ray runs along it, and a firer or target whose hex touches it at a corner is adjacent to it (detail 2). A crest on a lateral side of an intervening hex is neither crossed nor run along and blocks nothing."
+note = "A box entry carrying two footnotes -- Units (3,6), Huts (1,4), Crest (2,3) -- blocks only when both footnotes hold (they compose with 'and'; the table does not say, this is the chosen reading). The Hilltop-fires-on-Ground Units entry is footnote 4 as printed (closer to the target), not 3. The ray is the exact segment between the two hex centres (los_ray_sides, integer geometry): every hex whose interior it passes through -- a corner it clips included, since terrain fills its whole hex (note f) -- and every hexside it crosses; a ray crossing a hexside at its midpoint passes both hexes and crosses that hexside. A ray that touches hex corners -- in a corner direction it runs along hexsides (HexCoord::hexsides_along_line), and some others pass exactly through a corner -- may pass either side (the table does not say; this is the chosen reading, the line shifted infinitesimally either way): it is clear if either side is, so a lone blocker in a hex the ray only touches does not block. Details 3 and 4 ('closer to the firing/target unit, or halfway between') compare hex distances: a hex's to the firer and to the target, a hexside's halfway between its two hexes'. Notes d and e read exactly those hexsides: the ray may run along one wall hexside, a second blocks; a crest run along is a crest fired through, its footnote weighed at the step the ray runs along it, and a firer or target whose hex touches it at a corner is adjacent to it (detail 2). A crest on a lateral side of an intervening hex is neither crossed nor run along and blocks nothing."
 proofs = [
     "omdurman-types::src::lib::line_between_forms_a_connected_ray",
     "omdurman-types::src::lib::hexsides_along_line_join_adjacent_hexes",
@@ -1226,6 +1226,14 @@ tests = [
     "omdurman-rules::src::los_table::crest_adjacency_rescues_a_crest_the_ray_runs_along",
     "omdurman-rules::src::los_table::fire_along_one_wall_hexside_is_clear_along_two_blocked",
     "omdurman-rules::src::los_table::los_clear_rays_are_the_clear_sides_of_the_line",
+    "omdurman-rules::src::los_table::a_ray_through_a_hexside_midpoint_passes_both_hexes_and_crosses_it",
+    "omdurman-rules::src::los_table::campaign_fire_into_omdurman_through_the_wall_is_blocked",
+    "omdurman-rules::src::los_table::rough_ground_in_a_clipped_corner_blocks",
+    "omdurman-rules::src::los_table::a_tied_ray_is_blocked_only_when_both_sides_are",
+    "omdurman-rules::src::los_table::ground_to_ground_los_is_reciprocal_on_a_random_board",
+    "omdurman-rules::src::los_table::ray::los_ray_sides_are_the_hexes_the_segment_enters",
+    "omdurman-rules::src::los_table::ray::los_ray_sides_along_hexsides_are_the_two_tie_sides",
+    "omdurman-rules::src::los_table::ray::los_ray_sides_keep_corner_clips_and_midpoint_crossings",
     "omdurman-rules::src::effects::tests::a_rampart_unit_blocks_line_of_sight_at_rough_level",
     "omdurman-rules::src::effects::tests::the_hedge_is_read_along_the_clear_side_of_a_tied_ray",
     "omdurman-rules::src::effects::tests::the_entry_hexside_is_read_along_the_clear_side_of_a_tied_ray",
@@ -1262,6 +1270,10 @@ symbol = "has_los"
 [[mapping.impl]]
 file = "omdurman-rules/src/los_table.rs"
 symbol = "los_clear_rays"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/los_table/ray.rs"
+symbol = "los_ray_sides"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/state/fire.rs"
