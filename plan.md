@@ -138,7 +138,9 @@ Themes in the tree, each its own commit once clippy/tests pass:
    (splash/*). **Check the observers are registered** (`add_observer` for
    `press_/release_/click_menu_button`, `end_menu_button_drag`,
    `cancel_menu_button`) -- the diff adds the functions, splash/mod.rs
-   must wire them.
+   must wire them. *(Superseded 2026-10-10, `45f8e15`: the buttons are
+   Bevy's headless `bevy::ui_widgets::Button` in the splash's BSN scene,
+   each observing its own `Activate`; the five global observers are gone.)*
 3. Net: solo-room session evidence (`SOLO_ROOM_SECS`), `rejoining`,
    signalling timeout -> offline fallback (`SIGNALLING_TIMEOUT_SECS`),
    snapshot-request backoff, loopback dedup, re-announce after reconnect,
