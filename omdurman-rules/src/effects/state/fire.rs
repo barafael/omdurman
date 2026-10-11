@@ -47,10 +47,13 @@ impl GameState {
                     .units
                     .iter()
                     .filter(|u| {
-                        !matches!(
-                            u.profile.kind,
-                            crate::UnitKind::Gunboat { .. } | crate::UnitKind::Fort { .. }
-                        )
+                        // A Friendlies passenger (§5.21) is cargo on its
+                        // gunboat, so it blocks no more than the boat does.
+                        u.state.loaded_on.is_none()
+                            && !matches!(
+                                u.profile.kind,
+                                crate::UnitKind::Gunboat { .. } | crate::UnitKind::Fort { .. }
+                            )
                     })
                     .map(|u| (u.position, u.profile.kind))
                     .collect();

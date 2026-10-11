@@ -10375,6 +10375,11 @@ mod tests {
             crate::los_table::LosLevel::Rough,
             "the boat's level, not the passenger's"
         );
+        assert_eq!(
+            state.los_unit_blocker()(hex),
+            None,
+            "a passenger blocks no more than its boat"
+        );
         let rifle = make_dervish_tribal(&mut state, HexCoord::new(0, 0));
         assert!(matches!(
             state.can_fire_at(rifle, hex, FireKind::Direct),
