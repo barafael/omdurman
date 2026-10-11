@@ -317,12 +317,12 @@ const _: () = assert!(WeaponClass::ALL.len() == DERVISH_RANGE_EFFECTS.len());
 /// impact d10 roll to a scatter direction. Transcribed from
 /// `howitzer_scattergram.ron`; rolls 7–10 are `Center` (on target).
 pub(crate) static SCATTERGRAM: [ScatterHexDirection; 10] = [
-    ScatterHexDirection::UpperLeft,
-    ScatterHexDirection::UpperRight,
-    ScatterHexDirection::Right,
     ScatterHexDirection::LowerRight,
     ScatterHexDirection::LowerLeft,
     ScatterHexDirection::Left,
+    ScatterHexDirection::UpperLeft,
+    ScatterHexDirection::UpperRight,
+    ScatterHexDirection::Right,
     ScatterHexDirection::Center,
     ScatterHexDirection::Center,
     ScatterHexDirection::Center,

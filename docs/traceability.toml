@@ -1581,7 +1581,7 @@ status = "implemented"
 clause = "The designated target hex is hit on a roll of 7–10."
 witness = "omdurman-rules::src::howitzer_scatter::scatter_is_center_exactly_for_rolls_7_to_10"
 approximation = "A shell that scatters off the map (the aimed hex lay on the edge) is lost: nothing is resolved, the gunboat has fired."
-note = "The printed Scattergram's directions are the map's (1 upper-left ... 6 left; 7-10 on target), one hex off the designated hex (scatter_impact_hex). Results take effect on every unit in the impact hex, friend or foe; legality is validated against the aimed hex. The 4-10 hex target window is pinned under §6.22's range tests. The impact roll and hex are reported on FireResolved."
+note = "The printed Scattergram's directions are the map's, north up (1 lower-right, 2 lower-left, 3 left, 4 upper-left, 5 upper-right, 6 right; 7-10 on target -- the diagram is printed upside down), one hex off the designated hex (scatter_impact_hex). Results take effect on every unit in the impact hex, friend or foe; legality is validated against the aimed hex. The 4-10 hex target window is pinned under §6.22's range tests. The impact roll and hex are reported on FireResolved."
 tests = [
     "omdurman-rules::src::effects::tests::a_shell_scattered_off_the_map_is_lost",
     "omdurman-rules::src::howitzer_scatter::howitzer_on_target_7_to_10",
