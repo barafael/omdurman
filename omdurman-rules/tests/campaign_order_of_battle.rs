@@ -265,3 +265,48 @@ fn the_anglo_egyptian_waves_follow_the_order_of_appearance() {
         Err(RuleError::LeadersMustEnterByTurnFour)
     ));
 }
+
+// §9.113: "All three leaders must be in play by the end of turn four!" binds
+// a leader who can come in. With the Dervish standing on every hex of the
+// Anglo-Egyptian Entrance Area the leaders cannot enter, so turn 4 ends
+// rather than locking the game; they come in later, once a hex is free.
+#[rulebook("§9.113")]
+#[test]
+fn a_blocked_entrance_defers_the_turn_four_leaders() {
+    let mut state = campaign();
+    let entrance = state.board.entrance_hexes(NamedArea::AngloEgyptianEntrance);
+    let squatters = [
+        UnitId::Baggara_0_0,
+        UnitId::Baggara_1_0,
+        UnitId::Baggara_2_0,
+        UnitId::Baggara_3_0,
+        UnitId::Baggara_4_0,
+        UnitId::Baggara_5_0,
+    ];
+    assert!(entrance.len() <= squatters.len());
+    for (hex, id) in entrance.iter().zip(squatters) {
+        state.units.push(at(id, *hex));
+    }
+    movement(&mut state, Player::AngloEgyptian, 4);
+    let kitchener = UnitId::Kitchener_0_0;
+    assert!(matches!(
+        state.can_place_single_reinforcement(&at(kitchener, entrance[0])),
+        Err(RuleError::EnemyOccupied(_))
+    ));
+    apply_effect(&mut state, &GameEffect::AdvancePhase)
+        .expect("a leader who cannot enter does not hold up the phase");
+    assert_eq!(
+        state.phase,
+        Phase::DefensiveFire(omdurman_rules::FireSubPhase::DirectFire)
+    );
+
+    // Turn 5: one hex is free again, and the deferred leader enters.
+    let freed = entrance[0];
+    state.units.retain(|u| u.position != freed);
+    movement(&mut state, Player::AngloEgyptian, 5);
+    assert!(
+        state
+            .can_place_single_reinforcement(&at(kitchener, freed))
+            .is_ok()
+    );
+}

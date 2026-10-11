@@ -219,12 +219,16 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
         return Err(RuleError::MeleePendingResolution);
     }
     // §9.113: "All three leaders must be in play by the end of turn four!"
-    // -- the Anglo-Egyptian turn-4 Movement phase is their last chance.
+    // -- the Anglo-Egyptian turn-4 Movement phase is their last chance. The
+    // rule binds only a leader who *can* come in: one whose every entrance
+    // hex the Dervish hold (or stacking closes) would otherwise lock the
+    // game in this phase forever, so his entry is deferred instead (he may
+    // still enter on a later turn, `validate_campaign_reinforcements`).
     if state.scenario == Scenario::Campaign
         && matches!(state.phase, Phase::Movement)
         && state.active_player == Player::AngloEgyptian
         && state.current_turn.value() == 4
-        && !campaign_leaders_in_play(state)
+        && campaign_leader_may_still_enter(state)
     {
         return Err(RuleError::LeadersMustEnterByTurnFour);
     }
@@ -336,21 +340,45 @@ fn charge_fok_entry(state: &mut GameState) {
     }
 }
 
-/// Whether Kitchener, Gatacre and Hunter have all come into play (§9.113):
-/// each on the board or already eliminated.
-fn campaign_leaders_in_play(state: &GameState) -> bool {
-    use crate::{BritishLeader, UnitIdentity};
-    [
-        BritishLeader::Kitchener,
-        BritishLeader::Gatacre,
-        BritishLeader::Hunter,
-    ]
-    .iter()
-    .all(|leader| {
-        let is = |identity: UnitIdentity| identity == UnitIdentity::AngloEgyptianLeader(*leader);
-        state.units.iter().any(|u| is(u.profile.identity))
-            || state.eliminated.iter().any(|id| {
-                crate::unit_profiles::profile_for_unit(*id).is_some_and(|p| is(p.identity))
+/// Whether one of Kitchener, Gatacre and Hunter has not yet come into play
+/// (§9.113: on the board or already eliminated) and could enter now -- a
+/// legal reinforcement placement exists on some hex of his entrance area.
+/// A board without entrance annotations accepts any hex, so there an absent
+/// leader always could.
+fn campaign_leader_may_still_enter(state: &GameState) -> bool {
+    use crate::UnitIdentity;
+    // The printed counters of Kitchener, Gatacre and Hunter.
+    const LEADERS: [UnitId; 3] = [
+        UnitId::Kitchener_0_0,
+        UnitId::Kitchener_1_0,
+        UnitId::Kitchener_2_0,
+    ];
+    LEADERS.iter().any(|&id| {
+        let Some(profile) = crate::unit_profiles::profile_for_unit(id) else {
+            return false;
+        };
+        if !matches!(profile.identity, UnitIdentity::AngloEgyptianLeader(_)) {
+            return false;
+        }
+        let is = |identity: UnitIdentity| identity == profile.identity;
+        let in_play = state.units.iter().any(|u| is(u.profile.identity))
+            || state.eliminated.iter().any(|e| {
+                crate::unit_profiles::profile_for_unit(*e).is_some_and(|p| is(p.identity))
+            });
+        if in_play {
+            return false;
+        }
+        let hexes = state.board.entrance_hexes(entrance_area_for(&profile));
+        hexes.is_empty()
+            || hexes.iter().any(|&position| {
+                state
+                    .can_place_single_reinforcement(&UnitPlacement {
+                        id,
+                        position,
+                        profile,
+                        state: Default::default(),
+                    })
+                    .is_ok()
             })
     })
 }

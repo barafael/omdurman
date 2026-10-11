@@ -2118,7 +2118,8 @@ title = "Anglo-Egyptian reinforcements (Campaign)"
 status = "implemented"
 clause = "The leader units KITCHENER, GATACRE, and HUNTER may enter anytime during the first four game turns and do not count against the 12 units per turn limit. All three leaders must be in play by the end of turn four!"
 witness = "omdurman-rules::tests::campaign_order_of_battle::the_anglo_egyptian_waves_follow_the_order_of_appearance"
-note = "Implemented: entry through the annotated entrance areas (the Anglo-Egyptian Entrance Area, north-edge Nile hexes for gunboats, the Abu Alim hut for the Friendlies) with the printed entry costs; turn 1 = the printed first wave (Friendlies, Egyptian Cavalry, Horse Artillery, two Egyptian Division brigades); turns 2-3 = any twelve land units; three gunboats a turn until turn 4; turn 4 on = all remaining (units held back may still enter later); leaders free on turns 1-4, and the turn-4 Anglo-Egyptian Movement phase cannot end until Kitchener, Gatacre and Hunter are in play."
+approximation = "The manual does not say what happens when a leader cannot enter at all (every hex of his entrance area held by the Dervish or closed by stacking). The engine enforces the turn-4 deadline only for a leader who has a legal entry hex at that moment (campaign_leader_may_still_enter in advance_phase); a blocked leader's entry is deferred -- turn 4 ends, and he may still enter on a later Anglo-Egyptian Movement phase -- rather than the phase locking forever."
+note = "Implemented: entry through the annotated entrance areas (the Anglo-Egyptian Entrance Area, north-edge Nile hexes for gunboats, the Abu Alim hut for the Friendlies) with the printed entry costs; turn 1 = the printed first wave (Friendlies, Egyptian Cavalry, Horse Artillery, two Egyptian Division brigades); turns 2-3 = any twelve land units; three gunboats a turn until turn 4; turn 4 on = all remaining (units held back may still enter later); leaders free on turns 1-4, and the turn-4 Anglo-Egyptian Movement phase cannot end until Kitchener, Gatacre and Hunter are in play (or none of the missing ones can legally enter, see approximation)."
 proofs = [
     "omdurman-rules::src::reinforcements::wave_for_turn_answers_exactly_on_the_printed_schedule",
 ]
@@ -2133,6 +2134,7 @@ tests = [
     "omdurman-rules::src::effects::tests::campaign_setup_rejects_non_initial_force",
     "omdurman-rules::tests::campaign_order_of_battle::reinforcements_enter_through_their_entrance_areas",
     "omdurman-rules::tests::campaign_order_of_battle::the_anglo_egyptian_waves_follow_the_order_of_appearance",
+    "omdurman-rules::tests::campaign_order_of_battle::a_blocked_entrance_defers_the_turn_four_leaders",
 ]
 
 [[mapping.impl]]
