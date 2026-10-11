@@ -542,33 +542,11 @@ fn apply_sequenced(env: &mut ApplyEnv<'_, '_>, delivery: SequencedDelivery) {
     info!(seq, uid, "applied sequenced event");
     // Our own submission made it through the host: stop retransmitting it.
     env.pending.confirm(uid);
-    // What the event does to the counters, for the board effects: diffed
-    // around the apply, live only (a rebuild never comes through here).
-    let before = (env.gsp.live_applied.is_some()
-        && matches!(
-            ev,
-            GameEvent::Effect(_)
-                | GameEvent::PlaceUnit { .. }
-                | GameEvent::MoveUnit { .. }
-                | GameEvent::RemoveUnit { .. }
-        ))
-    .then(|| crate::fx::LiveChange::snapshot(&env.gsp.game_state.0));
-    let setup = env.gsp.game_state.0.phase == omdurman_rules::Phase::Setup;
-    // The one application path (shared with replay): every variant reaches
-    // the engine synchronously, in seq order.
-    let accepted = game_apply::apply_game_event(&ev, &mut env.gsp.sinks());
-    if accepted && let Some(before) = before {
-        let change = crate::fx::LiveChange::between(&before, &env.gsp.game_state.0, setup);
-        if let Some(live) = env.gsp.live_applied.as_mut()
-            && !change.is_empty()
-        {
-            live.0.push(change);
-        }
+    // The board shows a review: the event, now recorded, reaches the live
+    // state through `timeline::catch_up_live_stash` instead.
+    if !env.gsp.reviewing() {
+        apply_to_board(env, &ev);
     }
-    env.gsp
-        .pending_observations
-        .0
-        .extend(env.gsp.game_state.0.drain_observations());
     let GameEvent::StartGame {
         seats, scenario, ..
     } = &ev
@@ -606,6 +584,38 @@ fn apply_sequenced(env: &mut ApplyEnv<'_, '_>, delivery: SequencedDelivery) {
                 .push((NetMsg::Control(Control::RequestSnapshot), host));
         }
     }
+}
+
+/// Apply a sequenced event to the board's engine state, with what it did to
+/// the counters (the board effects) and its observations (the UI).
+fn apply_to_board(env: &mut ApplyEnv<'_, '_>, ev: &GameEvent) {
+    // What the event does to the counters, for the board effects: diffed
+    // around the apply, live only (a rebuild never comes through here).
+    let before = (env.gsp.live_applied.is_some()
+        && matches!(
+            ev,
+            GameEvent::Effect(_)
+                | GameEvent::PlaceUnit { .. }
+                | GameEvent::MoveUnit { .. }
+                | GameEvent::RemoveUnit { .. }
+        ))
+    .then(|| crate::fx::LiveChange::snapshot(&env.gsp.game_state.0));
+    let setup = env.gsp.game_state.0.phase == omdurman_rules::Phase::Setup;
+    // The one application path (shared with replay): every variant reaches
+    // the engine synchronously, in seq order.
+    let accepted = game_apply::apply_game_event(ev, &mut env.gsp.sinks());
+    if accepted && let Some(before) = before {
+        let change = crate::fx::LiveChange::between(&before, &env.gsp.game_state.0, setup);
+        if let Some(live) = env.gsp.live_applied.as_mut()
+            && !change.is_empty()
+        {
+            live.0.push(change);
+        }
+    }
+    env.gsp
+        .pending_observations
+        .0
+        .extend(env.gsp.game_state.0.drain_observations());
 }
 
 /// What [`handle_socket`] remembers between frames: what it has already
@@ -775,10 +785,13 @@ pub(crate) fn handle_socket(
 
     // Message processing runs in both Lobby and InGame: the lobby needs to
     // receive faction picks, the host's `StartGame`, and snapshot replies.
-    // In `Spectating` the timeline owns the world (rebuilt from a record, no
-    // live peer), so socket processing is suppressed. During `Splash` there is
-    // no socket yet.
-    if matches!(*state.get(), AppState::Splash | AppState::Spectating) {
+    // An offline review (`Spectating` with no session underneath) owns the
+    // world, so socket processing is suppressed; a review on top of a session
+    // does not stop it (the events go to the stashed live state, see
+    // `timeline`). During `Splash` there is no socket yet.
+    if *state.get() == AppState::Splash
+        || (*state.get() == AppState::Spectating && !gsp.reviewing())
+    {
         return;
     }
 
@@ -1127,7 +1140,10 @@ pub(crate) fn handle_socket(
                 net.last_applied_seq = record_max;
                 net.recent_uids
                     .rebuild(record.events.iter().filter_map(|e| e.uid));
-                {
+                // (Under a review the board shows the reviewed position: the
+                // stashed live state replays the installed record instead,
+                // `timeline::catch_up_live_stash`.)
+                if !gsp.reviewing() {
                     let GameStateParams {
                         game_state,
                         game_map,

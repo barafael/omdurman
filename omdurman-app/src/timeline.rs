@@ -1,20 +1,40 @@
 //! Spectator timeline scrubber (§spectator).
 //!
 //! Reviews a recorded [`GameRecord`] — the in-memory game or one loaded from a
-//! `games/*/events.jsonl` file — by rebuilding rules/map state to an arbitrary event
-//! index. Rewind is *replay-from-start*: to show event `N` we reset to the
-//! record's seed and re-apply events `0..=N` via
-//! [`crate::rebuild_state_to`]. `ChaCha8Rng` can't resume mid-stream, so
-//! reseeding every rebuild (rather than snapshotting the RNG) is deliberate.
+//! `games/*/events.jsonl` file — by rebuilding the rules state to an arbitrary
+//! event index. The dice need no rewinding: every effect carries its
+//! pre-rolled dice, so a replay never draws a random number. Scrubbing is
+//! incremental: a step forward applies the next event to the shown state,
+//! and any other seek restarts from the nearest [checkpoint](CHECKPOINT_EVERY)
+//! at or before the cursor instead of from event 0.
 //!
-//! While [`AppState::Spectating`] is active there is no live socket; the net
-//! systems are gated off and the scrubber owns the world state.
+//! **The review owns only what the board shows.** The reviewed position is
+//! held in the board's resources ([`crate::GameStateResource`], the press,
+//! the movement routes; the board itself follows the reviewed scenario), so
+//! every renderer shows it unchanged. Everything else a replay writes -- the
+//! seat table, the setup-ready flag, the AI driver -- goes to the review's
+//! private [`ReviewSide`], so the session's seats, peers and AI are never
+//! touched.
+//!
+//! **A live session goes on underneath.** Opening a review from a running
+//! session (the lobby's "Review current game", the result card's "Review
+//! timeline") moves the live board state aside into [`LiveStash`] (see
+//! [`stash_live_world`]). The net layer keeps running: the host keeps
+//! sequencing, every peer keeps recording, but the receive path leaves the
+//! board's resources to the review, and [`catch_up_live_stash`] applies each
+//! newly recorded event to the stash instead -- through the same
+//! [`game_apply::apply_game_event`] as the live echo. The host's AI and the
+//! struck-mine roll read the live state through [`LiveGame`], so play goes
+//! on while a player reviews. Leaving the review ([`leave_review`]) puts the
+//! caught-up live state back. An *offline* review (opened from the title
+//! screen, no session) has no stash, and the net systems stay gated off.
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use omdurman_hexmap::{GameMap, load_map_data};
-use omdurman_net::GameRecord;
+use omdurman_net::{GameRecord, RecordedEvent};
+use omdurman_rules::effects::GameState;
 
 use crate::{GameRng, game_apply};
 
@@ -25,6 +45,28 @@ pub(crate) struct RebuildState<'a, 'w, 's> {
     pub commands: &'a mut Commands<'w, 's>,
     pub game_map: &'a mut GameMap,
     pub sinks: game_apply::EventSinks<'a>,
+}
+
+/// A scrub restarts from a checkpoint at most this many events before the
+/// cursor (memory: one engine-state clone per this many events).
+pub(crate) const CHECKPOINT_EVERY: usize = 64;
+
+/// The log-derived state a replay writes that the board does not show: kept
+/// private to the review, so a scrub never rewrites the session's seat
+/// table, setup-ready flag or AI driver.
+#[derive(Default)]
+pub(crate) struct ReviewSide {
+    seats: crate::seats::Seats,
+    local_setup_ready: crate::peers::LocalSetupReady,
+    bot_driver: crate::bot_player::BotDriver,
+}
+
+/// The reviewed state after one event, kept to restart a scrub from.
+struct Checkpoint {
+    game_state: GameState,
+    seats: crate::seats::Seats,
+    press: crate::telegram::TelegramLog,
+    unit_paths: crate::picker::UnitPaths,
 }
 
 /// The record under review plus the scrubber's cursor and playback state.
@@ -40,9 +82,8 @@ pub struct SpectatorTimeline {
     /// Seconds since the last auto-advance step (playback pacing).
     pub play_accum: f32,
     /// Set when `cursor` changed and the world must be rebuilt to match. The
-    /// rebuild is deferred to [`scrub_teardown`]/[`scrub_rebuild`] so the heavy
-    /// work runs in normal systems with full world access, not inside the egui
-    /// pass.
+    /// rebuild is deferred to [`scrub_rebuild`] so the heavy work runs in a
+    /// normal system with full world access, not inside the egui pass.
     pub dirty: bool,
     /// Where a loaded record came from, for the panel header. Empty for the
     /// in-memory game.
@@ -51,6 +92,13 @@ pub struct SpectatorTimeline {
     /// combat-marker spawner's (label, cursor, generation) key cannot
     /// suppress the marker of a re-opened record parked on the same event.
     pub generation: u32,
+    /// The event the board's state reflects (`None`: nothing of this record
+    /// is shown yet), so a step forward applies one event.
+    shown: Option<usize>,
+    /// The review's own seat table & co. (see [`ReviewSide`]).
+    side: ReviewSide,
+    /// Reviewed states by event index (every [`CHECKPOINT_EVERY`]th event).
+    checkpoints: std::collections::BTreeMap<usize, Checkpoint>,
 }
 
 impl SpectatorTimeline {
@@ -63,6 +111,18 @@ impl SpectatorTimeline {
         self.source_label = source_label;
         self.generation += 1;
         self.dirty = true;
+        self.shown = None;
+        self.checkpoints.clear();
+    }
+
+    /// Stop reviewing: drop the record and everything rebuilt from it.
+    pub fn close(&mut self) {
+        self.record = None;
+        self.playing = false;
+        self.dirty = false;
+        self.shown = None;
+        self.checkpoints.clear();
+        self.side = ReviewSide::default();
     }
 
     /// Number of events in the open record (0 if none).
@@ -108,141 +168,358 @@ pub fn advance_timeline_playback(
     }
 }
 
-/// Resources needed for the teardown phase of a timeline scrub: reset the
-/// picker and drop the peer entities. Placed units are kept and reconciled
-/// against the rebuilt state (see [`scrub_teardown`]).
-#[derive(SystemParam)]
-pub struct ScrubTeardown<'w, 's> {
-    pub commands: Commands<'w, 's>,
-    pub picker: ResMut<'w, crate::picker::UnitPicker>,
-    pub picker_state: ResMut<'w, crate::picker::PickerState>,
-    /// Despawned so the rebuild starts with an empty peer set; the reviewed
-    /// record's `StartGame` seats are re-applied by the rebuild.
-    pub peer_entities: Query<'w, 's, Entity, With<crate::peers::Peer>>,
-}
-
-/// Resources needed for the rebuild phase of a timeline scrub: reset the map,
-/// overlay, and rules state, then replay events.
+/// What a scrub writes: the board's resources (the reviewed position is what
+/// the board shows) and the picker selection it resets. Never the seat
+/// table, the peers, the net state or the AI driver (see [`ReviewSide`]).
 #[derive(SystemParam)]
 pub struct ScrubRebuild<'w, 's> {
     pub commands: Commands<'w, 's>,
-    pub game_map: ResMut<'w, omdurman_hexmap::GameMap>,
     pub game_state: ResMut<'w, crate::GameStateResource>,
-    pub seats: ResMut<'w, crate::seats::Seats>,
-    pub local_setup_ready: ResMut<'w, crate::peers::LocalSetupReady>,
-    /// The always-present AI driver (reseeded per StartGame in
-    /// [`game_apply::apply_start_game`]).
-    pub bot_driver: ResMut<'w, crate::bot_player::BotDriver>,
     pub loaded_annotations: ResMut<'w, crate::LoadedAnnotations>,
+    /// The reviewed scenario's board, loaded on the next frame.
     pub pending_map_load: ResMut<'w, crate::PendingMapLoad>,
     /// Movement routes, rebuilt by the replay.
     pub unit_paths: ResMut<'w, crate::picker::UnitPaths>,
     /// The press (telegrams / Gazette), rebuilt by the replay.
     pub press: ResMut<'w, crate::telegram::TelegramLog>,
-    /// The review shows the play board (the board itself is (re)loaded from
-    /// `pending_map_load`, and follows the reviewed scenario via the play-view
-    /// board reconciler, §dual-map).
-    pub next_app_mode: ResMut<'w, NextState<crate::AppMode>>,
+    pub picker: ResMut<'w, crate::picker::UnitPicker>,
+    pub picker_state: ResMut<'w, crate::picker::PickerState>,
 }
 
-/// When the timeline cursor is dirty, rebuild the whole world to that event.
+/// When the timeline cursor is dirty, rebuild the shown state to that event.
 ///
-/// A re-scrub runs over an *already populated* world, so it first resets the
-/// picker selection and the peer entities, then replays `0..=cursor`
-/// synchronously ([`rebuild_state_to`]). Placed-unit entities are
-/// intentionally kept: `picker::reconcile_unit_sprites` moves / spawns /
-/// despawns them against the rebuilt engine state in the same frame, so
-/// playback steps don't blank the board.
-///
-/// Split into two chained systems [`scrub_teardown`] → [`scrub_rebuild`] so
-/// each SystemParam bundle stays focused on a single phase.
-pub fn scrub_teardown(mut timeline: ResMut<SpectatorTimeline>, mut teardown: ScrubTeardown) {
+/// A step to the next event applies that one event: it plays out on the
+/// board (counters glide, fade, spin). Any other seek restarts from the
+/// nearest checkpoint at or before the cursor (or from event 0) and is a
+/// jump: the counters snap ([`crate::fx::SnapSprites`]). Placed-unit entities
+/// are kept: `picker::reconcile_unit_sprites` moves / spawns / despawns them
+/// against the rebuilt engine state in the same frame, so playback steps
+/// don't blank the board. Runs only on the review screen.
+pub fn scrub_rebuild(mut timeline: ResMut<SpectatorTimeline>, mut rebuild: ScrubRebuild) {
     if !timeline.dirty {
         return;
-    }
-    if timeline.record.is_none() {
-        timeline.dirty = false;
-        return;
-    }
-    for entity in &teardown.peer_entities {
-        teardown.commands.entity(entity).despawn();
-    }
-    teardown.picker.reset_available();
-    *teardown.picker_state = crate::picker::PickerState::Idle;
-}
-
-/// Rebuild phase of the timeline scrub: replays events `0..=cursor` and
-/// switches to the game view. Runs after [`scrub_teardown`].
-///
-/// A step to the next event plays out on the board (counters glide, fade,
-/// spin); any other seek is a jump, and the counters snap
-/// ([`crate::fx::SnapSprites`]).
-pub fn scrub_rebuild(
-    mut timeline: ResMut<SpectatorTimeline>,
-    mut rebuild: ScrubRebuild,
-    mut last_shown: Local<Option<(u32, usize)>>,
-) {
-    if !timeline.dirty {
-        return;
-    }
-    // Borrow, don't clone: this runs on every playback step and the record
-    // holds the entire game's events. (`dirty` is reset after the rebuild,
-    // once the borrowed record's last use is behind us.)
-    let Some(record) = timeline.record.as_ref() else {
-        timeline.dirty = false;
-        return;
-    };
-
-    {
-        let ScrubRebuild {
-            commands,
-            game_map,
-            game_state,
-            seats,
-            local_setup_ready,
-            bot_driver,
-            loaded_annotations,
-            pending_map_load,
-            unit_paths,
-            press,
-            ..
-        } = &mut rebuild;
-        let mut state = RebuildState {
-            commands,
-            game_map,
-            sinks: game_apply::EventSinks {
-                game_state: &mut game_state.0,
-                seats,
-                local_setup_ready,
-                bot_driver,
-                loaded_annotations,
-                pending_map_load,
-                unit_paths,
-                press,
-            },
-        };
-        rebuild_state_to(record, Some(timeline.cursor), &mut state);
     }
     timeline.dirty = false;
-    let stepped = last_shown.is_some_and(|(generation, cursor)| {
-        generation == timeline.generation && timeline.cursor == cursor + 1
-    });
+    let SpectatorTimeline {
+        record,
+        cursor,
+        shown,
+        side,
+        checkpoints,
+        ..
+    } = &mut *timeline;
+    // Borrow, don't clone: this runs on every playback step and the record
+    // holds the entire game's events.
+    let Some(record) = record.as_ref() else {
+        return;
+    };
+    if record.events.is_empty() {
+        return;
+    }
+    let target = (*cursor).min(record.events.len() - 1);
+    let stepped = *shown == Some(target.wrapping_sub(1)) && target > 0;
+    rebuild.picker.reset_available();
+    *rebuild.picker_state = crate::picker::PickerState::Idle;
+
+    let ScrubRebuild {
+        game_state,
+        loaded_annotations,
+        pending_map_load,
+        unit_paths,
+        press,
+        ..
+    } = &mut rebuild;
+    // Where to start: from whichever of the shown event (when moving forward)
+    // and the nearest checkpoint at or before the target is closer, else
+    // afresh.
+    let forward = shown.filter(|&at| at <= target);
+    let checkpoint = checkpoints
+        .range(..=target)
+        .next_back()
+        .filter(|(at, _)| forward.is_none_or(|shown_at| **at > shown_at));
+    let start = match (forward, checkpoint) {
+        (_, Some((&at, point))) => {
+            game_state.0 = point.game_state.clone();
+            side.seats = point.seats.clone();
+            **press = point.press.clone();
+            unit_paths.0 = point.unit_paths.0.clone();
+            at + 1
+        }
+        (Some(at), None) => at + 1,
+        (None, None) => {
+            game_state.0 = GameState::new(omdurman_types::Scenario::Campaign);
+            side.seats.0.clear();
+            **press = crate::telegram::TelegramLog::default();
+            unit_paths.0.clear();
+            0
+        }
+    };
+    let mut sinks = game_apply::EventSinks {
+        game_state: &mut game_state.0,
+        seats: &mut side.seats,
+        local_setup_ready: &mut side.local_setup_ready,
+        bot_driver: &mut side.bot_driver,
+        loaded_annotations,
+        pending_map_load,
+        unit_paths,
+        press,
+    };
+    for (idx, event) in record
+        .events
+        .iter()
+        .enumerate()
+        .take(target + 1)
+        .skip(start)
+    {
+        game_apply::apply_game_event(&event.payload, &mut sinks);
+        if (idx + 1).is_multiple_of(CHECKPOINT_EVERY) && !checkpoints.contains_key(&idx) {
+            checkpoints.insert(
+                idx,
+                Checkpoint {
+                    game_state: sinks.game_state.clone(),
+                    seats: sinks.seats.clone(),
+                    press: sinks.press.clone(),
+                    unit_paths: crate::picker::UnitPaths(sinks.unit_paths.0.clone()),
+                },
+            );
+        }
+    }
+    // The past's observations would flood the live drain with stale cards.
+    let _stale = sinks.game_state.drain_observations();
+    *shown = Some(target);
     if !stepped {
         rebuild.commands.insert_resource(crate::fx::SnapSprites);
     }
-    *last_shown = Some((timeline.generation, timeline.cursor));
+}
 
-    // Show the reviewed game on the play board (rebuild_state_to queued the
-    // board data via PendingMapLoad; the reconciler keeps it on the reviewed
-    // scenario's map while in a play view).
-    rebuild.next_app_mode.set(crate::AppMode::Game);
+// -- The live session underneath a review ------------------------------------
+
+/// The live session's board state, moved aside while the board shows a
+/// review (see the module docs). Present exactly while a review runs on top
+/// of a session.
+#[derive(Resource)]
+pub(crate) struct LiveStash {
+    game_state: GameState,
+    press: crate::telegram::TelegramLog,
+    unit_paths: crate::picker::UnitPaths,
+    /// How many of the record's events `game_state` reflects...
+    applied: usize,
+    /// ...the last of them (seq, uid)...
+    last: Option<(u32, Option<u64>)>,
+    /// ...and of which record (`GameRecorder::generation`).
+    record_generation: u32,
+}
+
+impl LiveStash {
+    /// The live engine state.
+    pub(crate) fn game_state(&self) -> &GameState {
+        &self.game_state
+    }
+}
+
+/// The live session's engine state wherever the board is: the stash while
+/// the board shows a review, else the board's own. For the systems that act
+/// in the session on any screen (the host's AI, the struck-mine roll, seat
+/// presence).
+#[derive(SystemParam)]
+pub(crate) struct LiveGame<'w> {
+    shown: Res<'w, crate::GameStateResource>,
+    stash: Option<Res<'w, LiveStash>>,
+}
+
+impl LiveGame<'_> {
+    pub(crate) fn state(&self) -> &GameState {
+        match &self.stash {
+            Some(stash) => stash.game_state(),
+            None => &self.shown.0,
+        }
+    }
+}
+
+/// Run condition: the board's resources hold a live session's state, or a
+/// review runs on top of one -- anything but an offline review (no session
+/// at all), where the session systems have nothing to act on.
+pub(crate) fn session_live(
+    state: Res<State<crate::AppState>>,
+    stash: Option<Res<LiveStash>>,
+) -> bool {
+    *state.get() != crate::AppState::Spectating || stash.is_some()
+}
+
+/// Whether the review on screen runs on top of a live session.
+pub(crate) fn reviewing_live(stash: Option<Res<LiveStash>>) -> bool {
+    stash.is_some()
+}
+
+/// The record's identity at `applied` events: its generation and last event.
+fn record_mark(
+    recorder: &crate::game_record::GameRecorder,
+    applied: usize,
+) -> (u32, Option<(u32, Option<u64>)>) {
+    let last = applied
+        .checked_sub(1)
+        .and_then(|i| recorder.record.as_ref()?.events.get(i))
+        .map(|e| (e.seq, e.uid));
+    (recorder.generation(), last)
+}
+
+/// Entering a review from a running session (`InGame` or `Lobby` →
+/// `Spectating`): set the live board state aside, so the session goes on
+/// underneath (see the module docs). Copied rather than moved: the board
+/// keeps showing it until the first scrub.
+pub(crate) fn stash_live_world(
+    mut commands: Commands,
+    game_state: Res<crate::GameStateResource>,
+    press: Res<crate::telegram::TelegramLog>,
+    unit_paths: Res<crate::picker::UnitPaths>,
+    recorder: Res<crate::game_record::GameRecorder>,
+) {
+    let applied = recorder.record.as_ref().map_or(0, |r| r.events.len());
+    let (record_generation, last) = record_mark(&recorder, applied);
+    info!(
+        applied,
+        "review opened over a live session; live state set aside"
+    );
+    commands.insert_resource(LiveStash {
+        game_state: game_state.0.clone(),
+        press: press.clone(),
+        unit_paths: crate::picker::UnitPaths(unit_paths.0.clone()),
+        applied,
+        last,
+        record_generation,
+    });
+}
+
+/// Entering any review: show the board (the review screen is the board of
+/// `Spectating`).
+pub(crate) fn enter_review(mut next_mode: ResMut<NextState<crate::AppMode>>) {
+    next_mode.set(crate::AppMode::Game);
+}
+
+/// The session state a live event writes besides the stash itself: the
+/// seat table, the setup-ready flag and the AI driver stay in their
+/// resources (a review never touches them).
+#[derive(SystemParam)]
+pub(crate) struct LiveSinks<'w> {
+    recorder: Res<'w, crate::game_record::GameRecorder>,
+    seats: ResMut<'w, crate::seats::Seats>,
+    local_setup_ready: ResMut<'w, crate::peers::LocalSetupReady>,
+    bot_driver: ResMut<'w, crate::bot_player::BotDriver>,
+}
+
+/// Bring the stash up to the record: apply every event recorded since, or --
+/// when the record was replaced (a history install, a resync reset) or no
+/// longer holds the applied prefix -- replay it from the start.
+fn catch_up(stash: &mut LiveStash, live: &mut LiveSinks) {
+    let events: &[RecordedEvent] = live
+        .recorder
+        .record
+        .as_ref()
+        .map_or(&[], |r| r.events.as_slice());
+    let same_line = live.recorder.generation() == stash.record_generation
+        && events.len() >= stash.applied
+        && record_mark(&live.recorder, stash.applied).1 == stash.last;
+    let from = if same_line { stash.applied } else { 0 };
+    if same_line && from == events.len() {
+        return;
+    }
+    // (Seats & co. are touched only now: a resource written every frame
+    // would wake every `Peers::changed` reader every frame.)
+    let mut scratch_annotations = crate::LoadedAnnotations::default();
+    let mut scratch_map_load = crate::PendingMapLoad::default();
+    let mut sinks = game_apply::EventSinks {
+        game_state: &mut stash.game_state,
+        seats: &mut live.seats,
+        local_setup_ready: &mut live.local_setup_ready,
+        bot_driver: &mut live.bot_driver,
+        loaded_annotations: &mut scratch_annotations,
+        pending_map_load: &mut scratch_map_load,
+        unit_paths: &mut stash.unit_paths,
+        press: &mut stash.press,
+    };
+    if !same_line {
+        info!(
+            events = events.len(),
+            "live record replaced during a review; rebuilding the live state"
+        );
+        *sinks.game_state = GameState::new(omdurman_types::Scenario::Campaign);
+        sinks.seats.0.clear();
+        sinks.unit_paths.0.clear();
+    }
+    for event in &events[from..] {
+        game_apply::apply_game_event(&event.payload, &mut sinks);
+    }
+    // Live-only presentation (combat cards, slips) of events the player was
+    // not watching: dropped, as a rebuild drops them.
+    let _unseen = sinks.game_state.drain_observations();
+    stash.applied = events.len();
+    let (generation, last) = record_mark(&live.recorder, stash.applied);
+    stash.record_generation = generation;
+    stash.last = last;
+}
+
+/// Keep the stashed live state current while a review is on screen: apply
+/// what the session recorded this frame (runs after the receive path).
+pub(crate) fn catch_up_live_stash(mut stash: ResMut<LiveStash>, mut live: LiveSinks) {
+    catch_up(&mut stash, &mut live);
+}
+
+/// The board resources a review hands back to the live session.
+#[derive(SystemParam)]
+pub(crate) struct ReviewExit<'w, 's> {
+    commands: Commands<'w, 's>,
+    timeline: ResMut<'w, SpectatorTimeline>,
+    stash: Option<ResMut<'w, LiveStash>>,
+    live: LiveSinks<'w>,
+    game_state: ResMut<'w, crate::GameStateResource>,
+    press: ResMut<'w, crate::telegram::TelegramLog>,
+    unit_paths: ResMut<'w, crate::picker::UnitPaths>,
+    pending_map_load: ResMut<'w, crate::PendingMapLoad>,
+    picker: ResMut<'w, crate::picker::UnitPicker>,
+    picker_state: ResMut<'w, crate::picker::PickerState>,
+}
+
+/// Leaving a review (any way out of `Spectating`): drop the reviewed record,
+/// and when a session ran underneath, put its caught-up state back on the
+/// board -- the counters snap to it, the board reloads for its scenario.
+pub(crate) fn leave_review(exit: ReviewExit) {
+    let ReviewExit {
+        mut commands,
+        mut timeline,
+        stash,
+        mut live,
+        mut game_state,
+        mut press,
+        mut unit_paths,
+        mut pending_map_load,
+        mut picker,
+        mut picker_state,
+    } = exit;
+    timeline.close();
+    picker.reset_available();
+    *picker_state = crate::picker::PickerState::Idle;
+    let Some(mut stash) = stash else {
+        return;
+    };
+    catch_up(&mut stash, &mut live);
+    game_state.0 = std::mem::replace(
+        &mut stash.game_state,
+        GameState::new(omdurman_types::Scenario::Campaign),
+    );
+    *press = std::mem::take(&mut stash.press);
+    unit_paths.0 = std::mem::take(&mut stash.unit_paths.0);
+    pending_map_load.0 = Some(crate::map_kind_for_scenario(game_state.0.scenario));
+    commands.remove_resource::<LiveStash>();
+    commands.insert_resource(crate::fx::SnapSprites);
+    info!(
+        applied = stash.applied,
+        "review closed; live state restored"
+    );
 }
 
 /// Rebuild game + map state from the canonical event log, applying events
 /// `0..=upto` (or all events when `upto` is `None`). The reset-from-seed + full
-/// forward replay is the same mechanism the live late-joiner path uses; the
-/// bounded form drives the spectator timeline scrubber (§spectator), which shows
-/// the state as it was after event `upto`.
+/// forward replay of the live late-joiner / history-install path.
 ///
 /// Every event goes through [`game_apply::apply_game_event`] -- the same
 /// function the live echo uses -- synchronously and in record order, so the

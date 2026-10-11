@@ -72,11 +72,10 @@ pub(crate) fn apply_start_game(fields: StartGameFields<'_>, sinks: &mut EventSin
     sinks.seats.0 = seats.to_vec();
     // A fresh game restarts per-member setup readiness (§9.2/§9.3).
     sinks.local_setup_ready.0 = false;
-    // A fresh game must not inherit a skewed driver stream: the submitted
-    // *effects* carry their own dice, but the driver's private stream picks
-    // which candidate is played. Every StartGame (live, replayed, or late
-    // join) reseeds to the same constant so replayed AI picks match the
-    // original live trajectory.
+    // A fresh game starts the AI driver afresh (no move memory, no action in
+    // flight) on a fresh dice stream: the submitted effects carry their own
+    // dice, so a replay never consults the driver, and a constant seed only
+    // made the AI repeat its rolls in every game.
     *sinks.bot_driver = crate::bot_player::BotDriver::default();
     *sinks.game_state = GameState::new(scenario);
     sinks

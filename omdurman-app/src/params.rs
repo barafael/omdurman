@@ -48,6 +48,19 @@ pub(crate) struct GameStateParams<'w> {
     /// (never written by a rebuild). Optional: headless harnesses run the
     /// receive path without the effects plugin.
     pub live_applied: Option<ResMut<'w, crate::fx::LiveApplied>>,
+    /// Present while the board shows a review on top of this session: the
+    /// board's resources above hold the reviewed position then, so the
+    /// receive path leaves them alone and `timeline::catch_up_live_stash`
+    /// applies the session's events to the stashed live state instead.
+    pub live_stash: Option<Res<'w, crate::timeline::LiveStash>>,
+}
+
+impl GameStateParams<'_> {
+    /// Whether the board shows a review on top of this session (see
+    /// [`Self::live_stash`]).
+    pub(crate) fn reviewing(&self) -> bool {
+        self.live_stash.is_some()
+    }
 }
 
 impl GameStateParams<'_> {

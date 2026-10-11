@@ -229,6 +229,21 @@ every peer — when the send to any one peer fails.
 - **Modes.** Top-level `AppMode::{Menu, Lobby, Game}` (`M` returns to the menu), with
   `AppState::{Splash, Lobby, InGame, Spectating}` underneath; `Spectating` is the timeline
   scrubber (`timeline.rs`) that reviews a recorded game by rebuilding state to any event index.
+  Scrubbing is incremental: a step forward applies one event, any other seek restarts from the
+  nearest checkpoint (an engine-state clone every 64 events). The review owns only what the board
+  shows -- `GameStateResource`, the press, the movement routes (and the board follows the
+  reviewed scenario); the seat table, setup-ready flag and AI driver a replay writes stay private
+  to the timeline, and no peer entity is touched. A review opened from a running session (the
+  lobby's "Review current game", the result card's "Review timeline") runs *on top of* it: the
+  live board state is set aside in `timeline::LiveStash`, the net layer keeps running (the host
+  keeps sequencing, every peer keeps recording; the receive path leaves the board resources to
+  the review), and `catch_up_live_stash` applies each newly recorded event to the stash through
+  the same `apply_game_event` -- replaying the record from the start if it was replaced (a
+  history install). The host's AI, the struck-mine roll and seat presence read the live state
+  through `timeline::LiveGame`, so play goes on underneath; leaving the review puts the caught-up
+  state back. An offline review (from the title screen) has no session and gates the net systems
+  off. The host's AI plays on every screen; it holds a few seconds after each turn for the
+  telegram, longer only while the host's own seated player is on the board with it unread.
   There is no in-app editor: the board and asset data files are edited as text (see §1).
   Behaviour is gated on the active mode, not a build flag.
 - **Dual-map.** `ActiveEditMap` (local) tracks the live board; `PendingMapLoad` defers a (re)load

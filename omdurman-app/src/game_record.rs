@@ -38,6 +38,10 @@ pub struct GameRecorder {
     /// than a wrong answer.
     seq_index: std::collections::HashMap<u32, usize>,
     uid_index: std::collections::HashMap<u64, u32>,
+    /// Bumped whenever `record` is replaced rather than appended to (a
+    /// history install, a resync reset), so a reader that applied a prefix
+    /// of the old record knows to start over (`timeline::LiveStash`).
+    generation: u32,
     #[cfg(not(target_arch = "wasm32"))]
     events_path: String,
     /// This game's artifact directory (`games/game_{ts}_{suffix}`), created
@@ -134,6 +138,7 @@ impl GameRecorder {
     /// holds the old line followed by a duplicate of the new one.
     pub(crate) fn install_history(&mut self, record: GameRecord) {
         self.record = Some(record);
+        self.generation = self.generation.wrapping_add(1);
         self.reindex();
         self.flushed_count = 0;
         self.rewrite_pending = true;
@@ -154,10 +159,16 @@ impl GameRecorder {
             initial_state: InitialGameState { seed },
             events: Vec::new(),
         });
+        self.generation = self.generation.wrapping_add(1);
         self.reindex();
         self.flushed_count = 0;
         self.rewrite_pending = true;
         self.dirty = false;
+    }
+
+    /// How often `record` was replaced wholesale (see the field).
+    pub(crate) fn generation(&self) -> u32 {
+        self.generation
     }
 
     fn reindex(&mut self) {

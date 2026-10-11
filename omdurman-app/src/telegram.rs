@@ -8,7 +8,7 @@ use omdurman_net::GameEvent;
 /// the same text. (The end-of-game newspaper is composed by every peer from
 /// the game state, see `crate::newspaper`; a [`GameEvent::Gazette`] in an
 /// older record is filed but no longer shown.)
-#[derive(Resource, Default)]
+#[derive(Resource, Default, Clone)]
 pub struct TelegramLog {
     /// Filed telegrams, one per turn, in record order.
     pub entries: Vec<(u8, String)>,
@@ -30,8 +30,10 @@ pub struct TelegramLog {
 impl TelegramLog {
     /// Whether the latest finished turn's telegram still waits for this
     /// player: not yet filed (the host is writing it) or not yet dismissed.
-    /// The host's AI holds its moves meanwhile, so play really waits for
-    /// the overlay (`ui_plugin::controls::telegram_overlay`); at game over
+    /// The host's AI holds its moves meanwhile while the host is a seated
+    /// player looking at the board (`bot_player::turn_end_hold`, capped), so
+    /// play waits for the overlay (`ui_plugin::controls::telegram_overlay`);
+    /// at game over
     /// the newspaper replaces the telegram and nothing waits.
     pub(crate) fn awaiting_ack(&self, state: &omdurman_rules::effects::GameState) -> bool {
         if state.game_over {
