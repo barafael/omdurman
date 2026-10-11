@@ -109,7 +109,8 @@ pub struct PickerUnit {
     pub handle: Handle<Image>,
     pub is_boat: bool,
     /// In this game's order of battle for this player at all (sprite cell is
-    /// a unit, scenario, faction, not eliminated). Sticky once cleared.
+    /// a unit, scenario, faction, not eliminated). Re-derived from scratch by
+    /// every filter pass of `unit_picker_ui`, so it follows the current game.
     pub visible: bool,
     /// May be placed *now* -- set up in this scenario, or enter this turn
     /// (§9.112/§9.113). Recomputed every frame.
