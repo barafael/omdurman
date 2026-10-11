@@ -5,7 +5,9 @@ audit: the retired audit, plan and play-test documents, plus
 `review-2026-09.md` and `playtest-2026-09-fok.md`. Those two documents stay as
 dated records, and their open items live here. Items cite symbols rather than
 line numbers; re-check an item against the code before acting on it. Delete an
-item when it is fixed.
+item when it is fixed. Last reviewed against the code on 2026-10-11, after the
+deep-review fixes (LOS geometry, board data, net chunking, review mode, AI
+seat handling).
 
 ## Rules engine: deviations from the manual
 
@@ -19,8 +21,10 @@ item when it is fixed.
 - **§6.41 allocate, then resolve.** "Allocate all fire attacks, then resolve"
   is enforced by the UI's allocation tray only; the engine accepts attacks
   one at a time.
-- **§7.7 casualty choice.** Losses fall on units in list order; the owning
-  player does not choose them.
+- **§7.7 casualty choice.** Losses fall on units in list order, the rank and
+  file before their leaders (`leaders_last`); the owning player does not
+  choose them. The same order picks the one unit a breach or a destroyed fort
+  takes (§6.62/§6.63, `first_casualty`).
 
 ## Rules questions (the manual is ambiguous; current reading in brackets)
 
@@ -116,6 +120,31 @@ item when it is fixed.
 - **§9.345 at night.** The crossing costs six upstream points; on the FALL OF
   KHARTOUM night turn 1 an old gunboat's halved upstream allowance is five.
   [Unaffordable that turn -- a consequence of §8.1, not a bug.]
+- **§6.3 rays through a hex corner.** Notes d/e cover rays along a hexside
+  only. [A ray through a corner is treated alike: the hexes it only touches
+  block only when both sides of the tie block (`los_ray_sides`); ruling
+  2026-10-11.]
+- **§6.3 positional details are not reciprocal.** "The third hut" and the
+  like count from the firer, so a Ground firer at a Rough target and the
+  Rough unit firing back can disagree (e.g. Huts (1,3) vs (1,4)). [Read as
+  printed: each direction counts from its own firer.]
+- **§6.63 breach casualty.** "One enemy unit is eliminated". [Any enemy unit
+  beside the wall hexside except Anglo-Egyptian leaders, a player's fort
+  counter included: no printed fort borders a city wall, so the wall is
+  never the fort's own (ruling 2026-10-11). Open: a gunboat on a Nile hex
+  beside a wall hexside is also a candidate.] A demolition of a wall the
+  artillery already breached that turn takes no second unit.
+- **§7.7 excess melee losses.** The manual does not say where losses beyond
+  the meleeing units go. [They fall on hex-mates, never on the attackers'
+  own fort or gunboats (§6.54, §7.1); losses no unit can take lapse.]
+- **§9.113 blocked leader entry.** The turn-4 deadline for the A-E leaders
+  says nothing of Dervish units holding every entrance hex. [The deadline
+  applies only while a missing leader has a legal entry hex; otherwise the
+  leader enters on a later turn (recorded as an approximation).]
+- **§7.5 declining the retreat.** The manual's retreat is optional and
+  silent on timing. [The defender retreats or explicitly stands fast
+  (`DeclineRetreatBeforeMelee`) before the attacker resolves; an AI attacker
+  waits for that choice.]
 
 ## UI
 
@@ -126,21 +155,16 @@ item when it is fixed.
   `no_route_reason` only knows budgets (`picker/clicks.rs`). Say which rule
   holds the boat. The hover tooltip likewise prints "0 left" beside
   "11↑ 17↓ MP left" for such a boat.
-- The melee-declared card shows the defender's retreat instructions to
-  spectators, too: anyone who is not the attacker gets them (`melee.rs`).
 - The advance slip says "may advance" even when the §7.6 Dervish advance is
   mandatory. There is no advance reminder at End Phase.
-- "Review allocations" is not gated to the fire phases (`actions_panel.rs`).
 - Deployment traps get no warning (e.g. the Hogali pocket in Fall of Khartoum).
-- Fired pips are never drawn (TODO in `render.rs`).
+- Fired pips are never drawn: the acted rings mark movement only
+  (`TODO(acted-universal)` in `render.rs`).
 - The Mahdi's Tomb shows up only as a VP row: there is no board marker or
   control indicator.
-- There is no LOS or Scattergram chart tab, and nothing sends a `ChartSheetRequest`.
+- The chart sheet (`charts.rs`) has no LOS table or Scattergram tab.
 - There are no Nile flow arrows (`flow_at`) and no marker for units stopped in
   an enemy ZOC (`zoc_stopped_this_turn`).
-- Fall of Khartoum: the picker cannot plot a gunboat's White↔Blue Nile mouth
-  crossing (§9.345, a single 6-MP move between non-adjacent hexes); only the
-  bot uses it.
 - River mine and chain placement (`river_placement.rs`) shows no legal band;
   the engine refuses hexes outside it.
 - The event viewer (V key) shows the Dervish mine and chain placements to the
@@ -174,11 +198,17 @@ item when it is fixed.
   accepts attackers from several adjacent hexes (§7.6).
 - The fire tray lets artillery at a garrisoned fort choose the fort or the
   garrison, but the preview card on hover shows the garrison shot only.
+- A teammate's resolved fire still locks this peer's fire tray when the
+  firer is a shared-pool unit (one every seat of the side commands, as in a
+  game without commands), `fire_allocation.rs`.
+- Resetting teammates' Ready flags on a new game
+  (`controls::reset_peer_ready_on_new_game`) has no test.
 - The phase-sequence indicator (`UiPhaseState::phase_sequence`) has four rungs,
   folding Direct and Maxim/Howitzer fire into one.
 - Polish: selection pulse, howitzer scatter animation, Zariba build animation.
 - Offline lobby roster.
-- Probably still open: zoom to cursor; player names re-randomised on relaunch.
+- Player names and colours are re-randomised on every launch
+  (`LocalPlayerSettings` is not persisted).
 - Unconfirmed, from the play-test and review notes:
   - The unit list doesn't group identical counters (Kehena, Degheim).
   - Fire slips pile up.
@@ -189,18 +219,30 @@ item when it is fixed.
 
 ## Net and app plumbing
 
-- `handle_socket` is still about 520 lines; split out a `GameSession`.
+- `handle_socket` is about 620 lines; split out a `GameSession`.
 - `GameMap` (hexmap) and `BoardInfo` (rules) duplicate board topology.
 - Private dice: every roll is visible in the event log.
-- Snapshot-request retry is unbounded.
+- Snapshot-request retry never gives up (every 2 s, then every 15 s once
+  the bootstrap budget has passed).
 - Broadcast retention is all-or-nothing.
-- Per-game app state is not reset between games in one process.
-  `generate_newspaper`'s `Local<bool>` "done" flag is never reset, so a second
-  game never gets its own newspaper. The telegram cursor, dispatches and cards
-  may have the same problem (review 3.3; unconfirmed).
-- `SpriteAnnotationsResource` is defined twice, in `omdurman-app/src/sprites.rs`
-  and `omdurman-board-ui/src/sprites.rs`, so the two can drift.
-- 25 systems still take `Option<Res<GameStateResource>>`.
+- Per-game app state may not be reset between games in one process: the
+  telegram cursor, dispatches and cards (review 3.3; unconfirmed). The
+  picker tray, the scenario-placement latch and teammates' Ready flags are
+  now per game.
+- 23 systems still take `Option<Res<GameStateResource>>`.
+- Duplicated web tab (`seats.rs`): the localStorage probe is compile-checked
+  only, never run in a browser. Two tabs that start in the same instant with
+  the same key don't answer each other's probe; only the `PlayerInfo`
+  fallback covers that, and only before a game starts.
+- A newcomer that wins the lobby election replaces the old host's scenario,
+  optional-rule and AI picks with its own defaults (every view agrees, but
+  the earlier picks are lost).
+
+## Board data
+
+- The road network inside Omdurman has not been audited against the printed
+  map (e.g. near (31,42)); the 2026-10 audit covered terrain types and crest
+  hexsides only.
 
 ## Verification
 
@@ -238,6 +280,11 @@ item when it is fixed.
   `FriendliesTransport` are unreachable. A small real board would need a
   cheap proof-build hasher for `BoardInfo`'s maps (a symbolic hex hashed
   with SipHash on every lookup is prohibitive).
+- Kani has not been run since the 2026-10-11 fixes. New expensive-tier
+  harnesses (`advance_phase_from_is_safe`, `roll_desertion_is_safe`,
+  `decline_retreat_before_melee_is_safe`) have passed only their randomized
+  `cargo test` twins, and the pending-mine queue edits to the proofs in
+  `effects/river.rs` are unverified.
 - 22 Kani harnesses have no `#[rulebook]` annotation and are not tracked in
   `traceability.toml` (e.g. `distance_is_symmetric`, `game_over_is_absorbing`,
   `sink_chain_is_atomic`, `place_mine_is_atomic`).
