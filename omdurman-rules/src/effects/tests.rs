@@ -10450,7 +10450,7 @@ mod tests {
     // passenger is cargo. Rifles may not fire at it (only artillery engages
     // a gunboat), the legality check agreeing with resolution, and it is
     // seen at a gunboat's LOS level whichever counter is listed first.
-    #[rulebook("§5.21", "§6.61")]
+    #[rulebook("§5.21", "§6.61", "§6.3")]
     #[test]
     fn a_gunboat_carrying_friendlies_is_judged_as_a_gunboat() {
         let mut state = playing(Scenario::Campaign);

@@ -1187,6 +1187,7 @@ proofs = [
     "omdurman-rules::src::los_table::blocking_grid_is_total_and_walls_block_ground_firers",
 ]
 tests = [
+    "omdurman-rules::src::effects::tests::a_gunboat_carrying_friendlies_is_judged_as_a_gunboat",
     "omdurman-rules::src::los_table::los_ray_is_the_straight_line_on_the_campaign_board",
     "omdurman-rules::src::los_table::has_los_hilltop_to_ground_units_block_only_nearer_the_target",
     "omdurman-rules::src::los_table::los_level_mapping",
