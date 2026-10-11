@@ -6533,6 +6533,95 @@ mod tests {
         apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap();
     }
 
+    // §6.82 with §5.21/§10.12/§10.22: a gunboat's advance after combat is
+    // movement -- it obeys the same constraints as steaming in: no advance
+    // with lost engines or once stopped, never across the chain, its
+    // "Friendlies" passenger comes along, and a British boat entering a
+    // mine strikes it (or runs onto the chain and stops).
+    #[rulebook("§6.82", "§10.12")]
+    #[test]
+    fn a_gunboat_advance_after_combat_obeys_gunboat_movement() {
+        let mut state = playing(Scenario::Campaign);
+        state.board = Arc::new(nile_board_row0(0, 8, HexDirection::East));
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::AngloEgyptian;
+        let from = HexCoord::new(2, 0);
+        let to = HexCoord::new(3, 0);
+        let gb = make_profiled_unit(&mut state, from, ae_gunboat_profile());
+        let friendly = make_profiled_unit(&mut state, from, friendlies_infantry_profile());
+        state.find_unit_mut(friendly).unwrap().state.loaded_on = Some(gb);
+        state.friendlies_transport = Some(TransportState::Loaded {
+            unit: friendly,
+            gunboat: gb,
+            since: GameTurnIndex::new(0),
+        });
+        state.mines.push(crate::MinePlacement {
+            hex: to,
+            triggered: false,
+        });
+        state.vacated_by_combat.insert(to, vec![gb]);
+        let advance = GameEffect::AdvanceAfterCombat { unit_id: gb, to };
+
+        // Lost engines, or stopped earlier in the turn: no advance.
+        state.find_unit_mut(gb).unwrap().state.engines_lost = true;
+        assert!(matches!(
+            state.can_advance_after_combat(gb, to),
+            Err(RuleError::EnginesLost(_))
+        ));
+        state.find_unit_mut(gb).unwrap().state.engines_lost = false;
+        state.gunboats_stopped_this_turn.push(gb);
+        assert!(matches!(
+            state.can_advance_after_combat(gb, to),
+            Err(RuleError::StruckMine(_))
+        ));
+        state.gunboats_stopped_this_turn.clear();
+
+        apply_effect(&mut state, &advance).unwrap();
+        assert_eq!(state.find_unit(gb).unwrap().position, to);
+        assert_eq!(
+            state.find_unit(friendly).unwrap().position,
+            to,
+            "the passenger stays aboard"
+        );
+        assert_eq!(
+            state.pending_mine(),
+            Some(crate::StruckMine {
+                gunboat: gb,
+                hex: to
+            }),
+            "the advance strikes the mine"
+        );
+        assert!(state.gunboats_stopped_this_turn.contains(&gb));
+
+        // A Dervish boat may not advance onto the chain; a British one
+        // runs onto it and stops there.
+        let mut chained = playing(Scenario::Campaign);
+        chained.board = Arc::new(nile_board_row0(0, 8, HexDirection::East));
+        chained.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        chained.chain = Some(crate::ChainPlacement {
+            hexes: vec![to],
+            sunk: false,
+        });
+        chained.active_player = Player::Dervish;
+        let dervish_gb = make_dervish_gunboat(&mut chained, from);
+        chained.vacated_by_combat.insert(to, vec![dervish_gb]);
+        assert!(matches!(
+            chained.can_advance_after_combat(dervish_gb, to),
+            Err(RuleError::BlockedByChain(_))
+        ));
+        chained.units.clear();
+        chained.active_player = Player::AngloEgyptian;
+        let brit = make_profiled_unit(&mut chained, from, ae_gunboat_profile());
+        chained.vacated_by_combat.insert(to, vec![brit]);
+        apply_effect(
+            &mut chained,
+            &GameEffect::AdvanceAfterCombat { unit_id: brit, to },
+        )
+        .unwrap();
+        assert_eq!(chained.gunboats_at_chain.get(&brit), Some(&from));
+        assert!(chained.gunboats_stopped_this_turn.contains(&brit));
+    }
+
     #[rulebook("§10.22", "§10.23")]
     #[test]
     fn chain_stops_gunboat_until_sunk() {

@@ -215,9 +215,14 @@ impl GameState {
         // stay on the Nile, land units stay off it, and nobody advances off
         // the board (with no board loaded, map constraints don't apply).
         if matches!(unit.profile.kind, UnitKind::Gunboat { .. }) {
-            if !self.board.terrain.is_empty() && !self.board.is_nile(to) {
-                return Err(RuleError::GunboatOffNile(to));
-            }
+            // An advance is movement: the gunboat answers to every rule of
+            // its normal movement -- not with its engines lost or once
+            // stopped by a mine or the chain (§10.12/§10.22), not on its
+            // Friendlies loading turn (§5.21), on the Nile and never across
+            // the chain (§5.22/§10.23). A British boat entering a mine or
+            // the chain stops there on apply, its passenger aboard.
+            self.gunboat_underway_preconditions(unit)?;
+            self.check_gunboat_step(unit, unit.position, to, true)?;
         } else {
             if !self.board.terrain.is_empty() && self.board.terrain_at(to).is_none() {
                 return Err(RuleError::OffBoard(to));

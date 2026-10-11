@@ -592,8 +592,14 @@ pub fn apply_advance_after_combat(
 ) -> Result<(), RuleError> {
     state.can_advance_after_combat(unit_id, to)?;
     let from = state.find_unit(unit_id).map(|u| u.position).unwrap_or(to);
+    let gunboat = state
+        .find_unit(unit_id)
+        .is_some_and(|u| matches!(u.profile.kind, UnitKind::Gunboat { .. }));
     if let Some(unit) = state.find_unit_mut(unit_id) {
         unit.position = to;
+    }
+    if gunboat {
+        super::movement::gunboat_advanced(state, unit_id, from, to);
     }
     consume_advance_eligibility(state, unit_id);
     state.turn_events.push(TurnEventRecord::AdvanceAfterCombat {

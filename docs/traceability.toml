@@ -1678,6 +1678,7 @@ tests = [
     "omdurman-rules::src::effects::tests::advance_requires_participation",
     "omdurman-rules::src::effects::tests::rejected_advance_phase_keeps_vacated_windows",
     "omdurman-rules::src::effects::tests::a_gunboat_is_not_offered_a_land_advance",
+    "omdurman-rules::src::effects::tests::a_gunboat_advance_after_combat_obeys_gunboat_movement",
 ]
 
 [[mapping.impl]]
@@ -2737,6 +2738,7 @@ tests = [
     "omdurman-rules::src::effects::tests::mine_fires_once_and_spares_dervish",
     "omdurman-rules::src::effects::tests::a_disabled_gunboat_drifts_two_hexes_a_turn",
     "omdurman-rules::src::effects::tests::two_struck_mines_are_both_rolled_for",
+    "omdurman-rules::src::effects::tests::a_gunboat_advance_after_combat_obeys_gunboat_movement",
 ]
 
 [[mapping.impl]]

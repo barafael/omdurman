@@ -129,30 +129,10 @@ impl GameState {
         if unit.state.disrupted {
             return Err(RuleError::Disrupted(unit.id));
         }
-        // §10.12: a gunboat that has lost its engines only drifts; one that
-        // struck a mine was ordered to stop for the turn.
-        if unit.state.engines_lost {
-            return Err(RuleError::EnginesLost(unit.id));
-        }
-        if self.gunboats_stopped_this_turn.contains(&unit.id) {
-            // §10.22: stopped by the chain; §10.12: by a mine.
-            return Err(if self.chain_covers(unit.position) {
-                RuleError::StoppedByChain(unit.id)
-            } else {
-                RuleError::StruckMine(unit.id)
-            });
-        }
+        self.gunboat_underway_preconditions(unit)?;
         // §5.21: a "Friendlies" unit aboard a gunboat moves only with it.
         if unit.state.loaded_on.is_some() {
             return Err(RuleError::LoadedOnGunboat(unit.id));
-        }
-        // §5.21: the gunboat carries its passenger on the turn after
-        // loading ("during the Anglo-Egyptian player's next turn").
-        if let Some(TransportState::Loaded { gunboat, since, .. }) = self.friendlies_transport
-            && gunboat == unit.id
-            && since == self.current_turn
-        {
-            return Err(RuleError::TransportLoadingTurn(unit.id));
         }
         // §5.3: Zariba builders stay put until the turn ends; §6.53: the
         // Royal Engineers "end their movement adjacent" to their target.
@@ -167,6 +147,36 @@ impl GameState {
         // §9.346: the GORDON leader unit may not move during FALL OF KHARTOUM.
         if self.scenario == Scenario::FallOfKhartoum && unit.profile.identity.is_gordon() {
             return Err(RuleError::GordonMayNotMove);
+        }
+        Ok(())
+    }
+
+    /// Whether a gunboat may get under way at all this turn -- by movement
+    /// or by advance after combat (§6.82), which is movement too: not with
+    /// its engines lost (§10.12, it only drifts), not once ordered to stop
+    /// by a mine (§10.12) or the chain (§10.22), and not on the turn it
+    /// took the "Friendlies" aboard (§5.21: it carries them "during the
+    /// Anglo-Egyptian player's next turn"). Vacuous for every other unit.
+    pub(crate) fn gunboat_underway_preconditions(
+        &self,
+        unit: &UnitPlacement,
+    ) -> Result<(), RuleError> {
+        if unit.state.engines_lost {
+            return Err(RuleError::EnginesLost(unit.id));
+        }
+        if self.gunboats_stopped_this_turn.contains(&unit.id) {
+            // §10.22: stopped by the chain; §10.12: by a mine.
+            return Err(if self.chain_covers(unit.position) {
+                RuleError::StoppedByChain(unit.id)
+            } else {
+                RuleError::StruckMine(unit.id)
+            });
+        }
+        if let Some(TransportState::Loaded { gunboat, since, .. }) = self.friendlies_transport
+            && gunboat == unit.id
+            && since == self.current_turn
+        {
+            return Err(RuleError::TransportLoadingTurn(unit.id));
         }
         Ok(())
     }
@@ -496,37 +506,7 @@ impl GameState {
         let mut moved_upstream = false;
         let mut prev = unit.position;
         for (i, &next) in steps.iter().enumerate() {
-            if !prev.is_adjacent_to(next) {
-                return Err(RuleError::PathNotContiguous {
-                    from: prev,
-                    to: next,
-                });
-            }
-            // §5.22: gunboats stay on the Nile. With a board loaded, every
-            // entered hex must be a Nile hex.
-            if !self.board.terrain.is_empty() && !self.board.is_nile(next) {
-                return Err(RuleError::GunboatOffNile(next));
-            }
-            // §10.22/§10.23: "No gunboats (British or Dervish) may cross
-            // the chain until it has been sunk". A British gunboat that
-            // enters a chained hex stops there (the move is cut short on
-            // apply -- it does not know where the chain lies), and from it
-            // may only go back the way it came; a Dervish gunboat, which
-            // knows, may not enter one at all. No gunboat sets up on a
-            // chained hex (§10.21), so a boat lying on one always steamed
-            // in and is on record; one without a record has no way back.
-            if i == 0 && self.chain_covers(prev) {
-                let back = self
-                    .gunboats_at_chain
-                    .get(&unit.id)
-                    .is_some_and(|&from| next == from || next.is_adjacent_to(from));
-                if !back || self.chain_covers(next) {
-                    return Err(RuleError::BlockedByChain(next));
-                }
-            } else if self.chain_covers(next) && owner != Player::AngloEgyptian {
-                return Err(RuleError::BlockedByChain(next));
-            }
-            self.check_move_step(unit, prev, next)?;
+            self.check_gunboat_step(unit, prev, next, i == 0)?;
             // §5.41/§5.43: a gunboat stops on entering an enemy *gunboat's*
             // ZOC (which `hex_in_enemy_zoc` encodes for a gunboat mover).
             if i < last && self.hex_in_enemy_zoc(next, owner, kind) {
@@ -554,6 +534,52 @@ impl GameState {
             cost: MovementPoints(cost as i16),
             went_upstream: moved_upstream,
         })
+    }
+
+    /// One gunboat step `prev` -> `next` (`first`: the step leaving the
+    /// boat's own hex), costs and ZOC aside: adjacent (§5.11), on the Nile
+    /// (§5.22), not across the chain (§10.22/§10.23), and not into an enemy
+    /// fort or enemy-held hex ([`Self::check_move_step`]). The per-step core
+    /// of a gunboat move, shared with its advance after combat (§6.82).
+    pub(crate) fn check_gunboat_step(
+        &self,
+        unit: &UnitPlacement,
+        prev: HexCoord,
+        next: HexCoord,
+        first: bool,
+    ) -> Result<(), RuleError> {
+        if !prev.is_adjacent_to(next) {
+            return Err(RuleError::PathNotContiguous {
+                from: prev,
+                to: next,
+            });
+        }
+        // §5.22: gunboats stay on the Nile. With a board loaded, every
+        // entered hex must be a Nile hex.
+        if !self.board.terrain.is_empty() && !self.board.is_nile(next) {
+            return Err(RuleError::GunboatOffNile(next));
+        }
+        // §10.22/§10.23: "No gunboats (British or Dervish) may cross the
+        // chain until it has been sunk". A British gunboat that enters a
+        // chained hex stops there (the move is cut short on apply -- it does
+        // not know where the chain lies), and from it may only go back the
+        // way it came; a Dervish gunboat, which knows, may not enter one at
+        // all. No gunboat sets up on a chained hex (§10.21), so a boat lying
+        // on one always steamed in and is on record; one without a record
+        // has no way back.
+        let owner = unit.profile.identity.owner();
+        if first && self.chain_covers(prev) {
+            let back = self
+                .gunboats_at_chain
+                .get(&unit.id)
+                .is_some_and(|&from| next == from || next.is_adjacent_to(from));
+            if !back || self.chain_covers(next) {
+                return Err(RuleError::BlockedByChain(next));
+            }
+        } else if self.chain_covers(next) && owner != Player::AngloEgyptian {
+            return Err(RuleError::BlockedByChain(next));
+        }
+        self.check_move_step(unit, prev, next)
     }
 
     /// The true movement-point cost of a move along `path` (the entered hexes,
