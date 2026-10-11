@@ -149,7 +149,11 @@ pub(crate) fn resolve_melee_combat(
     // §7.7: "Melee losses must be taken from meleeing units first!" -- an
     // elimination beyond the meleeing units falls on the other units of
     // their hexes (a battery or a disrupted battalion stacked with them).
-    // Within each of the two tiers, leaders last.
+    // Within each of the two tiers, leaders last. Never on a fort the
+    // attackers stand in: §6.54 lets a fort fall only to artillery, an
+    // infantry melee *attack* or the Royal Engineers, and the defender's
+    // counter-roll is none of those (nor on a gunboat, which takes no part
+    // in melee, §7.1). Losses beyond the units that may take them lapse.
     let att_casualties: Vec<UnitId> = match def_result {
         CombatResult::Eliminate(_) => {
             let mut order = super::fire::leaders_last(state, &att_units);
@@ -164,6 +168,8 @@ pub(crate) fn resolve_melee_combat(
                     hexes.contains(&u.position)
                         && u.profile.identity.owner() == attacker_player
                         && !att_units.contains(&u.id)
+                        && u.profile.kind.may_be_melee_attacked()
+                        && !matches!(u.profile.kind, UnitKind::Fort { .. })
                 })
                 .map(|u| u.id)
                 .collect();

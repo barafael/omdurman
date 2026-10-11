@@ -64,11 +64,13 @@ impl GameState {
 
     /// The LOS level of the target at `target_hex` (§6.3): that of the first
     /// unit standing there, with notes b and c ([`los_level_for_unit`]), or
-    /// the hex's terrain level when it is empty.
+    /// the hex's terrain level when it is empty. A "Friendlies" unit aboard
+    /// a gunboat (§5.21) is cargo, not a target: the boat carrying it is
+    /// seen at a gunboat's level, whichever counter is listed first.
     pub fn target_los_level(&self, target_hex: HexCoord) -> crate::los_table::LosLevel {
         self.units
             .iter()
-            .find(|u| u.position == target_hex)
+            .find(|u| u.position == target_hex && u.state.loaded_on.is_none())
             .map(|u| los_level_for_unit(u.profile.kind, target_hex, &self.board))
             .unwrap_or_else(|| {
                 self.board
@@ -237,7 +239,11 @@ impl GameState {
         let mut has_enemy = false;
         let mut only_artillery_targets = true;
         for u in &self.units {
-            if u.position != target_hex {
+            // §5.21: a "Friendlies" unit aboard a gunboat is cargo -- the
+            // target is the gunboat, which only artillery engages (§6.61),
+            // so the passenger opens the hex to no other weapon (resolution
+            // judges the boat the same way, `special_fire_target`).
+            if u.position != target_hex || u.state.loaded_on.is_some() {
                 continue;
             }
             // §6.51: an Anglo-Egyptian leader has "a movement factor only"

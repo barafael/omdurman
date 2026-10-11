@@ -272,9 +272,11 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
                 // AE turn: Dervish fired direct defensive.  Next: AE
                 // offensive fire (Direct, then Maxim/Howitzer).
                 state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+                clear_fire_trackers(state);
             } else if !maxim_subphase {
                 // FoK: no Maxims or howitzers -- straight to Dervish offensive fire.
                 state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+                clear_fire_trackers(state);
             } else {
                 // Dervish turn: AE fired direct defensive.  AE also has
                 // Maxim / howitzer capability -- they fire again now.
@@ -283,23 +285,18 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
                 // Clear the per-phase fired set so Maxims that fired in Direct
                 // Fire may fire again here.  The Maxim-only gate in
                 // `can_fire_at` prevents non-Maxim units from exploiting this.
-                state.units_fired_this_phase.clear();
-                state.gunboat_maxims_fired_this_phase.clear();
-                state.units_fired_at_this_phase.clear();
-                state.units_shelled_this_phase.clear();
+                clear_fire_trackers(state);
             }
         }
         Phase::DefensiveFire(FireSubPhase::MaximSecondAndHowitzer) => {
             state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+            clear_fire_trackers(state);
         }
         Phase::OffensiveFire(FireSubPhase::DirectFire) => {
             if state.active_player == Player::AngloEgyptian && maxim_subphase {
                 state.phase = Phase::OffensiveFire(FireSubPhase::MaximSecondAndHowitzer);
                 // §6.42: same clear as the defensive path above.
-                state.units_fired_this_phase.clear();
-                state.gunboat_maxims_fired_this_phase.clear();
-                state.units_fired_at_this_phase.clear();
-                state.units_shelled_this_phase.clear();
+                clear_fire_trackers(state);
             } else {
                 state.phase = Phase::Melee;
             }
@@ -458,11 +455,21 @@ fn end_zariba_construction(state: &mut GameState) {
 }
 
 /// Clear per-phase / per-turn tracking (§5.13: MP never carry over).
-fn clear_per_turn_tracking(state: &mut GameState) {
+/// §6.14: "in any given fire combat phase ... a combat unit may only fire
+/// once and may only be fired at once" -- the fired / fired-at / shelled
+/// ledgers belong to one fire phase (or §6.42 subphase), so every fire
+/// phase starts with them empty. Without the reset at Defensive -> Offensive
+/// Fire, units a scattered §6.64 shell struck on their own side in the
+/// defensive Maxim/howitzer subphase could not be fired at offensively.
+fn clear_fire_trackers(state: &mut GameState) {
     state.units_fired_this_phase.clear();
     state.gunboat_maxims_fired_this_phase.clear();
     state.units_fired_at_this_phase.clear();
     state.units_shelled_this_phase.clear();
+}
+
+fn clear_per_turn_tracking(state: &mut GameState) {
+    clear_fire_trackers(state);
     state.mp_spent_this_turn.clear();
     // §5.24: the sticky upstream cap only lasts for the turn.
     state.gunboats_upstream_this_turn.clear();
