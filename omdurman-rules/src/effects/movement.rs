@@ -29,6 +29,7 @@ pub fn apply_move_unit(
     // §10.12: "When a British gunboat enters a mined hex, the Dervish player
     // must order it to stop" -- the move ends on the first live mine along
     // the path (the Anglo-Egyptian player does not know where they lie).
+    // §10.14: the Dervish gunboats pass them "with no ill effect".
     let struck = (mover_owner == Player::AngloEgyptian
         && matches!(mover_kind, UnitKind::Gunboat { .. }))
     .then(|| entered.iter().position(|h| state.live_mine_at(*h)))

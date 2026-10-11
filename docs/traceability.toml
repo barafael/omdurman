@@ -2789,6 +2789,10 @@ tests = [
 file = "omdurman-rules/src/effects/river.rs"
 symbol = "apply_river_mine"
 
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/movement.rs"
+symbol = "apply_move_unit"
+
 [[mapping]]
 section = "§10.2"
 title = "River Chain"
