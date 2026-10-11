@@ -10,24 +10,29 @@
 //!
 //! ```text
 //!           __    __
-//!        __/ 1\__/ 2\__
-//!       / 6\__/ C\__/ 3\
-//!       \__/ 5\__/ 4\__/
+//!        __/ 4\__/ 5\__
+//!       / 3\__/ C\__/ 6\
+//!       \__/ 2\__/ 1\__/
 //!          \__/  \__/
 //! ```
 //!
 //! | Impact roll | Impact hex                                                           |
 //! | :---------: | :------------------------------------------------------------------- |
-//! |      1      | upper left ([`ScatterHexDirection::UpperLeft`])                    |
-//! |      2      | upper right ([`ScatterHexDirection::UpperRight`])                  |
-//! |      3      | right ([`ScatterHexDirection::Right`])                             |
-//! |      4      | lower right ([`ScatterHexDirection::LowerRight`])                  |
-//! |      5      | lower left ([`ScatterHexDirection::LowerLeft`])                    |
-//! |      6      | left ([`ScatterHexDirection::Left`])                               |
+//! |      1      | lower right ([`ScatterHexDirection::LowerRight`])                  |
+//! |      2      | lower left ([`ScatterHexDirection::LowerLeft`])                    |
+//! |      3      | left ([`ScatterHexDirection::Left`])                               |
+//! |      4      | upper left ([`ScatterHexDirection::UpperLeft`])                    |
+//! |      5      | upper right ([`ScatterHexDirection::UpperRight`])                  |
+//! |      6      | right ([`ScatterHexDirection::Right`])                             |
 //! |    7–10     | **C**, the designated target hex ([`ScatterHexDirection::Center`]) |
 //!
-//! The diagram lies on the mapsheet, so "upper" is north like the rest of
-//! the map. [`howitzer_scatter`] reads the roll off the table (the `static`
+//! The diagram is seven real map hexes (§2.1: "All full hexes ... are
+//! playable, including the seven hexes of the Howitzer Fire Scattergram"),
+//! so its directions are the map's: "upper" is north. It is printed upside
+//! down, like the combat tables beside it (Campaign map, centre hex
+//! (45,39)); the diagram above is drawn north up, so the "1" that reads
+//! upright at the top left is the hex south-east of the centre.
+//! [`howitzer_scatter`] reads the roll off the table (the `static`
 //! in [`crate::tables_data`], transcribed from
 //! `Boardgame - Remember_Gordon/tables/howitzer_scattergram.ron`) and
 //! [`scatter_impact_hex`] turns the direction into a hex coordinate.
@@ -115,8 +120,8 @@ mod tests {
         }
     }
 
-    /// The diagram's directions are the map's: roll 3 ("Right") lands east
-    /// of the target, roll 1 ("Upper Left") north-west, whoever fires.
+    /// The diagram's directions are the map's: roll 6 ("Right") lands east
+    /// of the target, roll 1 ("Lower Right") south-east, whoever fires.
     #[rulebook("§6.64")]
     #[test]
     fn scatter_follows_the_printed_diagram() {
@@ -124,29 +129,30 @@ mod tests {
         let impact = |roll: u16| {
             scatter_impact_hex(target, howitzer_scatter(DieRoll::try_from(roll).unwrap()))
         };
-        assert_eq!(impact(3), HexCoord::new(9, 8), "3: right (east)");
-        assert_eq!(impact(6), HexCoord::new(7, 8), "6: left (west)");
-        assert_eq!(impact(1), HexCoord::new(7, 7), "1: upper left");
-        assert_eq!(impact(2), HexCoord::new(8, 7), "2: upper right");
-        assert_eq!(impact(4), HexCoord::new(9, 9), "4: lower right");
-        assert_eq!(impact(5), HexCoord::new(8, 9), "5: lower left");
+        assert_eq!(impact(6), HexCoord::new(9, 8), "6: right (east)");
+        assert_eq!(impact(3), HexCoord::new(7, 8), "3: left (west)");
+        assert_eq!(impact(4), HexCoord::new(7, 7), "4: upper left");
+        assert_eq!(impact(5), HexCoord::new(8, 7), "5: upper right");
+        assert_eq!(impact(1), HexCoord::new(9, 9), "1: lower right");
+        assert_eq!(impact(2), HexCoord::new(8, 9), "2: lower left");
         for roll in 7..=10 {
             assert_eq!(impact(roll), target);
         }
     }
 
     /// The authored scattergram assigns a distinct ring hex to each of the
-    /// rolls 1-6 (printed order: UL, UR, R, LR, LL, L).
+    /// rolls 1-6 (in map directions, north up: LR, LL, L, UL, UR, R -- the
+    /// diagram is printed upside down, reading UL, UR, R, LR, LL, L upright).
     #[rulebook("§6.64")]
     #[test]
     fn howitzer_each_miss_gets_its_printed_hex() {
         let expected = [
-            ScatterHexDirection::UpperLeft,
-            ScatterHexDirection::UpperRight,
-            ScatterHexDirection::Right,
             ScatterHexDirection::LowerRight,
             ScatterHexDirection::LowerLeft,
             ScatterHexDirection::Left,
+            ScatterHexDirection::UpperLeft,
+            ScatterHexDirection::UpperRight,
+            ScatterHexDirection::Right,
         ];
         for (i, want) in expected.iter().enumerate() {
             assert_eq!(

@@ -217,4 +217,89 @@ mod wall_ring_tests {
             );
         }
     }
+
+    /// The printed Omdurman town is the Terrain Effects Chart's Huts icon
+    /// (-1 to the attacker's die roll), the same icon as Kerreri, Shambat and
+    /// Halfaya -- not a named Building (-3): only the five named landmarks
+    /// carry that icon. Three town hexes print only roads, no icon, and are
+    /// clear.
+    #[traceability_macro::rulebook("§6.23")]
+    #[test]
+    fn campaign_town_is_huts_and_only_the_landmarks_are_buildings() {
+        let map = campaign_map_data();
+        let mut buildings: Vec<&str> = map
+            .tiles
+            .values()
+            .filter(|t| matches!(t.terrain, Terrain::Building { .. }))
+            .map(|t| t.name.as_deref().unwrap_or("(unnamed)"))
+            .collect();
+        buildings.sort_unstable();
+        assert_eq!(
+            buildings,
+            ["Arsenal", "Grounds", "Mahdi's Tomb", "Palace", "Treasury"]
+        );
+        let at = |q, r| &map.tiles[&(q, r)].terrain;
+        // A town hex with a single hut icon, and one with three.
+        assert!(matches!(at(33, 32), Terrain::Huts { .. }));
+        assert!(matches!(at(27, 37), Terrain::Huts { .. }));
+        for (q, r) in [(30, 35), (30, 38), (31, 41)] {
+            assert!(
+                matches!(at(q, r), Terrain::Clear { .. }),
+                "({q},{r}) prints no hut icon"
+            );
+        }
+        let town_huts = map
+            .tiles
+            .values()
+            .filter(|t| {
+                t.name.as_deref() == Some("Omdurman") && matches!(t.terrain, Terrain::Huts { .. })
+            })
+            .count();
+        assert_eq!(town_huts, 102, "printed Omdurman hut hexes");
+    }
+
+    /// The crest hexsides printed on Jebel Surgham, on the ridge linking it
+    /// to the Kerreri Hills, and on the eastern Kerreri Hills (the thick
+    /// brown hexside line of the Terrain Effects Chart: -1 to fire across
+    /// it, +1 to cross it).
+    #[traceability_macro::rulebook("§6.23")]
+    #[test]
+    fn campaign_crests_cover_jebel_surgham_and_the_eastern_kerreri_hills() {
+        let board = BoardInfo::from_map_data(campaign_map_data());
+        let crest = |a: (i32, i32), b: (i32, i32)| {
+            board.hexside_between(HexCoord::new(a.0, a.1), HexCoord::new(b.0, b.1))
+                == Some(HexsideKind::Crest)
+        };
+        // The ring round Jebel Surgham's hilltop.
+        let top = HexCoord::new(30, 19);
+        for n in top.neighbors() {
+            assert!(crest((30, 19), (n.q, n.r)), "hilltop ring side to {n:?}");
+        }
+        // Jebel Surgham's slopes, the ridge to Kerreri, and the eastern
+        // Kerreri Hills round the twin hilltops (25,5)/(26,5).
+        for (a, b) in [
+            ((32, 19), (33, 19)),
+            ((34, 22), (35, 22)),
+            ((29, 16), (30, 16)),
+            ((25, 15), (26, 15)),
+            ((22, 13), (23, 13)),
+            ((24, 11), (25, 11)),
+            ((27, 10), (28, 10)),
+            ((24, 5), (25, 5)),
+            ((25, 5), (25, 6)),
+            ((26, 4), (26, 5)),
+            ((26, 5), (27, 5)),
+            ((29, 4), (29, 5)),
+        ] {
+            assert!(crest(a, b), "printed crest {a:?}|{b:?}");
+        }
+        // Two adjacent hilltops share a level: no crest between them.
+        assert!(!crest((25, 5), (26, 5)));
+        let crests = board
+            .hexsides
+            .values()
+            .filter(|k| **k == HexsideKind::Crest)
+            .count();
+        assert_eq!(crests, 174, "printed campaign crest hexsides");
+    }
 }

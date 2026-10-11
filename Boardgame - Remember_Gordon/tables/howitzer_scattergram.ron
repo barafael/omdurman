@@ -1,12 +1,16 @@
 // Howitzer Scattergram (§6.64): impact direction by d10 roll
 // (array index = roll − 1). Center = on target.
+// Directions are the map's (Upper = north): the diagram is seven real map
+// hexes in the Campaign mapsheet's lower right corner, centred on (45,39),
+// printed upside down with the combat tables beside it -- so the "1" read
+// upright at the top left sits in the hex south-east of the centre.
 [
-    UpperLeft,
-    UpperRight,
-    Right,
     LowerRight,
     LowerLeft,
     Left,
+    UpperLeft,
+    UpperRight,
+    Right,
     Center,
     Center,
     Center,

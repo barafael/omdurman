@@ -6346,7 +6346,7 @@ mod tests {
         let mut state = GameState::new(Scenario::Campaign);
         state.board = Arc::new(nile_board_row0(0, 12, HexDirection::East));
         let target = HexCoord::new(8, 0);
-        // Roll 3 (Right on the scattergram) lands on a distinct neighbour.
+        // Roll 3 (Left on the scattergram) lands on a distinct neighbour.
         let impact =
             crate::howitzer_scatter::scatter_impact_hex(target, howitzer_scatter(DieRoll::Three));
         assert_ne!(impact, target);
