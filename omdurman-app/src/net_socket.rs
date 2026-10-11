@@ -1167,9 +1167,6 @@ pub(crate) fn handle_socket(
                 // Seat claims and votes: handled by `seat_arbiter`.
                 ctx.incoming.seat_control.push((control, peer));
             }
-            NetMsg::Control(Control::SnapshotReceived) => {
-                // Legacy acknowledgement (see `Control::SnapshotReceived`).
-            }
             NetMsg::Control(Control::Chunk { .. }) => {
                 // Reassembled above (`ChunkAssembler::receive` never passes
                 // a chunk through).

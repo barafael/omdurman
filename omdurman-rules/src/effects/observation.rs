@@ -17,13 +17,12 @@ pub enum ElimCause {
     /// were eliminated (orphan leader, §5.44).
     OrphanLeader,
     /// The one enemy unit lost when a wall hexside it stands at is breached
-    /// (§6.63). Appended last: the variant index is serialized.
+    /// (§6.63).
     WallBreach,
     /// An Anglo-Egyptian leader alone in a hex a Dervish unit entered
-    /// (§6.51(a)). Appended last: the variant index is serialized.
+    /// (§6.51(a)).
     Overrun,
-    /// A gunboat sunk by a river mine (§10.12). Appended last: the variant
-    /// index is serialized.
+    /// A gunboat sunk by a river mine (§10.12).
     RiverMine,
 }
 

@@ -6,8 +6,7 @@ use omdurman_net::GameEvent;
 /// turn's record ([`omdurman_rules::press::telegram`]) and filed from the
 /// recorded [`GameEvent::Telegram`], so every peer -- and a replay -- reads
 /// the same text. (The end-of-game newspaper is composed by every peer from
-/// the game state, see `crate::newspaper`; a [`GameEvent::Gazette`] in an
-/// older record is filed but no longer shown.)
+/// the game state, see `crate::newspaper`.)
 #[derive(Resource, Default, Clone)]
 pub struct TelegramLog {
     /// Filed telegrams, one per turn, in record order.
@@ -23,8 +22,6 @@ pub struct TelegramLog {
     /// unseen telegram of the latest turn and waits for a click (see
     /// `ui_plugin::controls::telegram_overlay`).
     pub acknowledged: usize,
-    /// The Gazette paragraphs of an older record (no longer written).
-    pub gazette: Option<Vec<String>>,
 }
 
 impl TelegramLog {
@@ -49,9 +46,8 @@ impl TelegramLog {
             .any(|(turn, _)| *turn == latest)
     }
 
-    /// File a press event (the `game_apply` arm for both variants): the
-    /// first telegram recorded for a turn wins, as does the first Gazette.
-    /// Returns whether it was filed.
+    /// File a press event (the `game_apply` arm): the first telegram
+    /// recorded for a turn wins. Returns whether it was filed.
     pub(crate) fn file(&mut self, event: &GameEvent) -> bool {
         match event {
             GameEvent::Telegram { turn, text } => {
@@ -59,13 +55,6 @@ impl TelegramLog {
                     return false;
                 }
                 self.entries.push((*turn, text.clone()));
-                true
-            }
-            GameEvent::Gazette { paragraphs } => {
-                if self.gazette.is_some() {
-                    return false;
-                }
-                self.gazette = Some(paragraphs.clone());
                 true
             }
             _ => false,

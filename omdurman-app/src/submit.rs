@@ -28,8 +28,7 @@ pub(crate) fn apply_for_check(state: &mut GameState, event: &GameEvent) -> Resul
         GameEvent::StartGame { .. }
         | GameEvent::SeatAssigned { .. }
         | GameEvent::SeatCarved { .. }
-        | GameEvent::Telegram { .. }
-        | GameEvent::Gazette { .. } => Ok(()),
+        | GameEvent::Telegram { .. } => Ok(()),
         GameEvent::Effect(effect) => apply_effect(state, effect),
         GameEvent::PlaceUnit { .. } | GameEvent::MoveUnit { .. } | GameEvent::RemoveUnit { .. } => {
             match crate::game_apply::sprite_event_effect(event, state) {

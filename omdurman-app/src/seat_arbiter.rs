@@ -334,10 +334,7 @@ pub(crate) fn seat_control(time: Res<Time>, mut traffic: SeatTraffic, mut books:
                 }
             }
             // Only seat controls are buffered for this system.
-            Control::RequestSnapshot
-            | Control::SnapshotReceived
-            | Control::GameHistory(_)
-            | Control::Chunk { .. } => {}
+            Control::RequestSnapshot | Control::GameHistory(_) | Control::Chunk { .. } => {}
         }
     }
 

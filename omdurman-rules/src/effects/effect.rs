@@ -247,7 +247,7 @@ pub enum GameEffect {
         roll: DieRoll,
     },
 
-    // -- Turn / phase flow (appended: postcard encodes the variant index) --
+    // -- Turn / phase flow --
     /// [`GameEffect::AdvancePhase`] stamped with the phase it ends (rulebook
     /// §4): rejected with [`RuleError::PhaseAlreadyEnded`] unless the state
     /// is still in `phase` of `turn` with `player` the phasing player. Ending
@@ -279,7 +279,5 @@ pub enum GameEffect {
     /// yet declined.
     /// **Postconditions:** `pending_melee.retreat_declined` is set; a later
     /// [`GameEffect::RetreatBeforeMelee`] from this attack is refused.
-    ///
-    /// (Appended last: the wire format encodes the variant index.)
     DeclineRetreatBeforeMelee,
 }

@@ -166,11 +166,6 @@ pub enum GameEvent {
     /// joiner shows it too. Presentation only: no engine effect, and
     /// the first telegram recorded for a turn wins.
     Telegram { turn: u8, text: String },
-    /// The London Gazette's report paragraphs at game over. No longer
-    /// written: every peer composes the front page from the game state
-    /// (`omdurman_rules::press::gazette`). Kept so older records still
-    /// decode (the variant index is the wire format).
-    Gazette { paragraphs: Vec<String> },
 }
 
 /// One entry in the canonical event log: a `GameEvent` plus the metadata
@@ -235,8 +230,7 @@ pub enum Ephemeral {
     /// separate from `FactionChoice` so peers can distinguish "spectating" from
     /// "undecided" in the lobby roster.
     SpectatorChoice(bool),
-    /// The host's lobby rules (live preview, host-authoritative; appended:
-    /// earlier variant indices are the wire format): the optional rules
+    /// The host's lobby rules (live preview, host-authoritative): the optional rules
     /// (§10.11, §10.21) and the factions handed to the AI. Guests adopt
     /// them, so the roster shows the AI commanders and a guest promoted to
     /// host carries on with the same settings. The committed values travel
@@ -251,15 +245,8 @@ pub enum Ephemeral {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum Control {
     RequestSnapshot,
-    /// Former install acknowledgement. Nothing consumed it (the host never
-    /// read its pending-ack list), so it is no longer sent and is ignored on
-    /// receipt. The variant stays so the postcard variant index of
-    /// [`Control::GameHistory`] -- and with it the wire format shared with
-    /// already-deployed clients -- does not shift.
-    SnapshotReceived,
     GameHistory(GameRecord),
-    // -- Seat claims and votes (appended: earlier variant indices are part
-    //    of the wire format). Guests never submit seat events; they ask the
+    // -- Seat claims and votes. Guests never submit seat events; they ask the
     //    host, which arbitrates and submits the recorded `GameEvent`. --
     /// Guest/host -> host: `requester` asks for a seat change.
     SeatRequest {
@@ -895,9 +882,6 @@ mod serde_tests {
                 turn: 3,
                 text: "Heavy fighting at the Messalamia Gate.".into(),
             },
-            GameEvent::Gazette {
-                paragraphs: vec!["Khartoum holds.".into(), "Gordon defiant.".into()],
-            },
         ];
         for event in events {
             let msg = NetMsg::Sequenced {
@@ -946,13 +930,6 @@ mod serde_tests {
             };
             assert_eq!(format!("{back:?}"), format!("{control:?}"));
         }
-        // Appending keeps the existing Control indices: GameHistory is
-        // still variant 2 on the wire.
-        let history = NetMsg::Control(Control::GameHistory(GameRecord {
-            initial_state: InitialGameState { seed: 0 },
-            events: Vec::new(),
-        }));
-        assert_eq!(enc_msg(&history).unwrap()[..2], [3, 2]);
     }
 
     #[test]

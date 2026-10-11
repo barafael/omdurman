@@ -236,19 +236,6 @@ mod tests {
             .collect()
     }
 
-    /// `Chunk` is appended to `Control`: the existing variant indices (the
-    /// wire format) are unchanged.
-    #[test]
-    fn chunk_is_an_appended_control_variant() {
-        let chunk = NetMsg::Control(Control::Chunk {
-            transfer_id: 0,
-            index: 0,
-            total: 1,
-            bytes: Vec::new(),
-        });
-        assert_eq!(enc_msg(&chunk).unwrap()[..2], [3, 7]);
-    }
-
     #[test]
     fn small_messages_travel_whole() {
         let mut id = 5;

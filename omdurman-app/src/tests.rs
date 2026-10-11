@@ -630,8 +630,8 @@ mod late_joiner_tests {
         assert_eq!(seats[2].holder, SeatHolder::Human(c));
     }
 
-    /// The telegram and Gazette are recorded press events: applying them live
-    /// and replaying the record file the same texts, one telegram per turn
+    /// Telegrams are recorded press events: applying them live and
+    /// replaying the record file the same texts, one telegram per turn
     /// (the first recorded wins), so every peer and every replay reads the
     /// host's words.
     #[test]
@@ -651,16 +651,13 @@ mod late_joiner_tests {
                 turn: 1,
                 text: "A different account.".into(),
             },
-            GameEvent::Gazette {
-                paragraphs: vec!["Khartoum holds.".into()],
-            },
         ];
         let mut live = TestHarness::new();
         let filed: Vec<bool> = events
             .iter()
             .map(|e| game_apply::apply_game_event(e, &mut live.sinks()))
             .collect();
-        assert_eq!(filed, vec![true, true, false, true]);
+        assert_eq!(filed, vec![true, true, false]);
 
         let mut replayed = TestHarness::new();
         replayed.replay(&make_record(events), None);
@@ -668,10 +665,6 @@ mod late_joiner_tests {
         assert_eq!(
             replayed.press.entries,
             vec![(1, "Night assault repulsed.".to_string())]
-        );
-        assert_eq!(
-            replayed.press.gazette,
-            Some(vec!["Khartoum holds.".to_string()])
         );
     }
 

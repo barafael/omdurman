@@ -146,8 +146,7 @@ pub(crate) fn sprite_event_effect(event: &GameEvent, gs: &GameState) -> Option<G
         | GameEvent::Effect(_)
         | GameEvent::SeatAssigned { .. }
         | GameEvent::SeatCarved { .. }
-        | GameEvent::Telegram { .. }
-        | GameEvent::Gazette { .. } => None,
+        | GameEvent::Telegram { .. } => None,
     }
 }
 
@@ -251,9 +250,9 @@ pub(crate) fn apply_game_event(event: &GameEvent, sinks: &mut EventSinks<'_>) ->
             ok
         }
         GameEvent::Effect(effect) => apply_engine_effect(effect, sinks),
-        // Presentation only: the host's telegram / Gazette text, filed the
-        // same on every peer (the first for a turn wins).
-        GameEvent::Telegram { .. } | GameEvent::Gazette { .. } => sinks.press.file(event),
+        // Presentation only: the host's telegram text, filed the same on
+        // every peer (the first for a turn wins).
+        GameEvent::Telegram { .. } => sinks.press.file(event),
         GameEvent::PlaceUnit { .. } | GameEvent::MoveUnit { .. } | GameEvent::RemoveUnit { .. } => {
             let Some(effect) = sprite_event_effect(event, sinks.game_state) else {
                 warn!(?event, "sprite event names no rules counter; ignored");
