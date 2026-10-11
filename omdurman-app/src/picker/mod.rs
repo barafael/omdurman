@@ -230,7 +230,6 @@ impl Plugin for GamePlugin {
                     crate::melee::advance_target_overlay_mesh.in_set(crate::GameSet),
                     crate::turn_track_ui::turn_track_gizmos.in_set(crate::GameSet),
                     crate::desertion::detect_desertion_turn.in_set(crate::GameSet),
-                    crate::river_placement::roll_for_struck_mine.in_set(crate::GameSet),
                     // §10 optional-rule mine/chain placement: the click
                     // router routes it only in Setup, for the Dervish seat.
                     crate::river_placement::handle_optional_rule_click

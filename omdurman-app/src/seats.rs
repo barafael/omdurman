@@ -848,7 +848,8 @@ pub(crate) fn update_seat_presence(
     seats: Res<Seats>,
     local_key: Res<LocalPlayerKey>,
     settings: Res<crate::settings::LocalPlayerSettings>,
-    game_state: Res<crate::GameStateResource>,
+    // The live game, also under a review (`timeline::LiveGame`).
+    game: crate::timeline::LiveGame,
     peers: Query<(
         &crate::peers::PeerPlayerKey,
         Option<&crate::peers::PeerName>,
@@ -870,7 +871,7 @@ pub(crate) fn update_seat_presence(
         &seats.0,
         &connected,
         time.elapsed_secs_f64(),
-        game_state.0.game_over,
+        game.state().game_over,
     );
     if presence.observable() != before {
         presence.set_changed();

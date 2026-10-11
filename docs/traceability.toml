@@ -1851,11 +1851,20 @@ tests = [
     "omdurman-rules::src::effects::tests::a_retreat_needs_an_open_path_and_may_join_friends",
     "omdurman-rules::src::effects::tests::a_unit_melee_attacks_once_a_turn",
     "omdurman-rules::src::effects::tests::a_retreated_unit_may_be_attacked_again_but_not_retreat_twice",
+    "omdurman-rules::src::effects::tests::declining_the_retreat_ends_the_defenders_window",
 ]
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/effect.rs"
 symbol = "RetreatBeforeMelee"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/effect.rs"
+symbol = "DeclineRetreatBeforeMelee"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/melee.rs"
+symbol = "apply_decline_retreat_before_melee"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/dispatch.rs"

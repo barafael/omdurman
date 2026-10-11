@@ -2305,6 +2305,99 @@ mod tests {
         // the window only ever opens via resolution or the last retreat.)
     }
 
+    // §7.5: cavalry and camel units *may* retreat -- the defender's "no" is a
+    // decision too, and it ends the defender's reaction: no unit retreats
+    // from the attack afterwards, and the melee still resolves.
+    #[rulebook("§7.5")]
+    #[test]
+    fn declining_the_retreat_ends_the_defenders_window() {
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::Melee;
+        state.active_player = Player::Dervish; // attackers; A-E defends
+        let cav_hex = HexCoord::new(5, 5);
+        let cavalry = state.alloc_unit_id();
+        state.units.push(UnitPlacement {
+            id: cavalry,
+            position: cav_hex,
+            profile: UnitProfile {
+                kind: UnitKind::Cavalry {
+                    fire: 0,
+                    melee: 0,
+                    movement: 0,
+                },
+                identity: UnitIdentity::AngloEgyptianCavalry,
+                weapon: WeaponClass::Rifles,
+                fire: Some(crate::FireFactor::Three),
+                melee: Some(crate::MeleeFactor::Five),
+                movement: UnitMovement::Land(crate::MovementAllowance::Eight),
+            },
+            state: Default::default(),
+        });
+        let attacker = make_dervish_tribal(&mut state, HexCoord::new(6, 5));
+        let dest = HexCoord::new(3, 5);
+
+        // Nothing to decline before a melee is declared.
+        assert!(matches!(
+            apply_effect(&mut state, &GameEffect::DeclineRetreatBeforeMelee),
+            Err(RuleError::NoMeleePending)
+        ));
+        apply_effect(
+            &mut state,
+            &GameEffect::DeclareMelee {
+                attack: MeleeAttack {
+                    attacker_player: Player::Dervish,
+                    attacker_hex: HexCoord::new(6, 5),
+                    defender_hex: cav_hex,
+                    attackers: vec![attacker],
+                    defenders: vec![cavalry],
+                    attacker_modifiers: vec![MeleeModifier::DervishStandard],
+                    defender_modifiers: vec![MeleeModifier::AngloEgyptianStandard],
+                },
+                attacker_roll: DieRoll::Five,
+                defender_roll: DieRoll::Five,
+                disruption: crate::DisruptionDraw::default(),
+            },
+        )
+        .unwrap();
+        assert!(state.can_retreat_before_melee(cavalry, dest).is_ok());
+
+        apply_effect(&mut state, &GameEffect::DeclineRetreatBeforeMelee).unwrap();
+        assert!(state.pending_melee.as_ref().unwrap().retreat_declined);
+        assert!(matches!(
+            state.can_retreat_before_melee(cavalry, dest),
+            Err(RuleError::RetreatDeclined)
+        ));
+        let before = state.clone();
+        assert!(matches!(
+            apply_effect(
+                &mut state,
+                &GameEffect::RetreatBeforeMelee {
+                    unit_id: cavalry,
+                    to: dest,
+                },
+            ),
+            Err(RuleError::RetreatDeclined)
+        ));
+        assert_eq!(state.find_unit(cavalry).unwrap().position, cav_hex);
+        // Declined once is declined: a second "no" is refused, unchanged.
+        assert!(matches!(
+            apply_effect(&mut state, &GameEffect::DeclineRetreatBeforeMelee),
+            Err(RuleError::RetreatDeclined)
+        ));
+        assert!(state.pending_melee.as_ref().unwrap().retreat_declined);
+        // The attack still falls, and closes the window.
+        apply_effect(&mut state, &GameEffect::ResolveMelee).unwrap();
+        assert!(state.pending_melee.is_none());
+
+        // Only in the Melee phase.
+        let mut wrong_phase = before;
+        wrong_phase.phase = Phase::Movement;
+        assert!(matches!(
+            apply_effect(&mut wrong_phase, &GameEffect::DeclineRetreatBeforeMelee),
+            Err(RuleError::WrongPhase)
+        ));
+    }
+
     // §7.5/§7.6: when the lone defender withdraws before the blow falls, the
     // declared melee lapses -- no roll, and no forced Dervish advance (§7.6
     // binds only when the melee *eliminates* the defenders).

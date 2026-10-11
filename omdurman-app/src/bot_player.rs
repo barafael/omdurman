@@ -28,12 +28,7 @@ use omdurman_rules::Phase;
 use omdurman_rules::effects::{GameEffect, GameState};
 use omdurman_types::Player;
 
-use crate::{GameStateResource, PendingEdits, net_plugin};
-
-/// Fixed seed for the driver's private dice stream. "O-M-D-U-R-M-A-N" —
-/// cosmetic only (see [`BotDriver::from_seed`]). Exposed so `apply_start_game`
-/// can reseed the always-present resource on each StartGame.
-pub const BOT_SEED: u64 = 0x4F4D_4455_524D_414E;
+use crate::{PendingEdits, net_plugin};
 
 /// The host-side AI driver's private state: its own dice stream (candidate
 /// enumeration pre-rolls effect dice — the shared `GameRng` stays with the
@@ -43,7 +38,7 @@ pub const BOT_SEED: u64 = 0x4F4D_4455_524D_414E;
 /// in every `InGame`+`Game` frame, and resources that blink in and out
 /// (`sync_driver_seed` used to insert/remove it via deferred `commands`)
 /// raced `bot_player_act`, which panicked with "Resource does not exist".
-/// A fresh game reseeds it via `apply_start_game` instead.
+/// A fresh game replaces it via `apply_start_game` instead.
 #[derive(Resource)]
 pub struct BotDriver {
     rng: BotRng,
@@ -66,18 +61,28 @@ pub struct BotDriver {
     /// the AI stands down (warned once) and looks again every
     /// [`STUCK_RETRY_SECS`] instead of re-submitting a rejected effect.
     stuck: bool,
+    /// Turns finished when the driver last looked (`turn_summaries.len()`),
+    /// and the seconds since that count last grew: the end-of-turn hold
+    /// (see [`turn_end_hold`]).
+    turns_seen: usize,
+    since_turn_end: f32,
 }
 
+/// A driver on a fresh dice stream. The stream rolls the dice the AI's
+/// effects carry (candidate enumeration pre-rolls them), so it is seeded
+/// from fresh entropy like the app's own `GameRng`: a constant seed made the
+/// AI repeat the same rolls in every game and after every rebuild. Replay
+/// never runs the driver -- the effects in the log carry their dice -- so
+/// nothing depends on its seed.
 impl Default for BotDriver {
     fn default() -> Self {
-        Self::from_seed(BOT_SEED)
+        Self::from_seed(omdurman_net::new_seed())
     }
 }
 
 impl BotDriver {
-    /// Seeded from a fixed constant: the submitted *effects* carry their own
-    /// dice, so the driver's stream only shapes which legal action is picked,
-    /// and a fresh game must not inherit a skewed stream.
+    /// A driver on the dice stream of `seed` (tests pin one; the game uses
+    /// [`Default`], fresh entropy).
     pub fn from_seed(seed: u64) -> Self {
         Self {
             rng: BotRng::from_seed(seed),
@@ -87,6 +92,8 @@ impl BotDriver {
             in_flight_secs: 0.0,
             wait: None,
             stuck: false,
+            turns_seen: 0,
+            since_turn_end: f32::INFINITY,
         }
     }
 }
@@ -106,6 +113,30 @@ const STUCK_RETRY_SECS: f32 = 2.0;
 /// are silent by design -- the human's turn, a pause, a telegram -- and an
 /// AI waiting on one of them for good looked exactly like a hung one.
 const WAIT_REPORT_SECS: f32 = 10.0;
+/// After a turn ends the AI holds this long before playing on, so the
+/// players can take in the turn's telegram (each peer shows it over its own
+/// board).
+const TURN_END_PAUSE_SECS: f32 = 3.0;
+/// The longest the AI waits, after a turn ends, for the host's own player to
+/// dismiss the telegram (see [`turn_end_hold`]).
+const TELEGRAM_WAIT_MAX_SECS: f32 = 60.0;
+
+/// What holds the AI after a turn ended `since_turn_end` seconds ago, if
+/// anything. Every peer's players get [`TURN_END_PAUSE_SECS`] to read the
+/// telegram. The host's own unread telegram holds it longer -- but only when
+/// `host_reading`: the host holds a seat and is looking at the board. The
+/// host is only the lowest peer id: a spectator, a teammate in the menu or a
+/// player reviewing the timeline would otherwise hold the game up for
+/// everyone. Capped at [`TELEGRAM_WAIT_MAX_SECS`].
+fn turn_end_hold(since_turn_end: f32, host_reading: bool) -> Option<&'static str> {
+    if since_turn_end < TURN_END_PAUSE_SECS {
+        Some("the players to read the end-of-turn telegram")
+    } else if host_reading && since_turn_end < TELEGRAM_WAIT_MAX_SECS {
+        Some("the end-of-turn telegram to be read")
+    } else {
+        None
+    }
+}
 
 /// A gate the AI is waiting on: which one, for how long, and whether it
 /// has been reported. Reset whenever the gate changes or an action goes out.
@@ -141,26 +172,69 @@ impl BotDriver {
     }
 }
 
+/// The host's own view: which screen is up and who the host is, for the
+/// holds that are about what the host sees (its board's animations, its own
+/// telegram).
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct HostView<'w> {
+    screen: Option<Res<'w, State<crate::Screen>>>,
+    key: Option<Res<'w, crate::seats::LocalPlayerKey>>,
+    telegrams: Option<Res<'w, crate::telegram::TelegramLog>>,
+}
+
+impl HostView<'_> {
+    /// The host's board is on screen (its animations pace the AI).
+    fn on_board(&self) -> bool {
+        self.screen
+            .as_ref()
+            .is_some_and(|s| *s.get() == crate::Screen::Board)
+    }
+
+    /// The host's own seated player looks at the board and has not yet
+    /// dismissed the latest turn's telegram.
+    fn reading(&self, seats: &crate::seats::Seats, state: &GameState) -> bool {
+        let seated = self
+            .key
+            .as_ref()
+            .is_some_and(|key| crate::seats::seat_of(&seats.0, key.0).is_some());
+        seated
+            && self.on_board()
+            && self
+                .telegrams
+                .as_ref()
+                .is_some_and(|log| log.awaiting_ack(state))
+    }
+}
+
 /// The host plays the AI factions' turns: enumerate legal actions, take the
 /// commander's best *engine-validated* one, submit it as an ordinary game
 /// event. Runs in the game states (Setup included — the AI deploys its own
-/// force), paced by [`BotDriver`]'s cooldown.
+/// force), paced by [`BotDriver`]'s cooldown -- on whatever screen the host
+/// is, against the live state (also under a review, `timeline::LiveGame`).
 #[allow(clippy::too_many_arguments)]
 pub fn bot_player_act(
     time: Res<Time>,
     net: Res<NetState>,
     mut driver: ResMut<BotDriver>,
     seats: crate::seats::SeatView,
-    game_state: Res<GameStateResource>,
+    live: crate::timeline::LiveGame,
     mut pending: ResMut<PendingEdits>,
     offline: Option<Res<net_plugin::OfflineMode>>,
-    telegrams: Option<Res<crate::telegram::TelegramLog>>,
+    host: HostView,
     mut activity: ResMut<crate::activity::Activity>,
     board: crate::fx::BoardBusy,
 ) {
     let ai = crate::seats::ai_factions(&seats.seats.0);
-    let state = &game_state.0;
+    let state = live.state();
     let dt = time.delta_secs();
+    // The end-of-turn clock runs whatever the gates below say.
+    let turns = state.turn_summaries.len();
+    if turns != driver.turns_seen {
+        driver.turns_seen = turns;
+        driver.since_turn_end = 0.0;
+    } else {
+        driver.since_turn_end += dt;
+    }
     // Every gate below is silent by design; `waiting` says once, after a
     // while, which one holds the AI (see `WAIT_REPORT_SECS`).
     if ai.is_empty() {
@@ -170,10 +244,12 @@ pub fn bot_player_act(
     if seats.presence.paused() {
         return driver.waiting("the game paused for an absent player", dt, state);
     }
-    // The end-of-turn telegram is modal: the AI waits until the host's
-    // player has read it, instead of playing on underneath.
-    if telegrams.is_some_and(|log| log.awaiting_ack(state)) {
-        return driver.waiting("the end-of-turn telegram to be read", dt, state);
+    // A turn just ended: give the players its telegram first.
+    if turns > 0
+        && !state.game_over
+        && let Some(gate) = turn_end_hold(driver.since_turn_end, host.reading(&seats.seats, state))
+    {
+        return driver.waiting(gate, dt, state);
     }
     // Only the host (or an offline self-hosted instance) drives the AI.
     if !(net.is_host || offline.is_some_and(|o| o.0)) {
@@ -200,14 +276,18 @@ pub fn bot_player_act(
         return driver.waiting("a board to be loaded", dt, state);
     }
     let Some(chooser) = ai_chooser(state).filter(|side| ai.contains(side)) else {
+        if omdurman_bot::actions::retreat_window_open(state) {
+            return driver.waiting("the defender's retreat-before-melee decision", dt, state);
+        }
         return driver.waiting("a human player to act", dt, state);
     };
 
     // Let the board finish showing the last action (a glide, a shot, a
     // ghost) before the next: the cooldown only runs on a quiet board, so
     // the AI's turn reads one action at a time instead of overlapping. (The
-    // animations keep the frames coming meanwhile.)
-    if board.busy() {
+    // animations keep the frames coming meanwhile.) Only the host's own
+    // board: off it (the menu, a review) nothing of the live game animates.
+    if host.on_board() && board.busy() {
         return driver.waiting("the board to finish animating", dt, state);
     }
     driver.wait = None;
@@ -245,16 +325,15 @@ pub fn bot_player_act(
 }
 
 /// The side whose decision the AI would make now: the Dervish player's roll
-/// for a mine a British gunboat struck (§10.12); during set-up the side
-/// deploying -- set-up is sequential and in the Campaign the Dervish deploy
-/// first though the Anglo-Egyptians move first (§9.111/§9.113); otherwise
-/// the phase player (defensive fire belongs to the non-moving side, §6.7).
+/// for a mine a British gunboat struck (§10.12); the defender of a declared
+/// melee while its retreat is open -- it reacts before the attacker resolves
+/// (§7.5), so an AI attacker waits for a human defender to retreat or stand;
+/// during set-up the side deploying -- set-up is sequential and in the
+/// Campaign the Dervish deploy first though the Anglo-Egyptians move first
+/// (§9.111/§9.113); otherwise the phase player (defensive fire belongs to the
+/// non-moving side, §6.7). See [`omdurman_bot::actions::decider`].
 fn ai_chooser(state: &GameState) -> Option<Player> {
-    if state.pending_mine().is_some() {
-        Some(Player::Dervish)
-    } else {
-        state.player_to_act()
-    }
+    omdurman_bot::actions::decider(state)
 }
 
 /// One AI decision for `chooser` in `state`, engine-validated -- all but the
@@ -340,6 +419,71 @@ mod tests {
         assert_eq!(ai_chooser(&state), Some(Player::Dervish));
         state.setup_ready_dervish = true;
         assert_eq!(ai_chooser(&state), Some(Player::AngloEgyptian));
+    }
+
+    /// The end-of-turn hold: a short pause for everyone, and the host's own
+    /// unread telegram only while the host is a seated player on the board
+    /// -- a spectator host, or one in the menu or a review, never holds the
+    /// game up -- and never for long.
+    #[test]
+    fn the_turn_end_holds_the_ai_briefly() {
+        assert!(turn_end_hold(0.0, false).is_some());
+        assert!(turn_end_hold(TURN_END_PAUSE_SECS - 0.1, false).is_some());
+        assert!(turn_end_hold(TURN_END_PAUSE_SECS, false).is_none());
+        assert!(turn_end_hold(TURN_END_PAUSE_SECS + 5.0, true).is_some());
+        assert!(turn_end_hold(TELEGRAM_WAIT_MAX_SECS, true).is_none());
+        assert!(turn_end_hold(f32::INFINITY, true).is_none());
+    }
+
+    /// §7.5: during a declared melee the defender decides first while it
+    /// may retreat; an AI attacker facing a human defender therefore waits.
+    #[test]
+    fn the_defender_chooses_first_in_a_melee() {
+        let script = omdurman_rules::tactics::all_scripts()
+            .into_iter()
+            .find(|s| s.name == "retreat_before_melee")
+            .expect("the §7.5 vignette");
+        let mut state = script.state;
+        let omdurman_rules::tactics::ScriptStep::Legal { effect, .. } = &script.steps[0] else {
+            panic!("the vignette opens with the declaration");
+        };
+        apply_effect(&mut state, effect).unwrap();
+        // An Anglo-Egyptian attack on a Dervish camel unit.
+        assert_eq!(ai_chooser(&state), Some(Player::Dervish));
+        // A Kitchener attacker never plays the Dervish retreat for them.
+        let mut rng = BotRng::from_seed(11);
+        let mut memory = omdurman_bot::move_memory::MoveMemory::new();
+        let pick = next_ai_action(
+            &state,
+            Player::AngloEgyptian,
+            &[Player::AngloEgyptian],
+            &mut rng,
+            &mut memory,
+        );
+        assert!(!matches!(
+            pick,
+            GameEffect::RetreatBeforeMelee { .. } | GameEffect::DeclineRetreatBeforeMelee
+        ));
+        apply_effect(&mut state, &GameEffect::DeclineRetreatBeforeMelee).unwrap();
+        assert_eq!(ai_chooser(&state), Some(Player::AngloEgyptian));
+    }
+
+    /// Every game's AI rolls fresh dice (review 2026-09, item 2.5): the driver
+    /// `apply_start_game` installs used to restart one constant stream, so
+    /// every game -- and every rebuild -- repeated the AI's rolls.
+    #[test]
+    fn every_game_gets_fresh_ai_dice() {
+        let rolls =
+            |driver: &mut BotDriver| -> Vec<_> { (0..24).map(|_| driver.rng.roll_d10()).collect() };
+        assert_ne!(
+            rolls(&mut BotDriver::default()),
+            rolls(&mut BotDriver::default())
+        );
+        // An explicit seed still pins a stream (tests, fixtures).
+        assert_eq!(
+            rolls(&mut BotDriver::from_seed(7)),
+            rolls(&mut BotDriver::from_seed(7))
+        );
     }
 
     /// The [`Agents`] pair describing an AI configuration — what the headless

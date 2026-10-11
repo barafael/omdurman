@@ -419,6 +419,7 @@ fn with_pending_melee(state: &mut GameState) {
             attacker_roll: any_roll(),
             defender_roll: any_roll(),
             disruption: any_disruption(),
+            retreat_declined: any(),
         });
     }
 }
@@ -870,6 +871,22 @@ fn resolve_melee_is_safe() {
     let mut state = any_state();
     with_pending_melee(&mut state);
     check(state, GameEffect::ResolveMelee);
+}
+
+#[cfg_attr(kani, kani::proof)]
+#[cfg_attr(kani, kani::unwind(8))]
+#[cfg_attr(
+    kani,
+    kani::stub(
+        crate::unit_profiles::profile_for_unit,
+        crate::proof_palette::palette_profile
+    )
+)]
+#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
+fn decline_retreat_before_melee_is_safe() {
+    let mut state = any_state();
+    with_pending_melee(&mut state);
+    check(state, GameEffect::DeclineRetreatBeforeMelee);
 }
 
 #[cfg_attr(kani, kani::proof)]
@@ -1475,7 +1492,7 @@ fn two_moves_keep_the_invariants() {
 // decoder that panics on a malformed packet is a remote crash.
 
 /// Number of effect kinds (`GameEffect` variants).
-const EFFECT_KINDS: usize = 23;
+const EFFECT_KINDS: usize = 24;
 
 /// An arbitrary effect of kind `kind` (variant order), built from the same
 /// payload generators as the safety harnesses.
@@ -1592,7 +1609,8 @@ fn any_effect(kind: usize) -> GameEffect {
             player: any_player(),
             phase: any_phase(),
         },
-        _ => GameEffect::RollDesertion { roll: any_roll() },
+        22 => GameEffect::RollDesertion { roll: any_roll() },
+        _ => GameEffect::DeclineRetreatBeforeMelee,
     }
 }
 
@@ -1678,6 +1696,7 @@ fn kind_of(effect: &GameEffect) -> usize {
         GameEffect::ArtilleryBreachWall { .. } => 20,
         GameEffect::AdvancePhaseFrom { .. } => 21,
         GameEffect::RollDesertion { .. } => 22,
+        GameEffect::DeclineRetreatBeforeMelee => 23,
     }
 }
 
@@ -1846,6 +1865,10 @@ mod sampled {
         (
             "artillery_breach_wall_is_safe",
             artillery_breach_wall_is_safe,
+        ),
+        (
+            "decline_retreat_before_melee_is_safe",
+            decline_retreat_before_melee_is_safe,
         ),
         (
             "an_accepted_move_is_a_legal_move",

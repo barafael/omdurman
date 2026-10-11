@@ -66,16 +66,18 @@ pub(crate) fn handle_optional_rule_click(
 /// §10.12: "the Dervish player then resolves the effect of the mine's blast
 /// by rolling" -- the Dervish seat's app rolls for a British gunboat that
 /// struck a mine, once per strike. (An AI-held Dervish seat rolls through the
-/// bot driver.)
+/// bot driver.) On any screen, against the live state (`timeline::LiveGame`):
+/// the A-E End Phase waits for this roll, so a Dervish player in the menu or
+/// a review must not hold the game up.
 pub(crate) fn roll_for_struck_mine(
-    game_state: Res<GameStateResource>,
+    live: crate::timeline::LiveGame,
     peers: crate::peers::Peers,
     seats: Res<crate::seats::Seats>,
     mut game_rng: ResMut<crate::GameRng>,
     mut pending: ResMut<PendingEdits>,
     mut rolled_for: Local<Option<omdurman_rules::StruckMine>>,
 ) {
-    let Some(struck) = game_state.0.pending_mine() else {
+    let Some(struck) = live.state().pending_mine() else {
         *rolled_for = None;
         return;
     };

@@ -205,20 +205,19 @@ pub fn play_until(
             traced_turn = state.current_turn.value();
             eprintln!("{}", trace_line(&state));
         }
-        // The app's `ai_chooser`: the mine roll is the Dervish player's
-        // (§10.12); otherwise the side to act (deployer in set-up, the
-        // non-moving side in defensive fire).
         let decided = std::time::Instant::now();
-        let chooser = if state.pending_mine().is_some() {
-            Player::Dervish
-        } else {
-            state.player_to_act().unwrap_or(state.phase_player())
-        };
+        // The app's `ai_chooser` (`actions::decider`): the mine roll is the
+        // Dervish player's (§10.12), a declared melee's retreat the
+        // defender's (§7.5); otherwise the side to act (deployer in set-up,
+        // the non-moving side in defensive fire). Nobody picks the other
+        // side's decisions.
+        let chooser = crate::actions::decider(&state).unwrap_or(state.phase_player());
         let candidates = if state.phase == Phase::Setup {
             crate::actions::legal_actions_deep_setup(&state, &mut rng)
         } else {
             crate::actions::legal_actions(&state, &mut rng)
         };
+        let candidates = crate::actions::own_decisions(&state, chooser, &candidates);
         let effect = if let Some(e) = candidates
             .iter()
             .find(|e| matches!(e, GameEffect::DervishDesertion { .. }))

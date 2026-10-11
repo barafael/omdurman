@@ -154,13 +154,30 @@ fn add_game(app: &mut App, room: String) {
         .init_state::<ui_phase_state::UiPhaseState>()
         .add_systems(Last, ui_phase_state::sync_ui_phase_state)
         // In-game AI commanders (Kitchener/Khalifa): the host plays any faction
-        // whose seats are AI seats, paced for live spectating.
+        // whose seats are AI seats, paced for live spectating -- on whatever
+        // screen the host is (the menu, the lobby, a review: the host is only
+        // the lowest peer id, maybe a spectator), against the live state.
         .init_resource::<bot_player::BotDriver>()
         .add_systems(
             Update,
-            bot_player::bot_player_act
-                .run_if(in_state(Screen::Board))
-                .before(net_plugin::flush_pending),
+            (
+                // A review on top of a session: the session's events go to
+                // the stashed live state (see `timeline`), before anything
+                // acts on it.
+                timeline::catch_up_live_stash
+                    .after(net_socket::handle_socket)
+                    .run_if(timeline::reviewing_live),
+                bot_player::bot_player_act
+                    .run_if(timeline::session_live)
+                    .after(timeline::catch_up_live_stash)
+                    .before(net_plugin::flush_pending),
+                // §10.12: a human Dervish seat rolls for a struck mine on any
+                // screen too -- the A-E End Phase waits for it.
+                river_placement::roll_for_struck_mine
+                    .run_if(timeline::session_live)
+                    .after(timeline::catch_up_live_stash)
+                    .before(net_plugin::flush_pending),
+            ),
         )
         .add_message::<events::LocalAction>()
         .add_message::<events::ObservationEvent>()
@@ -215,13 +232,37 @@ fn add_game(app: &mut App, room: String) {
             Update,
             (
                 events::forward_local_actions.before(net_plugin::flush_pending),
-                // Timeline scrub: advance playback, then rebuild world state to
-                // the cursor (the sprite reconcile runs after the rebuild).
-                timeline::advance_timeline_playback,
-                timeline::scrub_teardown.after(timeline::advance_timeline_playback),
-                timeline::scrub_rebuild.after(timeline::scrub_teardown),
+                // Timeline scrub: advance playback, then rebuild the shown
+                // state to the cursor (the sprite reconcile runs after the
+                // rebuild). Only on the review screen: the menu over a review
+                // pauses it, and a review left behind never scrubs again.
+                (
+                    timeline::advance_timeline_playback,
+                    timeline::scrub_rebuild.after(timeline::advance_timeline_playback),
+                )
+                    .run_if(in_state(Screen::Review)),
             ),
         )
+        // Into and out of a review. From a running session (the lobby's
+        // "Review current game", the result card's "Review timeline") the
+        // live state is set aside and kept current underneath; from the title
+        // screen there is no session to keep.
+        .add_systems(
+            OnTransition {
+                exited: AppState::InGame,
+                entered: AppState::Spectating,
+            },
+            timeline::stash_live_world,
+        )
+        .add_systems(
+            OnTransition {
+                exited: AppState::Lobby,
+                entered: AppState::Spectating,
+            },
+            timeline::stash_live_world,
+        )
+        .add_systems(OnEnter(AppState::Spectating), timeline::enter_review)
+        .add_systems(OnExit(AppState::Spectating), timeline::leave_review)
         .add_systems(
             bevy_egui::EguiPrimaryContextPass,
             (
@@ -236,7 +277,8 @@ fn add_game(app: &mut App, room: String) {
                 // A seat vote waits for nobody: on every screen of a live
                 // session, the menu included (the menu's native buttons
                 // take no clicks through it: `EguiPointerOverUi`).
-                seats_ui::vote_popup_ui.run_if(in_state(AppState::InGame)),
+                seats_ui::vote_popup_ui
+                    .run_if(in_state(AppState::InGame).or_else(timeline::reviewing_live)),
                 // "Back to lobby" lives in the mode toolbar (ui_plugin) now.
                 timeline::timeline_ui
                     .in_set(ui_plugin::PanelUiSet)

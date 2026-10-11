@@ -1151,6 +1151,10 @@ fn melee_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>)
                 }
             }
         }
+        // The defender's "no" (§7.5 "may"), offered while it has a retreat.
+        if retreat_window_open(state) {
+            out.push(GameEffect::DeclineRetreatBeforeMelee);
+        }
         let probe = GameEffect::ResolveMelee;
         if engine_accepts(state, &probe) {
             out.push(probe);
@@ -1211,6 +1215,78 @@ fn melee_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>)
 
 /// All hexes at exactly `dist` from `center` (the distance-2 ring has 12
 /// hexes). Used for §7.5 retreat-before-melee destinations.
+/// Whether the defenders of the pending melee still have their §7.5 decision
+/// to make: some unit on the threatened hex may retreat somewhere, and the
+/// defender has not declined ([`GameEffect::DeclineRetreatBeforeMelee`]).
+pub fn retreat_window_open(state: &GameState) -> bool {
+    let Some(pending) = &state.pending_melee else {
+        return false;
+    };
+    let hex = pending.attack.defender_hex;
+    !pending.retreat_declined
+        && state.units.iter().filter(|u| u.position == hex).any(|u| {
+            ring_at_distance(hex, 2)
+                .into_iter()
+                .any(|to| state.can_retreat_before_melee(u.id, to).is_ok())
+        })
+}
+
+/// The side whose decision it is now: the Dervish player's roll for a mine a
+/// British gunboat struck (§10.12); the defender of a declared melee while
+/// its §7.5 retreat is still open (it reacts before the blow falls); else
+/// the side to act ([`GameState::player_to_act`]: the deployer in set-up,
+/// the non-moving side in defensive fire).
+pub fn decider(state: &GameState) -> Option<Player> {
+    if state.game_over {
+        return None;
+    }
+    if state.pending_mine().is_some() {
+        return Some(Player::Dervish);
+    }
+    if retreat_window_open(state)
+        && let Some(pending) = &state.pending_melee
+    {
+        return Some(pending.attack.attacker_player.opponent());
+    }
+    state.player_to_act()
+}
+
+/// The side an effect is the decision of, where that is not simply the side
+/// to act: the §7.5 reaction is the defender's -- a retreat belongs to the
+/// retreating unit's owner, the decline to the defending side -- while the
+/// resolution of a declared melee and an advance into vacated ground
+/// (§6.82/§7.6) are the attacker's. `None` for every other effect.
+pub fn effect_actor(state: &GameState, effect: &GameEffect) -> Option<Player> {
+    let owner = |id: &UnitId| state.find_unit(*id).map(|u| u.profile.identity.owner());
+    match effect {
+        GameEffect::RetreatBeforeMelee { unit_id, .. }
+        | GameEffect::AdvanceAfterCombat { unit_id, .. } => owner(unit_id),
+        GameEffect::DeclineRetreatBeforeMelee => state
+            .pending_melee
+            .as_ref()
+            .map(|p| p.attack.attacker_player.opponent()),
+        GameEffect::ResolveMelee => state
+            .pending_melee
+            .as_ref()
+            .map(|p| p.attack.attacker_player),
+        _ => None,
+    }
+}
+
+/// `candidates` without the ones that are another side's decision
+/// ([`effect_actor`]): what `player` may choose from.
+pub fn own_decisions(
+    state: &GameState,
+    player: Player,
+    candidates: &[GameEffect],
+) -> Vec<GameEffect> {
+    candidates
+        .iter()
+        .filter(|e| effect_actor(state, e).is_none_or(|p| p == player))
+        .cloned()
+        .collect()
+}
+
 fn ring_at_distance(center: HexCoord, dist: u32) -> Vec<HexCoord> {
     let d = dist as i32;
     let mut out = Vec::new();
@@ -1431,6 +1507,106 @@ mod tests {
             legal_actions(&day, &mut rng3)
                 .iter()
                 .all(|e| !matches!(e, GameEffect::DervishDesertion { .. }))
+        );
+    }
+}
+
+#[cfg(test)]
+mod melee_reaction_tests {
+    use super::*;
+
+    /// The `retreat_before_melee` vignette right after its declaration: an
+    /// Anglo-Egyptian infantry melee on a Dervish camel unit, which may
+    /// retreat two hexes (§7.5). Returns the state and the camel.
+    fn declared() -> (GameState, UnitId) {
+        let script = omdurman_rules::tactics::all_scripts()
+            .into_iter()
+            .find(|s| s.name == "retreat_before_melee")
+            .expect("the §7.5 vignette");
+        let mut state = script.state;
+        let omdurman_rules::tactics::ScriptStep::Legal { effect, .. } = &script.steps[0] else {
+            panic!("the vignette opens with the declaration");
+        };
+        apply_effect(&mut state, effect).expect("the declaration");
+        let camel = state.pending_melee.as_ref().unwrap().attack.defenders[0];
+        (state, camel)
+    }
+
+    /// §7.5: the defender reacts before the blow falls -- the decision is
+    /// the defender's while it may retreat, the attacker's once it has
+    /// declined (or has nothing left to retreat).
+    #[test]
+    fn the_defender_decides_first_then_the_attacker() {
+        let (mut state, _) = declared();
+        assert!(retreat_window_open(&state));
+        assert_eq!(decider(&state), Some(Player::Dervish), "the defender");
+        let mut rng = BotRng::from_seed(3);
+        let offered = legal_actions(&state, &mut rng);
+        assert!(offered.contains(&GameEffect::DeclineRetreatBeforeMelee));
+        // The defender chooses among its retreats and its "no" only.
+        let own = own_decisions(&state, Player::Dervish, &offered);
+        assert!(!own.is_empty());
+        assert!(own.iter().all(|e| matches!(
+            e,
+            GameEffect::RetreatBeforeMelee { .. } | GameEffect::DeclineRetreatBeforeMelee
+        )));
+
+        apply_effect(&mut state, &GameEffect::DeclineRetreatBeforeMelee).unwrap();
+        assert!(!retreat_window_open(&state));
+        assert_eq!(decider(&state), Some(Player::AngloEgyptian), "the attacker");
+        let offered = legal_actions(&state, &mut rng);
+        assert!(!offered.contains(&GameEffect::DeclineRetreatBeforeMelee));
+        assert!(
+            !offered
+                .iter()
+                .any(|e| matches!(e, GameEffect::RetreatBeforeMelee { .. })),
+            "a declined retreat is no longer offered"
+        );
+        assert!(
+            own_decisions(&state, Player::AngloEgyptian, &offered)
+                .contains(&GameEffect::ResolveMelee)
+        );
+    }
+
+    /// A commander only ever decides for its own side: the attacker is never
+    /// handed the defender's retreat (Kitchener used to "retreat" the enemy
+    /// out of his own outnumbering attack), and the defender never resolves
+    /// the attacker's melee.
+    #[test]
+    fn commanders_never_take_the_other_sides_decision() {
+        let (state, camel) = declared();
+        let mut rng = BotRng::from_seed(5);
+        let offered = legal_actions(&state, &mut rng);
+        let mut memory = crate::move_memory::MoveMemory::new();
+        let attacker_pick = crate::commanders::pick_validated(
+            &state,
+            Player::AngloEgyptian,
+            &offered,
+            &mut rng,
+            &mut memory,
+        );
+        assert!(
+            !matches!(
+                attacker_pick,
+                GameEffect::RetreatBeforeMelee { .. } | GameEffect::DeclineRetreatBeforeMelee
+            ),
+            "the attacker picked the defender's decision: {attacker_pick:?}"
+        );
+        let defender_pick = crate::commanders::pick_validated(
+            &state,
+            Player::Dervish,
+            &offered,
+            &mut rng,
+            &mut memory,
+        );
+        match defender_pick {
+            GameEffect::RetreatBeforeMelee { unit_id, .. } => assert_eq!(unit_id, camel),
+            GameEffect::DeclineRetreatBeforeMelee => {}
+            other => panic!("the defender took {other:?}"),
+        }
+        assert_eq!(
+            effect_actor(&state, &GameEffect::ResolveMelee),
+            Some(Player::AngloEgyptian)
         );
     }
 }

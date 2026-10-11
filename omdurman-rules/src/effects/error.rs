@@ -443,6 +443,10 @@ pub enum RuleError {
         "fire kind does not match the effect (§6.64: howitzer fire is resolved with a scatter roll)"
     )]
     FireKindMismatch,
+
+    /// The defender already declined the §7.5 retreat from the pending melee.
+    #[error("the defenders have chosen to stand against this melee (§7.5)")]
+    RetreatDeclined,
 }
 
 /// Why a Dervish desertion effect was rejected (rulebook §8.2).

@@ -1,7 +1,6 @@
 use crate::peers::{
     LobbyPick, PeerColor, PeerCursor, PeerName, PeerPlayerKey, Spectator, sync_peer_entities,
 };
-use crate::state::AppState;
 use bevy::prelude::*;
 use bevy_egui::egui;
 use bevy_matchbox::prelude::{MatchboxSocket, PeerId};
@@ -295,13 +294,16 @@ impl Plugin for NetPlugin {
             .add_systems(
                 Update,
                 (
+                    // (Not in an offline review; a review on top of a session
+                    // keeps the session's peers and presence current.)
                     sync_peer_entities
                         .after(crate::net_socket::handle_socket)
-                        .run_if(not(in_state(AppState::Spectating))),
+                        .run_if(crate::timeline::session_live),
                     crate::events::drain_observations.after(crate::net_socket::handle_socket),
                     crate::seats::update_seat_presence
                         .after(apply_ephemeral)
-                        .run_if(not(in_state(AppState::Spectating))),
+                        .after(crate::timeline::catch_up_live_stash)
+                        .run_if(crate::timeline::session_live),
                     apply_ephemeral
                         .after(crate::net_socket::handle_socket)
                         .after(sync_peer_entities),

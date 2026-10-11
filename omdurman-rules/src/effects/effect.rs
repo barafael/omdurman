@@ -268,4 +268,18 @@ pub enum GameEffect {
     /// first and recorded, the die survives a pause, a reload or a rejoin --
     /// re-opening the desertion panel can no longer roll it again.
     RollDesertion { roll: DieRoll },
+
+    /// The defender of the pending melee lets it come without (further)
+    /// retreat: cavalry and camel units *may* retreat (§7.5), and this is the
+    /// defender's "no". It ends the defender's reaction window, so the
+    /// attacker knows the defence has decided -- an AI attacker waits for it
+    /// (or for the last threatened unit to have retreated) before resolving.
+    ///
+    /// **Preconditions:** the Melee phase; `pending_melee` is `Some` and not
+    /// yet declined.
+    /// **Postconditions:** `pending_melee.retreat_declined` is set; a later
+    /// [`GameEffect::RetreatBeforeMelee`] from this attack is refused.
+    ///
+    /// (Appended last: the wire format encodes the variant index.)
+    DeclineRetreatBeforeMelee,
 }

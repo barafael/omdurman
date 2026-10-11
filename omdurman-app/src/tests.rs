@@ -1877,6 +1877,246 @@ fn ai_plays_fall_of_khartoum_headless() {
     ));
 }
 
+/// The engine state after the record's first `upto + 1` events, replayed
+/// afresh (`None`: all of them).
+fn replayed(
+    record: &omdurman_net::GameRecord,
+    upto: Option<usize>,
+) -> omdurman_rules::effects::GameState {
+    let mut game_state =
+        omdurman_rules::effects::GameState::new(omdurman_types::Scenario::Campaign);
+    let mut seats = crate::seats::Seats::default();
+    let mut ready = crate::peers::LocalSetupReady::default();
+    let mut driver = crate::bot_player::BotDriver::from_seed(1);
+    let mut annotations = crate::LoadedAnnotations::default();
+    let mut map_load = crate::PendingMapLoad::default();
+    let mut paths = crate::picker::UnitPaths::default();
+    let mut press = crate::telegram::TelegramLog::default();
+    let mut sinks = crate::game_apply::EventSinks {
+        game_state: &mut game_state,
+        seats: &mut seats,
+        local_setup_ready: &mut ready,
+        bot_driver: &mut driver,
+        loaded_annotations: &mut annotations,
+        pending_map_load: &mut map_load,
+        unit_paths: &mut paths,
+        press: &mut press,
+    };
+    let end = upto.map_or(record.events.len(), |i| i + 1);
+    for event in &record.events[..end] {
+        crate::game_apply::apply_game_event(&event.payload, &mut sinks);
+    }
+    let _ = game_state.drain_observations();
+    game_state
+}
+
+/// What a position is, for comparing two engine states: every counter where
+/// it stands and how, and where the turn is.
+fn position(state: &omdurman_rules::effects::GameState) -> String {
+    format!(
+        "{:?}",
+        (
+            &state.units,
+            state.phase,
+            state.current_turn,
+            state.active_player,
+            state.turn_summaries.len(),
+            state.game_over,
+        )
+    )
+}
+
+/// A review opened on top of a running session (the result card's "Review
+/// timeline", the lobby's "Review current game") shows the reviewed event
+/// without disturbing the session: the host's AI plays on underneath, every
+/// scrub -- incremental, from a checkpoint, or afresh -- shows exactly the
+/// replayed position, and leaving the review hands back a live state equal
+/// to the whole record replayed, also after a history install that replaced
+/// the record mid-review. The AI also plays while its host is in the menu.
+#[test]
+fn a_review_runs_on_top_of_a_live_game() {
+    use bevy::prelude::*;
+    let games = tempfile::tempdir().expect("temp dir");
+    let mut app = headless_game_app(true);
+    app.insert_resource(crate::net_plugin::OfflineMode(true))
+        .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+            std::time::Duration::from_millis(250),
+        ))
+        .insert_resource(crate::game_record::GameRecorder::init_in(
+            games.path().to_str().expect("utf-8 temp path"),
+            7,
+        ));
+    for _ in 0..10 {
+        app.update();
+    }
+    app.world_mut()
+        .resource_mut::<NextState<crate::AppState>>()
+        .set(crate::AppState::Lobby);
+    app.world_mut()
+        .resource_mut::<NextState<crate::AppMode>>()
+        .set(crate::AppMode::Lobby);
+    for _ in 0..10 {
+        app.update();
+    }
+    let seats = [
+        omdurman_types::Player::AngloEgyptian,
+        omdurman_types::Player::Dervish,
+    ]
+    .map(|faction| omdurman_net::Seat {
+        faction,
+        scope: None,
+        holder: omdurman_net::SeatHolder::Ai,
+    })
+    .to_vec();
+    app.world_mut()
+        .resource_mut::<crate::PendingEdits>()
+        .submit_game(omdurman_net::GameEvent::StartGame {
+            seats,
+            scenario: omdurman_types::Scenario::FallOfKhartoum,
+            optional_rules: Vec::new(),
+        });
+    let recorded = |app: &App| {
+        app.world()
+            .resource::<crate::game_record::GameRecorder>()
+            .record
+            .clone()
+            .expect("the game is recorded")
+    };
+    let shown = |app: &App| position(&app.world().resource::<crate::GameStateResource>().0);
+    let screen = |app: &App| *app.world().resource::<State<crate::Screen>>().get();
+    for _ in 0..400 {
+        app.update();
+    }
+    assert_eq!(screen(&app), crate::Screen::Board);
+
+    // The host in the menu: the AI plays on.
+    let before_menu = recorded(&app).events.len();
+    app.world_mut()
+        .resource_mut::<NextState<crate::AppMode>>()
+        .set(crate::AppMode::Menu);
+    for _ in 0..100 {
+        app.update();
+    }
+    assert_eq!(screen(&app), crate::Screen::Title);
+    assert!(
+        recorded(&app).events.len() > before_menu,
+        "the AI plays on while its host is in the menu"
+    );
+
+    // Back to the board, then into the review of the running game.
+    app.world_mut()
+        .resource_mut::<NextState<crate::AppMode>>()
+        .set(crate::AppMode::Game);
+    for _ in 0..4 {
+        app.update();
+    }
+    let reviewed = recorded(&app);
+    let len = reviewed.events.len();
+    assert!(len > 2 * crate::timeline::CHECKPOINT_EVERY, "{len} events");
+    app.world_mut()
+        .resource_mut::<crate::timeline::SpectatorTimeline>()
+        .open(reviewed.clone(), "current game".into());
+    app.world_mut()
+        .resource_mut::<NextState<crate::AppState>>()
+        .set(crate::AppState::Spectating);
+    for _ in 0..3 {
+        app.update();
+    }
+    assert_eq!(screen(&app), crate::Screen::Review);
+    assert!(
+        app.world()
+            .contains_resource::<crate::timeline::LiveStash>()
+    );
+    assert_eq!(shown(&app), position(&replayed(&reviewed, None)));
+
+    // Scrub: a jump back (afresh), steps forward, a jump onto a checkpoint
+    // and past one, the end.
+    let seek = |app: &mut App, cursor: usize| {
+        let mut timeline = app
+            .world_mut()
+            .resource_mut::<crate::timeline::SpectatorTimeline>();
+        timeline.cursor = cursor;
+        timeline.dirty = true;
+        app.update();
+    };
+    let every = crate::timeline::CHECKPOINT_EVERY;
+    for cursor in [
+        0,
+        1,
+        2,
+        len / 2,
+        len / 2 + 1,
+        every - 1,
+        every + 3,
+        5,
+        len - 1,
+        2 * every + 7,
+    ] {
+        seek(&mut app, cursor);
+        assert_eq!(
+            shown(&app),
+            position(&replayed(&reviewed, Some(cursor))),
+            "the review at event {cursor}"
+        );
+    }
+
+    // The session goes on underneath, and leaves the reviewed board alone.
+    for _ in 0..100 {
+        app.update();
+    }
+    assert!(
+        recorded(&app).events.len() > len,
+        "the AI plays on while its host reviews"
+    );
+    assert_eq!(
+        shown(&app),
+        position(&replayed(&reviewed, Some(2 * every + 7)))
+    );
+    // A history install replaces the record mid-review (a forced resync):
+    // the live state follows the installed line.
+    let mut installed = recorded(&app);
+    installed.events.truncate(len - 3);
+    app.world_mut()
+        .resource_mut::<crate::game_record::GameRecorder>()
+        .install_history(installed);
+    app.world_mut()
+        .resource_mut::<crate::timeline::SpectatorTimeline>()
+        .playing = true;
+    for _ in 0..20 {
+        app.update();
+    }
+
+    // Out of the review, as the menu's Game button leaves it.
+    {
+        let world = app.world_mut();
+        world
+            .resource_mut::<NextState<crate::AppMode>>()
+            .set(crate::AppMode::Game);
+        world
+            .resource_mut::<NextState<crate::AppState>>()
+            .set(crate::AppState::InGame);
+    }
+    app.update();
+    assert_eq!(screen(&app), crate::Screen::Board);
+    assert!(
+        !app.world()
+            .contains_resource::<crate::timeline::LiveStash>()
+    );
+    assert!(
+        app.world()
+            .resource::<crate::timeline::SpectatorTimeline>()
+            .record
+            .is_none(),
+        "the review is closed: playback cannot scrub the live game"
+    );
+    assert_eq!(shown(&app), position(&replayed(&recorded(&app), None)));
+    // ...and play goes on from there, consistently.
+    for _ in 0..60 {
+        app.update();
+        assert_eq!(shown(&app), position(&replayed(&recorded(&app), None)));
+    }
+}
+
 /// A counter displaced by a live move glides to its new hex; after a jump
 /// (`fx::SnapSprites`: a history install, a timeline seek) it lands at once
 /// instead, and the jump marker is consumed.
