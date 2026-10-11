@@ -707,8 +707,53 @@ fn wall_axis(state: &GameState, palace: HexCoord) -> Option<HexCoord> {
 /// `None` while no gate/breach lies near the axis (then the wave masses on
 /// the wall and waits for the guns).
 pub fn assault_corridor(state: &GameState) -> Option<HexCoord> {
+    corridor_of(state, assault_axis_wall(state)?)
+}
+
+/// The second column of the Fall of Khartoum assault: Ali Wad Helu's
+/// Kehena and Degheim, Osman Digna's Hadendowa and half the Mulazmin
+/// demonstrate against the gates of the south front while the main body
+/// takes the White Nile gap
+/// -- the city was attacked at more than one point that night, and a
+/// garrison watching its gates cannot strip them for the gap. Only where
+/// the board has a gap: else there is one axis and one column.
+fn second_column(state: &GameState, unit: &omdurman_rules::UnitPlacement) -> bool {
+    let tribe = match unit.profile.identity {
+        UnitIdentity::DervishTribal { tribe } => tribe,
+        _ => return false,
+    };
+    use omdurman_types::DervishTribe::*;
+    let with_the_column = match tribe {
+        Kehena | Degheim | Hadendowa => true,
+        // Every fourth counter of the Mulazmin.
+        Mulazmin => UnitId::ALL
+            .iter()
+            .position(|&id| id == unit.id)
+            .is_some_and(|i| i % 4 == 1),
+        _ => false,
+    };
+    with_the_column
+        && palace_hex(state).is_some_and(|p| crate::khartoum::wall_gap(state, p).is_some())
+}
+
+/// How far the second column stands off its gate: inside a day's rush of
+/// it, so the plugs it threatens stay put (see `kitchener_goal`).
+const SECOND_COLUMN_STANDOFF: u32 = 2;
+
+/// The axis of the column `unit` marches with: the gates of the south
+/// front for the second column, [`assault_axis_wall`] for the main body.
+fn column_axis(state: &GameState, unit: &omdurman_rules::UnitPlacement) -> Option<HexCoord> {
+    if second_column(state, unit) {
+        wall_axis(state, palace_hex(state)?)
+    } else {
+        assault_axis_wall(state)
+    }
+}
+
+/// The outside hex of the gate or breach nearest `axis` (or the gap's
+/// approach when `axis` is it): the corridor a column files through.
+fn corridor_of(state: &GameState, axis: HexCoord) -> Option<HexCoord> {
     let palace = palace_hex(state)?;
-    let axis = assault_axis_wall(state)?;
     if crate::khartoum::wall_gap(state, palace).is_some_and(|gap| gap.approach == axis) {
         return Some(axis);
     }
@@ -858,10 +903,10 @@ pub(crate) enum Goal {
     /// On this hex by the movement-point road: walls closed but at gates and
     /// breaches (§5.23), terrain costs (§5.11).
     March(HexCoord),
-    /// Next to this hex, closing on it straight: an assault on a line that
-    /// is not entered (the Zariba hedge, §9.231), where the road in would
-    /// lead round its ends.
-    Close(HexCoord),
+    /// `standoff` hexes from `target`, closing on it straight: an assault on
+    /// a line that is not entered (the Zariba hedge, §9.231), where the
+    /// road in would lead round its ends.
+    Close { target: HexCoord, standoff: u32 },
 }
 
 impl Goal {
@@ -898,7 +943,14 @@ impl Goal {
                 // Cut off from the goal: worse than any reachable hex.
                 None => -per_hex * 100,
             },
-            Goal::Close(goal) => -per_hex * (at.distance(goal) as i32 - 1).max(0),
+            Goal::Close { target, standoff } => {
+                let d = at.distance(target) as i32 - standoff as i32;
+                if d >= 0 {
+                    -per_hex * d
+                } else {
+                    per_hex * d / 2
+                }
+            }
         }
     }
 }
@@ -1053,7 +1105,7 @@ fn khalifa_position_value(
     value -= if palace.is_some() {
         let exposure = adjacent_enemy_fire(state, at, player);
         if night { exposure / 15 } else { exposure / 8 }
-    } else if matches!(goal, Some(Goal::Close(_))) {
+    } else if matches!(goal, Some(Goal::Close { .. })) {
         // The dawn assault on the Zariba (see `crate::battle_plan`) walks
         // into the fire it was sent into.
         lane_cost(state, at, player) / 8
@@ -1102,9 +1154,11 @@ fn kitchener_score(effect: &GameEffect, state: &GameState, player: Player) -> i3
             if on_city_line(state, p.position) {
                 s += 8;
             }
-            // The palace guard (§9.346), before the gates.
+            // The palace guard (§9.346), before the gates: riflemen, who
+            // melee (§7.4) -- a battery there is a hole in the guard.
             if Some(p.position) == palace
                 && combat_count_in(state, p.position, player) < PALACE_GUARD
+                && matches!(p.profile.kind, omdurman_types::UnitKind::Infantry { .. })
             {
                 s += 40;
             }
@@ -1401,7 +1455,11 @@ fn kitchener_goal(state: &GameState, unit_id: UnitId, player: Player) -> Option<
                 // walks into his hex (§9.346); a stack there must be
                 // meleed out first, whatever gate has fallen.
                 let guard = combat_count_in(state, palace, player);
-                if guard < PALACE_GUARD || (unit.position == palace && guard <= PALACE_GUARD) {
+                let rifleman =
+                    matches!(unit.profile.kind, omdurman_types::UnitKind::Infantry { .. });
+                if rifleman
+                    && (guard < PALACE_GUARD || (unit.position == palace && guard <= PALACE_GUARD))
+                {
                     return Some(Goal::Hex(palace));
                 }
                 let plug = gate_plug_vacancy(state, player, palace);
@@ -1590,7 +1648,7 @@ fn khalifa_score(effect: &GameEffect, state: &GameState, player: Player) -> i32 
                 })
                 .count() as i32;
             s += same_tribe.min(3) * 5;
-            let anchor = axis.or(palace);
+            let anchor = column_axis(state, p).or(palace);
             if let Some(a) = anchor {
                 let d = p.position.distance(a) as i32;
                 let weight = if p.profile.weapon == omdurman_rules::WeaponClass::Artillery {
@@ -1749,9 +1807,20 @@ fn khalifa_goal(state: &GameState, unit_id: UnitId, player: Player) -> Option<Go
         return Some(goal);
     }
     if let Some(palace) = palace_hex(state) {
-        let axis = assault_axis_wall(state);
+        // The second column holds the garrison at the gates of the south
+        // front -- close enough that the plugs dare not leave them -- while
+        // the main body goes in by the gap.
+        if second_column(state, unit)
+            && let Some(gate) = wall_axis(state, palace).and_then(|a| corridor_of(state, a))
+        {
+            return Some(Goal::Band {
+                target: gate,
+                standoff: SECOND_COLUMN_STANDOFF,
+            });
+        }
+        let axis = column_axis(state, unit);
         let is_guns = unit.profile.weapon == omdurman_rules::WeaponClass::Artillery;
-        let corridor = assault_corridor(state);
+        let corridor = axis.and_then(|a| corridor_of(state, a));
         // Already through the corridor line (or in across any open gate):
         // everything past this point is a footrace to GORDON (§9.346). The
         // gate is walkable (§5.23), so no melee is needed until a defender

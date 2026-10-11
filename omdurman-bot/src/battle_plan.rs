@@ -7,9 +7,11 @@
 //! lettered hexes of §9.212, the Zariba and the Kerreri detachment of
 //! §9.211):
 //!
-//! - **Dawn (turn 1).** The white flags and Sherif's red banner on the
-//!   Dervish right (Osman Azrak's assault; here Osman Digna's and Sherif's
-//!   commands, letters O and S) go straight at the Zariba. The Green Flag
+//! - **Dawn (turn 1).** Sherif's red banner and half the white flags on the
+//!   Dervish right (Osman Azrak's assault; here Sherif's and Osman Digna's
+//!   commands, letters S and O) go straight at the Zariba and are stopped
+//!   short of it; the rest of the white flags wait in the khor, and the
+//!   survivors fall back there on turn 2. The Green Flag
 //!   (Ali Wad Helu and Sheik El Din, letters A and D) swings north over the
 //!   Kerreri hills after the mounted troops at Kerreri. The Black Flag (the
 //!   Khalifa and Yakub, letters K and Y) waits behind Jebel Surgham. The
@@ -229,21 +231,24 @@ fn khalifa_historical_goal(state: &GameState, unit: &UnitPlacement) -> Option<Go
         // The dawn assault: straight at the hedge, the way a man walks --
         // not round by the river ends the Zariba is entered through
         // (§9.233).
-        (Flag::Red | Flag::White, 1) => state
-            .units
-            .iter()
-            .filter(|u| {
-                u.profile.identity.owner() == Player::AngloEgyptian
-                    && state.board.is_zariba(u.position)
-            })
-            .map(|u| u.position)
-            .min_by_key(|p| (p.distance(unit.position), p.q, p.r))
-            .map(Goal::Close)
-            .or_else(|| strike(one_move))
+        // The dawn assault: Sherif's men and half of Osman Digna's go
+        // straight at the hedge, the way a man walks -- not round by the
+        // river ends the Zariba is entered through (§9.233) -- and are
+        // stopped short of it, as Osman Azrak's were; the rest of the white
+        // flags stay in the khor.
+        (Flag::Red, 1) => dawn_assault(state, unit).unwrap_or(hold),
+        (Flag::White, 1) if in_the_dawn_assault(unit) => dawn_assault(state, unit).unwrap_or(hold),
+        (Flag::White, 1) => hold,
+        // After the dawn the survivors fall back out of the guns' reach to
+        // where they started; the khor's ambush springs on what comes near.
+        (Flag::White, _) => strike(KHOR_REACH)
+            .or_else(|| letter_hex(leader).map(Goal::Hex))
             .unwrap_or(hold),
-        (Flag::White, _) => strike(KHOR_REACH).unwrap_or(hold),
+        (Flag::Red, _) => strike(one_move)
+            .or_else(|| letter_hex(leader).map(Goal::Hex))
+            .unwrap_or(hold),
         (Flag::Black, 1) => hold,
-        (Flag::Black | Flag::Red, _) => strike(one_move).unwrap_or(hold),
+        (Flag::Black, _) => strike(one_move).unwrap_or(hold),
         // Turn 1: over the Kerreri hills after the mounted troops there.
         (Flag::Green, 1) => nearest_within(
             state,
@@ -257,6 +262,49 @@ fn khalifa_historical_goal(state: &GameState, unit: &UnitPlacement) -> Option<Go
         (Flag::Green, _) => strike(one_move).unwrap_or(hold),
     };
     Some(goal)
+}
+
+/// How close the dawn assault comes to the hedge: some 1,200 yards, about
+/// where the Zariba's fire broke Osman Azrak's men -- the edge of the
+/// rifles' normal range (§6.22). Measured in arena play, closer spends the
+/// assault for nothing; this far, it is still shot at hard, and falls back
+/// on turn 2 (see `khalifa_historical_goal`).
+const DAWN_ASSAULT_STANDOFF: u32 = 3;
+
+/// Whether `unit` of Osman Digna's command goes in with the dawn assault:
+/// every other counter of it, the rest held in the khor.
+fn in_the_dawn_assault(unit: &UnitPlacement) -> bool {
+    omdurman_rules::UnitId::ALL
+        .iter()
+        .position(|&id| id == unit.id)
+        .is_some_and(|i| i % 2 == 0)
+}
+
+/// The dawn assault's goal for `unit`: rifle range of the nearest Zariba
+/// stack, closed on straight.
+fn dawn_assault(state: &GameState, unit: &UnitPlacement) -> Option<Goal> {
+    state
+        .units
+        .iter()
+        .filter(|u| {
+            u.profile.identity.owner() == Player::AngloEgyptian && state.board.is_zariba(u.position)
+        })
+        .map(|u| u.position)
+        .min_by_key(|p| (p.distance(unit.position), p.q, p.r))
+        .map(|target| Goal::Close {
+            target,
+            standoff: DAWN_ASSAULT_STANDOFF,
+        })
+}
+
+/// The lettered set-up hex of `leader` (§9.212), on the printed map.
+fn letter_hex(leader: DervishLeader) -> Option<HexCoord> {
+    let letter = leader.setup_letter();
+    omdurman_rules::board_data::campaign_map_data()
+        .tiles
+        .iter()
+        .find(|(_, data)| data.setup_letter == Some(letter))
+        .map(|(&(q, r), _)| HexCoord::new(q, r))
 }
 
 /// A hex given in the board's printed columns and rows (`q`, and the row
