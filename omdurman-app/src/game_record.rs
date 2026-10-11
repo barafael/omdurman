@@ -543,38 +543,81 @@ pub struct SavedGame {
     pub meta: Option<GameMeta>,
 }
 
+/// A record file's identity for the metadata cache: modification time and
+/// length. A file that grew or was rewritten no longer matches.
+#[cfg(not(target_arch = "wasm32"))]
+type FileStamp = (Option<std::time::SystemTime>, u64);
+
+#[cfg(not(target_arch = "wasm32"))]
+fn file_stamp(path: &str) -> Option<FileStamp> {
+    let meta = std::fs::metadata(path).ok()?;
+    Some((meta.modified().ok(), meta.len()))
+}
+
 /// Cached list of saved games for the lobby sub-tab. Refreshed on entering the
 /// lobby (and by the tab's refresh button) rather than re-read + re-parsed every
 /// egui frame -- parsing every `game_*.jsonl` per frame would be wasteful. Stays
 /// empty on wasm, which has no saved-game files on disk.
+///
+/// The parsed metadata is cached per file and only re-parsed when the file's
+/// modification time or length changed: parsing every saved game on every
+/// lobby entry froze the lobby for a noticeable moment once a few dozen games
+/// had piled up.
 #[derive(Resource, Default)]
 pub struct SavedGamesCache {
     pub games: Vec<SavedGame>,
     /// Set once the cache has been populated at least once, so the UI can tell
     /// "not scanned yet" from "scanned, none found".
     pub loaded: bool,
+    /// Parsed metadata by record path, with the stamp it was parsed at.
+    #[cfg(not(target_arch = "wasm32"))]
+    parsed: std::collections::HashMap<String, (FileStamp, Option<GameMeta>)>,
 }
 
 impl SavedGamesCache {
-    /// (Re)scan [`GAMES_DIR`] and parse each file's metadata, newest first. A
-    /// no-op on wasm (no on-disk saved games).
+    /// (Re)scan [`GAMES_DIR`] and parse each new or changed file's metadata,
+    /// newest first. A no-op on wasm (no on-disk saved games).
     pub fn refresh(&mut self) {
         #[cfg(not(target_arch = "wasm32"))]
-        {
-            self.games = list_saved_games()
-                .into_iter()
-                .map(|(path, name)| {
+        self.refresh_in(GAMES_DIR);
+        self.loaded = true;
+    }
+
+    /// [`SavedGamesCache::refresh`] over `games_dir`; returns how many record
+    /// files had to be parsed (the rest came from the cache).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn refresh_in(&mut self, games_dir: &str) -> usize {
+        let mut parsed_now = 0;
+        let listed = list_saved_games_in(games_dir);
+        self.parsed
+            .retain(|path, _| listed.iter().any(|(listed, _)| listed == path));
+        self.games = listed
+            .into_iter()
+            .map(|(path, name)| {
+                let stamp = file_stamp(&path);
+                let cached = self
+                    .parsed
+                    .get(&path)
+                    .filter(|(at, _)| stamp.as_ref() == Some(at))
+                    .map(|(_, meta)| meta.clone());
+                let meta = cached.unwrap_or_else(|| {
+                    parsed_now += 1;
                     let meta = load_record_from_jsonl(&path)
                         .inspect_err(
                             |error| warn!(%error, %path, "failed to read saved-game metadata"),
                         )
                         .ok()
                         .map(|record| game_meta(&record));
-                    SavedGame { path, name, meta }
-                })
-                .collect();
-        }
+                    if let Some(stamp) = stamp {
+                        self.parsed.insert(path.clone(), (stamp, meta.clone()));
+                    }
+                    meta
+                });
+                SavedGame { path, name, meta }
+            })
+            .collect();
         self.loaded = true;
+        parsed_now
     }
 }
 
@@ -584,12 +627,13 @@ pub fn refresh_saved_games_on_lobby(mut cache: ResMut<SavedGamesCache>) {
     cache.refresh();
 }
 
-/// List saved games in [`GAMES_DIR`], newest first, as `(path, name)`: one
-/// `game_*/` directory per game, its record at `events.jsonl`. Returns an
-/// empty list if the directory is missing or unreadable.
+/// List saved games in `games_dir` (the app's is [`GAMES_DIR`]), newest
+/// first, as `(path, name)`: one `game_*/` directory per game, its record at
+/// `events.jsonl`. Returns an empty list if the directory is missing or
+/// unreadable.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn list_saved_games() -> Vec<(String, String)> {
-    let Ok(entries) = std::fs::read_dir(GAMES_DIR) else {
+fn list_saved_games_in(games_dir: &str) -> Vec<(String, String)> {
+    let Ok(entries) = std::fs::read_dir(games_dir) else {
         return Vec::new();
     };
     let mut games: Vec<(String, String)> = entries
@@ -743,6 +787,46 @@ mod tests {
         assert_eq!(disk.initial_state.seed, 3);
         assert_eq!(disk.events.len(), 1);
         assert_eq!(disk.events[0].payload, event(5));
+    }
+
+    /// Entering the lobby again does not re-parse every saved game: only
+    /// files that are new or changed since the last scan are read.
+    #[test]
+    fn saved_games_metadata_is_parsed_once_per_file_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let games = dir.path().to_str().unwrap();
+        let mut a = GameRecorder::init_in(games, 1);
+        a.push_event(&event(0), None, 0, Some(100));
+        let mut app = App::new();
+        app.insert_resource(a);
+        flush(&mut app);
+        let _b = GameRecorder::init_in(games, 2);
+        let mut cache = SavedGamesCache::default();
+        assert_eq!(cache.refresh_in(games), 2, "first scan parses both");
+        assert_eq!(cache.games.len(), 2);
+        assert_eq!(cache.refresh_in(games), 0, "unchanged: from the cache");
+        // The first game grows: only it is read again.
+        app.world_mut()
+            .resource_mut::<GameRecorder>()
+            .push_event(&event(1), None, 1, Some(101));
+        flush(&mut app);
+        assert_eq!(cache.refresh_in(games), 1);
+        let events: Vec<usize> = cache
+            .games
+            .iter()
+            .filter_map(|g| g.meta.as_ref().map(|m| m.events))
+            .collect();
+        assert!(events.contains(&2) && events.contains(&0), "{events:?}");
+        // A deleted game leaves the list (and the cache).
+        std::fs::remove_dir_all(
+            app.world()
+                .resource::<GameRecorder>()
+                .artifacts_dir()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(cache.refresh_in(games), 0);
+        assert_eq!(cache.games.len(), 1);
     }
 
     // D9: the seq / uid indices agree with the record.
