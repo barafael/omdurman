@@ -15,6 +15,12 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
     check_effect_coords(effect)?;
     let result = match effect {
         GameEffect::AdvancePhase => advance_phase(state),
+        GameEffect::AdvancePhaseFrom {
+            turn,
+            player,
+            phase,
+        } => advance_phase_from(state, *turn, *player, *phase),
+        GameEffect::RollDesertion { roll } => apply_roll_desertion(state, *roll),
         GameEffect::MoveUnit {
             unit_id,
             to,
@@ -143,6 +149,8 @@ fn check_hexside(side: &HexsideRef) -> Result<(), RuleError> {
 fn check_effect_coords(effect: &GameEffect) -> Result<(), RuleError> {
     match effect {
         GameEffect::AdvancePhase
+        | GameEffect::AdvancePhaseFrom { .. }
+        | GameEffect::RollDesertion { .. }
         | GameEffect::ResolveMelee
         | GameEffect::DervishDesertion { .. }
         | GameEffect::SinkChain { .. }
@@ -184,6 +192,21 @@ fn check_effect_coords(effect: &GameEffect) -> Result<(), RuleError> {
 // ---------------------------------------------------------------------------
 // 5) Phase advancement
 // ---------------------------------------------------------------------------
+
+/// [`advance_phase`], but only out of the stamped phase (rulebook §4): a
+/// stale request -- the phase it was meant to end has ended already -- is
+/// rejected instead of ending the next one.
+pub fn advance_phase_from(
+    state: &mut GameState,
+    turn: GameTurnIndex,
+    player: Player,
+    phase: Phase,
+) -> Result<(), RuleError> {
+    if state.current_turn != turn || state.active_player != player || state.phase != phase {
+        return Err(RuleError::PhaseAlreadyEnded);
+    }
+    advance_phase(state)
+}
 
 /// Advance the game state to the next phase (rulebook §4).
 pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {

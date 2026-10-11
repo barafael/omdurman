@@ -264,6 +264,16 @@ pub fn apply_dervish_desertion(
     if !state.desertion_due() {
         return Err(DesertionError::WrongTime.into());
     }
+    // A die already rolled on its own (`RollDesertion`) is the die.
+    if let Some(rolled) = state.desertion_roll
+        && rolled != roll
+    {
+        return Err(DesertionError::NotTheRolledDie {
+            rolled: rolled.value() as u8,
+            claimed: roll.value() as u8,
+        }
+        .into());
+    }
 
     // The count is fixed by the roll; the Dervish player chooses which units.
     let expected = state.desertion_demand(roll);
@@ -301,6 +311,26 @@ pub fn apply_dervish_desertion(
         roll,
     });
     state.dervish_deserted = true;
+    Ok(())
+}
+
+/// Roll the §8.2 desertion die ahead of the choice of deserters: once, and
+/// only while the desertion is due. The [`apply_dervish_desertion`] that
+/// follows must carry this roll.
+pub fn apply_roll_desertion(state: &mut GameState, roll: DieRoll) -> Result<(), RuleError> {
+    if state.dervish_deserted {
+        return Err(DesertionError::AlreadyDeserted.into());
+    }
+    if state.scenario != Scenario::Campaign {
+        return Err(DesertionError::WrongScenario.into());
+    }
+    if !state.desertion_due() {
+        return Err(DesertionError::WrongTime.into());
+    }
+    if state.desertion_roll.is_some() {
+        return Err(DesertionError::AlreadyRolled.into());
+    }
+    state.desertion_roll = Some(roll);
     Ok(())
 }
 

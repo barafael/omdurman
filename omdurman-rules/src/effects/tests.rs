@@ -11697,6 +11697,123 @@ mod tests {
         assert!(!state.desertion_due());
     }
 
+    // §8.2: the die may be rolled on its own, ahead of the choice of
+    // deserters, once; the desertion that follows must carry that die.
+    #[rulebook("§8.2")]
+    #[test]
+    fn a_rolled_desertion_die_is_the_die() {
+        let mut state = dervish_first_night_state();
+        let a = make_dervish_tribal(&mut state, HexCoord::new(1, 0));
+        let b = make_dervish_tribal(&mut state, HexCoord::new(2, 0));
+        let c = make_dervish_tribal(&mut state, HexCoord::new(3, 0));
+        apply_effect(
+            &mut state,
+            &GameEffect::RollDesertion { roll: DieRoll::Two },
+        )
+        .unwrap();
+        assert_eq!(state.desertion_roll, Some(DieRoll::Two));
+        // Once: a second roll is refused, the first stands.
+        assert!(matches!(
+            assert_rejected_untouched(&mut state, GameEffect::RollDesertion { roll: DieRoll::One }),
+            RuleError::Desertion(DesertionError::AlreadyRolled)
+        ));
+        assert_eq!(state.desertion_roll, Some(DieRoll::Two));
+        // The desertion carries the rolled die, not another.
+        assert!(matches!(
+            assert_rejected_untouched(
+                &mut state,
+                GameEffect::DervishDesertion {
+                    roll: DieRoll::One,
+                    deserters: vec![a, b],
+                }
+            ),
+            RuleError::Desertion(DesertionError::NotTheRolledDie {
+                rolled: 2,
+                claimed: 1
+            })
+        ));
+        apply_effect(
+            &mut state,
+            &GameEffect::DervishDesertion {
+                roll: DieRoll::Two,
+                deserters: vec![a, b, c],
+            },
+        )
+        .unwrap();
+        assert!(!state.desertion_due());
+        // Nor may the die be rolled when no desertion is due.
+        assert!(matches!(
+            assert_rejected_untouched(&mut state, GameEffect::RollDesertion { roll: DieRoll::Two }),
+            RuleError::Desertion(DesertionError::AlreadyDeserted)
+        ));
+        let mut day = playing(Scenario::Campaign);
+        assert!(matches!(
+            assert_rejected_untouched(&mut day, GameEffect::RollDesertion { roll: DieRoll::Two }),
+            RuleError::Desertion(DesertionError::WrongTime)
+        ));
+        let mut fok = playing(Scenario::FallOfKhartoum);
+        assert!(matches!(
+            assert_rejected_untouched(&mut fok, GameEffect::RollDesertion { roll: DieRoll::Two }),
+            RuleError::Desertion(DesertionError::WrongScenario)
+        ));
+    }
+
+    // §4: ending a phase stamped with the phase it ends is idempotent: a
+    // second request for the same phase (a double click, two teammates) is
+    // refused instead of ending the next phase.
+    #[rulebook("§4")]
+    #[test]
+    fn a_stale_end_phase_request_is_refused() {
+        let mut state = playing(Scenario::Campaign);
+        let stamp = |s: &GameState| GameEffect::AdvancePhaseFrom {
+            turn: s.current_turn,
+            player: s.active_player,
+            phase: s.phase,
+        };
+        let end_movement = stamp(&state);
+        apply_effect(&mut state, &end_movement).unwrap();
+        assert!(matches!(state.phase, Phase::DefensiveFire(_)));
+        // The same request again does not skip Defensive Fire.
+        let phase = state.phase;
+        assert!(matches!(
+            assert_rejected_untouched(&mut state, end_movement.clone()),
+            RuleError::PhaseAlreadyEnded
+        ));
+        assert_eq!(state.phase, phase);
+        // Each stamp field is checked: the phase, the phasing player, the turn.
+        for stale in [
+            GameEffect::AdvancePhaseFrom {
+                turn: state.current_turn,
+                player: state.active_player.opponent(),
+                phase: state.phase,
+            },
+            GameEffect::AdvancePhaseFrom {
+                turn: GameTurnIndex::new(state.current_turn.value() + 1),
+                player: state.active_player,
+                phase: state.phase,
+            },
+        ] {
+            assert!(matches!(
+                assert_rejected_untouched(&mut state, stale),
+                RuleError::PhaseAlreadyEnded
+            ));
+            assert_eq!(state.phase, phase);
+        }
+        // The current phase's stamp ends it, exactly like `AdvancePhase`.
+        let mut bare = state.clone();
+        apply_effect(&mut bare, &GameEffect::AdvancePhase).unwrap();
+        let request = stamp(&state);
+        apply_effect(&mut state, &request).unwrap();
+        assert_eq!(state.phase, bare.phase);
+        assert_eq!(state.active_player, bare.active_player);
+        // The engine's own refusals still apply behind the stamp.
+        let mut setup = GameState::new(Scenario::Campaign);
+        assert!(matches!(
+            assert_rejected_untouched(&mut setup, stamp(&GameState::new(Scenario::Campaign))),
+            RuleError::SetupIncomplete(_)
+        ));
+    }
+
     // §8.1: "all Anglo-Egyptian movement allowances are halved" -- the
     // gunboats' too.
     #[rulebook("§8.1")]

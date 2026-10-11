@@ -717,6 +717,43 @@ fn advance_phase_is_safe() {
     )
 )]
 #[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
+fn advance_phase_from_is_safe() {
+    let mut state = any_state();
+    with_pending_melee(&mut state);
+    with_vacated_hex(&mut state);
+    with_mine(&mut state);
+    with_chain(&mut state);
+    with_demolition(&mut state);
+    // Mostly the current phase's own stamp, else an arbitrary (stale) one.
+    let own = (state.current_turn, state.active_player, state.phase);
+    let (turn, player, phase) = biased(
+        (
+            GameTurnIndex::new(any_below(22) as u8 + 1),
+            any_player(),
+            any_phase(),
+        ),
+        || Some(own),
+    );
+    check(
+        state,
+        GameEffect::AdvancePhaseFrom {
+            turn,
+            player,
+            phase,
+        },
+    );
+}
+
+#[cfg_attr(kani, kani::proof)]
+#[cfg_attr(kani, kani::unwind(8))]
+#[cfg_attr(
+    kani,
+    kani::stub(
+        crate::unit_profiles::profile_for_unit,
+        crate::proof_palette::palette_profile
+    )
+)]
+#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn move_unit_is_safe() {
     let mut state = any_state();
     with_mine(&mut state);
@@ -986,6 +1023,10 @@ fn dervish_desertion_is_safe() {
         .map(|u| u.id)
         .collect();
     let demand = state.desertion_demand(roll).min(dervish.len());
+    // A die rolled ahead (`RollDesertion`): the same one, or another.
+    if any() {
+        state.desertion_roll = Some(if any() { roll } else { any_roll() });
+    }
     let effect = GameEffect::DervishDesertion {
         roll,
         deserters: biased(any_ids(3), || Some(dervish[..demand].to_vec())),
@@ -1434,7 +1475,7 @@ fn two_moves_keep_the_invariants() {
 // decoder that panics on a malformed packet is a remote crash.
 
 /// Number of effect kinds (`GameEffect` variants).
-const EFFECT_KINDS: usize = 21;
+const EFFECT_KINDS: usize = 23;
 
 /// An arbitrary effect of kind `kind` (variant order), built from the same
 /// payload generators as the safety harnesses.
@@ -1541,11 +1582,17 @@ fn any_effect(kind: usize) -> GameEffect {
         19 => GameEffect::ConfirmSetupReady {
             player: any_player(),
         },
-        _ => GameEffect::ArtilleryBreachWall {
+        20 => GameEffect::ArtilleryBreachWall {
             firers: any_ids(2),
             target: any_hexside(),
             roll: any_roll(),
         },
+        21 => GameEffect::AdvancePhaseFrom {
+            turn: GameTurnIndex::new(any_below(22) as u8 + 1),
+            player: any_player(),
+            phase: any_phase(),
+        },
+        _ => GameEffect::RollDesertion { roll: any_roll() },
     }
 }
 
@@ -1629,6 +1676,8 @@ fn kind_of(effect: &GameEffect) -> usize {
         GameEffect::PlaceChain { .. } => 18,
         GameEffect::ConfirmSetupReady { .. } => 19,
         GameEffect::ArtilleryBreachWall { .. } => 20,
+        GameEffect::AdvancePhaseFrom { .. } => 21,
+        GameEffect::RollDesertion { .. } => 22,
     }
 }
 
@@ -1735,12 +1784,46 @@ mod sample {
     }
 }
 
+#[cfg_attr(kani, kani::proof)]
+#[cfg_attr(kani, kani::unwind(8))]
+#[cfg_attr(
+    kani,
+    kani::stub(
+        crate::unit_profiles::profile_for_unit,
+        crate::proof_palette::palette_profile
+    )
+)]
+#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
+fn roll_desertion_is_safe() {
+    let mut state = any_state();
+    // The first night's Dervish movement phase of the Campaign (§8.2).
+    nudge(&mut state, |s| {
+        s.scenario = Scenario::Campaign;
+        s.phase = Phase::Movement;
+        s.active_player = Player::Dervish;
+        s.day_night = DayNight::Night;
+        s.dervish_deserted = false;
+        for turn in 1..=22 {
+            s.current_turn = GameTurnIndex::new(turn);
+            if s.desertion_due() {
+                break;
+            }
+        }
+    });
+    if any() {
+        state.desertion_roll = Some(any_roll());
+    }
+    check(state, GameEffect::RollDesertion { roll: any_roll() });
+}
+
 #[cfg(test)]
 mod sampled {
     use super::*;
 
     const SAFETY: &[(&str, fn())] = &[
         ("advance_phase_is_safe", advance_phase_is_safe),
+        ("advance_phase_from_is_safe", advance_phase_from_is_safe),
+        ("roll_desertion_is_safe", roll_desertion_is_safe),
         ("move_unit_is_safe", move_unit_is_safe),
         ("fire_combat_is_safe", fire_combat_is_safe),
         ("howitzer_fire_is_safe", howitzer_fire_is_safe),

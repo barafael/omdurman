@@ -137,9 +137,16 @@ fn pick_quote() -> Option<Quote> {
     pinned.or_else(|| quotes.choose(&mut rand::rng())).cloned()
 }
 
+/// Whether the title screen may come up for the backdrop texture's load
+/// `state`: once it has loaded -- or failed to, in which case the screen
+/// shows without the backdrop rather than "Loading…" forever.
+fn backdrop_settled(state: &LoadState) -> bool {
+    matches!(state, LoadState::Loaded | LoadState::Failed(_))
+}
+
 /// Flip the [`SplashData::loaded`] flag once the startup board texture has
-/// finished decoding. On first load completion, transitions to
-/// [`AppMode::Menu`] (the persistent hub).
+/// finished decoding (or failed to: see [`backdrop_settled`]). On first load
+/// completion, transitions to [`AppMode::Menu`] (the persistent hub).
 #[cfg_attr(target_arch = "wasm32", allow(unused_variables))]
 #[cfg_attr(target_arch = "wasm32", allow(unused_mut))]
 fn update_loaded(
@@ -160,10 +167,13 @@ fn update_loaded(
     if splash_data.loaded {
         return;
     }
-    let loaded = cache
+    let load_state = cache
         .and_then(|cache| cache.0.get("fall_of_khartoum_1885.webp").cloned())
-        .map(|handle| matches!(asset_server.load_state(&handle), LoadState::Loaded))
-        .unwrap_or(false);
+        .map(|handle| asset_server.load_state(&handle));
+    if let Some(LoadState::Failed(error)) = &load_state {
+        warn!(%error, "splash: the backdrop texture failed to load; showing the title screen without it");
+    }
+    let loaded = load_state.as_ref().is_some_and(backdrop_settled);
     if loaded {
         splash_data.loaded = true;
         // Dev affordance: open a recorded game straight into the spectator
@@ -256,6 +266,18 @@ enum Destination {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A backdrop that failed to load still lets the title screen up (it
+    /// showed "Loading…" forever); one still loading does not.
+    #[test]
+    fn a_failed_backdrop_does_not_hold_the_title_screen() {
+        assert!(backdrop_settled(&LoadState::Loaded));
+        assert!(backdrop_settled(&LoadState::Failed(std::sync::Arc::new(
+            bevy::asset::AssetLoadError::AssetMetaReadError
+        ))));
+        assert!(!backdrop_settled(&LoadState::Loading));
+        assert!(!backdrop_settled(&LoadState::NotLoaded));
+    }
 
     #[test]
     fn embedded_quotes_parse() {

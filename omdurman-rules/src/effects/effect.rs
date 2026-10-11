@@ -246,4 +246,26 @@ pub enum GameEffect {
         target: HexsideRef,
         roll: DieRoll,
     },
+
+    // -- Turn / phase flow (appended: postcard encodes the variant index) --
+    /// [`GameEffect::AdvancePhase`] stamped with the phase it ends (rulebook
+    /// §4): rejected with [`RuleError::PhaseAlreadyEnded`] unless the state
+    /// is still in `phase` of `turn` with `player` the phasing player. Ending
+    /// a phase is not idempotent otherwise: a double click, a held key or two
+    /// teammates within one round trip would each end *a* phase, skipping the
+    /// next one. The players' End Phase control submits this; the bare
+    /// `AdvancePhase` stays for saved games and the engine-side drivers.
+    AdvancePhaseFrom {
+        turn: GameTurnIndex,
+        player: Player,
+        phase: Phase,
+    },
+
+    /// Roll the §8.2 desertion die on its own, before the deserters are
+    /// chosen (rulebook §8.2): legal once, while the desertion is due; the
+    /// roll is kept in [`GameState::desertion_roll`] and the
+    /// [`GameEffect::DervishDesertion`] that follows must carry it. Rolled
+    /// first and recorded, the die survives a pause, a reload or a rejoin --
+    /// re-opening the desertion panel can no longer roll it again.
+    RollDesertion { roll: DieRoll },
 }

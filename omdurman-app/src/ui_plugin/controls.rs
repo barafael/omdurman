@@ -36,6 +36,59 @@ pub(crate) fn end_phase_preview(
     })
 }
 
+/// The End Phase request for the phase `gs` is in, stamped with it (§4): the
+/// engine refuses it once that phase has ended, so a second request for the
+/// same phase -- a double click, a teammate's click within the same round
+/// trip -- can never end the *next* phase too.
+pub(crate) fn end_phase_effect(
+    gs: &omdurman_rules::effects::GameState,
+) -> omdurman_rules::effects::GameEffect {
+    omdurman_rules::effects::GameEffect::AdvancePhaseFrom {
+        turn: gs.current_turn,
+        player: gs.active_player,
+        phase: gs.phase,
+    }
+}
+
+/// Whether `event` ends a phase (either End Phase effect).
+pub(crate) fn ends_phase(event: &omdurman_net::GameEvent) -> bool {
+    use omdurman_rules::effects::GameEffect;
+    matches!(
+        event,
+        omdurman_net::GameEvent::Effect(
+            GameEffect::AdvancePhase | GameEffect::AdvancePhaseFrom { .. }
+        )
+    )
+}
+
+/// Submit the End Phase request for the phase this peer's pending
+/// submissions lead to (see [`end_phase_effect`]).
+fn submit_end_phase(gs: &omdurman_rules::effects::GameState, pending: &mut crate::PendingEdits) {
+    let unconfirmed: Vec<omdurman_net::GameEvent> =
+        pending.unconfirmed.iter().map(|(_, e)| e.clone()).collect();
+    let projected = crate::submit::projected_state(gs, &unconfirmed);
+    pending.submit_game(omdurman_net::GameEvent::Effect(end_phase_effect(
+        &projected,
+    )));
+}
+
+/// `E` pressed this frame without modifiers: a fresh press only -- the key
+/// repeat of a held `E` must not end phase after phase.
+fn end_phase_hotkey(modifiers: egui::Modifiers, events: &[egui::Event]) -> bool {
+    modifiers.is_none()
+        && events.iter().any(|e| {
+            matches!(
+                e,
+                egui::Event::Key {
+                    key: egui::Key::E,
+                    pressed: true,
+                    repeat: false,
+                    ..
+                }
+            )
+        })
+}
+
 /// The memoized End-Phase dry run ([`end_phase_button`]): the pending-queue
 /// length it was derived against and the label/refusal it produced.
 /// Invalidate on engine-state change via the caller's `state_moved` flag.
@@ -88,6 +141,38 @@ pub(crate) fn game_control_section(
         // Each player ends their *own* turn: the End Phase button is shown only
         // to whoever controls the active faction.
         end_phase_button(ui, state, pending, extras.allocation, state_moved);
+    }
+}
+
+/// Clear every teammate's setup-ready flag (`Ephemeral::SetupReady`) when a
+/// new game begins: the flags live on the peer entities, which outlive the
+/// game, so a teammate's "ready" from the last game's set-up would otherwise
+/// count in the next one -- and the faction's `ConfirmSetupReady` would go
+/// out before that teammate had deployed anything. A game is told apart by
+/// its `StartGame` ([`crate::scenario_setup::start_game_key`]), so a history
+/// install or rebuild of the *same* game keeps the flags (a reconnecting
+/// teammate re-announces theirs anyway).
+pub(crate) fn reset_peer_ready_on_new_game(
+    mut commands: Commands,
+    recorder: Res<crate::game_record::GameRecorder>,
+    flags: Query<Entity, With<crate::peers::SetupReadyFlag>>,
+    mut last: Local<Option<crate::scenario_setup::StartGameKey>>,
+) {
+    if !recorder.is_changed() {
+        return;
+    }
+    let key = recorder
+        .record
+        .as_ref()
+        .and_then(crate::scenario_setup::start_game_key);
+    if key.is_none() || key == *last {
+        return;
+    }
+    *last = key;
+    for entity in &flags {
+        commands
+            .entity(entity)
+            .remove::<crate::peers::SetupReadyFlag>();
     }
 }
 
@@ -160,6 +245,14 @@ fn end_phase_button(
         }
     };
     let current = crate::ui_phase_state::UiPhaseState::derive(&state.0).phase_label();
+    // One End Phase at a time: while ours is unconfirmed the button waits for
+    // its echo (the label above already projects over it), so a double
+    // click or a held key cannot skip the next phase.
+    if pending.unconfirmed.iter().any(|(_, e)| ends_phase(e)) {
+        ui.add_enabled(false, egui::Button::new("Ending phase\u{2026}"))
+            .on_disabled_hover_text(format!("Ending {current}; waiting for the host."));
+        return;
+    }
     let next = match next {
         Ok(next) => next,
         Err(reason) => {
@@ -208,9 +301,7 @@ fn end_phase_button(
                 allocation.panel_open = false;
             }
             crate::ui_trace::button("End Phase (discard allocations)");
-            pending.submit_game(omdurman_net::GameEvent::Effect(
-                omdurman_rules::effects::GameEffect::AdvancePhase,
-            ));
+            submit_end_phase(&state.0, pending);
         } else if keep.clicked() {
             ui.data_mut(|d| d.remove::<String>(armed_id));
         }
@@ -219,7 +310,7 @@ fn end_phase_button(
     // `E` ends the phase like a click (it arms the same discard confirm
     // when attacks are staged); never while a text field has the keyboard.
     let hotkey = !ui.ctx().egui_wants_keyboard_input()
-        && ui.input(|i| i.modifiers.is_none() && i.key_pressed(egui::Key::E));
+        && ui.input(|i| end_phase_hotkey(i.modifiers, &i.events));
     if ui
         .button(format!("End phase \u{2192} {next}  (E)"))
         .on_hover_text(hover)
@@ -230,9 +321,7 @@ fn end_phase_button(
             ui.data_mut(|d| d.insert_temp(armed_id, phase_key));
         } else {
             crate::ui_trace::button("End Phase");
-            pending.submit_game(omdurman_net::GameEvent::Effect(
-                omdurman_rules::effects::GameEffect::AdvancePhase,
-            ));
+            submit_end_phase(&state.0, pending);
         }
     }
 }
@@ -690,7 +779,8 @@ pub(crate) fn telegram_overlay(
 
 #[cfg(test)]
 mod tests {
-    use super::end_phase_preview;
+    use super::{end_phase_effect, end_phase_hotkey, end_phase_preview, ends_phase};
+    use bevy_egui::egui;
     use omdurman_net::GameEvent;
     use omdurman_rules::Phase;
     use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
@@ -718,6 +808,39 @@ mod tests {
         assert!(label.starts_with(expected), "{label} vs {expected}");
         // The live state is untouched by the dry run.
         assert!(matches!(gs.phase, Phase::OffensiveFire(_)));
+    }
+
+    /// End Phase is stamped with the phase it ends: the same request twice
+    /// (a double click, a teammate within one round trip) ends one phase,
+    /// never the next one too (§4).
+    #[test]
+    fn a_repeated_end_phase_request_ends_one_phase() {
+        let mut gs = GameState::new(Scenario::Campaign);
+        gs.phase = Phase::Movement;
+        let request = end_phase_effect(&gs);
+        assert!(ends_phase(&GameEvent::Effect(request.clone())));
+        apply_effect(&mut gs, &request).unwrap();
+        let after_one = gs.phase;
+        assert!(apply_effect(&mut gs, &request).is_err());
+        assert_eq!(gs.phase, after_one, "the next phase is not skipped");
+    }
+
+    /// Only a fresh press of `E` ends the phase; the key repeat of a held
+    /// key does not.
+    #[test]
+    fn a_held_e_ends_the_phase_once() {
+        let key = |repeat| egui::Event::Key {
+            key: egui::Key::E,
+            physical_key: None,
+            pressed: true,
+            repeat,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let none = egui::Modifiers::NONE;
+        assert!(end_phase_hotkey(none, &[key(false)]));
+        assert!(!end_phase_hotkey(none, &[key(true)]));
+        assert!(!end_phase_hotkey(none, &[]));
+        assert!(!end_phase_hotkey(egui::Modifiers::CTRL, &[key(false)]));
     }
 
     #[test]

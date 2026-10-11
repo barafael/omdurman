@@ -100,6 +100,7 @@ impl Plugin for UiPlugin {
                     update_hex_coord_display,
                     crate::scenario_setup::auto_trigger_scenario_setup
                         .run_if(bevy::prelude::in_state(crate::AppState::InGame)),
+                    controls::reset_peer_ready_on_new_game,
                 ),
             )
             .add_systems(
@@ -125,8 +126,8 @@ impl Plugin for UiPlugin {
                                 .or_else(crate::ui_phase_state::in_offensive_fire_phase),
                         ),
                         // §6.63 artillery breach: fire-phase sibling of the
-                        // Movement-phase special-actions card — one battery,
-                        // the wall hexsides it can reach.
+                        // Movement-phase special-actions card — the selected
+                        // battery (others may join), the walls it can reach.
                         artillery_breach_ui.run_if(
                             crate::ui_phase_state::in_defensive_fire_phase
                                 .or_else(crate::ui_phase_state::in_offensive_fire_phase),

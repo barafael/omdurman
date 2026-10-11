@@ -161,6 +161,12 @@ pub struct GameState {
     /// (§8.2). Prevents re-applying the desertion effect.
     #[serde(default)]
     pub dervish_deserted: bool,
+    /// The §8.2 desertion die once rolled by [`GameEffect::RollDesertion`]
+    /// ahead of the choice of deserters: the `DervishDesertion` must carry
+    /// this roll. `None` until rolled (and in records from before the roll
+    /// was its own effect, whose `DervishDesertion` carries the die alone).
+    #[serde(default)]
+    pub desertion_roll: Option<DieRoll>,
     /// The Dervish units that deserted (§8.2): off the board for good like
     /// the eliminated, but no casualties -- they scored nothing and are
     /// listed apart. A deserter never re-enters as a reinforcement.
@@ -277,6 +283,7 @@ impl GameState {
             board: Arc::new(BoardInfo::default()),
             breaches: BTreeSet::new(),
             dervish_deserted: false,
+            desertion_roll: None,
             deserted: Vec::new(),
             pending_melee: None,
             gordon_eliminated_turn: None,
@@ -541,6 +548,7 @@ impl GameState {
             board: Arc::new(BoardInfo::default()),
             breaches: BTreeSet::new(),
             dervish_deserted: false,
+            desertion_roll: None,
             deserted: Vec::new(),
             pending_melee: None,
             gordon_eliminated_turn: None,

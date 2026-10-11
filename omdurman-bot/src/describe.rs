@@ -156,7 +156,11 @@ fn describe_friendlies(a: &FriendliesAction) -> String {
 /// unit positions reflect where the action started.
 pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
     match effect {
-        GameEffect::AdvancePhase => format!("AdvancePhase (end {})", state.phase.top_level_name()),
+        // The stamped End Phase reads the same: the audit's phase epochs key
+        // on the "AdvancePhase" prefix.
+        GameEffect::AdvancePhase | GameEffect::AdvancePhaseFrom { .. } => {
+            format!("AdvancePhase (end {})", state.phase.top_level_name())
+        }
 
         GameEffect::MoveUnit {
             unit_id,
@@ -326,6 +330,7 @@ pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
             hexside_str(*target),
             roll.value()
         ),
+        GameEffect::RollDesertion { roll } => format!("RollDesertion roll {}", roll.value()),
     }
 }
 

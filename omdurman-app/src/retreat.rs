@@ -36,15 +36,33 @@ pub(crate) fn selected_threatened_unit(
 }
 
 /// The first unit at `hex` that may retreat before the pending melee (§7.5),
-/// as the engine judges it. Lets the defender -- who is not the phase player
-/// and so cannot select through the picker -- pick the unit by clicking the
-/// threatened hex.
+/// as the engine judges it (see [`retreat_candidates_at`]).
 pub(crate) fn retreat_candidate_at(gs: &GameState, hex: HexCoord) -> Option<UnitId> {
+    retreat_candidates_at(gs, hex).first().copied()
+}
+
+/// Every unit at `hex` that may retreat before the pending melee (§7.5), as
+/// the engine judges it, in board order. Lets the defender -- who is not the
+/// phase player and so cannot select through the picker -- pick the unit by
+/// clicking the threatened hex; each further click moves on to the next.
+pub(crate) fn retreat_candidates_at(gs: &GameState, hex: HexCoord) -> Vec<UnitId> {
     gs.units
         .iter()
         .filter(|u| u.position == hex)
         .map(|u| u.id)
-        .find(|&unit| !valid_retreat_hexes(unit, gs).is_empty())
+        .filter(|&unit| !valid_retreat_hexes(unit, gs).is_empty())
+        .collect()
+}
+
+/// The candidate a click on the threatened hex selects: the one after the
+/// currently selected candidate (wrapping), or the first -- so repeated
+/// clicks walk through every unit that may retreat, not only the first.
+fn next_retreat_candidate(candidates: &[UnitId], current: Option<UnitId>) -> Option<UnitId> {
+    let at = current.and_then(|c| candidates.iter().position(|&u| u == c));
+    match at {
+        Some(i) => candidates.get((i + 1) % candidates.len()).copied(),
+        None => candidates.first().copied(),
+    }
 }
 
 /// Bundle of the read-only picker state + the placed-units query so
@@ -166,7 +184,9 @@ pub fn handle_retreat(
     if !peers.may_act(gs.0.active_player.opponent()) {
         return;
     }
-    if let Some(candidate) = retreat_candidate_at(&gs.0, to)
+    let candidates = retreat_candidates_at(&gs.0, to);
+    let current = selected_threatened_unit(&state, &placed_units, &gs.0);
+    if let Some(candidate) = next_retreat_candidate(&candidates, current)
         && let Some((source, _)) = placed_units
             .iter()
             .find(|(_, p)| p.unit_id == Some(candidate))
@@ -192,4 +212,32 @@ pub fn handle_retreat(
         GameEvent::Effect(GameEffect::RetreatBeforeMelee { unit_id: unit, to }),
     );
     *state = PickerState::Idle;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Clicking the threatened hex again moves on to the next unit that may
+    /// retreat (wrapping), so any of them can be chosen -- not only the
+    /// first in the hex.
+    #[test]
+    fn repeated_clicks_walk_every_retreat_candidate() {
+        let (a, b, c) = (
+            UnitId::Baggara_0_0,
+            UnitId::Baggara_0_1,
+            UnitId::Baggara_1_0,
+        );
+        let all = [a, b, c];
+        assert_eq!(next_retreat_candidate(&all, None), Some(a));
+        assert_eq!(next_retreat_candidate(&all, Some(a)), Some(b));
+        assert_eq!(next_retreat_candidate(&all, Some(b)), Some(c));
+        assert_eq!(next_retreat_candidate(&all, Some(c)), Some(a));
+        // A selection elsewhere starts at the first.
+        assert_eq!(
+            next_retreat_candidate(&all, Some(UnitId::Taiasha_0_0)),
+            Some(a)
+        );
+        assert_eq!(next_retreat_candidate(&[], Some(a)), None);
+    }
 }

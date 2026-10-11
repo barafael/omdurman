@@ -312,6 +312,154 @@ pub(crate) fn special_actions_ui(
     );
 }
 
+/// How many of the ten die rolls make `effect` succeed, by the engine's own
+/// resolution: `effect` is applied to a copy of the state once per roll
+/// (`with_roll` stamps the roll in) and `succeeded` reads the outcome off
+/// the result. The odds a card shows are therefore exactly the engine's --
+/// factors, range bands, the §6.24 modifier and the CRT threshold.
+fn rolls_in_ten(
+    gs: &omdurman_rules::effects::GameState,
+    with_roll: impl Fn(omdurman_rules::DieRoll) -> omdurman_rules::effects::GameEffect,
+    succeeded: impl Fn(&omdurman_rules::effects::GameState) -> bool,
+) -> u8 {
+    let mut base = gs.clone();
+    base.observations.clear();
+    (1u16..=10)
+        .filter(|&raw| {
+            let roll = omdurman_rules::DieRoll::try_from(raw).expect("1..=10 is a die roll");
+            let mut probe = base.clone();
+            omdurman_rules::effects::apply_effect(&mut probe, &with_roll(roll)).is_ok()
+                && succeeded(&probe)
+        })
+        .count() as u8
+}
+
+/// The odds, as a card reads them: "breaches it on 4 in 10" / "cannot
+/// breach it".
+fn odds_label(rolls: u8, verb: &str, verbs: &str) -> String {
+    match rolls {
+        0 => format!("cannot {verb} it"),
+        10 => format!("{verbs} it on any roll"),
+        n => format!("{verbs} it on {n} in 10"),
+    }
+}
+
+/// What the breach card offers one set of batteries -- the selected `lead`
+/// plus the joined ones, combining their fire into one shot (§6.14; the
+/// engine sums each battery's banded factor onto one CRT row, §6.63 /
+/// §10.23 b).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct BreachOffer {
+    /// Other undisrupted, unfired batteries of the firing side this peer
+    /// commands that may join the shot (each can reach the chain or one of
+    /// the lead's walls).
+    pub partners: Vec<omdurman_rules::UnitId>,
+    /// Walls every firer may fire at, nearest to the lead first: (edge, the
+    /// lead's range, die rolls in ten that breach it).
+    pub walls: Vec<(omdurman_types::HexsideRef, u16, u8)>,
+    /// The river chain, when every firer may fire at it: (the lead's range,
+    /// die rolls in ten that sink it).
+    pub chain: Option<(u16, u8)>,
+}
+
+/// A battery that may fire a §6.63 / §10.23 b shot in this sub-phase.
+fn is_ready_battery(
+    gs: &omdurman_rules::effects::GameState,
+    unit: &omdurman_rules::UnitPlacement,
+) -> bool {
+    use omdurman_rules::WeaponClass;
+    unit.profile.identity.owner() == gs.phase_player()
+        && !unit.state.disrupted
+        && matches!(
+            unit.profile.weapon,
+            WeaponClass::Artillery | WeaponClass::Howitzer
+        )
+        && !gs.units_fired_this_phase.contains(&unit.id)
+}
+
+/// Derive the [`BreachOffer`] for `lead` + `joined` from the engine.
+/// `lead_walls` are the walls the lead battery reaches (from the
+/// `FireTargetCache`); `commands` says which units this peer may order.
+pub(crate) fn breach_offer(
+    gs: &omdurman_rules::effects::GameState,
+    lead: omdurman_rules::UnitId,
+    joined: &[omdurman_rules::UnitId],
+    lead_walls: &[(omdurman_types::HexsideRef, u16)],
+    commands: impl Fn(&omdurman_rules::UnitIdentity) -> bool,
+) -> BreachOffer {
+    use omdurman_rules::effects::{GameEffect, Observation};
+    let lead_chain = gs.can_fire_at_chain(lead).ok();
+    let partners = gs
+        .units
+        .iter()
+        .filter(|u| u.id != lead && is_ready_battery(gs, u) && commands(&u.profile.identity))
+        .filter(|u| {
+            (lead_chain.is_some() && gs.can_fire_at_chain(u.id).is_ok())
+                || lead_walls
+                    .iter()
+                    .any(|(edge, _)| gs.can_fire_at_wall(u.id, *edge).is_ok())
+        })
+        .map(|u| u.id)
+        .collect();
+    let firers: Vec<omdurman_rules::UnitId> = std::iter::once(lead)
+        .chain(joined.iter().copied())
+        .collect();
+    let walls = lead_walls
+        .iter()
+        .filter(|(edge, _)| {
+            joined
+                .iter()
+                .all(|&id| gs.can_fire_at_wall(id, *edge).is_ok())
+        })
+        .map(|&(edge, range)| {
+            let odds = rolls_in_ten(
+                gs,
+                |roll| GameEffect::ArtilleryBreachWall {
+                    firers: firers.clone(),
+                    target: edge,
+                    roll,
+                },
+                |probe| {
+                    probe
+                        .observations
+                        .iter()
+                        .any(|o| matches!(o, Observation::WallBreached { breached: true, .. }))
+                },
+            );
+            (edge, range, odds)
+        })
+        .collect();
+    let chain = lead_chain
+        .filter(|_| joined.iter().all(|&id| gs.can_fire_at_chain(id).is_ok()))
+        .map(|(_, range, _)| {
+            let odds = rolls_in_ten(
+                gs,
+                |roll| GameEffect::SinkChain {
+                    firers: firers.clone(),
+                    roll,
+                },
+                |probe| probe.chain.as_ref().is_some_and(|c| c.sunk),
+            );
+            (range.value(), odds)
+        });
+    BreachOffer {
+        partners,
+        walls,
+        chain,
+    }
+}
+
+/// The breach card's memo: the battery set it was derived for (the lead,
+/// the joined batteries) and the derived offer -- re-derived on an
+/// engine-state change or a change of the set, since every odds figure runs
+/// the engine over the ten rolls.
+#[derive(Default)]
+pub(crate) struct BreachCardMemo {
+    lead: Option<omdurman_rules::UnitId>,
+    joined: Vec<omdurman_rules::UnitId>,
+    offer: Option<BreachOffer>,
+}
+
 #[allow(clippy::too_many_arguments)]
 /// §6.63 Artillery Breach: with an artillery/howitzer unit selected during a
 /// fire sub-phase, list every Wall hexside the engine's `can_fire_at_wall`
@@ -320,7 +468,9 @@ pub(crate) fn special_actions_ui(
 /// the breach on the echo — the button is an attempt, not a promise. This is
 /// the attacker's standard way into the walled city (the Royal Engineers'
 /// §6.53 demolition is the other), so it is the one fire action that targets
-/// a *hexside* rather than a hex.
+/// a *hexside* rather than a hex. Other batteries may join the shot (§6.14
+/// combined fire): their factors add up on one CRT row, and every target
+/// shows the engine's odds for the batteries chosen.
 pub(crate) fn artillery_breach_ui(
     mut contexts: EguiContexts,
     game_state: Option<Res<crate::GameStateResource>>,
@@ -333,8 +483,8 @@ pub(crate) fn artillery_breach_ui(
     mut fire_targets: ResMut<crate::fire::FireTargetCache>,
     mut aimed: ResMut<crate::hexside_layer::HighlightedHexside>,
     view: crate::picker::HexMapView,
+    mut memo: Local<BreachCardMemo>,
 ) {
-    use omdurman_rules::WeaponClass;
     use omdurman_rules::effects::GameEffect;
 
     // Cleared every frame; a hovered wall button below sets it again.
@@ -357,16 +507,7 @@ pub(crate) fn artillery_breach_ui(
     let Some(unit) = gs.0.find_unit(uid) else {
         return;
     };
-    if unit.profile.identity.owner() != firing_player || unit.state.disrupted {
-        return;
-    }
-    if !matches!(
-        unit.profile.weapon,
-        WeaponClass::Artillery | WeaponClass::Howitzer
-    ) {
-        return;
-    }
-    if gs.0.units_fired_this_phase.contains(&uid) {
+    if !is_ready_battery(&gs.0, unit) {
         return;
     }
 
@@ -374,20 +515,58 @@ pub(crate) fn artillery_breach_ui(
     // (Engine re-validates on the echo; this list is just the clickable set.)
     // Cached per (battery, state) — see `FireTargetCache` — since each
     // `can_fire_at_wall` runs a LOS sweep over every wall on the board.
-    let targets: Vec<(omdurman_types::HexsideRef, u16)> =
-        fire_targets.wall_targets(&gs.0, uid).to_vec();
-    // §10.23 b: British artillery may fire at the river chain.
-    let chain = gs.0.can_fire_at_chain(uid).ok();
-    // No card when no wall (or chain) is in range: it would offer nothing
-    // (every gunboat and battery far from the walls used to get one).
-    if !targets.iter().any(|(_, range)| *range != u16::MAX) && chain.is_none() {
-        return;
-    }
-
-    let in_reach: Vec<(omdurman_types::HexsideRef, u16)> = targets
+    let in_reach: Vec<(omdurman_types::HexsideRef, u16)> = fire_targets
+        .wall_targets(&gs.0, uid)
         .iter()
         .copied()
         .filter(|(_, range)| *range != u16::MAX)
+        .collect();
+    // §10.23 b: British artillery may fire at the river chain.
+    // No card when no wall (or chain) is in range: it would offer nothing
+    // (every gunboat and battery far from the walls used to get one).
+    if in_reach.is_empty() && gs.0.can_fire_at_chain(uid).is_err() {
+        return;
+    }
+
+    // A new lead battery starts a fresh shot.
+    if memo.lead != Some(uid) {
+        *memo = BreachCardMemo {
+            lead: Some(uid),
+            ..Default::default()
+        };
+    }
+    if gs.is_changed() {
+        memo.offer = None;
+    }
+    let offer = match memo.offer.clone() {
+        Some(offer) => offer,
+        None => {
+            // Drop joined batteries that can no longer fire (one fired, was
+            // disrupted, or left the board).
+            let still_ready: Vec<_> = memo
+                .joined
+                .iter()
+                .copied()
+                .filter(|id| {
+                    gs.0.find_unit(*id)
+                        .is_some_and(|u| is_ready_battery(&gs.0, u))
+                })
+                .collect();
+            memo.joined = still_ready;
+            let offer = breach_offer(&gs.0, uid, &memo.joined, &in_reach, |identity| {
+                peers.scope_allows(identity)
+            });
+            memo.offer = Some(offer.clone());
+            offer
+        }
+    };
+    let mut joined = memo.joined.clone();
+    let firers: Vec<omdurman_rules::UnitId> =
+        std::iter::once(uid).chain(joined.iter().copied()).collect();
+    let walls_in_reach: Vec<(omdurman_types::HexsideRef, u16)> = offer
+        .walls
+        .iter()
+        .map(|&(edge, range, _)| (edge, range))
         .collect();
     let Ok(ctx) = contexts.ctx_mut() else { return };
     crate::ui::stacked_card(
@@ -406,43 +585,80 @@ pub(crate) fn artillery_breach_ui(
             ui.label(
                 crate::ui::text::note("Fire at a wall: a combat result of 2 or more breaches it and eliminates one enemy unit beside it."),
             );
-            ui.add_space(2.0);
-            if let Some((_, range, hex)) = chain {
-                let _ = hex;
-                let button = ui.small_button(format!(
-                    "The river chain \u{00b7} range {} \u{00b7} 3+ sinks it (§10.23)",
-                    range.value()
+            if !offer.partners.is_empty() {
+                ui.add_space(2.0);
+                ui.label(crate::ui::text::note(
+                    "Batteries joining the shot (§6.14 combined fire):",
                 ));
+                for &partner in &offer.partners {
+                    let mut on = joined.contains(&partner);
+                    let name = crate::combat_ui::unit_name(partner, Some(&gs.0));
+                    if ui.checkbox(&mut on, name).changed() {
+                        if on {
+                            joined.push(partner);
+                        } else {
+                            joined.retain(|id| *id != partner);
+                        }
+                    }
+                }
+            }
+            ui.add_space(2.0);
+            if let Some((range, odds)) = offer.chain {
+                let button = ui
+                    .add_enabled(
+                        odds > 0,
+                        egui::Button::new(format!(
+                            "The river chain \u{00b7} range {range} \u{00b7} {} (§10.23)",
+                            odds_label(odds, "sink", "sinks")
+                        ))
+                        .small(),
+                    )
+                    .on_disabled_hover_text(
+                        "No roll gives these batteries the combat result of 3 that sinks the chain: add batteries or close the range.",
+                    );
                 if button.clicked() {
                     submit.submit(
                         &gs.0,
                         omdurman_net::GameEvent::Effect(GameEffect::SinkChain {
-                            firers: vec![uid],
+                            firers: firers.clone(),
                             roll: game_rng.roll_d10(),
                         }),
                     );
                 }
             }
             let mut fire_at: Option<omdurman_types::HexsideRef> = None;
-            for (number, (edge, range)) in in_reach.iter().enumerate() {
+            for (number, &(edge, range, odds)) in offer.walls.iter().enumerate() {
                 let label = format!(
-                    "{} \u{00b7} {} \u{00b7} range {range}",
+                    "{} \u{00b7} {} \u{00b7} range {range} \u{00b7} {}",
                     number + 1,
-                    compass(unit.position, *edge, &view)
+                    compass(unit.position, edge, &view),
+                    odds_label(odds, "breach", "breaches")
                 );
-                let button = ui.small_button(label);
+                let button = ui
+                    .add_enabled(odds > 0, egui::Button::new(label).small())
+                    .on_disabled_hover_text(
+                        "No roll gives these batteries the combat result of 2 that breaches the wall: add batteries or close the range.",
+                    );
                 if button.hovered() {
-                    aimed.set_if_neq(crate::hexside_layer::HighlightedHexside(Some(*edge)));
+                    aimed.set_if_neq(crate::hexside_layer::HighlightedHexside(Some(edge)));
                 }
                 if button.clicked() {
-                    fire_at = Some(*edge);
+                    fire_at = Some(edge);
                 }
             }
-            ui.label(crate::ui::text::note(
-                "Or click a numbered wall on the map.",
-            ));
-            // The numbered badges on the board, clickable like the buttons.
-            if let Some(edge) = wall_badges(ui.ctx(), &in_reach, &view, &mut aimed) {
+            if !offer.walls.is_empty() {
+                ui.label(crate::ui::text::note(
+                    "Or click a numbered wall on the map.",
+                ));
+            }
+            // The numbered badges on the board, clickable like the buttons
+            // (a wall the batteries cannot breach stays inert).
+            if let Some(edge) = wall_badges(ui.ctx(), &walls_in_reach, &view, &mut aimed)
+                && offer
+                    .walls
+                    .iter()
+                    .any(|&(e, _, odds)| e == edge && odds > 0)
+            {
                 fire_at = Some(edge);
             }
             if let Some(edge) = fire_at {
@@ -452,7 +668,7 @@ pub(crate) fn artillery_breach_ui(
                 submit.submit(
                     &gs.0,
                     omdurman_net::GameEvent::Effect(GameEffect::ArtilleryBreachWall {
-                        firers: vec![uid],
+                        firers: firers.clone(),
                         target: edge,
                         roll,
                     }),
@@ -460,6 +676,10 @@ pub(crate) fn artillery_breach_ui(
             }
         },
     );
+    if joined != memo.joined {
+        memo.joined = joined;
+        memo.offer = None;
+    }
 }
 
 // -- Top bar (cross-cutting) -------------------------------------------------
@@ -678,4 +898,93 @@ fn wall_badges(
             });
     }
     clicked
+}
+
+#[cfg(test)]
+mod breach_offer_tests {
+    use super::*;
+    use omdurman_rules::effects::GameState;
+    use omdurman_rules::{FireSubPhase, Phase, UnitId, UnitPlacement, UnitState, WeaponClass};
+    use omdurman_types::{HexCoord, HexsideKind, HexsideRef, Player, Scenario};
+
+    /// A Direct Fire sub-phase with three Anglo-Egyptian batteries, a hex
+    /// apart, two or three hexes off a wall.
+    fn siege() -> (GameState, Vec<UnitId>, HexsideRef) {
+        let mut gs = GameState::new(Scenario::Campaign);
+        gs.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        gs.active_player = Player::AngloEgyptian;
+        let wall = HexsideRef::new(HexCoord::new(2, 0), HexCoord::new(3, 0));
+        std::sync::Arc::make_mut(&mut gs.board)
+            .hexsides
+            .insert(wall, HexsideKind::Wall);
+        let ids: Vec<UnitId> = UnitId::ALL
+            .iter()
+            .copied()
+            .filter(|&id| {
+                omdurman_rules::unit_profiles::profile_for_unit(id).is_some_and(|p| {
+                    p.weapon == WeaponClass::Artillery
+                        && p.identity.owner() == Player::AngloEgyptian
+                })
+            })
+            .take(3)
+            .collect();
+        assert_eq!(ids.len(), 3);
+        for (&id, at) in ids.iter().zip([(0, 0), (0, 1), (1, -1)]) {
+            gs.units.push(UnitPlacement {
+                id,
+                position: HexCoord::new(at.0, at.1),
+                profile: omdurman_rules::unit_profiles::profile_for_unit(id).unwrap(),
+                state: UnitState::default(),
+            });
+        }
+        (gs, ids, wall)
+    }
+
+    /// Several batteries may combine on one wall (§6.14 / §6.63): the card
+    /// offers the others as partners, and its odds are the engine's own --
+    /// better for the three together than for one alone, and exactly the
+    /// rolls the engine resolves as a breach.
+    #[test]
+    fn batteries_combine_on_a_wall_at_the_engines_odds() {
+        let (gs, ids, wall) = siege();
+        let walls = [(wall, 3)];
+        let alone = breach_offer(&gs, ids[0], &[], &walls, |_| true);
+        assert_eq!(alone.partners, ids[1..].to_vec());
+        assert_eq!(alone.walls.len(), 1);
+        let together = breach_offer(&gs, ids[0], &ids[1..], &walls, |_| true);
+        let (one, all) = (alone.walls[0].2, together.walls[0].2);
+        assert!(all > one, "{all} <= {one}");
+        let breaches = (1u16..=10)
+            .filter(|&raw| {
+                let mut probe = gs.clone();
+                omdurman_rules::effects::apply_effect(
+                    &mut probe,
+                    &omdurman_rules::effects::GameEffect::ArtilleryBreachWall {
+                        firers: ids.clone(),
+                        target: wall,
+                        roll: omdurman_rules::DieRoll::try_from(raw).unwrap(),
+                    },
+                )
+                .unwrap();
+                probe.breaches.contains(&wall)
+            })
+            .count() as u8;
+        assert_eq!(all, breaches);
+        // Batteries this peer does not command are not offered.
+        assert!(
+            breach_offer(&gs, ids[0], &[], &walls, |_| false)
+                .partners
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn odds_read_as_rolls_in_ten() {
+        assert_eq!(odds_label(0, "sink", "sinks"), "cannot sink it");
+        assert_eq!(
+            odds_label(4, "breach", "breaches"),
+            "breaches it on 4 in 10"
+        );
+        assert_eq!(odds_label(10, "sink", "sinks"), "sinks it on any roll");
+    }
 }

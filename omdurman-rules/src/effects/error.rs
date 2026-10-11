@@ -221,6 +221,11 @@ pub enum RuleError {
     )]
     MeleePendingResolution,
 
+    /// §4: an `AdvancePhaseFrom` whose phase has already ended (a second
+    /// End Phase request for the same phase).
+    #[error("that phase has already ended")]
+    PhaseAlreadyEnded,
+
     #[error(
         "the §8.2 desertion roll must be made before the Dervish movement phase of the first night turn can end"
     )]
@@ -464,6 +469,12 @@ pub enum DesertionError {
 
     #[error("the Khalifa, gunboats, artillery, and forts may not desert (unit {0})")]
     Exempt(UnitId),
+
+    #[error("the desertion die has already been rolled")]
+    AlreadyRolled,
+
+    #[error("the desertion die was rolled {rolled}, not {claimed}")]
+    NotTheRolledDie { rolled: u8, claimed: u8 },
 }
 
 /// The hexside of `kind` that stops a melee across it, and why (§7.2,
