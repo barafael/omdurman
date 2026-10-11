@@ -289,7 +289,8 @@ pub fn melee_reaction_ui(
                 ui.label("Your units withdrew (§7.5). Waiting for the attacker.");
             } else if retreat_possible {
                 ui.label("You may retreat threatened cavalry/camel: click the");
-                ui.label("attacked hex, then a highlighted hex two away.");
+                ui.label("attacked hex (again for its next unit), then a");
+                ui.label("highlighted hex two away.");
                 ui.label("Or wait for the attacker to resolve.");
             } else {
                 ui.label("Waiting for the attacker to resolve.");
