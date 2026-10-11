@@ -231,7 +231,7 @@ title = "Turn Sequence"
 status = "implemented"
 clause = "\"REMEMBER GORDON!\" — THE BATTLE OF OMDURMAN is played in \"Game Turns\", each of which has two \"Player Turns\"."
 witness = "omdurman-rules::src::effects::tests::turn_advances_through_phases"
-tests = ["omdurman-rules::src::effects::tests::both_ready_auto_advances_out_of_setup", "omdurman-rules::src::effects::tests::fire_combat_wrong_phase_rejected", "omdurman-rules::src::effects::tests::new_game_starts_in_setup", "omdurman-rules::src::turn_track::scenario_turn_dispatches_correctly", "omdurman-rules::src::effects::tests::turn_advances_through_phases", "omdurman-rules::src::unit_profiles::game_turn_marker_cell_returns_none", "omdurman-rules::src::effects::tests::declared_melee_blocks_phase_advance"]
+tests = ["omdurman-rules::src::effects::tests::both_ready_auto_advances_out_of_setup", "omdurman-rules::src::effects::tests::fire_combat_wrong_phase_rejected", "omdurman-rules::src::effects::tests::new_game_starts_in_setup", "omdurman-rules::src::turn_track::scenario_turn_dispatches_correctly", "omdurman-rules::src::effects::tests::turn_advances_through_phases", "omdurman-rules::src::unit_profiles::game_turn_marker_cell_returns_none", "omdurman-rules::src::effects::tests::declared_melee_blocks_phase_advance", "omdurman-rules::src::effects::tests::a_stale_end_phase_request_is_refused"]
 
 [[mapping.impl]]
 file = "omdurman-rules/src/scalars.rs"
@@ -256,6 +256,14 @@ symbol = "AdvancePhase"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/dispatch.rs"
 symbol = "advance_phase"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/effect.rs"
+symbol = "AdvancePhaseFrom"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/dispatch.rs"
+symbol = "advance_phase_from"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/dispatch.rs"
@@ -1994,11 +2002,20 @@ tests = [
     "omdurman-rules::src::effects::tests::desertion_roll_required_before_first_night_movement_ends",
     "omdurman-rules::src::effects::tests::desertion_removes_chosen_count_and_respects_exemptions",
     "omdurman-rules::src::effects::tests::desertion_is_rolled_in_the_dervish_movement_phase",
+    "omdurman-rules::src::effects::tests::a_rolled_desertion_die_is_the_die",
 ]
 
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/effect.rs"
 symbol = "DervishDesertion"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/effect.rs"
+symbol = "RollDesertion"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/setup.rs"
+symbol = "apply_roll_desertion"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"

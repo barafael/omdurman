@@ -946,7 +946,12 @@ fn dervish_desertion_action(state: &GameState, rng: &mut BotRng) -> Option<GameE
     if !state.desertion_due() {
         return None;
     }
-    let roll = rng.roll_d10();
+    // A die already rolled on its own (`RollDesertion`, a human seat the AI
+    // took over) is the die; otherwise the bot rolls.
+    let roll = match state.desertion_roll {
+        Some(rolled) => rolled,
+        None => rng.roll_d10(),
+    };
     let expected = state.desertion_demand(roll);
     let mut candidates: Vec<UnitId> = state
         .units
