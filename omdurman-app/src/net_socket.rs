@@ -48,6 +48,30 @@ fn next_host_seq(net: &NetState) -> u32 {
     net.next_seq.max(expected_seq(net))
 }
 
+/// Host: the seq submission `uid` already holds, if any -- recorded (its
+/// echo was applied), or assigned with the echo still in flight through the
+/// loopback (`NetState::host_in_flight`) -- and whether it came from the
+/// record. A retransmission is then re-echoed under that seq.
+fn already_sequenced(
+    net: &NetState,
+    recorder: &game_record::GameRecorder,
+    uid: u64,
+) -> Option<(u32, bool)> {
+    match recorder.seq_of_uid(uid) {
+        Some(seq) => Some((seq, true)),
+        None => net.host_in_flight.get(&uid).map(|&seq| (seq, false)),
+    }
+}
+
+/// Host: assign submission `uid` the next seq, remembering it as in flight
+/// until its echo is handled.
+fn sequence_fresh(net: &mut NetState, uid: u64) -> u32 {
+    let seq = next_host_seq(net);
+    net.next_seq = seq + 1;
+    net.host_in_flight.insert(uid, seq);
+    seq
+}
+
 /// Receive-side gate for one `NetMsg::Sequenced` delivery: decide whether it
 /// is applied now, buffered, or dropped, and return the deliveries that are
 /// ready to apply, in order (the delivery itself, then any contiguous run it
@@ -71,6 +95,16 @@ pub(crate) fn receive_sequenced(
     delivery: SequencedDelivery,
 ) -> Vec<SequencedDelivery> {
     let SequencedDelivery { seq, uid, .. } = delivery;
+    if own_loopback {
+        // Our own echo is being handled: from here on the record (applied)
+        // or nothing (dropped -- free to be sequenced afresh) answers a
+        // retransmission of it, not the in-flight table. (Only the entry
+        // for *this* seq: a re-echo trailing a dropped echo must not erase
+        // the submission's fresh assignment.)
+        if net.host_in_flight.get(&uid) == Some(&seq) {
+            net.host_in_flight.remove(&uid);
+        }
+    }
     // Identity dedup: the same event sequenced twice under different seq
     // numbers (transient dual-host streams, or a stale stream meeting a
     // fresh host) must still be applied exactly once. It *was* applied, so
@@ -196,16 +230,43 @@ pub(crate) fn drain_contiguous(
     ready
 }
 
+/// What a reconnect keeps of the session (see [`reset_session_state`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SessionReset {
+    /// Back into the room we were alone in (a solo game, the offline
+    /// fallback, or everyone else left): our line is the only one there is,
+    /// so the record and its numbering are kept -- wiping it would lose the
+    /// game, with nobody to re-download it from.
+    OwnLine,
+    /// Back into the room of a session with other peers: the record is
+    /// wiped and re-downloaded from them.
+    SameRoom,
+    /// Another room: the old game is abandoned.
+    NewRoom,
+}
+
+impl SessionReset {
+    /// The reset for a reconnect to the same room or another, with or
+    /// without peers connected at the time.
+    pub(crate) fn for_reconnect(same_room: bool, alone: bool) -> Self {
+        match (same_room, alone) {
+            (false, _) => Self::NewRoom,
+            (true, true) => Self::OwnLine,
+            (true, false) => Self::SameRoom,
+        }
+    }
+}
+
 /// Session reset on reconnect. A *same-room* reconnect (stall recovery, a
 /// WebRTC blip) keeps unconfirmed submissions -- they are retransmitted into
 /// the same game once the history is back -- and this game's record
-/// directory. A *room change* abandons the old game entirely: its
-/// submissions must never be retransmitted into the new room, and the engine
-/// state, seat table and record start fresh (the new room's `StartGame` or
-/// history install repopulates them; `init_game_record` opens a new game
-/// directory).
+/// directory (and, for [`SessionReset::OwnLine`], the record itself). A
+/// *room change* abandons the old game entirely: its submissions must never
+/// be retransmitted into the new room, and the engine state, seat table and
+/// record start fresh (the new room's `StartGame` or history install
+/// repopulates them; `init_game_record` opens a new game directory).
 pub(crate) fn reset_session_state(
-    same_room: bool,
+    reset: SessionReset,
     pending: &mut PendingEdits,
     recorder: &mut game_record::GameRecorder,
     game_state: &mut omdurman_rules::effects::GameState,
@@ -214,7 +275,10 @@ pub(crate) fn reset_session_state(
     pending.outgoing_broadcast.clear();
     pending.outgoing_targeted.clear();
     pending.stall_secs = 0.0;
-    if same_room {
+    if reset == SessionReset::OwnLine {
+        return;
+    }
+    if reset == SessionReset::SameRoom {
         recorder.reset_for_resync();
     } else {
         pending.unconfirmed.clear();
@@ -344,7 +408,8 @@ pub(crate) fn handle_reconnect(
     }
 
     let same_room = new_room == room.as_str();
-    info!(%new_room, same_room, "reconnecting");
+    let reset = SessionReset::for_reconnect(same_room, net.peers().is_empty());
+    info!(%new_room, ?reset, "reconnecting");
 
     // -- despawn old socket --
     if socket.is_some() {
@@ -353,20 +418,29 @@ pub(crate) fn handle_reconnect(
 
     // -- reset state --
     *net = NetState::default();
-    *turn = TurnState::default();
-    // Our record is wiped below: request the canonical history on reconnect
-    // (any peer with a record may serve it) and block host authority until it
-    // is installed or the bootstrap budget expires.
-    net.needs_snapshot = true;
-    net.resync_gate_secs = RESYNC_BOOTSTRAP_SECS;
-    // Back into the same room: a session lives here, and our record is gone
-    // until a history is installed (see `NetState::rejoining`).
-    net.rejoining = same_room;
+    if reset == SessionReset::OwnLine {
+        // Nobody else was here: our record is the room's line. It is kept
+        // (below) and we resume its numbering, as a peer that installed it
+        // would -- no resync gate, no snapshot to wait for, and solitude is
+        // session evidence again (we are not `rejoining` anyone).
+        restore_own_line(&mut net, &recorder);
+    } else {
+        *turn = TurnState::default();
+        // Our record is wiped below: request the canonical history on
+        // reconnect (any peer with a record may serve it) and block host
+        // authority until it is installed or the bootstrap budget expires.
+        net.needs_snapshot = true;
+        net.resync_gate_secs = RESYNC_BOOTSTRAP_SECS;
+        // Back into the same room: a session lives here, and our record is
+        // gone until a history is installed (see `NetState::rejoining`).
+        net.rejoining = same_room;
+    }
     incoming.ephemeral.clear();
     incoming.loopback.clear();
     incoming.seat_control.clear();
+    incoming.held.clear();
     reset_session_state(
-        same_room,
+        reset,
         &mut pending,
         &mut recorder,
         &mut game_state.0,
@@ -397,6 +471,19 @@ pub(crate) fn handle_reconnect(
     next_state.set(AppState::Lobby);
 
     commands.remove_resource::<ReconnectRoom>();
+}
+
+/// Resume the numbering of the record we keep (a reconnect into the room we
+/// were alone in, [`SessionReset::OwnLine`]): watermark, next seq and the
+/// uid dedup set describe the kept line, exactly as after a history install.
+pub(crate) fn restore_own_line(net: &mut NetState, recorder: &game_record::GameRecorder) {
+    let Some(record) = &recorder.record else {
+        return;
+    };
+    net.last_applied_seq = record.events.iter().map(|e| e.seq).max();
+    net.next_seq = expected_seq(net);
+    net.recent_uids
+        .rebuild(record.events.iter().filter_map(|e| e.uid));
 }
 
 /// Safety net for a silently dead submission path: when our own submissions
@@ -670,6 +757,7 @@ pub(crate) fn handle_socket(
                         }
                         PeerState::Disconnected => {
                             peers_changed |= net.remove_peer(peer);
+                            net.chunks.forget(peer);
                             info!(%peer, "peer disconnected");
                         }
                         _ => {}
@@ -855,10 +943,27 @@ pub(crate) fn handle_socket(
     let my_id = net.my_id().unwrap_or(PeerId(uuid::Uuid::nil()));
     let loopback: Vec<NetMsg> = std::mem::take(&mut ctx.incoming.loopback);
 
-    let decoded = received
+    // Submissions held last frame come first, in the order they arrived:
+    // whatever arrived since is younger. (Still held, they are re-held in
+    // the same order; demoted, they are forwarded to the new host in it.)
+    let mut decoded: Vec<(PeerId, NetMsg, bool)> = std::mem::take(&mut ctx.incoming.held)
         .into_iter()
-        .filter_map(|(peer, raw)| match decode(&raw) {
-            Some(msg) => Some((peer, msg, false)),
+        .map(|held| {
+            (
+                my_id,
+                NetMsg::Game {
+                    uid: held.uid,
+                    event: held.event,
+                },
+                held.own,
+            )
+        })
+        .collect();
+    for (peer, raw) in received {
+        match decode(&raw) {
+            // A chunk is held until its message is complete (reassembled
+            // in arrival position, so the channel's order is kept).
+            Some(msg) => decoded.extend(net.chunks.receive(peer, msg).map(|m| (peer, m, false))),
             None => {
                 // All peers must run the same build (the wire format is the
                 // variant index): a peer that does not will send nothing we
@@ -866,10 +971,10 @@ pub(crate) fn handle_socket(
                 if undecodable_from.insert(peer) {
                     warn!(%peer, "undecodable message from peer (a different build?); ignoring its messages");
                 }
-                None
             }
-        })
-        .chain(loopback.into_iter().map(|msg| (my_id, msg, true)));
+        }
+    }
+    decoded.extend(loopback.into_iter().map(|msg| (my_id, msg, true)));
 
     for (peer, msg, own_loopback) in decoded {
         match msg {
@@ -904,19 +1009,15 @@ pub(crate) fn handle_socket(
                     continue;
                 }
                 // Host-side idempotency: a retransmission of an event we
-                // already sequenced -- recorded canonically, or still in
-                // flight in this frame's batch -- is re-echoed with its
-                // existing seq instead of being sequenced twice.
-                let recorded_seq = ctx.recorder.seq_of_uid(uid);
-                let in_flight_seq = sequenced_out.iter().find_map(|m| match m {
-                    NetMsg::Sequenced { seq, uid: u, .. } if *u == uid => Some(*seq),
-                    _ => None,
-                });
-                if let Some(seq) = recorded_seq.or(in_flight_seq) {
+                // already sequenced -- recorded canonically, or sequenced
+                // with its echo still on the way through our loopback -- is
+                // re-echoed with its existing seq instead of being
+                // sequenced twice.
+                if let Some((seq, recorded_seq)) = already_sequenced(&net, &ctx.recorder, uid) {
                     info!(
                         seq,
                         uid,
-                        via_record = recorded_seq.is_some(),
+                        via_record = recorded_seq,
                         "host: retransmission of an already-sequenced event; re-echoing"
                     );
                     let sequenced = NetMsg::Sequenced {
@@ -928,28 +1029,43 @@ pub(crate) fn handle_socket(
                     ctx.incoming.loopback.push(sequenced);
                     continue;
                 }
-                if !sequencing_allowed(&net) {
+                // A host that has no game yet holding a guest's game action
+                // is missing the game it belongs to: a newcomer that won
+                // the election with an empty record. Sequencing it would
+                // start a rogue line under the guests' canonical one (and
+                // stop us from installing theirs): wait for their history.
+                let missing_game = !own_loopback
+                    && !turn.game_started
+                    && !crate::net_plugin::is_session_event(&ev);
+                if missing_game && !net.needs_snapshot {
+                    warn!(
+                        uid,
+                        "host: a guest submitted a game action but we have no game; requesting the history"
+                    );
+                    net.needs_snapshot = true;
+                    net.snapshot_retry_timer = 0.0;
+                }
+                if missing_game || !sequencing_allowed(&net) {
                     // The peer set may still be forming: sequencing now could
                     // collide with a peer that also (briefly) believes itself
-                    // host. Hold the submission; it is retried next frame.
-                    // (Logged once per uid: the bounce re-delivers it every
-                    // frame while the gate is closed, which would spam.)
+                    // host. Hold the submission, in arrival order; it is
+                    // retried next frame, ahead of anything newer.
+                    // (Logged once per uid: it is re-examined every frame
+                    // while the gate is closed, which would spam.)
                     if held_uids.insert(uid) {
                         info!(
                             uid,
                             stable_secs = net.election_stable_secs,
                             resync_gate = net.resync_gate_secs,
+                            missing_game,
                             "host: holding submission until sequencing is allowed"
                         );
                     }
-                    pending
-                        .outgoing_broadcast
-                        .push(NetMsg::Game { uid, event: ev });
+                    ctx.incoming.hold(uid, ev, own_loopback);
                     continue;
                 }
-                held_uids.clear();
-                let seq = next_host_seq(&net);
-                net.next_seq = seq + 1;
+                held_uids.remove(&uid);
+                let seq = sequence_fresh(&mut net, uid);
                 info!(seq, uid, event = ?ev, "host: sequenced submission");
                 let sequenced = NetMsg::Sequenced {
                     seq,
@@ -1040,6 +1156,10 @@ pub(crate) fn handle_socket(
             }
             NetMsg::Control(Control::SnapshotReceived) => {
                 // Legacy acknowledgement (see `Control::SnapshotReceived`).
+            }
+            NetMsg::Control(Control::Chunk { .. }) => {
+                // Reassembled above (`ChunkAssembler::receive` never passes
+                // a chunk through).
             }
             NetMsg::Control(Control::GameHistory(record)) => {
                 // Accept a record only if it carries events we haven't applied
@@ -1585,14 +1705,26 @@ mod tests {
             holder: omdurman_net::SeatHolder::Ai,
         }]);
 
-        reset_session_state(true, &mut pending, &mut recorder, &mut game_state, &mut ai);
+        reset_session_state(
+            SessionReset::SameRoom,
+            &mut pending,
+            &mut recorder,
+            &mut game_state,
+            &mut ai,
+        );
         assert_eq!(pending.unconfirmed.len(), 1, "same room: retransmit later");
         assert!(pending.outgoing_broadcast.is_empty());
         assert_eq!(recorder.artifacts_dir(), artifacts, "same game directory");
         assert!(recorder.record.as_ref().unwrap().events.is_empty());
         assert_eq!(ai.0.len(), 1);
 
-        reset_session_state(false, &mut pending, &mut recorder, &mut game_state, &mut ai);
+        reset_session_state(
+            SessionReset::NewRoom,
+            &mut pending,
+            &mut recorder,
+            &mut game_state,
+            &mut ai,
+        );
         assert!(
             pending.unconfirmed.is_empty(),
             "room change: old moves dropped"
@@ -1628,5 +1760,240 @@ mod tests {
         let requeued: Vec<u64> = pending.unconfirmed.iter().map(|(u, _)| *u).collect();
         assert_eq!(requeued, vec![own_lost_a, own_lost_b]);
         assert_eq!(pending.outgoing_broadcast.len(), 2);
+    }
+
+    // -- the host's receive path, headless ------------------------------
+
+    /// `handle_socket` alone, as an elected host with no socket (offline
+    /// self-hosting): submissions are fed through `PendingIncoming::held`,
+    /// which is examined ahead of the loopback -- exactly where a guest's
+    /// submission arriving over the socket sits.
+    fn host_app(game_started: bool) -> App {
+        let mut app = App::new();
+        let mut net = NetState::default();
+        net.set_my_id(Some(PeerId(uuid::Uuid::nil())));
+        net.is_host = true;
+        net.has_ever_peered = true;
+        net.election_stable_secs = SEQ_STABILIZE_SECS;
+        app.add_plugins((bevy::time::TimePlugin, bevy::state::app::StatesPlugin))
+            .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+                std::time::Duration::from_millis(100),
+            ))
+            .insert_state(AppState::InGame)
+            .init_state::<crate::AppMode>()
+            .insert_resource(net)
+            .insert_resource(PendingEdits::with_uid_base(1 << 40))
+            .insert_resource(TurnState { game_started })
+            .insert_resource(PendingIncoming::default())
+            .insert_resource(recorder())
+            .insert_resource(crate::seats::LocalPlayerKey(omdurman_net::PlayerKey(1)))
+            .insert_resource(crate::GameStateResource(
+                omdurman_rules::effects::GameState::new(omdurman_types::Scenario::Campaign),
+            ))
+            .init_resource::<omdurman_hexmap::GameMap>()
+            .init_resource::<crate::LoadedAnnotations>()
+            .init_resource::<crate::PendingMapLoad>()
+            .init_resource::<crate::events::PendingObservations>()
+            .init_resource::<crate::seats::Seats>()
+            .init_resource::<crate::peers::LocalSetupReady>()
+            .init_resource::<crate::bot_player::BotDriver>()
+            .init_resource::<crate::picker::UnitPaths>()
+            .init_resource::<crate::telegram::TelegramLog>()
+            .add_systems(Update, handle_socket);
+        app
+    }
+
+    /// A guest's submission reaching the host (see [`host_app`]).
+    fn guest_submits(app: &mut App, uid: u64) {
+        app.world_mut()
+            .resource_mut::<PendingIncoming>()
+            .hold(uid, event(uid as u32), false);
+    }
+
+    fn recorded_seqs(app: &App) -> Vec<(u32, Option<u64>)> {
+        app.world()
+            .resource::<GameRecorder>()
+            .record
+            .as_ref()
+            .unwrap()
+            .events
+            .iter()
+            .map(|e| (e.seq, e.uid))
+            .collect()
+    }
+
+    /// Every `Sequenced` the host staged for broadcast, as (seq, uid).
+    fn broadcast_seqs(app: &mut App) -> Vec<(u32, u64)> {
+        app.world_mut()
+            .resource_mut::<PendingEdits>()
+            .outgoing_broadcast
+            .drain(..)
+            .filter_map(|m| match m {
+                NetMsg::Sequenced { seq, uid, .. } => Some((seq, uid)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A guest's retransmission arriving after the host sequenced the
+    /// submission but before its own echo came round the loopback (one
+    /// frame later) is re-echoed under the seq it already has -- not given
+    /// a second seq, which left a hole in the host's line that every guest
+    /// had to heal by a forced history install.
+    #[test]
+    fn a_retransmission_before_the_echo_is_re_echoed_not_resequenced() {
+        let mut app = host_app(true);
+        guest_submits(&mut app, 77);
+        app.update();
+        assert_eq!(broadcast_seqs(&mut app), vec![(0, 77)]);
+        assert!(
+            recorded_seqs(&app).is_empty(),
+            "applied on echo, next frame"
+        );
+        // The retransmission lands ahead of the loopback echo.
+        guest_submits(&mut app, 77);
+        guest_submits(&mut app, 78);
+        app.update();
+        assert_eq!(
+            broadcast_seqs(&mut app),
+            vec![(0, 77), (1, 78)],
+            "re-echoed at seq 0; the next submission gets seq 1"
+        );
+        app.update();
+        app.update();
+        assert_eq!(recorded_seqs(&app), vec![(0, Some(77)), (1, Some(78))]);
+        let net = app.world().resource::<NetState>();
+        assert_eq!(net.last_applied_seq, Some(1), "no hole in the host's line");
+        assert!(net.host_in_flight.is_empty());
+        // Once recorded, a retransmission is answered from the record.
+        guest_submits(&mut app, 77);
+        app.update();
+        assert_eq!(broadcast_seqs(&mut app), vec![(0, 77)]);
+    }
+
+    /// An own echo dropped as a conflict leaves the in-flight table, so the
+    /// retransmission is sequenced afresh instead of being re-echoed at the
+    /// conflicting seq forever.
+    #[test]
+    fn a_dropped_own_echo_frees_the_submission_for_a_fresh_seq() {
+        let mut net = NetState::default();
+        net.is_host = true;
+        let mut rec = recorder();
+        let mut pending = PendingEdits::default();
+        assert_eq!(sequence_fresh(&mut net, 2), 0);
+        assert_eq!(already_sequenced(&net, &rec, 2), Some((0, false)));
+        // A foreign stream fills seq 0 first; our echo of uid 2 conflicts.
+        receive(&mut net, &mut rec, &mut pending, false, delivery(0, 1));
+        assert!(receive(&mut net, &mut rec, &mut pending, true, delivery(0, 2)).is_empty());
+        assert_eq!(already_sequenced(&net, &rec, 2), None);
+        assert_eq!(sequence_fresh(&mut net, 2), 1);
+        assert_eq!(
+            receive(&mut net, &mut rec, &mut pending, true, delivery(1, 2)),
+            vec![1]
+        );
+        assert_eq!(already_sequenced(&net, &rec, 2), Some((1, true)));
+    }
+
+    /// Submissions held while sequencing is not allowed are sequenced in
+    /// the order they arrived once it is -- ahead of anything that arrived
+    /// during the hold, and a retransmission keeps its first place.
+    #[test]
+    fn held_submissions_are_sequenced_in_arrival_order() {
+        let mut app = host_app(true);
+        app.world_mut().resource_mut::<NetState>().resync_gate_secs = 5.0;
+        guest_submits(&mut app, 10);
+        app.update();
+        guest_submits(&mut app, 11);
+        guest_submits(&mut app, 10); // a retransmission during the hold
+        app.update();
+        guest_submits(&mut app, 12);
+        app.update();
+        assert!(broadcast_seqs(&mut app).is_empty(), "held");
+        let held: Vec<u64> = app
+            .world()
+            .resource::<PendingIncoming>()
+            .held
+            .iter()
+            .map(|h| h.uid)
+            .collect();
+        assert_eq!(held, vec![10, 11, 12]);
+        app.world_mut().resource_mut::<NetState>().resync_gate_secs = 0.0;
+        guest_submits(&mut app, 13);
+        app.update();
+        assert_eq!(
+            broadcast_seqs(&mut app),
+            vec![(0, 10), (1, 11), (2, 12), (3, 13)]
+        );
+    }
+
+    /// A host without a game (a newcomer that won the election on an empty
+    /// record) holds the guests' game actions and asks for the history,
+    /// instead of starting a rogue line under the guests' canonical one;
+    /// once a game is running the held actions are sequenced.
+    #[test]
+    fn a_gameless_host_holds_guest_game_actions_for_the_history() {
+        let mut app = host_app(false);
+        guest_submits(&mut app, 5);
+        app.update();
+        app.update();
+        assert!(broadcast_seqs(&mut app).is_empty());
+        assert!(app.world().resource::<NetState>().needs_snapshot);
+        assert_eq!(app.world().resource::<PendingIncoming>().held.len(), 1);
+        // A StartGame (session event) is not held for it.
+        app.world_mut()
+            .resource_mut::<PendingIncoming>()
+            .hold(6, start_game(), false);
+        app.update();
+        assert_eq!(broadcast_seqs(&mut app), vec![(0, 6)]);
+        // The game is running (here: the StartGame applied): released.
+        app.update();
+        assert!(app.world().resource::<TurnState>().game_started);
+        app.update();
+        assert_eq!(broadcast_seqs(&mut app), vec![(1, 5)]);
+    }
+
+    // Reconnecting to the room this peer was alone in keeps its line: the
+    // record survives (nobody else could serve it back), the numbering
+    // resumes after it, and solitude is session evidence again -- the
+    // instance used to never sequence again.
+    #[test]
+    fn reconnecting_alone_to_the_same_room_keeps_the_own_line() {
+        assert_eq!(
+            SessionReset::for_reconnect(true, true),
+            SessionReset::OwnLine
+        );
+        assert_eq!(
+            SessionReset::for_reconnect(true, false),
+            SessionReset::SameRoom
+        );
+        assert_eq!(
+            SessionReset::for_reconnect(false, true),
+            SessionReset::NewRoom
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let mut pending = PendingEdits::with_uid_base(1);
+        let mut recorder = GameRecorder::init_in(dir.path().to_str().unwrap(), 5);
+        recorder.push_event(&start_game(), None, 0, Some(40));
+        recorder.push_event(&event(1), None, 1, Some(41));
+        let mut game_state =
+            omdurman_rules::effects::GameState::new(omdurman_types::Scenario::Campaign);
+        let mut seats = crate::seats::Seats::default();
+        reset_session_state(
+            SessionReset::OwnLine,
+            &mut pending,
+            &mut recorder,
+            &mut game_state,
+            &mut seats,
+        );
+        assert_eq!(recorder.record.as_ref().unwrap().events.len(), 2);
+        let mut net = NetState::default();
+        restore_own_line(&mut net, &recorder);
+        assert_eq!(net.last_applied_seq, Some(1));
+        assert_eq!(next_host_seq(&net), 2);
+        assert!(net.recent_uids.contains(41));
+        assert!(!net.rejoining && net.resync_gate_secs <= 0.0);
+        net.set_my_id(Some(PeerId(uuid::Uuid::from_u128(7))));
+        net.election_stable_secs = omdurman_net::SOLO_ROOM_SECS;
+        assert!(has_session_evidence(&net), "alone again: a solo room");
     }
 }

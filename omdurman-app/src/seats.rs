@@ -33,25 +33,30 @@ pub struct Seats(pub Vec<Seat>);
 #[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LocalPlayerKey(pub PlayerKey);
 
+/// `sessionStorage` slot of the web build's per-tab player key.
+#[cfg(target_arch = "wasm32")]
+const SESSION_KEY_SLOT: &str = "omdurman.player_key";
+
 impl LocalPlayerKey {
     /// The key for this app instance. Native: persisted in a locked slot file
     /// in the user's config directory, so a relaunch reclaims the seat (see
     /// `player_key_store`). Web: persisted per browser tab in
-    /// `sessionStorage`, so a reload keeps the seat.
+    /// `sessionStorage`, so a reload keeps the seat -- but a *duplicated* tab
+    /// inherits a copy of that storage, so the key is only trusted once
+    /// [`PlayerKeyClaim`] has settled it.
     pub fn load_or_create() -> Self {
         #[cfg(target_arch = "wasm32")]
         {
-            const STORAGE_KEY: &str = "omdurman.player_key";
             let storage = web_sys::window().and_then(|w| w.session_storage().ok().flatten());
             if let Some(storage) = storage.as_ref()
-                && let Ok(Some(stored)) = storage.get_item(STORAGE_KEY)
+                && let Ok(Some(stored)) = storage.get_item(SESSION_KEY_SLOT)
                 && let Ok(value) = u64::from_str_radix(&stored, 16)
             {
                 return Self(PlayerKey(value));
             }
             let key = PlayerKey::random();
             if let Some(storage) = storage {
-                let _ = storage.set_item(STORAGE_KEY, &key.to_string());
+                let _ = storage.set_item(SESSION_KEY_SLOT, &key.to_string());
             }
             Self(key)
         }
@@ -65,6 +70,193 @@ impl LocalPlayerKey {
         {
             Self(PlayerKey::random())
         }
+    }
+
+    /// Replace the key with a fresh one (it turned out to be another live
+    /// instance's -- a duplicated browser tab). Web: persisted for this tab.
+    pub fn regenerate(&mut self) {
+        self.0 = PlayerKey::random();
+        #[cfg(target_arch = "wasm32")]
+        if let Some(storage) = web_sys::window().and_then(|w| w.session_storage().ok().flatten()) {
+            let _ = storage.set_item(SESSION_KEY_SLOT, &self.0.to_string());
+        }
+        #[cfg(target_arch = "wasm32")]
+        key_probe::settle(self.0.0);
+        warn!(key = %self.0, "player key in use by another instance; took a fresh one");
+    }
+}
+
+/// Whether this instance's [`LocalPlayerKey`] is its own (settled). Native
+/// keys are exclusive by construction (locked slot files): always settled.
+///
+/// A web key comes from `sessionStorage`, which a browser *copies* when a
+/// tab is duplicated -- two live tabs would then share one seat, leaving the
+/// faction's other side of the table with nobody able to act. On load each
+/// tab therefore probes: it writes its key to a `localStorage` probe slot;
+/// a live tab holding the same settled key hears of it through the
+/// `storage` event (delivered to background tabs too, which no longer run
+/// frames) and answers in a reply slot. An answered probe means the key is
+/// taken: the new tab takes a fresh one. Unanswered for
+/// [`KEY_PROBE_SECS`], the key is ours -- a reloaded tab's old page is gone
+/// and cannot answer, so a reload keeps its seat. Until settled the key is
+/// not announced to anyone.
+#[derive(Resource, Debug)]
+pub struct PlayerKeyClaim {
+    settled: bool,
+    /// The probe this tab wrote (web), and how long it has waited.
+    #[cfg(target_arch = "wasm32")]
+    probe: String,
+    #[cfg(target_arch = "wasm32")]
+    waited: f32,
+}
+
+/// How long a web tab waits for an answer to its key probe.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+pub const KEY_PROBE_SECS: f32 = 1.5;
+
+#[cfg(target_arch = "wasm32")]
+mod key_probe {
+    //! The `localStorage` side of [`super::PlayerKeyClaim`].
+    use std::cell::Cell;
+    use web_sys::wasm_bindgen::{JsCast, closure::Closure};
+
+    /// Probe slot: `<key>:<nonce>` written by a tab checking its key.
+    pub const PROBE: &str = "omdurman.player_key_probe";
+    /// Reply slot: the probe a live holder of that key answered.
+    pub const TAKEN: &str = "omdurman.player_key_taken";
+
+    thread_local! {
+        /// This tab's settled key, which its `storage` listener defends.
+        static SETTLED: Cell<Option<u64>> = const { Cell::new(None) };
+    }
+
+    pub fn local_storage() -> Option<web_sys::Storage> {
+        web_sys::window().and_then(|w| w.local_storage().ok().flatten())
+    }
+
+    /// The probe text for `key`.
+    pub fn probe_for(key: u64) -> String {
+        format!("{key:016x}:{:016x}", rand::random::<u64>())
+    }
+
+    /// Defend `key` from now on: answer every probe for it.
+    pub fn settle(key: u64) {
+        SETTLED.with(|s| s.set(Some(key)));
+    }
+
+    /// Install the `storage` listener (once per page).
+    pub fn listen() {
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        let on_storage = Closure::<dyn FnMut()>::new(|| {
+            let Some(mine) = SETTLED.with(Cell::get) else {
+                return;
+            };
+            let Some(storage) = local_storage() else {
+                return;
+            };
+            let Ok(Some(probe)) = storage.get_item(PROBE) else {
+                return;
+            };
+            let probed = probe
+                .split(':')
+                .next()
+                .and_then(|k| u64::from_str_radix(k, 16).ok());
+            if probed == Some(mine) && storage.get_item(TAKEN).ok().flatten() != Some(probe.clone())
+            {
+                let _ = storage.set_item(TAKEN, &probe);
+            }
+        });
+        let _ =
+            window.add_event_listener_with_callback("storage", on_storage.as_ref().unchecked_ref());
+        // Lives as long as the page.
+        on_storage.forget();
+    }
+}
+
+impl PlayerKeyClaim {
+    /// Start claiming `key` (web: write the probe; native: settled).
+    pub fn start(key: PlayerKey) -> Self {
+        #[cfg(target_arch = "wasm32")]
+        {
+            key_probe::listen();
+            let probe = key_probe::probe_for(key.0);
+            if let Some(storage) = key_probe::local_storage() {
+                let _ = storage.set_item(key_probe::PROBE, &probe);
+            }
+            Self {
+                settled: false,
+                probe,
+                waited: 0.0,
+            }
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = key;
+            Self { settled: true }
+        }
+    }
+
+    /// A claim that is settled already (tests, native).
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn settled() -> Self {
+        Self {
+            settled: true,
+            #[cfg(target_arch = "wasm32")]
+            probe: String::new(),
+            #[cfg(target_arch = "wasm32")]
+            waited: 0.0,
+        }
+    }
+
+    /// A claim still waiting for its probe's answer.
+    #[cfg(test)]
+    pub fn unsettled_for_test() -> Self {
+        Self {
+            settled: false,
+            #[cfg(target_arch = "wasm32")]
+            probe: String::new(),
+            #[cfg(target_arch = "wasm32")]
+            waited: 0.0,
+        }
+    }
+
+    /// Whether the key may be announced (it is this instance's own).
+    pub fn is_settled(&self) -> bool {
+        self.settled
+    }
+}
+
+/// Web: settle the player key -- regenerate it if another live tab answered
+/// our probe, or keep it once the probe went unanswered for
+/// [`KEY_PROBE_SECS`]. A no-op once settled (and always on native).
+pub(crate) fn settle_player_key(
+    time: Res<Time>,
+    mut claim: ResMut<PlayerKeyClaim>,
+    mut key: ResMut<LocalPlayerKey>,
+) {
+    if claim.settled {
+        return;
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        claim.waited += time.delta_secs();
+        let answered = key_probe::local_storage()
+            .and_then(|s| s.get_item(key_probe::TAKEN).ok().flatten())
+            .is_some_and(|taken| taken == claim.probe);
+        if answered {
+            key.regenerate();
+        } else if claim.waited < KEY_PROBE_SECS {
+            return;
+        }
+        claim.settled = true;
+        key_probe::settle(key.0.0);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = (&time, &mut key);
+        claim.settled = true;
     }
 }
 
@@ -357,6 +549,21 @@ pub(crate) fn vote_voters(
     voters
 }
 
+/// Whether a voted seat change still stands given who is present now: a
+/// seat goes to the AI only while its human holder is still away (the
+/// abandonment that justified the vote). Every other change depends on the
+/// seat table alone, re-checked when it is applied.
+pub(crate) fn vote_still_stands(event: &GameEvent, abandoned: impl Fn(PlayerKey) -> bool) -> bool {
+    match event {
+        GameEvent::SeatAssigned {
+            previous: SeatHolder::Human(key),
+            holder: SeatHolder::Ai,
+            ..
+        } => abandoned(*key),
+        _ => true,
+    }
+}
+
 /// How long a seat vote stays open before it is denied.
 pub const SEAT_VOTE_SECS: f64 = 60.0;
 
@@ -462,6 +669,29 @@ impl VoteBook {
             }
         });
         expired
+    }
+
+    /// Deny every open vote whose change no longer stands (`valid` is false
+    /// for its event) -- e.g. the absent holder of a seat about to be handed
+    /// to the AI came back while the vote was open.
+    pub(crate) fn cancel_invalid(
+        &mut self,
+        valid: impl Fn(&GameEvent) -> bool,
+        reason: &str,
+    ) -> Vec<VoteOutcome> {
+        let mut cancelled = Vec::new();
+        self.open.retain(|v| {
+            if valid(&v.event) {
+                true
+            } else {
+                cancelled.push(VoteOutcome::Denied {
+                    request_id: v.request_id,
+                    reason: reason.to_string(),
+                });
+                false
+            }
+        });
+        cancelled
     }
 
     /// Drop every open vote (this peer is no longer the host).
