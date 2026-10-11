@@ -258,9 +258,10 @@ impl BoardInfo {
     ///   land hex -- the whole enclosed area counts, whatever its terrain.
     /// * Khartoum / other boards (Tomb absent, e.g. FALL OF KHARTOUM where
     ///   §2.1's washed-away wall section is a legal gap): the fill expands
-    ///   only into Building terrain, so the leak through the washed-away
-    ///   stretch stops at the city's edge; the Nile and off-map bound it
-    ///   elsewhere.
+    ///   only into built-up terrain (Building or Huts -- the town's hut
+    ///   hexes and its named buildings), so the leak through the
+    ///   washed-away stretch stops at the city's edge; the Nile and
+    ///   off-map bound it elsewhere.
     pub fn compute_walled_city(&self) -> Set<HexCoord> {
         use omdurman_types::Location;
         let mut seeds: Vec<HexCoord> = [Location::Palace, Location::MahdisTomb]
@@ -291,7 +292,7 @@ impl BoardInfo {
                 }
                 match self.terrain_at(n) {
                     Some(Terrain::Nile { .. }) | None => continue,
-                    Some(Terrain::Building { .. }) => {}
+                    Some(Terrain::Building { .. } | Terrain::Huts { .. }) => {}
                     _ if omdurman => {}
                     _ => continue,
                 }

@@ -305,7 +305,7 @@
             ),
         )),
         ((8, 4), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Khartoum"),
@@ -386,13 +386,13 @@
             ),
         )),
         ((9, 4), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Khartoum"),
         )),
         ((9, 5), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Khartoum"),
@@ -468,25 +468,25 @@
             ),
         )),
         ((10, 4), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Khartoum"),
         )),
         ((10, 5), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Khartoum"),
         )),
         ((10, 6), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Khartoum"),
         )),
         ((10, 7), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Khartoum"),
@@ -565,13 +565,13 @@
             name: Some("Austrian Mission"),
         )),
         ((11, 6), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Khartoum"),
         )),
         ((11, 7), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Khartoum"),
@@ -643,19 +643,19 @@
             ),
         )),
         ((12, 5), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Khartoum"),
         )),
         ((12, 6), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Khartoum"),
         )),
         ((12, 7), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Khartoum"),
@@ -732,7 +732,7 @@
             name: Some("Palace"),
         )),
         ((13, 6), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Khartoum"),
@@ -809,13 +809,13 @@
             ),
         )),
         ((14, 5), (
-            terrain: Building(
+            terrain: Huts(
                 road: None,
             ),
             name: Some("Khartoum"),
         )),
         ((14, 6), (
-            terrain: Building(
+            terrain: Huts(
                 road: Crossroad,
             ),
             name: Some("Khartoum"),

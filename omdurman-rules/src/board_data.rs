@@ -201,19 +201,21 @@ mod wall_ring_tests {
     }
 
     #[test]
-    fn fok_walled_city_is_the_building_block() {
+    fn fok_walled_city_is_the_built_up_block() {
         // FoK (§2.1): the washed-away wall section is a legal gap, so the
-        // fill is bounded by Building terrain instead -- the 17-hex city
-        // block around the palace.
+        // fill is bounded by built-up terrain instead -- the 17-hex city
+        // block around the palace: its hut hexes and named buildings.
         let board = BoardInfo::from_map_data(fall_of_khartoum_map_data());
         let palace = board.hex_of_location(Location::Palace).unwrap();
         assert!(board.is_walled_city(palace));
         assert_eq!(board.walled_city.len(), 17, "compiled FoK walled-city set");
         for h in &board.walled_city {
             assert!(
-                matches!(board.terrain_at(*h), Some(Terrain::Building { .. }))
-                    || board.locations.get(h) == Some(&Location::Palace),
-                "FoK city hex {h:?} must be Building terrain or a landmark"
+                matches!(
+                    board.terrain_at(*h),
+                    Some(Terrain::Building { .. } | Terrain::Huts { .. })
+                ) || board.locations.get(h) == Some(&Location::Palace),
+                "FoK city hex {h:?} must be built-up terrain or a landmark"
             );
         }
     }
@@ -256,6 +258,43 @@ mod wall_ring_tests {
             })
             .count();
         assert_eq!(town_huts, 102, "printed Omdurman hut hexes");
+    }
+
+    /// Khartoum's unnamed town hexes print the hut icon (Huts, -1 to the
+    /// attacker's die roll); only its named buildings -- the Palace, the
+    /// Austrian Mission, the Arsenal, the Barracks and the three forts --
+    /// are Buildings (-3).
+    #[traceability_macro::rulebook("§6.23")]
+    #[test]
+    fn khartoum_town_is_huts_and_only_the_named_buildings_are_buildings() {
+        let map = fall_of_khartoum_map_data();
+        let mut buildings: Vec<&str> = map
+            .tiles
+            .values()
+            .filter(|t| matches!(t.terrain, Terrain::Building { .. }))
+            .map(|t| t.name.as_deref().unwrap_or("(unnamed)"))
+            .collect();
+        buildings.sort_unstable();
+        assert_eq!(
+            buildings,
+            [
+                "Arsenal",
+                "Austrian Mission",
+                "Barracks",
+                "Fort Buri",
+                "Fort Makran",
+                "North Fort",
+                "Palace"
+            ]
+        );
+        let town_huts = map
+            .tiles
+            .values()
+            .filter(|t| {
+                t.name.as_deref() == Some("Khartoum") && matches!(t.terrain, Terrain::Huts { .. })
+            })
+            .count();
+        assert_eq!(town_huts, 15, "printed Khartoum hut hexes");
     }
 
     /// The crest hexsides printed on Jebel Surgham, on the ridge linking it
