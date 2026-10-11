@@ -230,9 +230,9 @@ seq-conflict / seq-gap healing, stall auto-reconnect — is specified in CLAUDE.
   on every peer). A `HandToAi` vote is called off as soon as the seat's holder is back (and the
   approved hand-over re-checks it), so a returning player keeps their seat. A host failover
   drops open votes; clients expire their ballots at the deadline.
-- **Wire format.** The seat `Control` and `GameEvent` variants are appended, but `StartGame`'s
-  shape and `PlayerInfo` changed, so every peer must run the same build. Old JSON saved games
-  still load (their `assignments`/`ai`/`commands` are ignored: seatless, reviewable).
+- **Wire format.** No compatibility across builds: every peer must run the same build, and
+  saved games from older builds are not guaranteed to load. Message and event shapes may change
+  freely.
 
 ### Determinism holds when
 Same canonical record on every peer, pre-rolled dice, deterministic (sorted-lexicographically)

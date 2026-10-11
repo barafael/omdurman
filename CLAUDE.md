@@ -240,8 +240,12 @@ The system is a deterministic event-sourced engine over a peer-to-peer mesh:
   `SeatCarved` (apply arms re-validate deterministically). Seat events and `StartGame` are
   *session events*: accepted unchecked by the submit dry run and never re-queued by
   `PendingEdits::requeue_missing_own`.
-- **Wire format.** New `Control` / `GameEvent` / `Ephemeral` variants are *appended* (postcard encodes the
-  variant index); the `StartGame` / `PlayerInfo` reshape means all peers must run the same build.
+- **Wire format.** No compatibility across builds is kept: every peer runs the same build, and old
+  saved games (`games/*/events.jsonl`) need not load. Change `Control` / `GameEvent` / `Ephemeral` /
+  `GameEffect` shapes, reorder or drop variants freely when a change calls for it -- no
+  `serde(default)` shims or migrations for old records. (Postcard still encodes the variant index, so
+  mixed builds fail to decode; that is accepted.) A `GameEffect` change still needs the expensive
+  tier's `EFFECT_KINDS` / `any_effect` / `kind_of` (`omdurman-rules/src/effects/expensive.rs`) kept in step.
 
 ## Empirical net-reliability harness
 
