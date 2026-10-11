@@ -929,7 +929,7 @@ fn gunboat_moves(state: &GameState, unit_id: UnitId, out: &mut Vec<GameEffect>) 
 /// The Dervish player's roll for a mine a British gunboat has struck
 /// (§10.12), while one is pending.
 pub fn river_mine_action(state: &GameState, rng: &mut BotRng) -> Option<GameEffect> {
-    let struck = state.pending_mine?;
+    let struck = state.pending_mine()?;
     Some(GameEffect::RiverMine {
         gunboat_id: struck.gunboat,
         hex: struck.hex,

@@ -422,6 +422,7 @@ tests = [
     "omdurman-rules::src::effects::tests::a_mined_gunboat_scores_and_takes_its_friendlies_down",
     "omdurman-rules::src::effects::tests::friendlies_transport_offer_load_requires_prerequisites",
     "omdurman-rules::src::effects::tests::friendlies_cross_the_nile_over_three_turns",
+    "omdurman-rules::src::effects::tests::a_gunboat_carrying_friendlies_is_judged_as_a_gunboat",
 ]
 
 [[mapping.impl]]
@@ -958,6 +959,7 @@ tests = [
     "omdurman-rules::src::effects::tests::infantry_may_fire_only_once_per_subphase",
     "omdurman-rules::src::effects::tests::maxim_may_fire_twice_per_turn",
     "omdurman-rules::src::effects::tests::fire_from_two_hexes_combines_into_one_attack",
+    "omdurman-rules::src::effects::tests::fire_trackers_reset_between_defensive_and_offensive_fire",
 ]
 
 [[mapping.impl]]
@@ -1111,6 +1113,7 @@ tests = [
     "omdurman-rules::src::terrain_chart::defense_modifier_convenience_matches_chart",
     "omdurman-rules::src::terrain_chart::terrain_movement_costs_in_bounds",
     "omdurman-rules::src::terrain_chart::terrain_defense_modifier_non_positive",
+    "omdurman-rules::src::effects::tests::gunboat_maxims_fire_across_a_wall_is_penalised",
 ]
 
 [[mapping.impl]]
@@ -1451,6 +1454,7 @@ tests = [
     "omdurman-rules::src::effects::tests::demolition_cancelled_when_engineer_moved_away",
     "omdurman-rules::src::effects::tests::demolition_targets_finds_adjacent_fort_and_wall",
     "omdurman-rules::src::effects::tests::a_demolished_fort_takes_an_occupant_with_it",
+    "omdurman-rules::src::effects::tests::demolishing_an_already_breached_wall_takes_no_second_unit",
 ]
 [[mapping.impl]]
 file = "omdurman-rules/src/unit.rs"
@@ -1498,6 +1502,7 @@ tests = [
     "omdurman-rules::src::effects::tests::cavalry_melee_never_eliminates_the_fort",
     "omdurman-rules::src::effects::tests::a_melee_disruption_never_falls_on_the_fort",
     "omdurman-rules::src::effects::tests::infantry_melee_destroys_an_empty_fort_and_opens_the_advance",
+    "omdurman-rules::src::effects::tests::melee_losses_never_spill_onto_the_attackers_own_fort",
 ]
 
 
@@ -1533,6 +1538,7 @@ note = "The artillery-only gate is enforced in GameState::can_fire_at and re-che
 tests = [
     "omdurman-rules::src::effects::tests::only_named_gunboats_have_maxims_and_they_cannot_sink_gunboats",
     "omdurman-rules::src::effects::tests::a_gunboat_sunk_by_artillery_scores_victory_points","omdurman-rules::src::effects::tests::rifles_may_not_sink_a_gunboat", "omdurman-rules::src::effects::tests::artillery_sinks_gunboat_only_on_three_plus",
+    "omdurman-rules::src::effects::tests::a_gunboat_carrying_friendlies_is_judged_as_a_gunboat",
   ]
 
 [[mapping.impl]]
@@ -1556,6 +1562,7 @@ tests = [
     "omdurman-rules::src::effects::tests::destroyed_fort_takes_one_occupant_with_it",
     "omdurman-rules::src::effects::tests::the_units_inside_a_fort_are_fired_at_with_its_minus_three",
     "omdurman-rules::src::effects::tests::a_demolished_fort_takes_an_occupant_with_it",
+    "omdurman-rules::src::effects::tests::one_unit_losses_take_the_rank_and_file_before_leaders",
 ]
 
 [[mapping.impl]]
@@ -1576,6 +1583,8 @@ tests = [
     "omdurman-rules::src::effects::tests::breach_casualty_stands_at_the_wall","omdurman-rules::src::unit_profiles::breech_marker_cell_returns_none", "omdurman-rules::src::effects::tests::artillery_breaches_wall_only_on_crt_two_or_better", "omdurman-rules::src::effects::tests::wall_breach_eliminates_one_adjacent_enemy_unit", "omdurman-rules::src::effects::tests::breach_is_an_opening_for_los_and_effective_kinds",
     "omdurman-rules::src::effects::tests::artillery_may_fire_at_the_wall_it_faces",
     "omdurman-rules::src::effects::tests::walls_are_breached_in_the_direct_fire_subphase_only",
+    "omdurman-rules::src::effects::tests::one_unit_losses_take_the_rank_and_file_before_leaders",
+    "omdurman-rules::src::effects::tests::demolishing_an_already_breached_wall_takes_no_second_unit",
 ]
 
 [[mapping.impl]]
@@ -1691,6 +1700,7 @@ tests = [
     "omdurman-rules::src::effects::tests::advance_requires_participation",
     "omdurman-rules::src::effects::tests::rejected_advance_phase_keeps_vacated_windows",
     "omdurman-rules::src::effects::tests::a_gunboat_is_not_offered_a_land_advance",
+    "omdurman-rules::src::effects::tests::a_gunboat_advance_after_combat_obeys_gunboat_movement",
 ]
 
 [[mapping.impl]]
@@ -1919,6 +1929,7 @@ tests = [
     "omdurman-rules::src::effects::tests::disrupted_defenders_add_no_melee_factor",
     "omdurman-rules::src::effects::tests::melee_losses_beyond_the_attackers_fall_on_their_stack",
     "omdurman-rules::src::effects::tests::melee_losses_fall_on_the_garrison_before_the_fort",
+    "omdurman-rules::src::effects::tests::melee_losses_never_spill_onto_the_attackers_own_fort",
 ]
 [[mapping.impl]]
 file = "omdurman-rules/src/combat.rs"
@@ -2139,7 +2150,8 @@ title = "Anglo-Egyptian reinforcements (Campaign)"
 status = "implemented"
 clause = "The leader units KITCHENER, GATACRE, and HUNTER may enter anytime during the first four game turns and do not count against the 12 units per turn limit. All three leaders must be in play by the end of turn four!"
 witness = "omdurman-rules::tests::campaign_order_of_battle::the_anglo_egyptian_waves_follow_the_order_of_appearance"
-note = "Implemented: entry through the annotated entrance areas (the Anglo-Egyptian Entrance Area, north-edge Nile hexes for gunboats, the Abu Alim hut for the Friendlies) with the printed entry costs; turn 1 = the printed first wave (Friendlies, Egyptian Cavalry, Horse Artillery, two Egyptian Division brigades); turns 2-3 = any twelve land units; three gunboats a turn until turn 4; turn 4 on = all remaining (units held back may still enter later); leaders free on turns 1-4, and the turn-4 Anglo-Egyptian Movement phase cannot end until Kitchener, Gatacre and Hunter are in play."
+approximation = "The manual does not say what happens when a leader cannot enter at all (every hex of his entrance area held by the Dervish or closed by stacking). The engine enforces the turn-4 deadline only for a leader who has a legal entry hex at that moment (campaign_leader_may_still_enter in advance_phase); a blocked leader's entry is deferred -- turn 4 ends, and he may still enter on a later Anglo-Egyptian Movement phase -- rather than the phase locking forever."
+note = "Implemented: entry through the annotated entrance areas (the Anglo-Egyptian Entrance Area, north-edge Nile hexes for gunboats, the Abu Alim hut for the Friendlies) with the printed entry costs; turn 1 = the printed first wave (Friendlies, Egyptian Cavalry, Horse Artillery, two Egyptian Division brigades); turns 2-3 = any twelve land units; three gunboats a turn until turn 4; turn 4 on = all remaining (units held back may still enter later); leaders free on turns 1-4, and the turn-4 Anglo-Egyptian Movement phase cannot end until Kitchener, Gatacre and Hunter are in play (or none of the missing ones can legally enter, see approximation)."
 proofs = [
     "omdurman-rules::src::reinforcements::wave_for_turn_answers_exactly_on_the_printed_schedule",
 ]
@@ -2154,6 +2166,7 @@ tests = [
     "omdurman-rules::src::effects::tests::campaign_setup_rejects_non_initial_force",
     "omdurman-rules::tests::campaign_order_of_battle::reinforcements_enter_through_their_entrance_areas",
     "omdurman-rules::tests::campaign_order_of_battle::the_anglo_egyptian_waves_follow_the_order_of_appearance",
+    "omdurman-rules::tests::campaign_order_of_battle::a_blocked_entrance_defers_the_turn_four_leaders",
 ]
 
 [[mapping.impl]]
@@ -2755,6 +2768,8 @@ tests = [
     "omdurman-rules::src::effects::tests::a_mined_gunboat_scores_and_takes_its_friendlies_down",
     "omdurman-rules::src::effects::tests::mine_fires_once_and_spares_dervish",
     "omdurman-rules::src::effects::tests::a_disabled_gunboat_drifts_two_hexes_a_turn",
+    "omdurman-rules::src::effects::tests::two_struck_mines_are_both_rolled_for",
+    "omdurman-rules::src::effects::tests::a_gunboat_advance_after_combat_obeys_gunboat_movement",
 ]
 
 [[mapping.impl]]
@@ -2781,6 +2796,7 @@ proofs = [
 ]
 tests = [
     "omdurman-rules::src::effects::tests::mine_fires_once_and_spares_dervish",
+    "omdurman-rules::src::effects::tests::two_struck_mines_are_both_rolled_for",
 ]
 
 [[mapping.impl]]
@@ -2803,6 +2819,10 @@ tests = [
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/river.rs"
 symbol = "apply_river_mine"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/movement.rs"
+symbol = "apply_move_unit"
 
 [[mapping]]
 section = "§10.2"

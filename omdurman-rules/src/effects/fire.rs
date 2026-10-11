@@ -431,9 +431,12 @@ fn commit_fire_attack(
             // the rank and file before their leaders, as everywhere).
             let fort_victim = matches!(special_kind, UnitKind::Fort { .. })
                 .then(|| {
-                    leaders_last(state, target_units)
-                        .into_iter()
-                        .find(|&id| id != special_id)
+                    let occupants: Vec<UnitId> = target_units
+                        .iter()
+                        .copied()
+                        .filter(|&id| id != special_id)
+                        .collect();
+                    first_casualty(state, &occupants)
                 })
                 .flatten();
             // The shared elimination path scores the kill (§9.14) and takes
@@ -518,22 +521,33 @@ fn fire_paragraphs(kind: FireKind, special: Option<UnitKind>) -> Vec<String> {
 /// hexes that share it (as for crest hexsides, LOS condition 2) -- not
 /// merely next to one of them. An Anglo-Egyptian leader is not a combat unit
 /// and is never the casualty (it falls only under §6.51 / §9.346); Dervish
-/// leaders fight and fall like any other unit (§6.51).
+/// leaders fight and fall like any other unit (§6.51), but after the rank
+/// and file, as in every casualty pick ([`first_casualty`]).
 pub(crate) fn breach_victim(
     state: &GameState,
     a: HexCoord,
     b: HexCoord,
     victim_owner: Player,
 ) -> Option<UnitId> {
-    state
+    let candidates: Vec<UnitId> = state
         .units
         .iter()
-        .find(|u| {
+        .filter(|u| {
             (u.position == a || u.position == b)
                 && u.profile.identity.owner() == victim_owner
                 && !matches!(u.profile.kind, UnitKind::BritishLeader { .. })
         })
         .map(|u| u.id)
+        .collect();
+    first_casualty(state, &candidates)
+}
+
+/// The one unit a "one unit is eliminated" rule takes from `candidates`
+/// (§6.62 a destroyed fort's occupant, §6.63 a breach's neighbour): the
+/// first in the [`leaders_last`] casualty order -- the rank and file before
+/// their leaders, so the KHALIFA does not die before his Taiasha.
+pub(crate) fn first_casualty(state: &GameState, candidates: &[UnitId]) -> Option<UnitId> {
+    leaders_last(state, candidates).into_iter().next()
 }
 
 /// The Terrain Effects Chart's hexside fire effect on an attack (§6.23):
@@ -545,7 +559,9 @@ pub(crate) fn breach_victim(
 /// a combined attack's firers come in over different hexsides, or one
 /// firer's ray is clear on both sides of a hexside, the most protective one
 /// applies to the single die roll. Howitzer shells (§6.64) are lobbed from
-/// 4-10 hexes and ignore LOS, so they cross no hexside.
+/// 4-10 hexes and ignore LOS, so they cross no hexside. Every weapon of
+/// the attack counts: a named gunboat's Maxims (`gunboat_maxims`) fire
+/// across the hexside like any rifle.
 pub fn target_hexside_fire_modifier(
     state: &GameState,
     attack: &FireAttack,
@@ -557,6 +573,7 @@ pub fn target_hexside_fire_modifier(
     attack
         .firers
         .iter()
+        .chain(attack.gunboat_maxims.iter())
         .filter_map(|id| state.find_unit(*id))
         .filter(|u| u.position != target_hex)
         .flat_map(|u| {
@@ -1279,8 +1296,8 @@ pub fn apply_artillery_breach_wall(
         state.breach_wall(target.a, target.b);
 
         // §6.63: "If any enemy units are adjacent to the wall hexside at the
-        // instant it is breached, one enemy unit is eliminated." Pick the
-        // first such unit (matching the demolition path's convention).
+        // instant it is breached, one enemy unit is eliminated" -- leaders
+        // last, as the demolition path picks.
         if let Some(victim) = breach_victim(state, target.a, target.b, firing_player.opponent()) {
             eliminate_unit(state, victim, ElimCause::WallBreach);
             adjacent_eliminated = Some(victim);

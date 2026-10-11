@@ -189,7 +189,7 @@ pub enum GameEffect {
 
     // -- Optional rules ----------------------------------------------------
     /// River mine resolution (rulebook §10.12): the Dervish player's roll for
-    /// the British gunboat stopped on his mine (`pending_mine`).
+    /// the British gunboat stopped on his mine (one of `pending_mines`).
     RiverMine {
         gunboat_id: UnitId,
         hex: HexCoord,

@@ -6406,7 +6406,7 @@ mod tests {
             state.find_unit(dervish_gb).unwrap().position,
             HexCoord::new(5, 0)
         );
-        assert!(state.pending_mine.is_none() && !state.mines[0].triggered);
+        assert!(state.pending_mines.is_empty() && !state.mines[0].triggered);
         state.units.retain(|u| u.id != dervish_gb);
 
         // A British gunboat sailing through is stopped on the mine.
@@ -6420,7 +6420,7 @@ mod tests {
         );
         assert_eq!(state.mp_spent(brit_gb), 3);
         assert_eq!(
-            state.pending_mine,
+            state.pending_mine(),
             Some(crate::StruckMine {
                 gunboat: brit_gb,
                 hex
@@ -6456,11 +6456,170 @@ mod tests {
         )
         .unwrap();
         assert!(state.find_unit(brit_gb).is_none(), "8-10: sunk");
-        assert!(state.mines[0].triggered && state.pending_mine.is_none());
+        assert!(state.mines[0].triggered && state.pending_mines.is_empty());
         // §10.13: a spent mine no longer fires.
         let gb3 = make_profiled_unit(&mut state, HexCoord::new(0, 0), ae_gunboat_profile());
         sail(&mut state, gb3, 6).unwrap();
         assert_eq!(state.find_unit(gb3).unwrap().position, HexCoord::new(6, 0));
+    }
+
+    // §10.12/§10.13: two British gunboats striking the two mines before the
+    // Dervish player has rolled are both rolled for -- the strikes queue
+    // instead of the second overwriting the first -- and a boat entering a
+    // mine already struck (its roll pending) passes: each mine goes off once.
+    #[rulebook("§10.12", "§10.13")]
+    #[test]
+    fn two_struck_mines_are_both_rolled_for() {
+        let mut state = playing(Scenario::Campaign);
+        state.board = Arc::new(nile_board_row0(0, 8, HexDirection::East));
+        state.active_player = Player::AngloEgyptian;
+        let (first_mine, second_mine) = (HexCoord::new(3, 0), HexCoord::new(6, 0));
+        for hex in [first_mine, second_mine] {
+            state.mines.push(crate::MinePlacement {
+                hex,
+                triggered: false,
+            });
+        }
+        let sail = |state: &mut GameState, gb: UnitId, to: i32| {
+            apply_effect(
+                state,
+                &GameEffect::MoveUnit {
+                    unit_id: gb,
+                    to: HexCoord::new(to, 0),
+                    cost: MovementPoints::new(to as i16),
+                    path: (1..=to).map(|q| HexCoord::new(q, 0)).collect(),
+                },
+            )
+        };
+        let a = make_profiled_unit(&mut state, HexCoord::new(0, 0), ae_gunboat_profile());
+        let b = make_profiled_unit(&mut state, HexCoord::new(0, 0), ae_gunboat_profile());
+        sail(&mut state, a, 7).unwrap();
+        assert_eq!(state.find_unit(a).unwrap().position, first_mine);
+        // The second boat passes the struck mine and stops on the other one.
+        sail(&mut state, b, 7).unwrap();
+        assert_eq!(state.find_unit(b).unwrap().position, second_mine);
+        assert_eq!(
+            state.pending_mines,
+            vec![
+                crate::StruckMine {
+                    gunboat: a,
+                    hex: first_mine
+                },
+                crate::StruckMine {
+                    gunboat: b,
+                    hex: second_mine
+                },
+            ]
+        );
+        assert_eq!(state.pending_mine().map(|m| m.gunboat), Some(a));
+        let roll = |state: &mut GameState, gunboat_id: UnitId, hex: HexCoord| {
+            apply_effect(
+                state,
+                &GameEffect::RiverMine {
+                    gunboat_id,
+                    hex,
+                    roll: DieRoll::One,
+                },
+            )
+        };
+        roll(&mut state, b, second_mine).unwrap();
+        assert!(matches!(
+            assert_rejected_untouched(&mut state, GameEffect::AdvancePhase),
+            RuleError::MinePendingResolution
+        ));
+        roll(&mut state, a, first_mine).unwrap();
+        assert!(state.pending_mines.is_empty());
+        assert!(state.mines.iter().all(|m| m.triggered));
+        apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap();
+    }
+
+    // §6.82 with §5.21/§10.12/§10.22: a gunboat's advance after combat is
+    // movement -- it obeys the same constraints as steaming in: no advance
+    // with lost engines or once stopped, never across the chain, its
+    // "Friendlies" passenger comes along, and a British boat entering a
+    // mine strikes it (or runs onto the chain and stops).
+    #[rulebook("§6.82", "§10.12")]
+    #[test]
+    fn a_gunboat_advance_after_combat_obeys_gunboat_movement() {
+        let mut state = playing(Scenario::Campaign);
+        state.board = Arc::new(nile_board_row0(0, 8, HexDirection::East));
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::AngloEgyptian;
+        let from = HexCoord::new(2, 0);
+        let to = HexCoord::new(3, 0);
+        let gb = make_profiled_unit(&mut state, from, ae_gunboat_profile());
+        let friendly = make_profiled_unit(&mut state, from, friendlies_infantry_profile());
+        state.find_unit_mut(friendly).unwrap().state.loaded_on = Some(gb);
+        state.friendlies_transport = Some(TransportState::Loaded {
+            unit: friendly,
+            gunboat: gb,
+            since: GameTurnIndex::new(0),
+        });
+        state.mines.push(crate::MinePlacement {
+            hex: to,
+            triggered: false,
+        });
+        state.vacated_by_combat.insert(to, vec![gb]);
+        let advance = GameEffect::AdvanceAfterCombat { unit_id: gb, to };
+
+        // Lost engines, or stopped earlier in the turn: no advance.
+        state.find_unit_mut(gb).unwrap().state.engines_lost = true;
+        assert!(matches!(
+            state.can_advance_after_combat(gb, to),
+            Err(RuleError::EnginesLost(_))
+        ));
+        state.find_unit_mut(gb).unwrap().state.engines_lost = false;
+        state.gunboats_stopped_this_turn.push(gb);
+        assert!(matches!(
+            state.can_advance_after_combat(gb, to),
+            Err(RuleError::StruckMine(_))
+        ));
+        state.gunboats_stopped_this_turn.clear();
+
+        apply_effect(&mut state, &advance).unwrap();
+        assert_eq!(state.find_unit(gb).unwrap().position, to);
+        assert_eq!(
+            state.find_unit(friendly).unwrap().position,
+            to,
+            "the passenger stays aboard"
+        );
+        assert_eq!(
+            state.pending_mine(),
+            Some(crate::StruckMine {
+                gunboat: gb,
+                hex: to
+            }),
+            "the advance strikes the mine"
+        );
+        assert!(state.gunboats_stopped_this_turn.contains(&gb));
+
+        // A Dervish boat may not advance onto the chain; a British one
+        // runs onto it and stops there.
+        let mut chained = playing(Scenario::Campaign);
+        chained.board = Arc::new(nile_board_row0(0, 8, HexDirection::East));
+        chained.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        chained.chain = Some(crate::ChainPlacement {
+            hexes: vec![to],
+            sunk: false,
+        });
+        chained.active_player = Player::Dervish;
+        let dervish_gb = make_dervish_gunboat(&mut chained, from);
+        chained.vacated_by_combat.insert(to, vec![dervish_gb]);
+        assert!(matches!(
+            chained.can_advance_after_combat(dervish_gb, to),
+            Err(RuleError::BlockedByChain(_))
+        ));
+        chained.units.clear();
+        chained.active_player = Player::AngloEgyptian;
+        let brit = make_profiled_unit(&mut chained, from, ae_gunboat_profile());
+        chained.vacated_by_combat.insert(to, vec![brit]);
+        apply_effect(
+            &mut chained,
+            &GameEffect::AdvanceAfterCombat { unit_id: brit, to },
+        )
+        .unwrap();
+        assert_eq!(chained.gunboats_at_chain.get(&brit), Some(&from));
+        assert!(chained.gunboats_stopped_this_turn.contains(&brit));
     }
 
     #[rulebook("§10.22", "§10.23")]
@@ -6593,9 +6752,9 @@ mod tests {
         state.find_unit_mut(gb).unwrap().position = HexCoord::new(1, 0);
         sail(&mut state, &[2, 3, 4]).unwrap();
         assert_eq!(state.find_unit(gb).unwrap().position, HexCoord::new(2, 0));
-        assert!(state.pending_mine.is_some());
+        assert!(state.pending_mine().is_some());
         assert!(state.gunboats_at_chain.is_empty());
-        state.pending_mine = None;
+        state.pending_mines.clear();
         state.mines.clear();
         state.gunboats_stopped_this_turn.clear();
         state.mp_spent_this_turn.clear();
@@ -8484,6 +8643,57 @@ mod tests {
         );
     }
 
+    // §6.14: Defensive and Offensive Fire are separate fire combat phases --
+    // a unit a scattered §6.64 shell struck on its own side in the
+    // defensive Maxim/howitzer subphase may still be fired at offensively.
+    #[rulebook("§6.14")]
+    #[test]
+    fn fire_trackers_reset_between_defensive_and_offensive_fire() {
+        for (mover, from) in [
+            (
+                Player::Dervish,
+                Phase::DefensiveFire(FireSubPhase::MaximSecondAndHowitzer),
+            ),
+            (
+                Player::AngloEgyptian,
+                Phase::DefensiveFire(FireSubPhase::DirectFire),
+            ),
+        ] {
+            let mut state = playing(Scenario::Campaign);
+            state.phase = from;
+            state.active_player = mover;
+            let target = HexCoord::new(1, 0);
+            let (shot_at, firer) = match mover {
+                Player::Dervish => (
+                    make_ae_infantry(&mut state, target),
+                    make_dervish_tribal(&mut state, HexCoord::new(0, 0)),
+                ),
+                Player::AngloEgyptian => (
+                    make_dervish_tribal(&mut state, target),
+                    make_ae_infantry(&mut state, HexCoord::new(0, 0)),
+                ),
+            };
+            state.units_fired_at_this_phase.push(shot_at);
+            state.units_shelled_this_phase.push(shot_at);
+            state.units_fired_this_phase.push(firer);
+            advance_phase(&mut state).unwrap();
+            assert_eq!(state.phase, Phase::OffensiveFire(FireSubPhase::DirectFire));
+            assert!(state.units_fired_at_this_phase.is_empty(), "{mover:?}");
+            assert!(state.units_shelled_this_phase.is_empty(), "{mover:?}");
+            assert!(state.units_fired_this_phase.is_empty(), "{mover:?}");
+            let attack = direct_attack(mover, vec![firer], target);
+            apply_effect(
+                &mut state,
+                &GameEffect::FireCombat {
+                    attack,
+                    roll: DieRoll::One,
+                    disruption: crate::DisruptionDraw::default(),
+                },
+            )
+            .unwrap_or_else(|e| panic!("{mover:?}: {e}"));
+        }
+    }
+
     // §6.14: "a combat unit ... may only be fired at once (exceptions: Maxim
     // guns and gunboats -- see 6.4)". The exceptions are the units that
     // *fire* twice (§6.42); a gunboat is fired at once per subphase like
@@ -10143,6 +10353,47 @@ mod tests {
         assert!(destroyed_once, "some roll destroys the fort");
     }
 
+    // §5.21/§6.61: a gunboat carrying the "Friendlies" is a gunboat -- its
+    // passenger is cargo. Rifles may not fire at it (only artillery engages
+    // a gunboat), the legality check agreeing with resolution, and it is
+    // seen at a gunboat's LOS level whichever counter is listed first.
+    #[rulebook("§5.21", "§6.61")]
+    #[test]
+    fn a_gunboat_carrying_friendlies_is_judged_as_a_gunboat() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::Dervish;
+        let hex = HexCoord::new(1, 0);
+        let gb = make_profiled_unit(&mut state, hex, ae_gunboat_profile());
+        let friendly = make_profiled_unit(&mut state, hex, friendlies_infantry_profile());
+        state.find_unit_mut(friendly).unwrap().state.loaded_on = Some(gb);
+        // The passenger first in board order.
+        state.units.rotate_right(1);
+        assert_eq!(state.units[0].id, friendly);
+        assert_eq!(
+            state.target_los_level(hex),
+            crate::los_table::LosLevel::Rough,
+            "the boat's level, not the passenger's"
+        );
+        let rifle = make_dervish_tribal(&mut state, HexCoord::new(0, 0));
+        assert!(matches!(
+            state.can_fire_at(rifle, hex, FireKind::Direct),
+            Err(RuleError::ArtilleryOnlyVsGunboatOrFort(_))
+        ));
+        let attack = direct_attack(Player::Dervish, vec![rifle], hex);
+        assert!(matches!(
+            apply_effect(
+                &mut state,
+                &GameEffect::FireCombat {
+                    attack,
+                    roll: DieRoll::Ten,
+                    disruption: crate::DisruptionDraw::default(),
+                },
+            ),
+            Err(RuleError::ArtilleryOnlyVsGunboatOrFort(_))
+        ));
+    }
+
     #[rulebook("§10.12", "§5.21", "§9.14")]
     #[test]
     fn a_mined_gunboat_scores_and_takes_its_friendlies_down() {
@@ -10164,7 +10415,9 @@ mod tests {
             hex,
             triggered: false,
         });
-        state.pending_mine = Some(crate::StruckMine { gunboat: gb, hex });
+        state
+            .pending_mines
+            .push(crate::StruckMine { gunboat: gb, hex });
         apply_effect(
             &mut state,
             &GameEffect::RiverMine {
@@ -10506,6 +10759,32 @@ mod tests {
         let mut howitzer = attack.clone();
         howitzer.kind = FireKind::Howitzer;
         assert_eq!(target_hexside_fire_modifier(&state, &howitzer, target), 0);
+    }
+
+    // §6.23: a named gunboat's Maxims (§2.32) fire across the target's
+    // hexside like any other weapon -- a Maxims-only attack (no `firers`)
+    // into a walled hex across the City Wall takes the -4.
+    #[rulebook("§6.23")]
+    #[test]
+    fn gunboat_maxims_fire_across_a_wall_is_penalised() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::AngloEgyptian;
+        let from = HexCoord::new(0, 0);
+        let target = HexCoord::new(1, 0);
+        let gunboat = make_named_gunboat(&mut state, from);
+        make_dervish_tribal(&mut state, target);
+        board_mut(&mut state)
+            .hexsides
+            .insert(HexsideRef::new(from, target), HexsideKind::Wall);
+        let attack = FireAttack {
+            firers: Vec::new(),
+            gunboat_maxims: vec![gunboat],
+            ..direct_attack(Player::AngloEgyptian, Vec::new(), target)
+        };
+        assert_eq!(target_hexside_fire_modifier(&state, &attack, target), -4);
+        let terrain_only = target_defence_modifier(&state, &attack, target, &[]);
+        assert_eq!(terrain_only, -4, "the defence modifier includes it");
     }
 
     // §9.346: fire into the palace takes its losses from the garrison;
@@ -11586,6 +11865,58 @@ mod tests {
         );
     }
 
+    // §6.54/§7.7: losses beyond the attackers spill onto their hex-mates,
+    // but never onto a fort the attackers stand in -- the defender's
+    // counter-roll is no artillery fire, infantry melee attack or Royal
+    // Engineers demolition, the only ways a fort falls.
+    #[rulebook("§7.7", "§6.54")]
+    #[test]
+    fn melee_losses_never_spill_onto_the_attackers_own_fort() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::Melee;
+        state.active_player = Player::Dervish;
+        let from = HexCoord::new(0, 0);
+        let target = HexCoord::new(1, 0);
+        let fort = make_fort(&mut state, from);
+        let dervish = make_dervish_tribal(&mut state, from);
+        let defenders: Vec<UnitId> = (0..4)
+            .map(|_| make_ae_infantry(&mut state, target))
+            .collect();
+        let mut attack = build_melee_attack(&state, from, target).unwrap();
+        assert_eq!(attack.attackers, vec![dervish], "forts do not melee attack");
+        let (att, def) = mandatory_melee_modifiers(&state, &attack);
+        attack.attacker_modifiers = att;
+        attack.defender_modifiers = def;
+        declare_and_resolve(
+            &mut state,
+            &GameEffect::DeclareMelee {
+                attack,
+                attacker_roll: DieRoll::One,
+                // The Anglo-Egyptians roll 10 (+1) on their 20 factors:
+                // two or more eliminations against one meleeing unit.
+                defender_roll: DieRoll::Ten,
+                disruption: crate::DisruptionDraw::default(),
+            },
+        )
+        .unwrap();
+        let resolved = state.observations.iter().find_map(|o| match o {
+            Observation::MeleeResolved {
+                defender_result, ..
+            } => Some(*defender_result),
+            _ => None,
+        });
+        assert!(
+            matches!(resolved, Some(CombatResult::Eliminate(n)) if n >= 2),
+            "the counter-roll must exceed the attackers: {resolved:?}"
+        );
+        assert!(state.find_unit(dervish).is_none(), "the attacker falls");
+        assert!(
+            state.find_unit(fort).is_some(),
+            "the excess loss does not take the attackers' own fort"
+        );
+        assert!(defenders.iter().all(|d| state.find_unit(*d).is_some()));
+    }
+
     // §6.54: forts are destroyed by "infantry melee attack" -- a cavalry
     // charge may fight the garrison but never takes the fort.
     #[rulebook("§6.54")]
@@ -11642,6 +11973,76 @@ mod tests {
         end_player_turn(&mut state);
         assert!(state.find_unit(fort).is_none());
         assert!(state.find_unit(occupant).is_none());
+    }
+
+    // §6.62 (via §6.53) and §6.63: the one unit lost with a demolished fort
+    // or beside a breached wall is picked leaders last, like every casualty
+    // -- the KHALIFA does not die before the Taiasha standing with him,
+    // whatever the order the counters lie in.
+    #[rulebook("§6.62", "§6.63")]
+    #[test]
+    fn one_unit_losses_take_the_rank_and_file_before_leaders() {
+        let mut state = playing(Scenario::Campaign);
+        state.active_player = Player::AngloEgyptian;
+        let eng = make_royal_engineers(&mut state, HexCoord::new(0, 0));
+        let fort = make_fort(&mut state, HexCoord::new(1, 0));
+        let khalifa = make_unit_with_identity(
+            &mut state,
+            HexCoord::new(1, 0),
+            UnitIdentity::DervishLeader(DervishLeader::KhalifaAbdullah),
+        );
+        let taiasha = make_dervish_tribal(&mut state, HexCoord::new(1, 0));
+        apply_demolition(&mut state, eng, DemolitionTarget::Fort(fort)).unwrap();
+        end_player_turn(&mut state);
+        assert!(state.find_unit(fort).is_none());
+        assert!(state.find_unit(taiasha).is_none(), "the rank and file fall");
+        assert!(state.find_unit(khalifa).is_some(), "the leader survives");
+
+        // The breach casualty, likewise.
+        let a = HexCoord::new(5, 5);
+        let b = HexCoord::new(6, 5);
+        let leader = make_unit_with_identity(
+            &mut state,
+            a,
+            UnitIdentity::DervishLeader(DervishLeader::KhalifaAbdullah),
+        );
+        let spearman = make_dervish_tribal(&mut state, b);
+        assert_eq!(breach_victim(&state, a, b, Player::Dervish), Some(spearman));
+        assert_ne!(breach_victim(&state, a, b, Player::Dervish), Some(leader));
+    }
+
+    // §6.53/§6.63: a demolition resolving on a wall the artillery already
+    // breached this turn has nothing left to breach -- it eliminates no
+    // second unit beside the wall.
+    #[rulebook("§6.53", "§6.63")]
+    #[test]
+    fn demolishing_an_already_breached_wall_takes_no_second_unit() {
+        let mut state = playing(Scenario::Campaign);
+        state.active_player = Player::AngloEgyptian;
+        let at = HexCoord::new(10, 10);
+        let beyond = HexCoord::new(10, 9);
+        let wall = HexsideRef::new(at, beyond);
+        board_mut(&mut state)
+            .hexsides
+            .insert(wall, HexsideKind::Wall);
+        let eng = make_royal_engineers(&mut state, at);
+        let first = make_dervish_tribal(&mut state, beyond);
+        let second = make_dervish_tribal(&mut state, beyond);
+        apply_demolition(&mut state, eng, DemolitionTarget::WallHexside(wall)).unwrap();
+        // The artillery breaches the wall first (its §6.63 casualty taken).
+        state.breach_wall(wall.a, wall.b);
+        state.units.retain(|u| u.id != first);
+        end_player_turn(&mut state);
+        assert!(
+            state.find_unit(second).is_some(),
+            "no second casualty for the same breach"
+        );
+        assert!(
+            state
+                .observations
+                .iter()
+                .any(|o| matches!(o, Observation::DemolitionResolved { success: false, .. }))
+        );
     }
 
     // §5.53: a Dervish leader stacks only with units of his command -- no

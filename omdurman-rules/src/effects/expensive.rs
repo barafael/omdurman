@@ -454,7 +454,7 @@ fn with_mine(state: &mut GameState) {
             triggered: struck.is_none() && any(),
         });
         if let Some(boat) = struck {
-            state.pending_mine = Some(StruckMine {
+            state.pending_mines.push(StruckMine {
                 gunboat: boat.id,
                 hex,
             });
@@ -544,7 +544,7 @@ fn same_rule_state(a: &GameState, b: &GameState) -> bool {
         && a.optional_rules == b.optional_rules
         && a.mines == b.mines
         && chain(a) == chain(b)
-        && a.pending_mine == b.pending_mine
+        && a.pending_mines == b.pending_mines
         && a.gunboats_stopped_this_turn == b.gunboats_stopped_this_turn
         && a.gunboats_at_chain == b.gunboats_at_chain
         && a.chain_sentries == b.chain_sentries
@@ -1083,7 +1083,7 @@ fn friendlies_transport_is_safe() {
 fn river_mine_is_safe() {
     let mut state = any_state();
     with_mine(&mut state);
-    let struck = state.pending_mine;
+    let struck = state.pending_mine();
     let effect = GameEffect::RiverMine {
         gunboat_id: biased(any_palette_id(), || struck.map(|m| m.gunboat)),
         hex: biased(any_payload_hex(), || struck.map(|m| m.hex)),

@@ -50,7 +50,7 @@ fn main() {
     let mut stuck = 0;
     while !state.game_over && steps < 200_000 {
         steps += 1;
-        let chooser = if state.pending_mine.is_some() {
+        let chooser = if state.pending_mine().is_some() {
             Player::Dervish
         } else {
             state.player_to_act().unwrap_or(state.phase_player())

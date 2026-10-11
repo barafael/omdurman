@@ -117,10 +117,13 @@ pub struct GameState {
     pub optional_rules: Vec<OptionalRule>,
     pub mines: Vec<MinePlacement>,
     pub chain: Option<ChainPlacement>,
-    /// The British gunboat stopped on a mine this turn, until the Dervish
-    /// player rolls for it (§10.12). No phase ends while it is pending.
+    /// The British gunboats stopped on a mine, in the order they struck,
+    /// each until the Dervish player rolls for it (§10.12). No phase ends
+    /// while one is pending. A queue: a second boat may strike the other
+    /// mine before the first roll arrives, and each is rolled for
+    /// ([`GameState::pending_mine`] is the next one due).
     #[serde(default)]
-    pub pending_mine: Option<crate::StruckMine>,
+    pub pending_mines: Vec<crate::StruckMine>,
     /// Gunboats ordered to stop for the rest of the turn -- on a mine
     /// (§10.12). Cleared in `clear_per_turn_tracking`.
     #[serde(default)]
@@ -276,7 +279,7 @@ impl GameState {
             optional_rules: Vec::new(),
             mines: Vec::new(),
             chain: None,
-            pending_mine: None,
+            pending_mines: Vec::new(),
             gunboats_stopped_this_turn: Vec::new(),
             gunboats_at_chain: BTreeMap::new(),
             chain_sentries: Vec::new(),
@@ -494,6 +497,20 @@ impl GameState {
             .collect()
     }
 
+    /// The next struck mine the Dervish player must roll for (§10.12): the
+    /// oldest entry of [`Self::pending_mines`], `None` when nothing is due.
+    pub fn pending_mine(&self) -> Option<crate::StruckMine> {
+        self.pending_mines.first().copied()
+    }
+
+    /// Whether `hex` holds a mine a British gunboat entering it would strike
+    /// (§10.12): one not yet rolled for (§10.13) nor already struck by an
+    /// earlier boat whose roll is still pending -- each mine goes off once.
+    pub fn live_mine_at(&self, hex: HexCoord) -> bool {
+        self.mines.iter().any(|m| m.hex == hex && !m.triggered)
+            && !self.pending_mines.iter().any(|p| p.hex == hex)
+    }
+
     /// Produce the next UnitId from [`UnitId::ALL`] (rulebook §4).
     /// Used internally by test helpers; production code should call
     /// [`unit_id_for_section_pos`][crate::unit_id_for_section_pos] instead.
@@ -541,7 +558,7 @@ impl GameState {
             optional_rules: Vec::new(),
             mines: Vec::new(),
             chain: None,
-            pending_mine: None,
+            pending_mines: Vec::new(),
             gunboats_stopped_this_turn: Vec::new(),
             gunboats_at_chain: BTreeMap::new(),
             chain_sentries: Vec::new(),

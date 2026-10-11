@@ -90,18 +90,21 @@ pub(crate) fn resolve_demolition(state: &mut GameState, unit_id: UnitId, target:
                 // §6.53 "see 6.62 ... for the effects on adjacent enemy
                 // units": "if the fort contains any enemy units at the
                 // instant it is destroyed, one unit is eliminated with the
-                // fort" (picked before the fort leaves the board).
+                // fort" (picked before the fort leaves the board; the rank
+                // and file before their leaders, as every casualty pick).
                 let victim = fort.and_then(|f| {
-                    state
+                    let occupants: Vec<UnitId> = state
                         .units
                         .iter()
-                        .find(|u| {
+                        .filter(|u| {
                             u.position == f.position
                                 && u.id != fort_id
                                 && u.profile.identity.owner() != engineer_owner
                                 && !matches!(u.profile.kind, UnitKind::BritishLeader { .. })
                         })
                         .map(|u| u.id)
+                        .collect();
+                    super::fire::first_casualty(state, &occupants)
                 });
                 if let Some(f) = fort {
                     state.observations.push(Observation::FortDestroyed {
@@ -123,7 +126,12 @@ pub(crate) fn resolve_demolition(state: &mut GameState, unit_id: UnitId, target:
         DemolitionTarget::WallHexside(edge) => {
             // "Adjacent to a wall hexside": in one of the two hexes sharing it.
             let adjacent = engineer_pos == edge.a || engineer_pos == edge.b;
-            if adjacent {
+            // §6.63: the victim falls "at the instant it is breached" -- a
+            // wall that artillery already breached this turn is no longer a
+            // target (like a fort the guns destroyed first): the demolition
+            // has nothing left to do and takes no second unit.
+            let standing = state.hexside_effective_is(edge.a, edge.b, |k| k == HexsideKind::Wall);
+            if adjacent && standing {
                 // Mutate the hexside: Wall → Breach (§6.63). The breach is
                 // game state (`state.breaches`), not a board mutation -- the
                 // board is static, so clone-and-try probes share it freely.

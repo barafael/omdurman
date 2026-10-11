@@ -29,13 +29,10 @@ pub fn apply_move_unit(
     // §10.12: "When a British gunboat enters a mined hex, the Dervish player
     // must order it to stop" -- the move ends on the first live mine along
     // the path (the Anglo-Egyptian player does not know where they lie).
+    // §10.14: the Dervish gunboats pass them "with no ill effect".
     let struck = (mover_owner == Player::AngloEgyptian
         && matches!(mover_kind, UnitKind::Gunboat { .. }))
-    .then(|| {
-        entered
-            .iter()
-            .position(|h| state.mines.iter().any(|m| m.hex == *h && !m.triggered))
-    })
+    .then(|| entered.iter().position(|h| state.live_mine_at(*h)))
     .flatten();
     // §10.22: "When a British gunboat enters a 'chained' river hex it must
     // stop and may move no further that turn" -- likewise unknown to it.
@@ -83,28 +80,14 @@ pub fn apply_move_unit(
     if let Some(unit) = state.find_unit_mut(unit_id) {
         unit.position = to;
     }
-    // §5.21: a gunboat carries the "Friendlies" unit aboard it.
-    for passenger in state
-        .units
-        .iter_mut()
-        .filter(|u| u.state.loaded_on == Some(unit_id))
-    {
-        passenger.position = to;
-    }
+    carry_passengers(state, unit_id, to);
     if struck.is_some() {
         super::river::strikes_mine(state, unit_id, to);
     }
     match chained {
         Some(i) => {
             let from = if i == 0 { came_from } else { entered[i - 1] };
-            state.gunboats_at_chain.insert(unit_id, from);
-            if !state.gunboats_stopped_this_turn.contains(&unit_id) {
-                state.gunboats_stopped_this_turn.push(unit_id);
-            }
-            state.observations.push(Observation::ChainStopsGunboat {
-                gunboat: unit_id,
-                hex: to,
-            });
+            stop_at_chain(state, unit_id, from, to);
         }
         // Clear of the chain again.
         None => {
@@ -132,6 +115,54 @@ pub fn apply_move_unit(
     check_gordon_palace(state);
 
     Ok(())
+}
+
+/// §5.21: a gunboat carries the "Friendlies" unit aboard it to `to`.
+pub(crate) fn carry_passengers(state: &mut GameState, gunboat: UnitId, to: HexCoord) {
+    for passenger in state
+        .units
+        .iter_mut()
+        .filter(|u| u.state.loaded_on == Some(gunboat))
+    {
+        passenger.position = to;
+    }
+}
+
+/// §10.22: a British gunboat entering the chained `hex` from `from` stops
+/// there for the turn and may later only go back the way it came (§10.23).
+pub(crate) fn stop_at_chain(state: &mut GameState, gunboat: UnitId, from: HexCoord, hex: HexCoord) {
+    state.gunboats_at_chain.insert(gunboat, from);
+    if !state.gunboats_stopped_this_turn.contains(&gunboat) {
+        state.gunboats_stopped_this_turn.push(gunboat);
+    }
+    state
+        .observations
+        .push(Observation::ChainStopsGunboat { gunboat, hex });
+}
+
+/// The engine half of a gunboat's advance after combat (§6.82) from `from`
+/// into `to`, once the boat stands there: it is movement, so the passenger
+/// comes along (§5.21), and a British boat strikes a live mine (§10.12) or
+/// runs onto the chain (§10.22) exactly as it would steaming in.
+pub(crate) fn gunboat_advanced(
+    state: &mut GameState,
+    gunboat: UnitId,
+    from: HexCoord,
+    to: HexCoord,
+) {
+    carry_passengers(state, gunboat, to);
+    let british = state
+        .find_unit(gunboat)
+        .is_some_and(|u| u.profile.identity.owner() == Player::AngloEgyptian);
+    if !british {
+        return;
+    }
+    super::river::strikes_mine(state, gunboat, to);
+    if state.chain_covers(to) {
+        stop_at_chain(state, gunboat, from, to);
+    } else {
+        state.gunboats_at_chain.remove(&gunboat);
+    }
 }
 
 /// §6.51(a): eliminate every Anglo-Egyptian leader standing alone -- no AE

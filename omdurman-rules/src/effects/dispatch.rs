@@ -242,17 +242,21 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
         return Err(RuleError::MeleePendingResolution);
     }
     // §9.113: "All three leaders must be in play by the end of turn four!"
-    // -- the Anglo-Egyptian turn-4 Movement phase is their last chance.
+    // -- the Anglo-Egyptian turn-4 Movement phase is their last chance. The
+    // rule binds only a leader who *can* come in: one whose every entrance
+    // hex the Dervish hold (or stacking closes) would otherwise lock the
+    // game in this phase forever, so his entry is deferred instead (he may
+    // still enter on a later turn, `validate_campaign_reinforcements`).
     if state.scenario == Scenario::Campaign
         && matches!(state.phase, Phase::Movement)
         && state.active_player == Player::AngloEgyptian
         && state.current_turn.value() == 4
-        && !campaign_leaders_in_play(state)
+        && campaign_leader_may_still_enter(state)
     {
         return Err(RuleError::LeadersMustEnterByTurnFour);
     }
     // §10.12: the Dervish player resolves a struck mine before play goes on.
-    if state.pending_mine.is_some() {
+    if !state.pending_mines.is_empty() {
         return Err(RuleError::MinePendingResolution);
     }
     // §8.2: "Once each campaign game, during the first night turn of the
@@ -295,9 +299,11 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
                 // AE turn: Dervish fired direct defensive.  Next: AE
                 // offensive fire (Direct, then Maxim/Howitzer).
                 state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+                clear_fire_trackers(state);
             } else if !maxim_subphase {
                 // FoK: no Maxims or howitzers -- straight to Dervish offensive fire.
                 state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+                clear_fire_trackers(state);
             } else {
                 // Dervish turn: AE fired direct defensive.  AE also has
                 // Maxim / howitzer capability -- they fire again now.
@@ -306,23 +312,18 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
                 // Clear the per-phase fired set so Maxims that fired in Direct
                 // Fire may fire again here.  The Maxim-only gate in
                 // `can_fire_at` prevents non-Maxim units from exploiting this.
-                state.units_fired_this_phase.clear();
-                state.gunboat_maxims_fired_this_phase.clear();
-                state.units_fired_at_this_phase.clear();
-                state.units_shelled_this_phase.clear();
+                clear_fire_trackers(state);
             }
         }
         Phase::DefensiveFire(FireSubPhase::MaximSecondAndHowitzer) => {
             state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+            clear_fire_trackers(state);
         }
         Phase::OffensiveFire(FireSubPhase::DirectFire) => {
             if state.active_player == Player::AngloEgyptian && maxim_subphase {
                 state.phase = Phase::OffensiveFire(FireSubPhase::MaximSecondAndHowitzer);
                 // §6.42: same clear as the defensive path above.
-                state.units_fired_this_phase.clear();
-                state.gunboat_maxims_fired_this_phase.clear();
-                state.units_fired_at_this_phase.clear();
-                state.units_shelled_this_phase.clear();
+                clear_fire_trackers(state);
             } else {
                 state.phase = Phase::Melee;
             }
@@ -362,21 +363,45 @@ fn charge_fok_entry(state: &mut GameState) {
     }
 }
 
-/// Whether Kitchener, Gatacre and Hunter have all come into play (§9.113):
-/// each on the board or already eliminated.
-fn campaign_leaders_in_play(state: &GameState) -> bool {
-    use crate::{BritishLeader, UnitIdentity};
-    [
-        BritishLeader::Kitchener,
-        BritishLeader::Gatacre,
-        BritishLeader::Hunter,
-    ]
-    .iter()
-    .all(|leader| {
-        let is = |identity: UnitIdentity| identity == UnitIdentity::AngloEgyptianLeader(*leader);
-        state.units.iter().any(|u| is(u.profile.identity))
-            || state.eliminated.iter().any(|id| {
-                crate::unit_profiles::profile_for_unit(*id).is_some_and(|p| is(p.identity))
+/// Whether one of Kitchener, Gatacre and Hunter has not yet come into play
+/// (§9.113: on the board or already eliminated) and could enter now -- a
+/// legal reinforcement placement exists on some hex of his entrance area.
+/// A board without entrance annotations accepts any hex, so there an absent
+/// leader always could.
+fn campaign_leader_may_still_enter(state: &GameState) -> bool {
+    use crate::UnitIdentity;
+    // The printed counters of Kitchener, Gatacre and Hunter.
+    const LEADERS: [UnitId; 3] = [
+        UnitId::Kitchener_0_0,
+        UnitId::Kitchener_1_0,
+        UnitId::Kitchener_2_0,
+    ];
+    LEADERS.iter().any(|&id| {
+        let Some(profile) = crate::unit_profiles::profile_for_unit(id) else {
+            return false;
+        };
+        if !matches!(profile.identity, UnitIdentity::AngloEgyptianLeader(_)) {
+            return false;
+        }
+        let is = |identity: UnitIdentity| identity == profile.identity;
+        let in_play = state.units.iter().any(|u| is(u.profile.identity))
+            || state.eliminated.iter().any(|e| {
+                crate::unit_profiles::profile_for_unit(*e).is_some_and(|p| is(p.identity))
+            });
+        if in_play {
+            return false;
+        }
+        let hexes = state.board.entrance_hexes(entrance_area_for(&profile));
+        hexes.is_empty()
+            || hexes.iter().any(|&position| {
+                state
+                    .can_place_single_reinforcement(&UnitPlacement {
+                        id,
+                        position,
+                        profile,
+                        state: Default::default(),
+                    })
+                    .is_ok()
             })
     })
 }
@@ -481,11 +506,21 @@ fn end_zariba_construction(state: &mut GameState) {
 }
 
 /// Clear per-phase / per-turn tracking (§5.13: MP never carry over).
-fn clear_per_turn_tracking(state: &mut GameState) {
+/// §6.14: "in any given fire combat phase ... a combat unit may only fire
+/// once and may only be fired at once" -- the fired / fired-at / shelled
+/// ledgers belong to one fire phase (or §6.42 subphase), so every fire
+/// phase starts with them empty. Without the reset at Defensive -> Offensive
+/// Fire, units a scattered §6.64 shell struck on their own side in the
+/// defensive Maxim/howitzer subphase could not be fired at offensively.
+fn clear_fire_trackers(state: &mut GameState) {
     state.units_fired_this_phase.clear();
     state.gunboat_maxims_fired_this_phase.clear();
     state.units_fired_at_this_phase.clear();
     state.units_shelled_this_phase.clear();
+}
+
+fn clear_per_turn_tracking(state: &mut GameState) {
+    clear_fire_trackers(state);
     state.mp_spent_this_turn.clear();
     // §5.24: the sticky upstream cap only lasts for the turn.
     state.gunboats_upstream_this_turn.clear();
