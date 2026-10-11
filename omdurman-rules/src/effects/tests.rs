@@ -6406,7 +6406,7 @@ mod tests {
             state.find_unit(dervish_gb).unwrap().position,
             HexCoord::new(5, 0)
         );
-        assert!(state.pending_mine.is_none() && !state.mines[0].triggered);
+        assert!(state.pending_mines.is_empty() && !state.mines[0].triggered);
         state.units.retain(|u| u.id != dervish_gb);
 
         // A British gunboat sailing through is stopped on the mine.
@@ -6420,7 +6420,7 @@ mod tests {
         );
         assert_eq!(state.mp_spent(brit_gb), 3);
         assert_eq!(
-            state.pending_mine,
+            state.pending_mine(),
             Some(crate::StruckMine {
                 gunboat: brit_gb,
                 hex
@@ -6456,11 +6456,81 @@ mod tests {
         )
         .unwrap();
         assert!(state.find_unit(brit_gb).is_none(), "8-10: sunk");
-        assert!(state.mines[0].triggered && state.pending_mine.is_none());
+        assert!(state.mines[0].triggered && state.pending_mines.is_empty());
         // §10.13: a spent mine no longer fires.
         let gb3 = make_profiled_unit(&mut state, HexCoord::new(0, 0), ae_gunboat_profile());
         sail(&mut state, gb3, 6).unwrap();
         assert_eq!(state.find_unit(gb3).unwrap().position, HexCoord::new(6, 0));
+    }
+
+    // §10.12/§10.13: two British gunboats striking the two mines before the
+    // Dervish player has rolled are both rolled for -- the strikes queue
+    // instead of the second overwriting the first -- and a boat entering a
+    // mine already struck (its roll pending) passes: each mine goes off once.
+    #[rulebook("§10.12", "§10.13")]
+    #[test]
+    fn two_struck_mines_are_both_rolled_for() {
+        let mut state = playing(Scenario::Campaign);
+        state.board = Arc::new(nile_board_row0(0, 8, HexDirection::East));
+        state.active_player = Player::AngloEgyptian;
+        let (first_mine, second_mine) = (HexCoord::new(3, 0), HexCoord::new(6, 0));
+        for hex in [first_mine, second_mine] {
+            state.mines.push(crate::MinePlacement {
+                hex,
+                triggered: false,
+            });
+        }
+        let sail = |state: &mut GameState, gb: UnitId, to: i32| {
+            apply_effect(
+                state,
+                &GameEffect::MoveUnit {
+                    unit_id: gb,
+                    to: HexCoord::new(to, 0),
+                    cost: MovementPoints::new(to as i16),
+                    path: (1..=to).map(|q| HexCoord::new(q, 0)).collect(),
+                },
+            )
+        };
+        let a = make_profiled_unit(&mut state, HexCoord::new(0, 0), ae_gunboat_profile());
+        let b = make_profiled_unit(&mut state, HexCoord::new(0, 0), ae_gunboat_profile());
+        sail(&mut state, a, 7).unwrap();
+        assert_eq!(state.find_unit(a).unwrap().position, first_mine);
+        // The second boat passes the struck mine and stops on the other one.
+        sail(&mut state, b, 7).unwrap();
+        assert_eq!(state.find_unit(b).unwrap().position, second_mine);
+        assert_eq!(
+            state.pending_mines,
+            vec![
+                crate::StruckMine {
+                    gunboat: a,
+                    hex: first_mine
+                },
+                crate::StruckMine {
+                    gunboat: b,
+                    hex: second_mine
+                },
+            ]
+        );
+        assert_eq!(state.pending_mine().map(|m| m.gunboat), Some(a));
+        let roll = |state: &mut GameState, gunboat_id: UnitId, hex: HexCoord| {
+            apply_effect(
+                state,
+                &GameEffect::RiverMine {
+                    gunboat_id,
+                    hex,
+                    roll: DieRoll::One,
+                },
+            )
+        };
+        roll(&mut state, b, second_mine).unwrap();
+        assert!(matches!(
+            assert_rejected_untouched(&mut state, GameEffect::AdvancePhase),
+            RuleError::MinePendingResolution
+        ));
+        roll(&mut state, a, first_mine).unwrap();
+        assert!(state.pending_mines.is_empty());
+        assert!(state.mines.iter().all(|m| m.triggered));
+        apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap();
     }
 
     #[rulebook("§10.22", "§10.23")]
@@ -6593,9 +6663,9 @@ mod tests {
         state.find_unit_mut(gb).unwrap().position = HexCoord::new(1, 0);
         sail(&mut state, &[2, 3, 4]).unwrap();
         assert_eq!(state.find_unit(gb).unwrap().position, HexCoord::new(2, 0));
-        assert!(state.pending_mine.is_some());
+        assert!(state.pending_mine().is_some());
         assert!(state.gunboats_at_chain.is_empty());
-        state.pending_mine = None;
+        state.pending_mines.clear();
         state.mines.clear();
         state.gunboats_stopped_this_turn.clear();
         state.mp_spent_this_turn.clear();
@@ -10256,7 +10326,9 @@ mod tests {
             hex,
             triggered: false,
         });
-        state.pending_mine = Some(crate::StruckMine { gunboat: gb, hex });
+        state
+            .pending_mines
+            .push(crate::StruckMine { gunboat: gb, hex });
         apply_effect(
             &mut state,
             &GameEffect::RiverMine {

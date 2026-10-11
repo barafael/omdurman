@@ -233,7 +233,7 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
         return Err(RuleError::LeadersMustEnterByTurnFour);
     }
     // §10.12: the Dervish player resolves a struck mine before play goes on.
-    if state.pending_mine.is_some() {
+    if !state.pending_mines.is_empty() {
         return Err(RuleError::MinePendingResolution);
     }
     // §8.2: "Once each campaign game, during the first night turn of the

@@ -2736,6 +2736,7 @@ tests = [
     "omdurman-rules::src::effects::tests::a_mined_gunboat_scores_and_takes_its_friendlies_down",
     "omdurman-rules::src::effects::tests::mine_fires_once_and_spares_dervish",
     "omdurman-rules::src::effects::tests::a_disabled_gunboat_drifts_two_hexes_a_turn",
+    "omdurman-rules::src::effects::tests::two_struck_mines_are_both_rolled_for",
 ]
 
 [[mapping.impl]]
@@ -2762,6 +2763,7 @@ proofs = [
 ]
 tests = [
     "omdurman-rules::src::effects::tests::mine_fires_once_and_spares_dervish",
+    "omdurman-rules::src::effects::tests::two_struck_mines_are_both_rolled_for",
 ]
 
 [[mapping.impl]]

@@ -75,7 +75,7 @@ pub(crate) fn roll_for_struck_mine(
     mut pending: ResMut<PendingEdits>,
     mut rolled_for: Local<Option<omdurman_rules::StruckMine>>,
 ) {
-    let Some(struck) = game_state.0.pending_mine else {
+    let Some(struck) = game_state.0.pending_mine() else {
         *rolled_for = None;
         return;
     };

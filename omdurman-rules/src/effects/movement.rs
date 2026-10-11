@@ -31,11 +31,7 @@ pub fn apply_move_unit(
     // the path (the Anglo-Egyptian player does not know where they lie).
     let struck = (mover_owner == Player::AngloEgyptian
         && matches!(mover_kind, UnitKind::Gunboat { .. }))
-    .then(|| {
-        entered
-            .iter()
-            .position(|h| state.mines.iter().any(|m| m.hex == *h && !m.triggered))
-    })
+    .then(|| entered.iter().position(|h| state.live_mine_at(*h)))
     .flatten();
     // §10.22: "When a British gunboat enters a 'chained' river hex it must
     // stop and may move no further that turn" -- likewise unknown to it.

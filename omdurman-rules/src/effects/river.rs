@@ -106,10 +106,10 @@ pub(crate) fn strikes_mine(state: &mut GameState, gunboat: UnitId, hex: HexCoord
     let british = state
         .find_unit(gunboat)
         .is_some_and(|u| u.profile.identity.owner() == Player::AngloEgyptian);
-    if !british || !state.mines.iter().any(|m| m.hex == hex && !m.triggered) {
+    if !british || !state.live_mine_at(hex) {
         return false;
     }
-    state.pending_mine = Some(crate::StruckMine { gunboat, hex });
+    state.pending_mines.push(crate::StruckMine { gunboat, hex });
     if !state.gunboats_stopped_this_turn.contains(&gunboat) {
         state.gunboats_stopped_this_turn.push(gunboat);
     }
@@ -122,22 +122,22 @@ pub(crate) fn strikes_mine(state: &mut GameState, gunboat: UnitId, hex: HexCoord
 
 /// Resolve the mine a British gunboat has struck (rulebook §10.12) with the
 /// Dervish player's roll: 1-4 no effect, 5-7 the engines are lost (the
-/// gunboat drifts from now on), 8-10 sunk. Only the pending strike may be
-/// resolved, and each mine goes off once (§10.13).
+/// gunboat drifts from now on), 8-10 sunk. Only a pending strike may be
+/// resolved (any of them, when two boats struck the two mines), and each
+/// mine goes off once (§10.13).
 pub fn apply_river_mine(
     state: &mut GameState,
     gunboat_id: UnitId,
     hex: HexCoord,
     roll: DieRoll,
 ) -> Result<(), RuleError> {
-    if state.pending_mine
-        != Some(crate::StruckMine {
-            gunboat: gunboat_id,
-            hex,
-        })
-    {
+    let struck = crate::StruckMine {
+        gunboat: gunboat_id,
+        hex,
+    };
+    let Some(slot) = state.pending_mines.iter().position(|m| *m == struck) else {
         return Err(RuleError::NoUntriggeredMine(hex));
-    }
+    };
     // §10.13: a mine only fires once.
     let Some(mine) = state
         .mines
@@ -147,7 +147,7 @@ pub fn apply_river_mine(
         return Err(RuleError::NoUntriggeredMine(hex));
     };
     mine.triggered = true;
-    state.pending_mine = None;
+    state.pending_mines.remove(slot);
 
     let result = crate::MineResult::from_roll(roll);
     match result {
@@ -321,7 +321,7 @@ mod verification {
         });
         // A British boat entering the hex has struck the mine (§10.12).
         if !dervish {
-            state.pending_mine = Some(crate::StruckMine {
+            state.pending_mines.push(crate::StruckMine {
                 gunboat: UnitId::ALL[0],
                 hex,
             });
@@ -432,7 +432,7 @@ mod verification {
         let hex = HexCoord::new(0, 0);
         let mut state = state_with_mined_boat(true);
         assert!(!strikes_mine(&mut state, UnitId::ALL[0], hex));
-        assert!(state.pending_mine.is_none());
+        assert!(state.pending_mines.is_empty());
         assert!(state.gunboats_stopped_this_turn.is_empty());
         assert!(!state.mines[0].triggered);
         // ...and nothing to roll for. A fresh state, so the solver does not

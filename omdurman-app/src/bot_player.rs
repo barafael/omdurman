@@ -250,7 +250,7 @@ pub fn bot_player_act(
 /// first though the Anglo-Egyptians move first (§9.111/§9.113); otherwise
 /// the phase player (defensive fire belongs to the non-moving side, §6.7).
 fn ai_chooser(state: &GameState) -> Option<Player> {
-    if state.pending_mine.is_some() {
+    if state.pending_mine().is_some() {
         Some(Player::Dervish)
     } else {
         state.player_to_act()

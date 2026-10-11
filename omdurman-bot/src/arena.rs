@@ -209,7 +209,7 @@ pub fn play_until(
         // (§10.12); otherwise the side to act (deployer in set-up, the
         // non-moving side in defensive fire).
         let decided = std::time::Instant::now();
-        let chooser = if state.pending_mine.is_some() {
+        let chooser = if state.pending_mine().is_some() {
             Player::Dervish
         } else {
             state.player_to_act().unwrap_or(state.phase_player())
