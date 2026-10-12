@@ -2,7 +2,6 @@ use bevy::prelude::*;
 use bevy_matchbox::prelude::*;
 use chrono::{DateTime, Utc};
 use matchbox_socket::RtcIceServerConfig;
-use omdurman_rules::MovementPoints;
 use omdurman_rules::OptionalRule;
 use omdurman_rules::effects::GameEffect;
 use omdurman_types::{CommandScope, HexCoord, Player, Scenario, SpriteRef};
@@ -75,7 +74,6 @@ impl SeatHolder {
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 pub struct Seat {
     pub faction: Player,
-    #[serde(default)]
     pub scope: Option<CommandScope>,
     pub holder: SeatHolder,
 }
@@ -101,31 +99,22 @@ pub enum GameEvent {
     /// automatically. Recorded + replayed, so a late joiner learns the seats
     /// via the snapshot path.
     StartGame {
-        /// The committed seats. Records written before seats existed carry
-        /// `assignments`/`ai`/`commands` instead; those keys are ignored and
-        /// the game loads seatless (reviewable, nobody bound).
-        #[serde(default)]
+        /// The committed seats.
         seats: Vec<Seat>,
         /// The scenario the host committed to. Selects which board loads
         /// (`Campaign` -> campaign map, otherwise the Fall-of-Khartoum map) and
         /// seeds the rules engine's turn track. Recorded + replayed so late
         /// joiners and history replay agree on both.
-        #[serde(default)]
         scenario: Scenario,
         /// Optional rules selected by the Dervish host for a campaign game
         /// (§10.11 RiverMines, §10.21 RiverChain). Independently checkable —
-        /// both may be active — and empty when none was selected or the
-        /// scenario doesn't support them. (Formerly the single
-        /// `optional_rule: Option<OptionalRule>`; legacy records carrying
-        /// that key load with no optional rules, as if `None`.)
-        #[serde(default)]
+        /// both may be active — and empty when none was selected.
         optional_rules: Vec<OptionalRule>,
     },
     /// A semantic game action resolved by the rule engine (§effect system).
     Effect(GameEffect),
     PlaceUnit {
         sprite: SpriteRef,
-        #[serde(default)]
         coord: HexCoord,
         is_boat: bool,
     },
@@ -137,15 +126,12 @@ pub enum GameEvent {
         sprite: SpriteRef,
         to_q: i32,
         to_r: i32,
-        #[serde(default)]
-        cost: MovementPoints,
         /// The hexes entered, excluding the start and ending at the destination
-        /// (the picker's BFS route). Lets the rules engine cost the move by
-        /// terrain (§5.11), classify gunboat up/downstream steps (§5.24), and
-        /// enforce the ZOC-stop rule per hex along the route (§5.26/§5.43).
-        /// Empty on legacy records / direct destination-only moves, in which
-        /// case the engine falls back to the supplied `cost`.
-        #[serde(default)]
+        /// (the picker's BFS route). The rules engine costs the move by
+        /// terrain (§5.11), classifies gunboat up/downstream steps (§5.24), and
+        /// enforces the ZOC-stop rule per hex along the route (§5.26/§5.43).
+        /// The movement points are computed by the engine; no cost travels on
+        /// the wire.
         path: Vec<HexCoord>,
     },
     /// Host-arbitrated change of one seat's holder: a newcomer claiming an
@@ -181,16 +167,12 @@ pub enum GameEvent {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct RecordedEvent {
     pub utc: DateTime<Utc>,
-    #[serde(default)]
     pub sender_idx: Option<u8>,
     /// Canonical, host-assigned global sequence number. Identical on every
     /// peer for the same event, so all peers' logs are byte-for-byte ordered
     /// the same way (§ordering).
     pub seq: u32,
-    /// Submission identity of the event (see [`NetMsg::Game`]). `None` for
-    /// records written before uids existed; identity dedup and confirmation
-    /// simply do not engage for those.
-    #[serde(default)]
+    /// Submission identity of the event (see [`NetMsg::Game`]).
     pub uid: Option<u64>,
     pub payload: GameEvent,
 }
@@ -847,28 +829,6 @@ mod serde_tests {
                 let names: Vec<String> = tribes.iter().map(|t| t.to_string()).collect();
                 assert_eq!(names, vec!["Baggara", "Jaalin"]);
             }
-            other => panic!("wrong event: {other:?}"),
-        }
-    }
-
-    // §1.1: records written before seats existed (`assignments` / `ai` /
-    // `commands` keyed by session `PeerId`) still deserialize -- the old keys
-    // are ignored and the game loads seatless, so legacy saved games stay
-    // reviewable.
-    #[traceability_macro::rulebook("§1.1")]
-    #[test]
-    fn legacy_start_game_without_commands_still_loads() {
-        let legacy = serde_json::json!({
-            "StartGame": {
-                "assignments": [],
-                "scenario": "Campaign",
-                "optional_rule": null,
-                "ai": ["Dervish"],
-            }
-        });
-        let event: GameEvent = serde_json::from_value(legacy).unwrap();
-        match event {
-            GameEvent::StartGame { seats, .. } => assert!(seats.is_empty()),
             other => panic!("wrong event: {other:?}"),
         }
     }

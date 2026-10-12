@@ -69,7 +69,6 @@ note = "The manual's multi-player provision -- 'each player assuming command of 
 tests = [
     "omdurman-rules::src::unit_profiles::command_owns_unit_follows_tribes_and_brigades",
     "omdurman-net::src::lib::start_game_commands_round_trip",
-    "omdurman-net::src::lib::legacy_start_game_without_commands_still_loads",
     "omdurman-net::src::lib::brigade_scope_display_and_membership",
     "omdurman-app::src::tests::replayed_start_game_stages_commands_and_resets_ready",
 ]

@@ -1408,7 +1408,6 @@ impl SelectedClick<'_> {
             },
             to_q: final_dest.q,
             to_r: final_dest.r,
-            cost: MovementPoints::new(total_cost),
             path,
         }))
     }
@@ -1712,7 +1711,6 @@ impl SelectedStackClick<'_, '_, '_> {
                 },
                 to_q: to.q,
                 to_r: to.r,
-                cost: MovementPoints::new(cum),
                 path: prefix,
             });
         }
