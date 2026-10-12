@@ -2370,9 +2370,9 @@ mod verification {
     }
 
     /// The terrain-to-level mapping is a property of the *ground* alone:
-    /// road overlays and Nile flow direction never change a hex's LOS
-    /// level. If road state ever leaked into the level lookup, road hexes
-    /// would silently shadow the printed LOS table.
+    /// the Nile flow direction never changes a hex's LOS level. (Roads are
+    /// a property of the hexside links, so they cannot leak into the level
+    /// lookup by construction.)
     // §6.3
     #[traceability_macro::rulebook("§6.3")]
     #[kani::proof]
@@ -2381,13 +2381,6 @@ mod verification {
         let g: usize = kani::any();
         let kind = any_ground(g % 7);
         let plain = los_level(Terrain::ground(kind));
-        let r: usize = kani::any();
-        let road = match r % 3 {
-            0 => Road::None,
-            1 => Road::Road,
-            _ => Road::Crossroad,
-        };
-        assert!(los_level(Terrain::ground_with_road(kind, road)) == plain);
         // The Nile's level is flow-independent.
         let d0: u8 = kani::any();
         let nile = Terrain::Nile {

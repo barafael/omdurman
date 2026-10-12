@@ -454,7 +454,7 @@ mod tests {
 mod verification {
     use super::{defense_modifier, movement_cost, movement_cost_with_road, terrain_effects_chart};
     use crate::MovementAllowance;
-    use omdurman_types::{GroundKind, HexDirection, Road, Terrain};
+    use omdurman_types::{GroundKind, HexDirection, Terrain};
 
     /// A symbolic ground kind (index layout follows `GroundKind`'s
     /// declaration order).
@@ -470,35 +470,26 @@ mod verification {
         }
     }
 
-    /// A symbolic road state.
-    fn any_road(i: usize) -> Road {
-        match i {
-            0 => Road::None,
-            1 => Road::Road,
-            _ => Road::Crossroad,
-        }
-    }
-
     /// §5.11: the printed Terrain Effects Chart movement column. Every
     /// ground hex costs 1..=3 MP to enter, the Nile is impassable to land
-    /// units, and a road costs a flat 1 MP -- never *more* than the
-    /// underlying terrain, and exactly 1 even where the terrain is cheaper
-    /// is the printed Road row's own wording ("cost of 1 MP"), so the proof
-    /// pins the flat override rather than a monotonicity claim.
+    /// units, and a step along a road *link* costs a flat 1 MP -- never
+    /// *more* than the underlying terrain, and exactly 1 even where the
+    /// terrain is cheaper is the printed Road row's own wording ("cost of
+    /// 1 MP"), so the proof pins the flat override rather than a
+    /// monotonicity claim.
     // §5.11
     #[traceability_macro::rulebook("§5.11")]
     #[kani::proof]
     fn movement_column_matches_the_printed_chart() {
         let g: usize = kani::any();
-        let r: usize = kani::any();
-        let terrain = Terrain::ground_with_road(any_ground(g % 7), any_road(r % 3));
+        let terrain = Terrain::ground(any_ground(g % 7));
         let cost = movement_cost(terrain);
         // Passable ground costs 1..=3 MP.
         let value = cost.expect("ground terrain is never impassable").value();
         assert!(value >= 1 && value <= 3);
-        // A road is a flat 1 MP regardless of terrain.
+        // A step along a road link is a flat 1 MP regardless of terrain.
         assert!(movement_cost_with_road(terrain, true) == Some(MovementAllowance::One));
-        // Without a road the terrain's own cost applies.
+        // Off a road link the terrain's own cost applies.
         assert!(movement_cost_with_road(terrain, false) == cost);
         // The Nile is impassable, whatever its flow direction.
         let flow: u8 = kani::any();
@@ -523,10 +514,6 @@ mod verification {
         let modifier = defense_modifier(terrain);
         assert!(modifier <= 0);
         assert!(modifier >= -3);
-        // Road state is a movement overlay only: it never changes defence.
-        let r: usize = kani::any();
-        let with_road = Terrain::ground_with_road(any_ground(g % 7), any_road(r % 3));
-        assert!(defense_modifier(with_road) == modifier);
         // The Nile carries no defence modifier.
         let nile = Terrain::Nile {
             direction: HexDirection::East,
