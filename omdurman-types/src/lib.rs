@@ -1321,15 +1321,6 @@ impl std::fmt::Display for CommandScope {
     }
 }
 
-/// One human's seat within a faction: the [`Player`] side they act for plus
-/// the [`CommandScope`] they gate on. Recorded in `GameEvent::StartGame`
-/// alongside the faction assignments, so replay and late joiners inherit it.
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
-pub struct Command {
-    pub player: Player,
-    pub scope: CommandScope,
-}
-
 /// Hex orientation: [diamond] pointy-top (vertices up/down) or [hexagon] flat-top (vertices left/right).
 ///
 /// Affects pixel-hex conversion formulas and which axis is staggered.
