@@ -69,7 +69,7 @@ mod zoc;
 
 // Re-export items moved out of main.rs into their owning modules so existing
 // `crate::Foo` paths continue to resolve throughout the crate.
-pub(crate) use board_state::{ActiveEditMap, LoadedAnnotations, PendingMapLoad};
+pub(crate) use board_state::{ActiveBoard, LoadedAnnotations, PendingMapLoad};
 pub(crate) use layout::ScreenLayout;
 pub(crate) use lobby::{LobbyScenario, LobbyTab, LocalFaction, LocalOptionalRule, LocalSpectator};
 pub(crate) use net_plugin::{PendingEdits, PendingIncoming, TurnState};
@@ -200,7 +200,7 @@ fn add_game(app: &mut App, room: String) {
         // inserts later panics if it ever runs first.
         .insert_resource(GameRng::from_seed(omdurman_net::new_seed()))
         .insert_resource(LoadedAnnotations::default())
-        .insert_resource(ActiveEditMap::default())
+        .insert_resource(ActiveBoard::default())
         .insert_resource(fire_allocation::FireAllocationState::default())
         .insert_resource(ui_plugin::DemolitionSelection::default())
         .insert_resource(ui_plugin::OptionalRulePlacement::default())

@@ -30,7 +30,7 @@ pub(crate) fn coord_passable(game_map: &GameMap, coord: HexCoord, is_boat: bool)
 /// entered terrain (1 along a road link) plus the crossed hexside (Khor +5,
 /// Crest +1, gate/breach +1, §9.233 Zariba end +2). With a game state the
 /// engine prices the step itself (it knows the breaches); the bare map is
-/// the editor/no-game fallback. Gunboats pay a flat 1 MP per entered Nile
+/// the bare-map/no-game fallback. Gunboats pay a flat 1 MP per entered Nile
 /// hex (§5.24). Returns 0 if the step is off-map or closed to the mover
 /// (callers should check passability separately).
 pub(crate) fn floor_movement_cost(

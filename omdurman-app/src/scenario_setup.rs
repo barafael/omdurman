@@ -176,7 +176,7 @@ pub(crate) fn auto_trigger_scenario_setup(
     game_state: Res<crate::GameStateResource>,
     board: (
         Res<GameMap>,
-        Res<crate::ActiveEditMap>,
+        Res<crate::ActiveBoard>,
         Res<crate::PendingMapLoad>,
     ),
     net: Res<omdurman_net::NetState>,

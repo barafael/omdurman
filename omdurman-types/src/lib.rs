@@ -1502,7 +1502,7 @@ pub struct MapData {
     /// roads.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub roads: Vec<HexsideRef>,
-    /// Editor-time exclusions: `(q, r)` coords that fall *inside* the overlay
+    /// Playable-map exclusions: `(q, r)` coords that fall *inside* the overlay
     /// grid but are not part of the playable map (covered by a logo, the turn
     /// track, or other board furniture). Subtracted from the generated hex set,
     /// so excluded hexes carry no terrain and reject placement. A `BTreeSet`

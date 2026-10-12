@@ -1,27 +1,21 @@
-//! Board-view plumbing for the game app (`omdurman-app`), split out while a
-//! map editor (since retired) shared it.
+//! Board-view plumbing for the game app (`omdurman-app`).
 //!
-//! Everything here used to exist as two near-verbatim copies (one per
-//! binary); any edit to one silently diverged the editor's rendering from the
-//! game's. The single copies now live here:
-//!
-//! * [`input`] — key/raycast helpers
+//! * [`input`] — key helpers
 //! * [`camera`] — the RTS camera (component, settings, control systems)
 //! * [`night`] — day/night colour grading (opt-in, driven by a resource)
 //! * [`panels`] — egui pointer gating + the declarative map-input set
 //! * [`board_store`] — two-board store, deferred board loads, map plane
 //!
-//! The binaries keep only their small local `Plugin` wiring and their
+//! The binary keeps only its small local `Plugin` wiring and its
 //! app-specific hooks (e.g. attaching `BoardInfo` to the engine state).
 
 pub mod board_store;
 pub mod camera;
-pub mod input;
+mod input;
 pub mod night;
 pub mod panels;
 
 pub use board_store::*;
 pub use camera::*;
-pub use input::*;
 pub use night::*;
 pub use panels::*;

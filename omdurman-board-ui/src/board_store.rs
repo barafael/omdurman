@@ -1,9 +1,8 @@
 //! The two-board store + board bootstrap (§dual-map): [`LoadedAnnotations`]
 //! (seeded from the RON data the rules crate embeds), the deferred
-//! [`PendingMapLoad`] request, [`apply_map_selection`] and the map plane.
-//! Previously two
-//! drifting copies (the game's and the since-retired map editor's) — including the calibration block that
-//! turns a board's pixel anchors into a [`HexLayout`].
+//! [`PendingMapLoad`] request, [`take_pending`]/[`load_board`] and the map
+//! plane, including the calibration block that turns a board's pixel anchors
+//! into a [`HexLayout`].
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
@@ -13,8 +12,8 @@ use omdurman_hexmap::{
 };
 use omdurman_types::{HexCoord, MapData, MapKind};
 
-/// The full two-board annotations store, kept in memory so edits, saves, and
-/// replay re-seeds can address either board without re-reading from disk
+/// The full two-board annotations store, kept in memory so board switches
+/// and replay re-seeds can address either board without re-reading from disk
 /// (§dual-map). Seeded from the RON data files at startup.
 #[derive(Resource)]
 pub struct LoadedAnnotations {
@@ -47,10 +46,10 @@ impl Default for LoadedAnnotations {
 }
 
 /// Which board is currently live in `GameMap`/`HexOverlay`/`MapDims`/
-/// `HexLayout` (§dual-map). Local to each peer/tool; switching it reloads the
+/// `HexLayout` (§dual-map). Local to each peer; switching it reloads the
 /// corresponding board via [`PendingMapLoad`].
 #[derive(Resource, Default)]
-pub struct ActiveEditMap(pub MapKind);
+pub struct ActiveBoard(pub MapKind);
 
 /// A deferred request to (re)load a board into the live `GameMap`/`HexOverlay`/
 /// `MapDims`/`HexLayout` and re-texture the map plane. Set by scenario start /
@@ -60,8 +59,7 @@ pub struct ActiveEditMap(pub MapKind);
 pub struct PendingMapLoad(pub Option<MapKind>);
 
 /// The `HexLayout` calibrated against the Fall-of-Khartoum scan — the default
-/// board both binaries open with. Previously the same anchor numbers were
-/// pasted into each `main.rs`; they now derive from the one embedded
+/// board the game opens with. The anchor numbers derive from the one embedded
 /// [`MapData`].
 pub fn default_layout() -> HexLayout {
     calibrated_layout(omdurman_rules::board_data::fall_of_khartoum_map_data())
@@ -69,7 +67,7 @@ pub fn default_layout() -> HexLayout {
 
 /// The `HexLayout` calibrated against a board's pixel anchors (§dual-map):
 /// two (`pixel`, `hex`) anchor pairs plus the image size.
-pub fn calibrated_layout(map: &MapData) -> HexLayout {
+fn calibrated_layout(map: &MapData) -> HexLayout {
     HexLayout::calibrated(
         map.overlay.orientation,
         omdurman_hexmap::CalibrationAnchor {
@@ -86,7 +84,7 @@ pub fn calibrated_layout(map: &MapData) -> HexLayout {
 
 /// Startup seeding: load both boards from the embedded RON data and load the
 /// default board (Fall-of-Khartoum) into the live map, including the
-/// calibrated [`HexLayout`], [`MapDims`] and [`ActiveEditMap`]. (Binaries that need more at
+/// calibrated [`HexLayout`], [`MapDims`] and [`ActiveBoard`]. (Binaries that need more at
 /// startup — e.g. the game's sprite-annotation file — wrap this system.)
 pub fn load_annotations(
     mut commands: Commands,
@@ -105,9 +103,9 @@ pub fn load_annotations(
         img_h: map.img_h,
     });
     // Keep the live-board marker in step with what was just loaded, so a
-    // board reconciler doesn't see a stale `ActiveEditMap` and misjudge
+    // board reconciler doesn't see a stale `ActiveBoard` and misjudge
     // whether a reload is needed.
-    commands.insert_resource(ActiveEditMap(kind));
+    commands.insert_resource(ActiveBoard(kind));
 }
 
 /// Bundle of resources mutated when (re)loading a board into the live
@@ -119,7 +117,7 @@ pub fn load_annotations(
 pub struct MapLoadContext<'w> {
     pub pending: ResMut<'w, PendingMapLoad>,
     pub loaded: Res<'w, LoadedAnnotations>,
-    pub active: ResMut<'w, ActiveEditMap>,
+    pub active: ResMut<'w, ActiveBoard>,
     pub game_map: ResMut<'w, GameMap>,
     pub overlay: ResMut<'w, HexOverlay>,
     pub dims: ResMut<'w, MapDims>,
@@ -137,7 +135,7 @@ pub fn take_pending(ctx: &mut MapLoadContext) -> Option<MapKind> {
 }
 
 /// Load `kind` into the live `GameMap`/overlay/layout/dims and re-texture the
-/// map plane. The shared core of both binaries' `apply_map_selection`.
+/// map plane. The shared core of the game's `apply_map_selection`.
 pub fn load_board(
     ctx: &mut MapLoadContext,
     kind: MapKind,
@@ -184,15 +182,15 @@ pub fn spawn_map_plane(
     for kind in [MapKind::FallOfKhartoum, MapKind::Campaign] {
         cache.texture(&asset_server, &loaded.map(kind).image);
     }
-    let texture = cache.texture(&asset_server, "fall_of_khartoum_1885.webp");
+    // The plane opens on the default board; take the texture name and the
+    // scan's pixel size from the loaded data, not from literals.
+    let default_map = loaded.map(MapKind::FallOfKhartoum);
+    let texture = cache.texture(&asset_server, &default_map.image);
     commands.insert_resource(cache);
     commands.spawn((
         MapPlane,
         Name::new("MapPlane"),
-        Mesh3d(meshes.add(Rectangle::new(
-            omdurman_hexmap::IMG_W,
-            omdurman_hexmap::IMG_H,
-        ))),
+        Mesh3d(meshes.add(Rectangle::new(default_map.img_w, default_map.img_h))),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color_texture: Some(texture),
             unlit: true,
