@@ -454,7 +454,7 @@ fn commit_fire_attack(
         maybe_open_advance_window(
             state,
             target_hex,
-            &attack,
+            attack,
             was_occupied,
             opponent,
             paragraphs,
@@ -478,7 +478,7 @@ fn commit_fire_attack(
     maybe_open_advance_window(
         state,
         target_hex,
-        &attack,
+        attack,
         was_occupied,
         opponent,
         Vec::new(),
