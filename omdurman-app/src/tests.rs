@@ -414,12 +414,7 @@ mod late_joiner_tests {
         let mut h = TestHarness::new();
         h.game_map.hexes.insert(
             HexCoord::new(99, 99),
-            omdurman_types::HexData::new(
-                Terrain::Swamp {
-                    road: omdurman_types::Road::None,
-                },
-                None,
-            ),
+            omdurman_types::HexData::new(Terrain::Swamp, None),
         );
         h.replay(&record, None);
 

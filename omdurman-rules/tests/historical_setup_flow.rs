@@ -79,7 +79,7 @@ fn historical_setup_completes_on_the_campaign_board() {
         assert!(
             !matches!(
                 board.terrain_at(*hex),
-                Some(omdurman_types::Terrain::Building { .. })
+                Some(omdurman_types::Terrain::Building)
             ),
             "{hex:?} inside the Zariba is no building"
         );

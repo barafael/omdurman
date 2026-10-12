@@ -1392,12 +1392,7 @@ mod tests {
         let mut board = BoardInfo::default();
         for q in 0..=9 {
             for r in 0..=5 {
-                board.terrain.insert(
-                    HexCoord::new(q, r),
-                    Terrain::Clear {
-                        road: Default::default(),
-                    },
-                );
+                board.terrain.insert(HexCoord::new(q, r), Terrain::Clear);
             }
         }
         state.board = Arc::new(board);
@@ -1742,12 +1737,7 @@ mod tests {
     #[test]
     fn retreat_before_melee_may_not_land_on_nile() {
         let mut board = BoardInfo::default();
-        board.terrain.insert(
-            HexCoord::new(5, 5),
-            Terrain::Clear {
-                road: Default::default(),
-            },
-        );
+        board.terrain.insert(HexCoord::new(5, 5), Terrain::Clear);
         board.terrain.insert(
             HexCoord::new(7, 5),
             Terrain::Nile {
@@ -1809,18 +1799,8 @@ mod tests {
     #[test]
     fn retreat_before_melee_may_not_land_on_enemy_fort() {
         let mut board = BoardInfo::default();
-        board.terrain.insert(
-            HexCoord::new(5, 5),
-            Terrain::Clear {
-                road: Default::default(),
-            },
-        );
-        board.terrain.insert(
-            HexCoord::new(7, 5),
-            Terrain::Clear {
-                road: Default::default(),
-            },
-        );
+        board.terrain.insert(HexCoord::new(5, 5), Terrain::Clear);
+        board.terrain.insert(HexCoord::new(7, 5), Terrain::Clear);
         let mut state = GameState::new(Scenario::Campaign);
         state.board = Arc::new(board);
         state.phase = Phase::Melee;
@@ -2481,12 +2461,7 @@ mod tests {
         // Loaded board: only (0,0) is land terrain and (1,0) is Nile; the
         // neighbour (1,-1) is not a map hex at all.
         let mut board = BoardInfo::default();
-        board.terrain.insert(
-            HexCoord::new(0, 0),
-            Terrain::Clear {
-                road: Default::default(),
-            },
-        );
+        board.terrain.insert(HexCoord::new(0, 0), Terrain::Clear);
         board.terrain.insert(
             HexCoord::new(1, 0),
             Terrain::Nile {
@@ -4532,12 +4507,7 @@ mod tests {
             HexCoord::new(1, 0),
             HexCoord::new(1, 1),
         ] {
-            board.terrain.insert(
-                h,
-                Terrain::Clear {
-                    road: Default::default(),
-                },
-            );
+            board.terrain.insert(h, Terrain::Clear);
         }
         state.board = Arc::new(board);
         state.phase = Phase::Movement;
@@ -5511,7 +5481,7 @@ mod tests {
         let buri = HexCoord::new(20, 9);
         assert!(matches!(
             state.board.terrain_at(buri),
-            Some(omdurman_types::Terrain::Building { .. })
+            Some(omdurman_types::Terrain::Building)
         ));
         let fort = make_unit(
             &mut state,
@@ -6296,12 +6266,7 @@ mod tests {
         let mut state = GameState::new(Scenario::Historical);
         let board = board_mut(&mut state);
         for q in 0..8 {
-            board.terrain.insert(
-                HexCoord::new(q, 0),
-                Terrain::Clear {
-                    road: Default::default(),
-                },
-            );
+            board.terrain.insert(HexCoord::new(q, 0), Terrain::Clear);
         }
         board.terrain.insert(
             HexCoord::new(0, 1),
@@ -6334,12 +6299,9 @@ mod tests {
         ));
         // Rough ground between them hides the Jehadia (rough terrain blocks
         // a ground-level view).
-        board_mut(&mut state).terrain.insert(
-            HexCoord::new(3, 0),
-            Terrain::Rough {
-                road: Default::default(),
-            },
-        );
+        board_mut(&mut state)
+            .terrain
+            .insert(HexCoord::new(3, 0), Terrain::Rough);
         assert!(state.can_deploy_unit(&jehadia(HexCoord::new(5, 0))).is_ok());
         // Within three hexes of Sheik El Din only.
         assert!(matches!(
@@ -6355,12 +6317,9 @@ mod tests {
         let mut state = GameState::new(Scenario::Historical);
         let board = board_mut(&mut state);
         for hex in [(1, 1), (0, 0), (0, 1), (1, 0)] {
-            board.terrain.insert(
-                HexCoord::new(hex.0, hex.1),
-                Terrain::Clear {
-                    road: Default::default(),
-                },
-            );
+            board
+                .terrain
+                .insert(HexCoord::new(hex.0, hex.1), Terrain::Clear);
         }
         for hex in [(2, 1), (2, 2), (1, 2)] {
             board.terrain.insert(

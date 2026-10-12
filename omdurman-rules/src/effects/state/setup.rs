@@ -353,10 +353,7 @@ impl GameState {
                         let terrain = self.board.terrain_at(hex);
                         let is_garrison_terrain = matches!(
                             terrain,
-                            Some(
-                                omdurman_types::Terrain::Building { .. }
-                                    | omdurman_types::Terrain::Huts { .. }
-                            )
+                            Some(omdurman_types::Terrain::Building | omdurman_types::Terrain::Huts)
                         );
                         let at_landmark = matches!(
                             self.board.location_at(hex),

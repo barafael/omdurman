@@ -533,9 +533,7 @@ fn kitchener_score(effect: &GameEffect, state: &GameState, player: Player) -> i3
             }
             if matches!(
                 state.board.terrain_at(p.position),
-                Some(
-                    omdurman_types::Terrain::Building { .. } | omdurman_types::Terrain::Huts { .. }
-                )
+                Some(omdurman_types::Terrain::Building | omdurman_types::Terrain::Huts)
             ) {
                 s += 3;
             }

@@ -454,9 +454,7 @@ mod tests {
         map.hexes.insert(
             hex,
             omdurman_types::HexData {
-                terrain: omdurman_types::Terrain::Clear {
-                    road: Default::default(),
-                },
+                terrain: omdurman_types::Terrain::Clear,
                 name: None,
                 setup_letter: None,
                 named_area: None,

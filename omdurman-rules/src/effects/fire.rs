@@ -670,9 +670,7 @@ pub fn target_defence_modifier(
     let terrain = state
         .board
         .terrain_at(target_hex)
-        .unwrap_or(omdurman_types::Terrain::Clear {
-            road: Default::default(),
-        });
+        .unwrap_or(omdurman_types::Terrain::Clear);
     // §6.54: "The −3 defensive value is deducted from the die roll of enemy
     // fire attacks on friendly units stacked inside the fort" -- when the
     // fort is not itself the target.

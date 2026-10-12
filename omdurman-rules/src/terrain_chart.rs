@@ -55,19 +55,19 @@ pub struct TerrainEntry {
 /// Source: printed Terrain Effects Chart on the mapsheet.
 pub fn terrain_effects_chart(terrain: Terrain) -> TerrainEntry {
     match terrain {
-        Terrain::Clear { .. } => TerrainEntry {
+        Terrain::Clear => TerrainEntry {
             movement_cost: Some(MovementAllowance::One),
             defense_modifier: 0,
         },
-        Terrain::Rough { .. } => TerrainEntry {
+        Terrain::Rough => TerrainEntry {
             movement_cost: Some(MovementAllowance::Three),
             defense_modifier: 0,
         },
-        Terrain::Trees { .. } => TerrainEntry {
+        Terrain::Trees => TerrainEntry {
             movement_cost: Some(MovementAllowance::One),
             defense_modifier: 0,
         },
-        Terrain::Swamp { .. } => TerrainEntry {
+        Terrain::Swamp => TerrainEntry {
             movement_cost: Some(MovementAllowance::Three),
             defense_modifier: 0,
         },
@@ -75,15 +75,15 @@ pub fn terrain_effects_chart(terrain: Terrain) -> TerrainEntry {
             movement_cost: None,
             defense_modifier: 0,
         },
-        Terrain::Hilltop { .. } => TerrainEntry {
+        Terrain::Hilltop => TerrainEntry {
             movement_cost: Some(MovementAllowance::One),
             defense_modifier: 0,
         },
-        Terrain::Huts { .. } => TerrainEntry {
+        Terrain::Huts => TerrainEntry {
             movement_cost: Some(MovementAllowance::Three),
             defense_modifier: -1,
         },
-        Terrain::Building { .. } => TerrainEntry {
+        Terrain::Building => TerrainEntry {
             movement_cost: Some(MovementAllowance::Three),
             defense_modifier: -3,
         },
@@ -162,7 +162,7 @@ pub fn land_step_cost(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use omdurman_types::{GroundKind, Road};
+    use omdurman_types::GroundKind;
     use strum::IntoEnumIterator;
     use traceability_macro::rulebook;
 
@@ -287,14 +287,6 @@ mod tests {
                 "no-road fallback mismatch for {terrain:?}"
             );
         }
-    }
-
-    #[rulebook("§5.11")]
-    #[test]
-    fn road_gives_crossroad() {
-        let r = Terrain::ground_with_road(GroundKind::Clear, Road::Crossroad);
-        assert!(r.is_crossroad());
-        assert!(r.has_road());
     }
 
     /// The printed Terrain Effects Chart, as transcribed in

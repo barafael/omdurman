@@ -227,7 +227,7 @@ pub(crate) fn auto_trigger_scenario_setup(
 mod tests {
     use super::*;
     use omdurman_types::SectionName;
-    use omdurman_types::{HexData, Road, Terrain};
+    use omdurman_types::{HexData, Terrain};
 
     /// A second game of the same scenario in a new room starts at seq 0
     /// again; its key must still differ from the first game's.
@@ -256,7 +256,7 @@ mod tests {
     fn map_with(letters: &[(i32, i32, SetupLetter)]) -> GameMap {
         let mut m = GameMap::default();
         for &(q, r, l) in letters {
-            let mut data = HexData::new(Terrain::Clear { road: Road::None }, None);
+            let mut data = HexData::new(Terrain::Clear, None);
             data.setup_letter = Some(l);
             m.hexes.insert(HexCoord::new(q, r), data);
         }
@@ -319,7 +319,7 @@ mod tests {
     fn map_with_named(named: &[(i32, i32, &str)]) -> GameMap {
         let mut m = GameMap::default();
         for &(q, r, name) in named {
-            let data = HexData::new(Terrain::Clear { road: Road::None }, Some(name.to_string()));
+            let data = HexData::new(Terrain::Clear, Some(name.to_string()));
             m.hexes.insert(HexCoord::new(q, r), data);
         }
         m

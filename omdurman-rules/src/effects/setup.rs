@@ -203,11 +203,10 @@ pub fn apply_place_reinforcements(
                     }
                 }
                 Player::Dervish => {
-                    let terrain = state.board.terrain_at(p.position).unwrap_or(
-                        omdurman_types::Terrain::Clear {
-                            road: Default::default(),
-                        },
-                    );
+                    let terrain = state
+                        .board
+                        .terrain_at(p.position)
+                        .unwrap_or(omdurman_types::Terrain::Clear);
                     crate::terrain_chart::movement_cost(terrain)
                         .map(|allowance| allowance.value() as i16)
                         .unwrap_or(1)

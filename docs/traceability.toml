@@ -304,7 +304,6 @@ clause = "A unit may move up to this printed movement allowance, paying varying 
 witness = "omdurman-rules::src::terrain_chart::engine_matches_the_transcribed_terrain_effects_chart"
 proofs = [
     "omdurman-rules::src::terrain_chart::movement_column_matches_the_printed_chart",
-    "omdurman-types::src::lib::terrain_road_state_round_trips",
 ]
 tests = [
     "omdurman-rules::src::effects::tests::road_rate_applies_only_along_the_road",
@@ -326,7 +325,6 @@ tests = [
     "omdurman-rules::src::terrain_chart::movement_cost_without_road_matches_terrain",
     "omdurman-rules::src::effects::tests::movement_cost_for_uses_terrain",
     "omdurman-rules::src::effects::tests::movement_cost_for_road_costs_one",
-    "omdurman-rules::src::terrain_chart::road_gives_crossroad",
     "omdurman-rules::src::terrain_chart::terrain_movement_costs_in_bounds",
     "omdurman-rules::src::terrain_chart::terrain_chart_road_always_costs_one",
     "omdurman-rules::src::terrain_chart::trees_cost_one_and_give_no_defense",
@@ -358,15 +356,7 @@ symbol = "movement_cost_with_road"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
-symbol = "Terrain::has_road"
-
-[[mapping.impl]]
-file = "omdurman-types/src/lib.rs"
 symbol = "Terrain::passable_by_land"
-
-[[mapping.impl]]
-file = "omdurman-types/src/lib.rs"
-symbol = "Terrain::is_crossroad"
 
 [[mapping.impl]]
 file = "omdurman-rules/src/board.rs"
@@ -534,7 +524,6 @@ witness = "omdurman-rules::src::effects::tests::gunboat_upstream_cap_is_sticky_a
 proofs = [
     "omdurman-types::src::lib::unit_kind_fire_and_movement_capability_law_is_exact",
     "omdurman-types::src::lib::hex_direction_from_index_is_total_mod_six",
-    "omdurman-types::src::lib::nile_flow_rotation_composes_and_never_leaves_the_nile",
 ]
 tests = [
     "omdurman-rules::src::unit_profiles::boat_annotation_yields_split_gunboat_movement",

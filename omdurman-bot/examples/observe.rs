@@ -62,12 +62,12 @@ fn terrain_char(t: Option<&Terrain>) -> char {
     match t {
         None => ' ',
         Some(Terrain::Nile { .. }) => '~',
-        Some(Terrain::Building { .. }) => '#',
-        Some(Terrain::Huts { .. }) => 'h',
-        Some(Terrain::Hilltop { .. }) => '^',
-        Some(Terrain::Rough { .. }) => ':',
-        Some(Terrain::Swamp { .. }) => ',',
-        Some(Terrain::Trees { .. }) => 't',
+        Some(Terrain::Building) => '#',
+        Some(Terrain::Huts) => 'h',
+        Some(Terrain::Hilltop) => '^',
+        Some(Terrain::Rough) => ':',
+        Some(Terrain::Swamp) => ',',
+        Some(Terrain::Trees) => 't',
         Some(_) => '.',
     }
 }

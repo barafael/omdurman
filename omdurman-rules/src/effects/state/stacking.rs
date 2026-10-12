@@ -334,7 +334,7 @@ impl GameState {
         }
         !matches!(
             self.board.terrain_at(into),
-            Some(omdurman_types::Terrain::Huts { .. } | omdurman_types::Terrain::Building { .. })
+            Some(omdurman_types::Terrain::Huts | omdurman_types::Terrain::Building)
         )
     }
 
