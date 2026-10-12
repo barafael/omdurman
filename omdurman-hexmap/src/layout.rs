@@ -1,12 +1,12 @@
 use bevy::prelude::*;
 use omdurman_types::{HexCoord, Orientation, OverlayParams};
 
-pub const IMG_W: f32 = 1571.0;
-pub const IMG_H: f32 = 1200.0;
+const IMG_W: f32 = 1571.0;
+const IMG_H: f32 = 1200.0;
 /// sqrt3 -- the ratio between a regular hexagon's width and its circumradius
-pub const SQRT_3: f32 = 1.732_050_8;
+const SQRT_3: f32 = 1.732_050_8;
 /// The ratio of hex height to circumradius (3/2 in axial math).
-pub const HEX_HEIGHT_RATIO: f32 = 1.5;
+const HEX_HEIGHT_RATIO: f32 = 1.5;
 
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
 pub struct MapDims {
@@ -93,7 +93,7 @@ impl HexLayout {
         }
     }
 
-    pub fn hex_to_world_offset(&self, coord: HexCoord, stagger: f32, phase: f32) -> Vec3 {
+    pub(crate) fn hex_to_world_offset(&self, coord: HexCoord, stagger: f32, phase: f32) -> Vec3 {
         let (q, r) = (coord.q as f32, coord.r as f32);
         let (x, z) = match self.orientation {
             Orientation::Pointy => (
@@ -108,7 +108,7 @@ impl HexLayout {
         Vec3::new(x, 0.0, z)
     }
 
-    pub fn world_to_hex_offset(&self, world: Vec3, stagger: f32, phase: f32) -> HexCoord {
+    pub(crate) fn world_to_hex_offset(&self, world: Vec3, stagger: f32, phase: f32) -> HexCoord {
         let x = world.x - self.origin.x;
         let z = world.z - self.origin.y;
         let (fq, fr) = match self.orientation {
@@ -146,7 +146,12 @@ impl HexLayout {
     /// Convert an axial hex coordinate to a 3D world position, applying the
     /// overlay's warp/rotation pipeline. The caller supplies the already-adjusted
     /// origin (see [`Self::adjusted_origin`]).
-    pub fn hex_to_world_pos(&self, coord: HexCoord, origin: Vec2, overlay: &OverlayParams) -> Vec3 {
+    pub(crate) fn hex_to_world_pos(
+        &self,
+        coord: HexCoord,
+        origin: Vec2,
+        overlay: &OverlayParams,
+    ) -> Vec3 {
         let stagger = overlay.offset_variant.stagger();
         let phase = overlay.offset_variant.phase();
         let local_layout = Self::from_overlay(overlay);
@@ -160,7 +165,7 @@ impl HexLayout {
     /// Convert a world-space hit point to the nearest hex coordinate, applying
     /// the overlay's rotation/warp inverse pipeline. The caller supplies the
     /// already-adjusted origin (see [`Self::adjusted_origin`]).
-    pub fn world_to_hex_from_hit(
+    pub(crate) fn world_to_hex_from_hit(
         &self,
         hit: Vec3,
         origin: Vec2,

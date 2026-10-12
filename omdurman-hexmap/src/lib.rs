@@ -5,7 +5,7 @@ pub mod world;
 
 // Explicit re-exports: only items actually consumed by other workspace crates.
 // layout.rs
-pub use layout::{CalibrationAnchor, HexLayout, IMG_H, IMG_W, MapDims, pixel_to_world_dims};
+pub use layout::{CalibrationAnchor, HexLayout, MapDims, pixel_to_world_dims};
 // map.rs
 pub use map::{GameMap, load_map_data};
 // plane.rs
