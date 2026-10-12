@@ -762,12 +762,16 @@ pub fn fire_combat_preview_ui(
     // allocated this sub-phase -- the click would refuse those. Deriving the
     // plan runs `can_fire_at` (with its LOS sweep) per firer plus the attack
     // assembly, so it is memoized: re-derived only when the hovered target,
-    // the selection, the allocation tray, or the engine state moved.
-    let planned_key = (target, group.units.clone(), allocated.len());
+    // the selection, the allocation tray, or the engine state moved. (The
+    // staleness check compares against the cached key in place; the key's
+    // unit `Vec` is cloned only when the plan is actually re-derived.)
     let planned_stale = gs_moved
         || state.is_changed()
-        || planned.as_ref().is_none_or(|(key, _)| *key != planned_key);
+        || planned.as_ref().is_none_or(|(key, _)| {
+            key.0 != target || key.1 != group.units || key.2 != allocated.len()
+        });
     if planned_stale {
+        let planned_key = (target, group.units.clone(), allocated.len());
         let planned_attacks = click_attacks(&gs.0, &group, &kinds, target, allocated);
         let attacks: Vec<FireAttack> = planned_attacks
             .into_iter()
