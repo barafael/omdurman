@@ -717,38 +717,16 @@ pub(crate) struct SocketMemo {
     undecodable_from: std::collections::HashSet<PeerId>,
 }
 
-/// The per-frame receive path: socket I/O (peer roster, election, inbound
-/// messages) when a socket exists, then the loopback / sequencing / apply
-/// path -- which runs *without* a socket too, so offline self-host mode
-/// (`OfflineMode`) sequences and applies its own submissions.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn handle_socket(
-    mut socket: Option<ResMut<MatchboxSocket>>,
-    traffic: NetTraffic,
-    app_state: AppStateShift,
-    mut commands: Commands,
-    mut gsp: GameStateParams,
-    mut ctx: SocketContext,
-    local_key: Res<crate::seats::LocalPlayerKey>,
-    mut memo: Local<SocketMemo>,
-) {
-    let SocketMemo {
-        held_uids,
-        socket_lost,
-        undecodable_from,
-    } = &mut *memo;
-    let NetTraffic {
-        mut net,
-        mut pending,
-        mut turn,
-        time,
-    } = traffic;
-    let AppStateShift {
-        state,
-        mut next_state,
-    } = app_state;
-
-    // -- socket: peer roster + own id --
+/// Socket I/O: reconcile the peer roster and our own id, detect a closed or
+/// unanswered signalling connection (offline self-host mode), and report what
+/// changed this frame. Returns `(peers_changed, my_id_changed,
+/// newly_connected, socket_live)`.
+fn poll_socket_roster(
+    socket: &mut Option<ResMut<MatchboxSocket>>,
+    net: &mut NetState,
+    socket_lost: &mut bool,
+    commands: &mut Commands,
+) -> (bool, bool, Vec<PeerId>, bool) {
     let mut peers_changed = false;
     let mut my_id_changed = false;
     let mut newly_connected: Vec<PeerId> = Vec::new();
@@ -831,8 +809,18 @@ pub(crate) fn handle_socket(
     } else {
         *socket_lost = false;
     }
+    (peers_changed, my_id_changed, newly_connected, socket_live)
+}
 
-    // -- election clocks (socket or not: offline mode needs them too) --
+/// Election clocks: run the stabilization window, and re-elect the host when
+/// the peer-set view changed (§election stabilization).
+fn update_election(
+    net: &mut NetState,
+    time: &Time,
+    peers_changed: bool,
+    my_id_changed: bool,
+    game_started: bool,
+) {
     net.resync_gate_secs = (net.resync_gate_secs - time.delta_secs()).max(0.0);
     if peers_changed || my_id_changed {
         // Peer-set view changed: the host-election stabilization window
@@ -841,7 +829,7 @@ pub(crate) fn handle_socket(
     } else {
         net.election_stable_secs += time.delta_secs();
     }
-    if has_session_evidence(&net) {
+    if has_session_evidence(net) {
         net.has_ever_peered = true;
     }
 
@@ -856,36 +844,28 @@ pub(crate) fn handle_socket(
             // same floor at every assignment, so this is belt and braces).
             // Deliveries buffered from the previous host can never be
             // completed now -- the new line is canonical by election.
-            net.next_seq = expected_seq(&net);
+            net.next_seq = expected_seq(net);
             net.reorder.clear();
             info!(
                 next_seq = net.next_seq,
-                game_started = turn.game_started,
-                "promoted to host; resumed sequence numbering"
+                game_started, "promoted to host; resumed sequence numbering"
             );
         }
         net.is_host = new_host_is_me;
     }
+}
 
-    // The lobby is entered voluntarily (via the mode picker), not
-    // auto-triggered by peers appearing -- so a local editing session
-    // is never dragged into someone else's game.
-
-    // Message processing runs in both Lobby and InGame: the lobby needs to
-    // receive faction picks, the host's `StartGame`, and snapshot replies.
-    // An offline review (`Spectating` with no session underneath) owns the
-    // world, so socket processing is suppressed; a review on top of a session
-    // does not stop it (the events go to the stashed live state, see
-    // `timeline`). During `Splash` there is no socket yet.
-    if *state.get() == AppState::Splash
-        || (*state.get() == AppState::Spectating && !gsp.reviewing())
-    {
-        return;
-    }
-
-    let mut targeted: Vec<(NetMsg, PeerId)> = Vec::new();
-    let mut sequenced_out: Vec<NetMsg> = Vec::new();
-
+/// Resync staging before any message is read: the guest's timed-out seq gap
+/// asks for the canonical history, and each side offers its record to a peer
+/// that just (re)connected. Appends to `targeted`.
+fn stage_catch_up(
+    net: &mut NetState,
+    turn: &TurnState,
+    time: &Time,
+    recorder: &game_record::GameRecorder,
+    newly_connected: &[PeerId],
+    targeted: &mut Vec<(NetMsg, PeerId)>,
+) {
     // Guest: a seq gap that outlived the reorder timeout will not fill on
     // its own -- request the canonical history (force-installed: the local
     // record is known incomplete).
@@ -917,10 +897,10 @@ pub(crate) fn handle_socket(
     if net.is_host
         && turn.game_started
         && !newly_connected.is_empty()
-        && let Some(ref record) = ctx.recorder.record
+        && let Some(ref record) = recorder.record
         && !record.events.is_empty()
     {
-        for &peer in &newly_connected {
+        for &peer in newly_connected {
             info!(%peer, "host: pushing game history to (re)connected peer");
             targeted.push((NetMsg::Control(Control::GameHistory(record.clone())), peer));
         }
@@ -935,31 +915,42 @@ pub(crate) fn handle_socket(
         && turn.game_started
         && let Some(host) = net.host_id()
         && newly_connected.contains(&host)
-        && let Some(ref record) = ctx.recorder.record
+        && let Some(ref record) = recorder.record
         && !record.events.is_empty()
     {
         info!(%host, "guest: offering game history to (re)connected host");
         targeted.push((NetMsg::Control(Control::GameHistory(record.clone())), host));
     }
+}
 
+/// Drain the socket channels and turn raw bytes into a decoded message
+/// stream: submissions held from earlier frames first (arrival order), then
+/// this frame's channel traffic (chunks reassembled in position), then the
+/// host's own loopback.
+fn collect_decoded(
+    socket_live: bool,
+    socket: &mut Option<ResMut<MatchboxSocket>>,
+    net: &mut NetState,
+    incoming: &mut PendingIncoming,
+    undecodable_from: &mut std::collections::HashSet<PeerId>,
+    my_id: PeerId,
+) -> Vec<(PeerId, NetMsg, bool)> {
     let mut received: Vec<(PeerId, Box<[u8]>)> = Vec::new();
     if socket_live && let Some(socket) = socket.as_deref_mut() {
         received.extend(socket.channel_mut(CH_RELIABLE).receive());
         received.extend(socket.channel_mut(CH_UNRELIABLE).receive());
     }
-    let is_host = net.is_host;
 
     // Host loopback: events the host sequenced for itself (below). They flow
     // through the identical apply path as remote `Sequenced` events so every
     // peer -- host included -- observes the same ordered stream. `my_id` is the
     // canonical "sender" for these.
-    let my_id = net.my_id().unwrap_or(PeerId(uuid::Uuid::nil()));
-    let loopback: Vec<NetMsg> = std::mem::take(&mut ctx.incoming.loopback);
+    let loopback: Vec<NetMsg> = std::mem::take(&mut incoming.loopback);
 
     // Submissions held last frame come first, in the order they arrived:
     // whatever arrived since is younger. (Still held, they are re-held in
     // the same order; demoted, they are forwarded to the new host in it.)
-    let mut decoded: Vec<(PeerId, NetMsg, bool)> = std::mem::take(&mut ctx.incoming.held)
+    let mut decoded: Vec<(PeerId, NetMsg, bool)> = std::mem::take(&mut incoming.held)
         .into_iter()
         .map(|held| {
             (
@@ -988,6 +979,388 @@ pub(crate) fn handle_socket(
         }
     }
     decoded.extend(loopback.into_iter().map(|msg| (my_id, msg, true)));
+    decoded
+}
+
+/// Host side of an unsequenced `NetMsg::Game` submission: re-echo
+/// retransmissions of already-sequenced events idempotently, hold
+/// submissions while sequencing is not allowed (or while our record is
+/// missing the game they belong to), otherwise assign the next sequence
+/// number and echo onto the broadcast + our own loopback.
+#[allow(clippy::too_many_arguments)]
+fn host_handle_game(
+    net: &mut NetState,
+    incoming: &mut PendingIncoming,
+    recorder: &game_record::GameRecorder,
+    turn: &TurnState,
+    held_uids: &mut std::collections::HashSet<u64>,
+    sequenced_out: &mut Vec<NetMsg>,
+    uid: u64,
+    ev: GameEvent,
+    own_loopback: bool,
+) {
+    // Host-side idempotency: a retransmission of an event we
+    // already sequenced -- recorded canonically, or sequenced
+    // with its echo still on the way through our loopback -- is
+    // re-echoed with its existing seq instead of being
+    // sequenced twice.
+    if let Some((seq, recorded_seq)) = already_sequenced(net, recorder, uid) {
+        info!(
+            seq,
+            uid,
+            via_record = recorded_seq,
+            "host: retransmission of an already-sequenced event; re-echoing"
+        );
+        let sequenced = NetMsg::Sequenced {
+            seq,
+            uid,
+            event: ev,
+        };
+        sequenced_out.push(sequenced.clone());
+        incoming.loopback.push(sequenced);
+        return;
+    }
+    // A host that has no game yet holding a guest's game action
+    // is missing the game it belongs to: a newcomer that won
+    // the election with an empty record. Sequencing it would
+    // start a rogue line under the guests' canonical one (and
+    // stop us from installing theirs): wait for their history.
+    let missing_game =
+        !own_loopback && !turn.game_started && !crate::net_plugin::is_session_event(&ev);
+    if missing_game && !net.needs_snapshot {
+        warn!(
+            uid,
+            "host: a guest submitted a game action but we have no game; requesting the history"
+        );
+        net.needs_snapshot = true;
+        net.snapshot_retry_timer = 0.0;
+    }
+    if missing_game || !sequencing_allowed(net) {
+        // The peer set may still be forming: sequencing now could
+        // collide with a peer that also (briefly) believes itself
+        // host. Hold the submission, in arrival order; it is
+        // retried next frame, ahead of anything newer.
+        // (Logged once per uid: it is re-examined every frame
+        // while the gate is closed, which would spam.)
+        if held_uids.insert(uid) {
+            info!(
+                uid,
+                stable_secs = net.election_stable_secs,
+                resync_gate = net.resync_gate_secs,
+                missing_game,
+                "host: holding submission until sequencing is allowed"
+            );
+        }
+        incoming.hold(uid, ev, own_loopback);
+        return;
+    }
+    held_uids.remove(&uid);
+    let seq = sequence_fresh(net, uid);
+    info!(seq, uid, event = ?ev, "host: sequenced submission");
+    let sequenced = NetMsg::Sequenced {
+        seq,
+        uid,
+        event: ev,
+    };
+    sequenced_out.push(sequenced.clone());
+    // Push the echo onto our own loopback queue. It is *not* applied
+    // here: the caller is already iterating a stream that was
+    // chained from the loopback taken *above*. The just-pushed echo
+    // won't be seen until the next call to this system (next frame),
+    // so the host applies its own sequenced events one frame later
+    // than a guest that receives the broadcast `Sequenced` echo. This
+    // is intentional -- it keeps every peer (host included) on the
+    // identical apply-on-echo path instead of special-casing the host
+    // to apply inline.
+    incoming.loopback.push(sequenced);
+}
+
+/// Serve a `RequestSnapshot`: only the elected host serves arbitrary
+/// requesters -- and, for the reconnected-host deadlock, a guest serves its
+/// *own host*. Anyone else serving would let rogue lines masquerade as
+/// canonical. Installs stay guarded by the ahead check on the receiving side.
+fn serve_snapshot(
+    is_host: bool,
+    net: &NetState,
+    turn: &TurnState,
+    recorder: &game_record::GameRecorder,
+    peer: PeerId,
+    targeted: &mut Vec<(NetMsg, PeerId)>,
+) {
+    let requester_is_my_host = Some(peer) == net.host_id();
+    if !is_host && !requester_is_my_host {
+        return;
+    }
+    if turn.game_started
+        && let Some(ref record) = recorder.record
+        && !record.events.is_empty()
+    {
+        info!(
+            events = record.events.len(),
+            "late joiner requested game history; sending"
+        );
+        targeted.push((NetMsg::Control(Control::GameHistory(record.clone())), peer));
+    } else {
+        // No game to serve (yet): the requester retries.
+        debug!("game history requested, but no game has started");
+    }
+}
+
+/// Install a foreign `GameHistory`: the one resync path (late joiner,
+/// diverged guest, reconnected host behind its guests). Guards decide
+/// whether the record wins; the install replaces the local record wholesale,
+/// re-queues own events the canonical line lacks, and rebuilds the world
+/// from the record (§divergence healing).
+#[allow(clippy::too_many_arguments)]
+fn install_foreign_history(
+    net: &mut NetState,
+    recorder: &mut game_record::GameRecorder,
+    pending: &mut PendingEdits,
+    gsp: &mut GameStateParams,
+    commands: &mut Commands,
+    state: &AppState,
+    next_state: &mut NextState<AppState>,
+    turn: &mut TurnState,
+    targeted: &mut Vec<(NetMsg, PeerId)>,
+    local_key: omdurman_net::PlayerKey,
+    record: omdurman_net::GameRecord,
+) {
+    // Accept a record only if it carries events we haven't applied
+    // yet. This covers two cases with one rule:
+    //   * fresh late joiner (`last_applied_seq == None`): always
+    //     ahead, so replay it;
+    //   * reconnecting peer that fell behind during a WebRTC blip:
+    //     `snapshot_applied` is already `true` from its first join,
+    //     but the host's record now has a higher max seq than we
+    //     applied, so we resync to catch up.
+    // A record whose highest seq we've already applied is a genuine
+    // duplicate (two snapshots racing) -- ignore it. A detected seq
+    // conflict or gap flips `force_install_history`: our own record
+    // is then known to be wrong, so the canonical history wins even
+    // if it is not ahead by seq alone.
+    // An authoritative host never installs foreign histories:
+    // its own line is canonical by election, and a longer rogue
+    // line would wipe its tail and desynchronize its numbering
+    // baseline. The exceptions are the resync gate (a freshly
+    // reconnected host with a wiped record, which must
+    // re-download the canonical line) and an empty host (below).
+    // A host that has applied nothing (a relaunched process that
+    // re-won the election) has no line to defend: it takes the
+    // record a guest offers it.
+    if net.is_host && net.resync_gate_secs <= 0.0 && net.last_applied_seq.is_some() {
+        debug!("host: ignoring foreign game history");
+        return;
+    }
+    let record_max = record.events.iter().map(|e| e.seq).max();
+    let ahead = match (record_max, net.last_applied_seq) {
+        (Some(hi), Some(applied)) => hi > applied,
+        (Some(_), None) => true,
+        (None, _) => false,
+    };
+    if !ahead && !net.force_install_history {
+        // A record whose highest seq *equals* our watermark is not
+        // junk -- it is proof that we are already converged. Clear
+        // the snapshot latch so the 2s request loop stops; only a
+        // record strictly *behind* us leaves the latch alone (it
+        // cannot satisfy a pending resync, so keep retrying).
+        if record_max == net.last_applied_seq {
+            info!(
+                watermark = ?net.last_applied_seq,
+                "received game history matching local state; already converged"
+            );
+            net.snapshot_applied = true;
+            net.needs_snapshot = false;
+            net.rejoining = false;
+            net.snapshot_retry_timer = 0.0;
+            net.force_install_history = false;
+        } else {
+            info!("ignoring game history that is not ahead of local state");
+        }
+        return;
+    }
+    net.snapshot_applied = true;
+    net.needs_snapshot = false;
+    net.rejoining = false;
+    net.snapshot_retry_timer = 0.0;
+    net.force_install_history = false;
+    net.resync_gate_secs = 0.0;
+    info!(
+        "received game history ({} events), replaying to resync",
+        record.events.len()
+    );
+    let old_record = recorder.record.take();
+    recorder.install_history(record.clone());
+    // Own events the discarded line applied but the canonical one
+    // lacks were confirmed by their (rogue) echo; re-queue them so
+    // player input survives the rollback.
+    if let Some(old) = old_record {
+        let requeued = pending.requeue_missing_own(&old, &record);
+        if requeued > 0 {
+            warn!(
+                requeued,
+                "re-queued own events missing from the installed history"
+            );
+        }
+    }
+    // The snapshot already includes every event up to the highest
+    // recorded seq; mark them applied so a live `Sequenced` echo of
+    // an event also present in the snapshot isn't applied a second
+    // time (only seqs above the watermark are new to this joiner).
+    // The uid dedup set must describe the installed line too.
+    net.last_applied_seq = record_max;
+    net.recent_uids
+        .rebuild(record.events.iter().filter_map(|e| e.uid));
+    // (Under a review the board shows the reviewed position: the
+    // stashed live state replays the installed record instead,
+    // `timeline::catch_up_live_stash`.)
+    if !gsp.reviewing() {
+        let GameStateParams {
+            game_state,
+            game_map,
+            loaded_annotations,
+            pending_map_load,
+            seats,
+            local_setup_ready,
+            bot_driver,
+            unit_paths,
+            press,
+            ..
+        } = gsp;
+        let mut state = RebuildState {
+            commands: &mut *commands,
+            game_map,
+            sinks: game_apply::EventSinks {
+                game_state: &mut game_state.0,
+                seats,
+                local_setup_ready,
+                bot_driver,
+                loaded_annotations,
+                pending_map_load,
+                unit_paths,
+                press,
+            },
+        };
+        rebuild_state_to(&record, None, &mut state);
+    }
+    // The installed line replaces ours in one jump: the counters
+    // snap to it instead of playing out the difference.
+    commands.insert_resource(crate::fx::SnapSprites);
+    // A mid-game reconnect lands in the Lobby (handle_reconnect
+    // reset the app state); the rebuilt record proves the game had
+    // started, so return straight to the board instead of leaving
+    // the player staring at a lobby whose StartGame is history.
+    if record
+        .events
+        .iter()
+        .any(|e| matches!(e.payload, GameEvent::StartGame { .. }))
+    {
+        // The installed history proves a game is running: host
+        // promotion must resume its numbering, and the
+        // proactive history push must serve reconnectees.
+        turn.game_started = true;
+        gsp.next_app_mode.set(crate::AppMode::Game);
+        if *state == AppState::Lobby {
+            next_state.set(AppState::InGame);
+        }
+    }
+    // Live deliveries buffered past the old watermark may now be
+    // contiguous with the installed history.
+    let ready = drain_contiguous(net, pending);
+    apply_ready(
+        &mut ApplyEnv {
+            net,
+            pending,
+            turn,
+            gsp,
+            recorder,
+            state,
+            next_state,
+            targeted,
+            local_key,
+        },
+        ready,
+    );
+}
+
+/// The per-frame receive path: socket I/O (peer roster, election, inbound
+/// messages) when a socket exists, then the loopback / sequencing / apply
+/// path -- which runs *without* a socket too, so offline self-host mode
+/// (`OfflineMode`) sequences and applies its own submissions.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn handle_socket(
+    mut socket: Option<ResMut<MatchboxSocket>>,
+    traffic: NetTraffic,
+    app_state: AppStateShift,
+    mut commands: Commands,
+    mut gsp: GameStateParams,
+    mut ctx: SocketContext,
+    local_key: Res<crate::seats::LocalPlayerKey>,
+    mut memo: Local<SocketMemo>,
+) {
+    let SocketMemo {
+        held_uids,
+        socket_lost,
+        undecodable_from,
+    } = &mut *memo;
+    let NetTraffic {
+        mut net,
+        mut pending,
+        mut turn,
+        time,
+    } = traffic;
+    let AppStateShift {
+        state,
+        mut next_state,
+    } = app_state;
+
+    let (peers_changed, my_id_changed, newly_connected, socket_live) =
+        poll_socket_roster(&mut socket, &mut net, socket_lost, &mut commands);
+    update_election(
+        &mut net,
+        &time,
+        peers_changed,
+        my_id_changed,
+        turn.game_started,
+    );
+
+    // The lobby is entered voluntarily (via the mode picker), not
+    // auto-triggered by peers appearing -- so a local editing session
+    // is never dragged into someone else's game.
+
+    // Message processing runs in both Lobby and InGame: the lobby needs to
+    // receive faction picks, the host's `StartGame`, and snapshot replies.
+    // An offline review (`Spectating` with no session underneath) owns the
+    // world, so socket processing is suppressed; a review on top of a session
+    // does not stop it (the events go to the stashed live state, see
+    // `timeline`). During `Splash` there is no socket yet.
+    if *state.get() == AppState::Splash
+        || (*state.get() == AppState::Spectating && !gsp.reviewing())
+    {
+        return;
+    }
+
+    let mut targeted: Vec<(NetMsg, PeerId)> = Vec::new();
+    let mut sequenced_out: Vec<NetMsg> = Vec::new();
+
+    stage_catch_up(
+        &mut net,
+        &turn,
+        &time,
+        &ctx.recorder,
+        &newly_connected,
+        &mut targeted,
+    );
+
+    let is_host = net.is_host;
+    let my_id = net.my_id().unwrap_or(PeerId(uuid::Uuid::nil()));
+    let decoded = collect_decoded(
+        socket_live,
+        &mut socket,
+        &mut net,
+        &mut ctx.incoming,
+        undecodable_from,
+        my_id,
+    );
 
     for (peer, msg, own_loopback) in decoded {
         match msg {
@@ -1021,81 +1394,17 @@ pub(crate) fn handle_socket(
                     }
                     continue;
                 }
-                // Host-side idempotency: a retransmission of an event we
-                // already sequenced -- recorded canonically, or sequenced
-                // with its echo still on the way through our loopback -- is
-                // re-echoed with its existing seq instead of being
-                // sequenced twice.
-                if let Some((seq, recorded_seq)) = already_sequenced(&net, &ctx.recorder, uid) {
-                    info!(
-                        seq,
-                        uid,
-                        via_record = recorded_seq,
-                        "host: retransmission of an already-sequenced event; re-echoing"
-                    );
-                    let sequenced = NetMsg::Sequenced {
-                        seq,
-                        uid,
-                        event: ev,
-                    };
-                    sequenced_out.push(sequenced.clone());
-                    ctx.incoming.loopback.push(sequenced);
-                    continue;
-                }
-                // A host that has no game yet holding a guest's game action
-                // is missing the game it belongs to: a newcomer that won
-                // the election with an empty record. Sequencing it would
-                // start a rogue line under the guests' canonical one (and
-                // stop us from installing theirs): wait for their history.
-                let missing_game = !own_loopback
-                    && !turn.game_started
-                    && !crate::net_plugin::is_session_event(&ev);
-                if missing_game && !net.needs_snapshot {
-                    warn!(
-                        uid,
-                        "host: a guest submitted a game action but we have no game; requesting the history"
-                    );
-                    net.needs_snapshot = true;
-                    net.snapshot_retry_timer = 0.0;
-                }
-                if missing_game || !sequencing_allowed(&net) {
-                    // The peer set may still be forming: sequencing now could
-                    // collide with a peer that also (briefly) believes itself
-                    // host. Hold the submission, in arrival order; it is
-                    // retried next frame, ahead of anything newer.
-                    // (Logged once per uid: it is re-examined every frame
-                    // while the gate is closed, which would spam.)
-                    if held_uids.insert(uid) {
-                        info!(
-                            uid,
-                            stable_secs = net.election_stable_secs,
-                            resync_gate = net.resync_gate_secs,
-                            missing_game,
-                            "host: holding submission until sequencing is allowed"
-                        );
-                    }
-                    ctx.incoming.hold(uid, ev, own_loopback);
-                    continue;
-                }
-                held_uids.remove(&uid);
-                let seq = sequence_fresh(&mut net, uid);
-                info!(seq, uid, event = ?ev, "host: sequenced submission");
-                let sequenced = NetMsg::Sequenced {
-                    seq,
+                host_handle_game(
+                    &mut net,
+                    &mut ctx.incoming,
+                    &ctx.recorder,
+                    &turn,
+                    held_uids,
+                    &mut sequenced_out,
                     uid,
-                    event: ev,
-                };
-                sequenced_out.push(sequenced.clone());
-                // Push the echo onto our own loopback queue. It is *not* applied
-                // here: this `for` loop is already iterating `decoded`, which was
-                // chained from the loopback taken *above*. The just-pushed echo
-                // won't be seen until the next call to this system (next frame),
-                // so the host applies its own sequenced events one frame later
-                // than a guest that receives the broadcast `Sequenced` echo. This
-                // is intentional -- it keeps every peer (host included) on the
-                // identical apply-on-echo path instead of special-casing the host
-                // to apply inline.
-                ctx.incoming.loopback.push(sequenced);
+                    ev,
+                    own_loopback,
+                );
             }
             NetMsg::Sequenced {
                 seq,
@@ -1133,30 +1442,7 @@ pub(crate) fn handle_socket(
                 ctx.incoming.ephemeral.push((eph, peer));
             }
             NetMsg::Control(Control::RequestSnapshot) => {
-                // Single-source installs: only the elected host serves
-                // arbitrary requesters -- and, for the reconnected-host
-                // deadlock (its record was wiped by its own reconnect while
-                // the superior line lives on the guests), a guest serves its
-                // *own host*. Anyone else serving would let rogue lines
-                // masquerade as canonical. Installs stay guarded by the
-                // ahead check on the receiving side.
-                let requester_is_my_host = Some(peer) == net.host_id();
-                if !is_host && !requester_is_my_host {
-                    continue;
-                }
-                if turn.game_started
-                    && let Some(ref record) = ctx.recorder.record
-                    && !record.events.is_empty()
-                {
-                    info!(
-                        events = record.events.len(),
-                        "late joiner requested game history; sending"
-                    );
-                    targeted.push((NetMsg::Control(Control::GameHistory(record.clone())), peer));
-                } else {
-                    // No game to serve (yet): the requester retries.
-                    debug!("game history requested, but no game has started");
-                }
+                serve_snapshot(is_host, &net, &turn, &ctx.recorder, peer, &mut targeted);
             }
             NetMsg::Control(
                 control @ (Control::SeatRequest { .. }
@@ -1172,160 +1458,18 @@ pub(crate) fn handle_socket(
                 // a chunk through).
             }
             NetMsg::Control(Control::GameHistory(record)) => {
-                // Accept a record only if it carries events we haven't applied
-                // yet. This covers two cases with one rule:
-                //   * fresh late joiner (`last_applied_seq == None`): always
-                //     ahead, so replay it;
-                //   * reconnecting peer that fell behind during a WebRTC blip:
-                //     `snapshot_applied` is already `true` from its first join,
-                //     but the host's record now has a higher max seq than we
-                //     applied, so we resync to catch up.
-                // A record whose highest seq we've already applied is a genuine
-                // duplicate (two snapshots racing) -- ignore it. A detected seq
-                // conflict or gap flips `force_install_history`: our own record
-                // is then known to be wrong, so the canonical history wins even
-                // if it is not ahead by seq alone.
-                // An authoritative host never installs foreign histories:
-                // its own line is canonical by election, and a longer rogue
-                // line would wipe its tail and desynchronize its numbering
-                // baseline. The exceptions are the resync gate (a freshly
-                // reconnected host with a wiped record, which must
-                // re-download the canonical line) and an empty host (below).
-                // A host that has applied nothing (a relaunched process that
-                // re-won the election) has no line to defend: it takes the
-                // record a guest offers it.
-                if net.is_host && net.resync_gate_secs <= 0.0 && net.last_applied_seq.is_some() {
-                    debug!("host: ignoring foreign game history");
-                    continue;
-                }
-                let record_max = record.events.iter().map(|e| e.seq).max();
-                let ahead = match (record_max, net.last_applied_seq) {
-                    (Some(hi), Some(applied)) => hi > applied,
-                    (Some(_), None) => true,
-                    (None, _) => false,
-                };
-                if !ahead && !net.force_install_history {
-                    // A record whose highest seq *equals* our watermark is not
-                    // junk -- it is proof that we are already converged. Clear
-                    // the snapshot latch so the 2s request loop stops; only a
-                    // record strictly *behind* us leaves the latch alone (it
-                    // cannot satisfy a pending resync, so keep retrying).
-                    if record_max == net.last_applied_seq {
-                        info!(
-                            watermark = ?net.last_applied_seq,
-                            "received game history matching local state; already converged"
-                        );
-                        net.snapshot_applied = true;
-                        net.needs_snapshot = false;
-                        net.rejoining = false;
-                        net.snapshot_retry_timer = 0.0;
-                        net.force_install_history = false;
-                    } else {
-                        info!("ignoring game history that is not ahead of local state");
-                    }
-                    continue;
-                }
-                net.snapshot_applied = true;
-                net.needs_snapshot = false;
-                net.rejoining = false;
-                net.snapshot_retry_timer = 0.0;
-                net.force_install_history = false;
-                net.resync_gate_secs = 0.0;
-                info!(
-                    "received game history ({} events), replaying to resync",
-                    record.events.len()
-                );
-                let old_record = ctx.recorder.record.take();
-                ctx.recorder.install_history(record.clone());
-                // Own events the discarded line applied but the canonical one
-                // lacks were confirmed by their (rogue) echo; re-queue them so
-                // player input survives the rollback.
-                if let Some(old) = old_record {
-                    let requeued = pending.requeue_missing_own(&old, &record);
-                    if requeued > 0 {
-                        warn!(
-                            requeued,
-                            "re-queued own events missing from the installed history"
-                        );
-                    }
-                }
-                // The snapshot already includes every event up to the highest
-                // recorded seq; mark them applied so a live `Sequenced` echo of
-                // an event also present in the snapshot isn't applied a second
-                // time (only seqs above the watermark are new to this joiner).
-                // The uid dedup set must describe the installed line too.
-                net.last_applied_seq = record_max;
-                net.recent_uids
-                    .rebuild(record.events.iter().filter_map(|e| e.uid));
-                // (Under a review the board shows the reviewed position: the
-                // stashed live state replays the installed record instead,
-                // `timeline::catch_up_live_stash`.)
-                if !gsp.reviewing() {
-                    let GameStateParams {
-                        game_state,
-                        game_map,
-                        loaded_annotations,
-                        pending_map_load,
-                        seats,
-                        local_setup_ready,
-                        bot_driver,
-                        unit_paths,
-                        press,
-                        ..
-                    } = &mut gsp;
-                    let mut state = RebuildState {
-                        commands: &mut commands,
-                        game_map,
-                        sinks: game_apply::EventSinks {
-                            game_state: &mut game_state.0,
-                            seats,
-                            local_setup_ready,
-                            bot_driver,
-                            loaded_annotations,
-                            pending_map_load,
-                            unit_paths,
-                            press,
-                        },
-                    };
-                    rebuild_state_to(&record, None, &mut state);
-                }
-                // The installed line replaces ours in one jump: the counters
-                // snap to it instead of playing out the difference.
-                commands.insert_resource(crate::fx::SnapSprites);
-                // A mid-game reconnect lands in the Lobby (handle_reconnect
-                // reset the app state); the rebuilt record proves the game had
-                // started, so return straight to the board instead of leaving
-                // the player staring at a lobby whose StartGame is history.
-                if record
-                    .events
-                    .iter()
-                    .any(|e| matches!(e.payload, GameEvent::StartGame { .. }))
-                {
-                    // The installed history proves a game is running: host
-                    // promotion must resume its numbering, and the
-                    // proactive history push must serve reconnectees.
-                    turn.game_started = true;
-                    gsp.next_app_mode.set(crate::AppMode::Game);
-                    if *state.get() == AppState::Lobby {
-                        next_state.set(AppState::InGame);
-                    }
-                }
-                // Live deliveries buffered past the old watermark may now be
-                // contiguous with the installed history.
-                let ready = drain_contiguous(&mut net, &mut pending);
-                apply_ready(
-                    &mut ApplyEnv {
-                        net: &mut net,
-                        pending: &mut pending,
-                        turn: &mut turn,
-                        gsp: &mut gsp,
-                        recorder: &mut ctx.recorder,
-                        state: state.get(),
-                        next_state: &mut next_state,
-                        targeted: &mut targeted,
-                        local_key: local_key.0,
-                    },
-                    ready,
+                install_foreign_history(
+                    &mut net,
+                    &mut ctx.recorder,
+                    &mut pending,
+                    &mut gsp,
+                    &mut commands,
+                    state.get(),
+                    &mut next_state,
+                    &mut turn,
+                    &mut targeted,
+                    local_key.0,
+                    record,
                 );
             }
         }

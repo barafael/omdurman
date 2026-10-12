@@ -468,6 +468,7 @@ pub(crate) struct MeleePreview {
     def_bands: Vec<crate::combat_predict::OutcomeBand>,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn melee_combat_preview_ui(
     mut contexts: EguiContexts,
     state: Res<PickerState>,
