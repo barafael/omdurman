@@ -1,12 +1,12 @@
 use bevy::prelude::*;
 use omdurman_types::{HexCoord, Orientation, OverlayParams};
 
-const IMG_W: f32 = 1571.0;
-const IMG_H: f32 = 1200.0;
+pub(crate) const IMG_W: f32 = 1571.0;
+pub(crate) const IMG_H: f32 = 1200.0;
 /// sqrt3 -- the ratio between a regular hexagon's width and its circumradius
-const SQRT_3: f32 = 1.732_050_8;
+pub(crate) const SQRT_3: f32 = 1.732_050_8;
 /// The ratio of hex height to circumradius (3/2 in axial math).
-const HEX_HEIGHT_RATIO: f32 = 1.5;
+pub(crate) const HEX_HEIGHT_RATIO: f32 = 1.5;
 
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
 pub struct MapDims {
