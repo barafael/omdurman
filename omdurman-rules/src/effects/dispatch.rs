@@ -507,6 +507,16 @@ fn end_zariba_construction(state: &mut GameState) {
     }
 }
 
+/// The four per-fire-phase ledgers (§6.14), in one place so the phase reset
+/// ([`clear_fire_trackers`]) and the post-apply prune
+/// ([`prune_dead_trackers`]) cannot drift apart when a tracker is added.
+const FIRE_PHASE_TRACKERS: &[fn(&mut GameState) -> &mut Vec<UnitId>] = &[
+    |s| &mut s.units_fired_this_phase,
+    |s| &mut s.gunboat_maxims_fired_this_phase,
+    |s| &mut s.units_fired_at_this_phase,
+    |s| &mut s.units_shelled_this_phase,
+];
+
 /// Clear per-phase / per-turn tracking (§5.13: MP never carry over).
 /// §6.14: "in any given fire combat phase ... a combat unit may only fire
 /// once and may only be fired at once" -- the fired / fired-at / shelled
@@ -515,10 +525,9 @@ fn end_zariba_construction(state: &mut GameState) {
 /// Fire, units a scattered §6.64 shell struck on their own side in the
 /// defensive Maxim/howitzer subphase could not be fired at offensively.
 fn clear_fire_trackers(state: &mut GameState) {
-    state.units_fired_this_phase.clear();
-    state.gunboat_maxims_fired_this_phase.clear();
-    state.units_fired_at_this_phase.clear();
-    state.units_shelled_this_phase.clear();
+    for tracker in FIRE_PHASE_TRACKERS {
+        tracker(state).clear();
+    }
 }
 
 fn clear_per_turn_tracking(state: &mut GameState) {
@@ -546,18 +555,16 @@ fn clear_per_turn_tracking(state: &mut GameState) {
 /// in `units_fired_this_phase` or `mp_spent_this_turn` (they are cleared
 /// wholesale at phase end, but kept tidy mid-phase).
 fn prune_dead_trackers(state: &mut GameState) {
-    let units = &state.units;
-    let alive = |id: &UnitId| units.iter().any(|u| u.id == *id);
-    state.units_fired_this_phase.retain(|id| alive(id));
-    state.gunboat_maxims_fired_this_phase.retain(|id| alive(id));
-    state.units_fired_at_this_phase.retain(|id| alive(id));
-    state.units_shelled_this_phase.retain(|id| alive(id));
-    state.zoc_stopped_this_turn.retain(|id| alive(id));
-    state.mp_spent_this_turn.retain(|id, _| alive(id));
+    let alive: std::collections::HashSet<UnitId> = state.units.iter().map(|u| u.id).collect();
+    for tracker in FIRE_PHASE_TRACKERS {
+        tracker(state).retain(|id| alive.contains(id));
+    }
+    state.zoc_stopped_this_turn.retain(|id| alive.contains(id));
+    state.mp_spent_this_turn.retain(|id, _| alive.contains(id));
     // Advance-after-combat windows never reference eliminated units
     // (§6.82/§7.6); drop them, and drop emptied windows whole.
     for eligible in state.vacated_by_combat.values_mut() {
-        eligible.retain(|id| alive(id));
+        eligible.retain(|id| alive.contains(id));
     }
     state
         .vacated_by_combat

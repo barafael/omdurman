@@ -187,10 +187,7 @@ fn commit_fired_markers(
     on_target_shell: bool,
 ) {
     for shot in attack.shots() {
-        match shot.mount {
-            FireMount::Main => state.units_fired_this_phase.push(shot.unit),
-            FireMount::GunboatMaxims => state.gunboat_maxims_fired_this_phase.push(shot.unit),
-        }
+        state.record_fired(shot);
     }
     for &tid in target_units {
         if attack.kind == FireKind::Howitzer {
@@ -450,18 +447,18 @@ fn commit_fire_attack(
         // from defensive fire): if the special target's destruction left the
         // hex without any enemy units, the participating firers may advance
         // into it.
-        let hex_still_defended = state
-            .units
-            .iter()
-            .any(|u| u.position == target_hex && u.profile.identity.owner() == opponent);
-        if was_occupied && !hex_still_defended && matches!(state.phase, Phase::OffensiveFire(_)) {
-            let mut paragraphs = vec!["6.82".to_string()];
-            paragraphs.push(match special_kind {
-                UnitKind::Gunboat { .. } => "6.61".to_string(),
-                _ => "6.62".to_string(),
-            });
-            open_advance_window(state, target_hex, &attack.all_firing_units(), paragraphs);
-        }
+        let paragraphs = match special_kind {
+            UnitKind::Gunboat { .. } => vec!["6.61".to_string()],
+            _ => vec!["6.62".to_string()],
+        };
+        maybe_open_advance_window(
+            state,
+            target_hex,
+            &attack,
+            was_occupied,
+            opponent,
+            paragraphs,
+        );
         let eliminations: Vec<UnitId> = diff_eliminated(state, pre_units);
         record_fire(state, eliminations, Some(special_kind));
         return;
@@ -478,17 +475,37 @@ fn commit_fire_attack(
     // `was_occupied` keeps a howitzer scatter onto a never-occupied hex
     // (§6.64) from opening a bogus window -- §6.82's "enemy-occupied hex is
     // vacated" never held.
+    maybe_open_advance_window(
+        state,
+        target_hex,
+        &attack,
+        was_occupied,
+        opponent,
+        Vec::new(),
+    );
+}
+
+/// §6.82: if offensive fire vacated an enemy-occupied hex, the participating
+/// firers may advance into it. Shared by the ordinary and the special-target
+/// (§6.61/§6.62) resolution paths; `extra_paragraphs` carries the special
+/// rule citation on top of §6.82. Defensive fire never advances (§6.7), and
+/// a hex that was never occupied opens no window (`was_occupied`).
+fn maybe_open_advance_window(
+    state: &mut GameState,
+    target_hex: HexCoord,
+    attack: &FireAttack,
+    was_occupied: bool,
+    opponent: crate::Player,
+    extra_paragraphs: Vec<String>,
+) {
     let hex_still_defended = state
         .units
         .iter()
         .any(|u| u.position == target_hex && u.profile.identity.owner() == opponent);
     if was_occupied && !hex_still_defended && matches!(state.phase, Phase::OffensiveFire(_)) {
-        open_advance_window(
-            state,
-            target_hex,
-            &attack.all_firing_units(),
-            vec!["6.82".to_string()],
-        );
+        let mut paragraphs = vec!["6.82".to_string()];
+        paragraphs.extend(extra_paragraphs);
+        open_advance_window(state, target_hex, &attack.all_firing_units(), paragraphs);
     }
 }
 

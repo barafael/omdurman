@@ -587,6 +587,15 @@ impl GameState {
         }
     }
 
+    /// Book `shot`'s weapon as fired this fire subphase — the write side of
+    /// [`Self::has_fired`], so the mount → ledger mapping lives in one place.
+    pub fn record_fired(&mut self, shot: Shot) {
+        match shot.mount {
+            FireMount::Main => self.units_fired_this_phase.push(shot.unit),
+            FireMount::GunboatMaxims => self.gunboat_maxims_fired_this_phase.push(shot.unit),
+        }
+    }
+
     /// If `target_ids` contains a gunboat or fort, return it, its kind, and
     /// the elimination threshold its destruction needs — `3` for a gunboat
     /// (§6.61) or `2` for a fort (§6.62) — rather than the generic Combat
