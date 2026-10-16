@@ -48,7 +48,11 @@ pub(crate) struct RebuildState<'a, 'w, 's> {
 }
 
 /// A scrub restarts from a checkpoint at most this many events before the
-/// cursor (memory: one engine-state clone per this many events).
+/// cursor (memory: one engine-state clone per this many events). Counted in
+/// events because an event is one order of bounded replay cost (the
+/// `GameEvent` contract); if orders ever grow into something a scrub feels,
+/// space checkpoints by replay cost (turn boundaries are the natural
+/// anchors) rather than by count.
 pub(crate) const CHECKPOINT_EVERY: usize = 64;
 
 /// The log-derived state a replay writes that the board does not show: kept

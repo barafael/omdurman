@@ -1977,9 +1977,29 @@ fn a_review_runs_on_top_of_a_live_game() {
     };
     let shown = |app: &App| position(&app.world().resource::<crate::GameStateResource>().0);
     let screen = |app: &App| *app.world().resource::<State<crate::Screen>>().get();
-    for _ in 0..400 {
-        app.update();
-    }
+    // The scrubs below cross two checkpoints (`2 * every + 7`, and the
+    // record is cut by three before the end): the review needs a record
+    // past the third. Drive the session until the AI has recorded that
+    // much, whatever its orders' granularity -- an event count after a fixed
+    // number of updates was a bet on the bot's pace, lost when its moves
+    // became whole routes -- within a bound only a stuck AI reaches.
+    let needed = 3 * crate::timeline::CHECKPOINT_EVERY;
+    // Run the session until the record holds `at_least` events (the AI
+    // pauses at turn ends and waits out telegrams, so a fixed number of
+    // updates is no measure of its progress).
+    let drive_until = |app: &mut App, at_least: usize, what: &str| {
+        let mut updates = 0;
+        while recorded(app).events.len() < at_least {
+            app.update();
+            updates += 1;
+            assert!(
+                updates < 5_000,
+                "{what}: the AI recorded only {} events in {updates} updates",
+                recorded(app).events.len()
+            );
+        }
+    };
+    drive_until(&mut app, needed, "the record for the review");
     assert_eq!(screen(&app), crate::Screen::Board);
 
     // The host in the menu: the AI plays on.
@@ -1987,14 +2007,12 @@ fn a_review_runs_on_top_of_a_live_game() {
     app.world_mut()
         .resource_mut::<NextState<crate::AppMode>>()
         .set(crate::AppMode::Menu);
-    for _ in 0..100 {
-        app.update();
-    }
-    assert_eq!(screen(&app), crate::Screen::Title);
-    assert!(
-        recorded(&app).events.len() > before_menu,
-        "the AI plays on while its host is in the menu"
+    drive_until(
+        &mut app,
+        before_menu + 1,
+        "the AI plays on while its host is in the menu",
     );
+    assert_eq!(screen(&app), crate::Screen::Title);
 
     // Back to the board, then into the review of the running game.
     app.world_mut()
@@ -2005,7 +2023,7 @@ fn a_review_runs_on_top_of_a_live_game() {
     }
     let reviewed = recorded(&app);
     let len = reviewed.events.len();
-    assert!(len > 2 * crate::timeline::CHECKPOINT_EVERY, "{len} events");
+    assert!(len >= needed, "{len} events");
     app.world_mut()
         .resource_mut::<crate::timeline::SpectatorTimeline>()
         .open(reviewed.clone(), "current game".into());
@@ -2054,13 +2072,7 @@ fn a_review_runs_on_top_of_a_live_game() {
     }
 
     // The session goes on underneath, and leaves the reviewed board alone.
-    for _ in 0..100 {
-        app.update();
-    }
-    assert!(
-        recorded(&app).events.len() > len,
-        "the AI plays on while its host reviews"
-    );
+    drive_until(&mut app, len + 1, "the AI plays on while its host reviews");
     assert_eq!(
         shown(&app),
         position(&replayed(&reviewed, Some(2 * every + 7)))

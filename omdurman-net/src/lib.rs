@@ -83,6 +83,14 @@ pub struct Seat {
 /// A game-state mutation. These are the only `NetMsg` payloads that get
 /// recorded into [`GameRecord`] and replayed for late joiners. Adding a
 /// variant here automatically participates in recording and replay.
+///
+/// Granularity: one event is one confirmed order, for humans and the AI
+/// alike -- a unit's whole plotted route ([`GameEvent::MoveUnit`] carries
+/// its path), a resolved attack with its dice, a placed counter. Not a hex
+/// of a route or a step of a resolution. The review's checkpoints are spaced
+/// by event count on that assumption (`timeline::CHECKPOINT_EVERY` in the
+/// app), so an event that did much more or much less work than an order
+/// would change what a scrub costs.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, strum::IntoStaticStr)]
 pub enum GameEvent {
     /// Host-committed seat table that starts the game. Each [`Seat`] binds a

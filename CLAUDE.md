@@ -68,6 +68,10 @@ sequencing; hours and tens of GB per job) needs `--features kani-expensive`; `ru
 clones the repo and runs everything on a big machine (`KANI_EXPENSIVE=1 ./run-kani.sh`). The
 same harnesses run under `cargo test` as a randomized test (`EXPENSIVE_SAMPLES=<n>` for more).
 
+The pre-push hook (`scripts/hooks/pre-push`) runs CI's cheap gates -- fmt, clippy, the
+workspace tests -- before a push leaves the machine; install it once per clone with
+`git config core.hooksPath scripts/hooks` (`git push --no-verify` skips it).
+
 CI (`.github/workflows/ci.yml`) runs, per push/PR: `cargo fmt --check`, `cargo clippy
 --workspace --all-targets -- -D warnings`, `cargo test --workspace`, the traceability
 gates (plus the report PDF as an artifact) and the mutation gate — plus the Pages deploy,
@@ -382,6 +386,9 @@ These are set automatically by the parser in `main.rs` (`parse_list` for `loose`
   `omdurman-app` (and `omdurman-hexmap` for its plugin shim).
 - `GameEvent` is the only enum whose variants get recorded and replayed. Adding a network message
   that should *not* persist (cursor pings, selection hints) belongs in `Ephemeral`, not
-  `GameEvent`.
+  `GameEvent`. One recorded event is one confirmed order -- a whole plotted route, not a hex of
+  it; a resolved attack, not a die -- for humans and the AI alike. Review checkpoints are spaced
+  by event count (`timeline::CHECKPOINT_EVERY`) on that assumption; a finer or coarser event
+  vocabulary changes what a scrub costs.
 - New game mutations must go through a new `GameEffect` variant + `apply_effect` arm so they
   participate in determinism, replay, and host-relay ordering.

@@ -1,0 +1,17 @@
+#!/bin/sh
+# Pre-push gate: what CI's cheap jobs check, run before a push can leave the
+# machine, so a red test never lands on main unnoticed (main stayed red for
+# five days once, under two more commits). Install once per clone:
+#
+#     git config core.hooksPath scripts/hooks
+#
+# `git push --no-verify` skips it. Takes a few minutes on a warm build; the
+# workspace tests are most of it.
+set -e
+cd "$(git rev-parse --show-toplevel)"
+echo "pre-push: cargo fmt --check"
+cargo fmt --all --check
+echo "pre-push: cargo clippy --workspace --all-targets"
+cargo clippy -q --workspace --all-targets -- -D warnings
+echo "pre-push: cargo test --workspace"
+cargo test -q --workspace
