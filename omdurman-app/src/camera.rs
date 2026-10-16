@@ -1,12 +1,20 @@
 //! RTS camera wiring for the game. The controls (right-drag pan, arrows,
 //! scroll zoom, Ctrl+scroll / PgUp/PgDn tilt, touch gestures, Home to fit) live in
 //! `omdurman-board-ui::camera`; this module only registers them (with the
-//! game's run condition), spawns the camera with its mesh-picking marker,
-//! mirrors the replicated day/night into [`BoardDayNight`], and registers the
-//! shared night shading.
+//! game's run condition), spawns the board camera with its mesh-picking
+//! marker and the UI camera, mirrors the replicated day/night into
+//! [`BoardDayNight`], and registers the shared night shading.
+//!
+//! Two cameras: the board's 3D camera ([`RtsCamera`]) and, drawn over it, a
+//! 2D camera ([`UiCamera`]) that every Bevy UI node and the egui pass render
+//! through. The board camera is switched off while an opaque screen (the
+//! title screen without a game behind it, the lobby) covers it
+//! (`splash::screen::sync_board_camera`): a frame then costs the UI alone,
+//! not the whole 3D pipeline for a board nobody sees.
 
 use bevy::prelude::*;
 use bevy::render::view::{ColorGrading, Tonemapping};
+use bevy_egui::{EguiGlobalSettings, PrimaryEguiContext};
 use omdurman_board_ui::night::{BoardDayNight, NightFading, night_shading};
 
 pub use omdurman_board_ui::camera::{
@@ -14,10 +22,20 @@ pub use omdurman_board_ui::camera::{
     RtsCameraState,
 };
 
+/// The 2D camera the UI (Bevy UI and egui) renders through.
+#[derive(Component)]
+pub struct UiCamera;
+
 pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
+        // egui would otherwise attach its primary context to the first camera
+        // it sees (the board's); it belongs to the UI camera, which carries
+        // `PrimaryEguiContext` itself.
+        app.world_mut()
+            .resource_mut::<EguiGlobalSettings>()
+            .auto_create_primary_context = false;
         app.insert_resource(CameraSettings::default())
             .insert_resource(CameraDragState::default())
             .init_resource::<CameraFit>()
@@ -70,6 +88,24 @@ fn spawn_camera(mut commands: Commands) {
         ColorGrading::default(),
         // Picking marker: the mesh backend only casts from marked cameras.
         crate::picking::picking_camera(),
+    ));
+    commands.spawn((
+        UiCamera,
+        Camera2d,
+        Camera {
+            // Over the board camera, which clears the window; while that one
+            // is off, this one clears (`sync_board_camera`).
+            order: 1,
+            clear_color: ClearColorConfig::None,
+            ..default()
+        },
+        // (The same multisampling as the board camera, deliberately: Bevy
+        // shares a window's main textures between cameras of one MSAA
+        // setting, and a camera of another gets its own -- whose blit would
+        // then replace the board's with stale pixels instead of drawing the
+        // UI over it.)
+        IsDefaultUiCamera,
+        PrimaryEguiContext,
     ));
 }
 

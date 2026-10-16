@@ -80,6 +80,7 @@ impl Plugin for SplashPlugin {
                     screen::menu_buttons,
                     screen::sync_splash_screen,
                     screen::sync_credits,
+                    screen::sync_board_camera,
                 )
                     .chain(),
             )

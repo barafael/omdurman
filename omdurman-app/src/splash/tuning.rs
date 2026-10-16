@@ -1,7 +1,7 @@
 //! The title screen's tuning pane (a dev aid): tap **Shift** on the title
 //! screen for a small egui pane that switches the menu column off and on,
 //! skips the slideshow to the next or previous map, and sets the pan's, the
-//! slideshow's, the blur's and the ambient frame rate's parameters live.
+//! slideshow's and the blur's parameters live.
 //! Everything starts from [`super::params`]; each finished change logs the
 //! whole set, ready to be copied back there. Shift again (or its Close
 //! button) hides it; the pane exists only while it shows: nothing of it takes
@@ -14,7 +14,6 @@ use bevy_egui::{EguiContexts, egui};
 use super::map::{SlideTiming, SplashMaps};
 use super::params::*;
 use crate::Screen;
-use crate::activity::AmbientFps;
 
 /// The title screen's live-tunable look: the menu column, and the pan.
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
@@ -43,14 +42,14 @@ impl Default for SplashTuning {
     }
 }
 
-/// The values as `params` spells them (and the ambient frame rate, `fps`).
-fn describe(tuning: &SplashTuning, fps: f32) -> String {
+/// The values as `params` spells them.
+fn describe(tuning: &SplashTuning) -> String {
     let map = &tuning.title_map;
     format!(
         "MAP_PAN_SPEED = {:.2}; TITLE_MAP: pan_amp = ({:.3}, {:.3}), rotate_deg = {:.1}, \
          rotate_swing_deg = {:.1}, tilt_deg = {:.1}, tilt_swing_deg = {:.1}; \
          MAP_SECS = {:.0}; MAP_CROSSFADE_SECS = {:.1}; MAP_BLUR_PX = {:.1}; \
-         AMBIENT_FPS = {:.0}; sidebar = {}",
+         sidebar = {}",
         tuning.pan_speed,
         map.pan_amp.0,
         map.pan_amp.1,
@@ -61,7 +60,6 @@ fn describe(tuning: &SplashTuning, fps: f32) -> String {
         tuning.timing.slide_secs,
         tuning.timing.crossfade_secs,
         tuning.blur_px,
-        fps,
         tuning.sidebar,
     )
 }
@@ -170,9 +168,6 @@ const TEXT_SCALE: f32 = 1.3;
 /// the pointer, the number creeps).
 const FINE_DRAG_PX: f64 = 2000.0;
 
-/// The range of the frame-rate slider: from the unfocused pace up.
-const FPS_RANGE: (f32, f32) = (crate::activity::AMBIENT_UNFOCUSED_FPS, 60.0);
-
 /// What the pane's buttons asked for this frame.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct PaneActions {
@@ -207,7 +202,6 @@ pub(super) fn tuning_pane_ui(
     keys: Res<ButtonInput<KeyCode>>,
     screen: Option<Res<State<Screen>>>,
     mut tuning: ResMut<SplashTuning>,
-    mut fps: ResMut<AmbientFps>,
     mut maps: ResMut<SplashMaps>,
 ) {
     let title = screen.is_some_and(|screen| **screen == Screen::Title);
@@ -221,16 +215,14 @@ pub(super) fn tuning_pane_ui(
         return;
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    let (mut edited, mut edited_fps) = (*tuning, fps.0);
+    let mut edited = *tuning;
     let show = ShowInfo::of(&maps);
     let (finished, actions) = egui::Area::new(egui::Id::new("splash_tuning"))
         .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-12.0, 12.0))
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
             egui::Frame::popup(ui.style())
-                .show(ui, |ui| {
-                    tuning_controls(ui, &mut edited, &mut edited_fps, show)
-                })
+                .show(ui, |ui| tuning_controls(ui, &mut edited, show))
                 .inner
         })
         .inner;
@@ -240,26 +232,21 @@ pub(super) fn tuning_pane_ui(
     if edited != *tuning {
         *tuning = edited;
     }
-    if edited_fps != fps.0 {
-        fps.0 = edited_fps;
-    }
     if actions.skip != 0 {
         maps.show.timing = edited.timing;
         maps.skip(actions.skip);
     }
     if finished {
-        info!("splash tuning: {}", describe(&edited, edited_fps));
+        info!("splash tuning: {}", describe(&edited));
     }
 }
 
-/// The pane's controls over `tuning` and the ambient `fps`, and its map
-/// buttons over the show (`show` says where it is): whether a change was
-/// finished this frame (a drag let go, a click, a typed value), and what the
-/// buttons asked for.
+/// The pane's controls over `tuning` and its map buttons over the show
+/// (`show` says where it is): whether a change was finished this frame (a
+/// drag let go, a click, a typed value), and what the buttons asked for.
 fn tuning_controls(
     ui: &mut egui::Ui,
     tuning: &mut SplashTuning,
-    fps: &mut f32,
     show: ShowInfo,
 ) -> (bool, PaneActions) {
     ui.set_width(PANE_WIDTH);
@@ -316,7 +303,6 @@ fn tuning_controls(
         slider(ui, &mut value, knob.range(), knob.label());
         knob.set(tuning, value);
     }
-    slider(ui, fps, (FPS_RANGE.0, FPS_RANGE.1, 0), "Frames per second");
     (finished, actions)
 }
 
@@ -328,7 +314,7 @@ mod tests {
     /// edit is a change worth logging.
     #[test]
     fn an_untouched_pane_changes_nothing() {
-        let (mut tuning, mut fps) = (SplashTuning::default(), crate::activity::AMBIENT_FPS);
+        let mut tuning = SplashTuning::default();
         let show = ShowInfo {
             current: 0,
             incoming: Some(1),
@@ -337,22 +323,20 @@ mod tests {
         let mut asked = PaneActions::default();
         crate::ui::headless(3, |ctx, _| {
             egui::Area::new(egui::Id::new("pane")).show(ctx, |ui| {
-                let (finished, actions) = tuning_controls(ui, &mut tuning, &mut fps, show);
+                let (finished, actions) = tuning_controls(ui, &mut tuning, show);
                 reported |= finished;
                 asked = actions;
             });
         });
         assert_eq!(tuning, SplashTuning::default());
-        assert_eq!(fps, crate::activity::AMBIENT_FPS);
         assert!(!reported);
         assert_eq!(asked, PaneActions::default());
     }
 
     // Every knob starts inside its slider's range, and sets exactly what it
-    // reads. (The frame rate is not a knob: it starts from the environment.)
+    // reads.
     #[test]
     fn the_knobs_start_in_range_and_round_trip() {
-        assert!((FPS_RANGE.0..=FPS_RANGE.1).contains(&crate::activity::AMBIENT_FPS));
         let defaults = SplashTuning::default();
         for (i, knob) in Knob::ALL.into_iter().enumerate() {
             let (min, max, _) = knob.range();

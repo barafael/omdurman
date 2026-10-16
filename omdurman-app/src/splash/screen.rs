@@ -21,6 +21,7 @@ use super::backdrop::{BackdropLayout, BackdropMaterial};
 use super::map::SplashMaps;
 use super::params::*;
 use super::{Destination, Quote, SplashData, palette_color};
+use crate::camera::{RtsCamera, UiCamera};
 use crate::ui::palette;
 use crate::ui_plugin::EguiPointerOverUi;
 use crate::{AppMode, AppState, Screen};
@@ -652,6 +653,43 @@ pub(super) fn sync_splash_screen(
             && let Some(mut material) = materials.get_mut(&backdrop.0)
         {
             *material = next;
+        }
+    }
+}
+
+/// Switch the board's camera off while the screen that is up covers it
+/// entirely -- the lobby, and the title screen unless a game shows through
+/// it ([`title_composite`] below 1) -- so no frame renders the board's whole
+/// 3D pipeline under an opaque backdrop; the UI camera clears the window
+/// meanwhile. Switched back on for every other screen.
+#[allow(clippy::type_complexity)]
+pub(super) fn sync_board_camera(
+    app_state: Res<State<AppState>>,
+    screen: Option<Res<State<Screen>>>,
+    progress: (Res<crate::TurnState>, Res<crate::game_record::GameRecorder>),
+    mut cameras: ParamSet<(
+        Query<&mut Camera, With<RtsCamera>>,
+        Query<&mut Camera, With<UiCamera>>,
+    )>,
+) {
+    let covered = match screen.as_deref().map(State::get) {
+        Some(Screen::Title) => title_composite(&app_state, &progress) >= 1.0,
+        Some(Screen::Lobby) => true,
+        _ => false,
+    };
+    for mut camera in &mut cameras.p0() {
+        if camera.is_active == covered {
+            camera.is_active = !covered;
+        }
+    }
+    for mut camera in &mut cameras.p1() {
+        let clears = !matches!(camera.clear_color, ClearColorConfig::None);
+        if clears != covered {
+            camera.clear_color = if covered {
+                ClearColorConfig::Default
+            } else {
+                ClearColorConfig::None
+            };
         }
     }
 }

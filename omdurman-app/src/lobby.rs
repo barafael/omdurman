@@ -288,7 +288,7 @@ pub fn lobby_ui(
     };
     // The period-map background and the floating panel are native UI under
     // egui (`splash`), with their frames from its ambient pacing; an egui
-    // repaint request here would force display-rate frames.
+    // repaint request here would force display-rate frames even unfocused.
 
     let roster = build_roster(
         &net,
