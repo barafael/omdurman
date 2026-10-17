@@ -18,7 +18,6 @@ mod late_joiner_tests {
     use omdurman_net::{
         GameEvent, GameRecord, InitialGameState, NetState, RecordedEvent, new_seed,
     };
-    use omdurman_rules::MovementPoints;
     use omdurman_rules::effects::GameState;
     use omdurman_types::{HexCoord, MapKind, SectionName, SpriteRef, Terrain};
 
@@ -151,9 +150,7 @@ mod late_joiner_tests {
                 coord: ps[0].position,
                 is_boat: ps[0].profile.kind.is_boat(),
             }),
-            GameEffect::MoveUnit {
-                unit_id, to, path, ..
-            } => Some(GameEvent::MoveUnit {
+            GameEffect::MoveUnit { unit_id, to, path } => Some(GameEvent::MoveUnit {
                 sprite: sprite_of(*unit_id),
                 to_q: to.q,
                 to_r: to.r,
@@ -161,20 +158,10 @@ mod late_joiner_tests {
             }),
             _ => None,
         };
-        // `GameEvent::MoveUnit` carries no movement points (the engine
-        // computes them from the route, §5.11/§5.24), so compare the
-        // round-tripped effect with the cost normalized away.
-        let comparable = |effect: &GameEffect| {
-            let mut normalized = effect.clone();
-            if let GameEffect::MoveUnit { cost, .. } = &mut normalized {
-                *cost = MovementPoints::default();
-            }
-            format!("{normalized:?}")
-        };
         candidate
             .filter(|ev| {
-                game_apply::sprite_event_effect(ev, state).map(|e| comparable(&e))
-                    == Some(comparable(effect))
+                game_apply::sprite_event_effect(ev, state).map(|e| format!("{e:?}"))
+                    == Some(format!("{effect:?}"))
             })
             .unwrap_or_else(|| GameEvent::Effect(effect.clone()))
     }

@@ -13,8 +13,8 @@
 
 use bevy::prelude::*;
 use omdurman_net::GameEvent;
+use omdurman_rules::OptionalRule;
 use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
-use omdurman_rules::{MovementPoints, OptionalRule};
 use omdurman_rules::{Phase, UnitId, UnitPlacement, UnitState};
 use omdurman_types::{HexCoord, MapKind, Scenario, SpriteRef};
 
@@ -134,7 +134,6 @@ pub(crate) fn sprite_event_effect(event: &GameEvent, gs: &GameState) -> Option<G
         } => Some(GameEffect::MoveUnit {
             unit_id: unit_for_sprite(sprite)?,
             to: HexCoord::new(*to_q, *to_r),
-            cost: MovementPoints::default(),
             path: path.clone(),
         }),
         GameEvent::RemoveUnit { sprite } => Some(GameEffect::RemoveDeployedUnit {

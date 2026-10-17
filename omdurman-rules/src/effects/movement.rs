@@ -4,13 +4,11 @@ use super::*;
 /// hexes entered (excluding the start, ending at `to`; empty means the single
 /// step to `to`). The whole path is validated step by step by
 /// [`GameState::validate_move`] and the movement-point cost is computed by the
-/// engine from the board (§5.11/§5.24): the caller-supplied `cost` is ignored
-/// (it survives in the effect only for wire compatibility).
+/// engine from the board (§5.11/§5.24); no caller-supplied cost exists.
 pub fn apply_move_unit(
     state: &mut GameState,
     unit_id: UnitId,
     to: HexCoord,
-    _cost: MovementPoints,
     path: &[HexCoord],
 ) -> Result<(), RuleError> {
     let plan = state.validate_move(unit_id, to, path)?;

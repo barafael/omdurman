@@ -21,12 +21,7 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
             phase,
         } => advance_phase_from(state, *turn, *player, *phase),
         GameEffect::RollDesertion { roll } => apply_roll_desertion(state, *roll),
-        GameEffect::MoveUnit {
-            unit_id,
-            to,
-            cost,
-            path,
-        } => apply_move_unit(state, *unit_id, *to, *cost, path),
+        GameEffect::MoveUnit { unit_id, to, path } => apply_move_unit(state, *unit_id, *to, path),
         GameEffect::FireCombat {
             attack,
             roll,

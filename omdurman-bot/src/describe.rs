@@ -162,12 +162,7 @@ pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
             format!("AdvancePhase (end {})", state.phase.top_level_name())
         }
 
-        GameEffect::MoveUnit {
-            unit_id,
-            to,
-            cost,
-            path,
-        } => {
+        GameEffect::MoveUnit { unit_id, to, path } => {
             let unit = state.find_unit(*unit_id);
             let from = unit
                 .map(|u| hex(u.position))
@@ -178,11 +173,24 @@ pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
                 let route = path.iter().map(|h| hex(*h)).collect::<Vec<_>>().join(" → ");
                 format!(" via [{route}]")
             };
+            // The engine prices the route (§5.11/§5.24); an empty path is the
+            // single step to `to`.
+            let route: &[omdurman_types::HexCoord] = if path.is_empty() {
+                std::slice::from_ref(to)
+            } else {
+                path
+            };
+            let cost = unit
+                .and_then(|u| state.movement_cost_for(u, route))
+                .map(|c| c.value());
+            let cost_note = cost
+                .map(|c| format!("{c} MP"))
+                .unwrap_or_else(|| "? MP".to_string());
             // §5.11/§5.24 audit trail: cumulative MP spent vs the allowance
             // (the upstream allowance for gunboats).
             let mp_note = unit
                 .map(|u| {
-                    let spent = state.mp_spent(*unit_id) + cost.value();
+                    let spent = state.mp_spent(*unit_id) + cost.unwrap_or(0);
                     let allow: i16 = match &u.profile.movement {
                         omdurman_rules::UnitMovement::Gunboat(g) => {
                             (g.upstream.value().min(g.downstream.value())) as i16
@@ -194,10 +202,9 @@ pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
                 })
                 .unwrap_or_default();
             format!(
-                "MoveUnit {}: {from} → {} ({} MP){mp_note}{via}",
+                "MoveUnit {}: {from} → {} ({cost_note}){mp_note}{via}",
                 unit_name(*unit_id),
                 hex(*to),
-                cost.value()
             )
         }
 

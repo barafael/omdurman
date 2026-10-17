@@ -923,7 +923,6 @@ pub fn unit_moves(state: &GameState, unit_id: UnitId) -> Vec<GameEffect> {
             out.push(GameEffect::MoveUnit {
                 unit_id: unit.id,
                 to: dest,
-                cost,
                 path,
             });
         }
@@ -956,7 +955,6 @@ fn gunboat_moves(state: &GameState, unit_id: UnitId, out: &mut Vec<GameEffect>) 
             out.push(GameEffect::MoveUnit {
                 unit_id,
                 to: dest,
-                cost,
                 path,
             });
         }
@@ -971,7 +969,6 @@ fn gunboat_moves(state: &GameState, unit_id: UnitId, out: &mut Vec<GameEffect>) 
                 out.push(GameEffect::MoveUnit {
                     unit_id,
                     to: dest,
-                    cost,
                     path,
                 });
             }

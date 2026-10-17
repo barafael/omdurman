@@ -47,8 +47,6 @@ pub enum GameEffect {
     MoveUnit {
         unit_id: UnitId,
         to: HexCoord,
-        cost: MovementPoints,
-        #[serde(default)]
         path: Vec<HexCoord>,
     },
 

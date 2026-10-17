@@ -61,8 +61,8 @@ use crate::proof_palette::{PALETTE, PALETTE_LEN};
 use crate::transport::ChainPlacement;
 use crate::{
     DemolitionTarget, DieRoll, FireAttack, FireKind, FireModifier, FireSubPhase, FriendliesAction,
-    GameTurnIndex, MeleeAttack, MeleeModifier, MinePlacement, MovementPoints, OptionalRule, Phase,
-    StruckMine, TransportState, UnitId, UnitPlacement, UnitState,
+    GameTurnIndex, MeleeAttack, MeleeModifier, MinePlacement, OptionalRule, Phase, StruckMine,
+    TransportState, UnitId, UnitPlacement, UnitState,
 };
 use omdurman_types::{DayNight, HexCoord, HexsideRef, Player, Scenario, UnitKind};
 
@@ -769,12 +769,7 @@ fn move_unit_is_safe() {
         Some(last) if any() => *last,
         _ => any_payload_hex(),
     };
-    let effect = GameEffect::MoveUnit {
-        unit_id,
-        to,
-        cost: MovementPoints(any()),
-        path,
-    };
+    let effect = GameEffect::MoveUnit { unit_id, to, path };
     check(state, effect);
 }
 
@@ -1315,7 +1310,6 @@ fn an_accepted_move_is_a_legal_move() {
     let effect = GameEffect::MoveUnit {
         unit_id: mover.id,
         to,
-        cost: MovementPoints(0),
         path: path.clone(),
     };
     let before = state.clone();
@@ -1479,7 +1473,6 @@ fn two_moves_keep_the_invariants() {
     let a_move = || GameEffect::MoveUnit {
         unit_id: biased(any_palette_id(), || Some(ids[any_below(ids.len())])),
         to: any_hex(),
-        cost: MovementPoints(0),
         path: Vec::new(),
     };
     check_pair(state, a_move(), a_move());
@@ -1502,7 +1495,6 @@ fn any_effect(kind: usize) -> GameEffect {
         1 => GameEffect::MoveUnit {
             unit_id: any_palette_id(),
             to: any_payload_hex(),
-            cost: MovementPoints(any()),
             path: {
                 let mut path = Vec::new();
                 if any() {

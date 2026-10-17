@@ -1100,7 +1100,6 @@ mod tests {
             &GameEffect::MoveUnit {
                 unit_id: id,
                 to: HexCoord::new(9, 0),
-                cost: MovementPoints::new(1),
                 path: line_path(HexCoord::new(0, 0), HexCoord::new(9, 0)),
             },
         );
@@ -1124,7 +1123,6 @@ mod tests {
             &GameEffect::MoveUnit {
                 unit_id: id,
                 to,
-                cost: MovementPoints::new(1),
                 path: Vec::new(),
             },
         );
@@ -1141,7 +1139,6 @@ mod tests {
             &GameEffect::MoveUnit {
                 unit_id: id,
                 to: HexCoord::new(2, 0),
-                cost: MovementPoints::new(1),
                 path: Vec::new(),
             },
         );
@@ -1163,7 +1160,6 @@ mod tests {
             &GameEffect::MoveUnit {
                 unit_id: id,
                 to: HexCoord::new(8, 0),
-                cost: MovementPoints::new(8),
                 path: line_path(HexCoord::new(0, 0), HexCoord::new(8, 0)),
             },
         );
@@ -1175,7 +1171,6 @@ mod tests {
             &GameEffect::MoveUnit {
                 unit_id: id,
                 to: HexCoord::new(9, 0),
-                cost: MovementPoints::new(1),
                 path: Vec::new(),
             },
         );
@@ -1339,27 +1334,12 @@ mod tests {
         make_ae_infantry(&mut state, HexCoord::new(5, 0)); // ZOC ring covers (4,0)
 
         // Move 1: enter the ZOC at (4,0) -- legal, the unit stops there.
-        assert!(
-            apply_move_unit(
-                &mut state,
-                mover,
-                HexCoord::new(4, 0),
-                MovementPoints::new(1),
-                &[]
-            )
-            .is_ok()
-        );
+        assert!(apply_move_unit(&mut state, mover, HexCoord::new(4, 0), &[]).is_ok());
         assert!(state.zoc_stopped_this_turn.contains(&mover));
 
         // Move 2 (same phase): rejected -- it may move no further this turn.
         assert!(matches!(
-            apply_move_unit(
-                &mut state,
-                mover,
-                HexCoord::new(4, 1),
-                MovementPoints::new(1),
-                &[]
-            ),
+            apply_move_unit(&mut state, mover, HexCoord::new(4, 1), &[]),
             Err(RuleError::StoppedInEnemyZoc(_))
         ));
 
@@ -1368,16 +1348,7 @@ mod tests {
         end_player_turn(&mut state); // -> AE turn
         end_player_turn(&mut state); // -> Dervish again, trackers cleared
         assert!(!state.zoc_stopped_this_turn.contains(&mover));
-        assert!(
-            apply_move_unit(
-                &mut state,
-                mover,
-                HexCoord::new(3, 0),
-                MovementPoints::new(1),
-                &[]
-            )
-            .is_ok()
-        );
+        assert!(apply_move_unit(&mut state, mover, HexCoord::new(3, 0), &[]).is_ok());
     }
 
     #[rulebook("§5.26")]
@@ -1410,7 +1381,6 @@ mod tests {
                 &mut state,
                 mover,
                 enemy_hex,
-                MovementPoints::new(2),
                 &[HexCoord::new(5, 1), enemy_hex]
             )
             .is_err(),
@@ -1420,17 +1390,11 @@ mod tests {
         // Path straight through a ZOC-ring hex -> rejected (must stop there).
         let through_zoc: Vec<HexCoord> = vec![HexCoord::new(5, 1)];
         assert!(matches!(
-            apply_move_unit(
-                &mut state,
-                mover,
-                HexCoord::new(5, 2).neighbors()[0],
-                MovementPoints::new(2),
-                &{
-                    let mut p = through_zoc.clone();
-                    p.push(HexCoord::new(5, 2).neighbors()[0]);
-                    p
-                }
-            ),
+            apply_move_unit(&mut state, mover, HexCoord::new(5, 2).neighbors()[0], &{
+                let mut p = through_zoc.clone();
+                p.push(HexCoord::new(5, 2).neighbors()[0]);
+                p
+            }),
             Err(RuleError::BlockedByEnemyZoc(_))
         ));
 
@@ -1448,14 +1412,7 @@ mod tests {
         let in_ring = detour.iter().any(|h| ring.contains(h));
         assert!(!in_ring, "test premise: the detour avoids the ZOC ring");
         assert!(
-            apply_move_unit(
-                &mut state,
-                mover,
-                HexCoord::new(5, 4),
-                MovementPoints::new(6),
-                &detour
-            )
-            .is_ok(),
+            apply_move_unit(&mut state, mover, HexCoord::new(5, 4), &detour).is_ok(),
             "a path around the ZOC is legal (§5.26 stops only on entering)"
         );
     }
@@ -2127,7 +2084,6 @@ mod tests {
                 &GameEffect::MoveUnit {
                     unit_id: fort,
                     to: HexCoord::new(1, 0),
-                    cost: MovementPoints::new(1),
                     path: vec![HexCoord::new(1, 0)],
                 }
             ),
@@ -3573,7 +3529,6 @@ mod tests {
             &GameEffect::MoveUnit {
                 unit_id: dervish,
                 to: HexCoord::new(2, 0),
-                cost: MovementPoints::new(2),
                 path: vec![HexCoord::new(1, 0), HexCoord::new(2, 0)],
             },
         );
@@ -3605,7 +3560,6 @@ mod tests {
             &GameEffect::MoveUnit {
                 unit_id: dervish,
                 to: HexCoord::new(1, 0),
-                cost: MovementPoints::new(1),
                 path: Vec::new(),
             },
         );
@@ -3639,7 +3593,6 @@ mod tests {
             &GameEffect::MoveUnit {
                 unit_id: dervish,
                 to: HexCoord::new(1, 0),
-                cost: MovementPoints::new(1),
                 path: Vec::new(),
             },
         );
@@ -4912,7 +4865,6 @@ mod tests {
             &GameEffect::MoveUnit {
                 unit_id: mover,
                 to: dest,
-                cost: MovementPoints::new(1),
                 path: Vec::new(),
             },
         );
@@ -4951,7 +4903,6 @@ mod tests {
                 &GameEffect::MoveUnit {
                     unit_id: mover,
                     to: dest,
-                    cost: MovementPoints::new(1),
                     path: Vec::new(),
                 }
             ),
@@ -5021,7 +4972,6 @@ mod tests {
                 &GameEffect::MoveUnit {
                     unit_id: baggara,
                     to: dest,
-                    cost: MovementPoints::new(1),
                     path: Vec::new(),
                 }
             ),
@@ -5067,7 +5017,6 @@ mod tests {
                 &GameEffect::MoveUnit {
                     unit_id: m2,
                     to: dest,
-                    cost: MovementPoints::new(1),
                     path: Vec::new(),
                 }
             ),
@@ -5152,7 +5101,6 @@ mod tests {
             &GameEffect::MoveUnit {
                 unit_id: mover,
                 to: HexCoord::new(1, 0),
-                cost: MovementPoints::new(1),
                 path: Vec::new(),
             },
         );
@@ -5185,7 +5133,6 @@ mod tests {
                 &GameEffect::MoveUnit {
                     unit_id: mover,
                     to: HexCoord::new(0, 0), // an adjacent Nile hex
-                    cost: MovementPoints::new(1),
                     path: Vec::new(),
                 }
             ),
@@ -5269,7 +5216,6 @@ mod tests {
             &GameEffect::MoveUnit {
                 unit_id: gb,
                 to: HexCoord::new(2, 0),
-                cost: MovementPoints::new(1),
                 path: vec![HexCoord::new(2, 0)],
             },
         );
@@ -5291,7 +5237,6 @@ mod tests {
             &GameEffect::MoveUnit {
                 unit_id: gb,
                 to: HexCoord::new(12, 0),
-                cost: MovementPoints::new(10),
                 path: downstream,
             },
         );
@@ -5988,37 +5933,17 @@ mod tests {
         // Five clear hexes (engine-costed at 1 MP each, no board).
         let start = HexCoord::new(0, 0);
         let first = HexCoord::new(5, 0);
-        apply_move_unit(
-            &mut state,
-            mover,
-            first,
-            MovementPoints::new(5),
-            &line_path(start, first),
-        )
-        .unwrap();
+        apply_move_unit(&mut state, mover, first, &line_path(start, first)).unwrap();
         assert_eq!(state.mp_spent(mover), 5);
         // 5 spent + 4 more would be 9 > 8: rejected.
         let too_far = HexCoord::new(9, 0);
         assert!(matches!(
-            apply_move_unit(
-                &mut state,
-                mover,
-                too_far,
-                MovementPoints::new(4),
-                &line_path(first, too_far)
-            ),
+            apply_move_unit(&mut state, mover, too_far, &line_path(first, too_far)),
             Err(RuleError::MovementExceedsAllowance { .. })
         ));
         // 5 spent + 3 = 8 <= 8: allowed.
         let last = HexCoord::new(8, 0);
-        apply_move_unit(
-            &mut state,
-            mover,
-            last,
-            MovementPoints::new(3),
-            &line_path(first, last),
-        )
-        .unwrap();
+        apply_move_unit(&mut state, mover, last, &line_path(first, last)).unwrap();
     }
 
     // §5.13: unused movement points are lost -- a fresh turn's allowance is
@@ -6029,14 +5954,7 @@ mod tests {
         let mut state = playing(Scenario::Campaign);
         state.active_player = Player::Dervish;
         let mover = make_dervish_tribal(&mut state, HexCoord::new(3, 0)); // MA 9
-        apply_move_unit(
-            &mut state,
-            mover,
-            HexCoord::new(4, 0),
-            MovementPoints::new(1),
-            &[],
-        )
-        .unwrap();
+        apply_move_unit(&mut state, mover, HexCoord::new(4, 0), &[]).unwrap();
         assert_eq!(state.mp_spent(mover), 1);
         end_player_turn(&mut state);
         end_player_turn(&mut state);
@@ -6050,19 +5968,11 @@ mod tests {
                 &mut state,
                 mover,
                 too_far,
-                MovementPoints::new(10),
                 &line_path(HexCoord::new(4, 0), too_far),
             ),
             Err(RuleError::MovementExceedsAllowance { .. })
         ));
-        apply_move_unit(
-            &mut state,
-            mover,
-            far,
-            MovementPoints::new(9),
-            &line_path(HexCoord::new(4, 0), far),
-        )
-        .unwrap();
+        apply_move_unit(&mut state, mover, far, &line_path(HexCoord::new(4, 0), far)).unwrap();
     }
 
     // §5.3: Anglo-Egyptian infantry can begin constructing a Zariba hexside:
@@ -6474,7 +6384,6 @@ mod tests {
                 &GameEffect::MoveUnit {
                     unit_id: gb,
                     to: HexCoord::new(to, 0),
-                    cost: MovementPoints::new(to as i16),
                     path: path(to),
                 },
             )
@@ -6572,7 +6481,6 @@ mod tests {
                 &GameEffect::MoveUnit {
                     unit_id: gb,
                     to: HexCoord::new(to, 0),
-                    cost: MovementPoints::new(to as i16),
                     path: (1..=to).map(|q| HexCoord::new(q, 0)).collect(),
                 },
             )
@@ -6770,7 +6678,6 @@ mod tests {
                 &GameEffect::MoveUnit {
                     unit_id: gb,
                     to: *path.last().unwrap(),
-                    cost: MovementPoints::new(path.len() as i16),
                     path,
                 },
             )
@@ -6803,7 +6710,6 @@ mod tests {
                 &GameEffect::MoveUnit {
                     unit_id: other,
                     to: HexCoord::new(4, 0),
-                    cost: MovementPoints::new(4),
                     path: through,
                 },
             ),
@@ -6859,7 +6765,6 @@ mod tests {
             &GameEffect::MoveUnit {
                 unit_id: foot,
                 to: HexCoord::new(12, 10),
-                cost: MovementPoints::new(2),
                 path: march,
             },
         )
@@ -7098,14 +7003,8 @@ mod tests {
         state.active_player = Player::Dervish;
         let dervish = make_dervish_tribal(&mut state, adj);
 
-        apply_move_unit(
-            &mut state,
-            dervish,
-            palace,
-            MovementPoints::new(1),
-            &[palace],
-        )
-        .expect("Dervish moves onto the palace");
+        apply_move_unit(&mut state, dervish, palace, &[palace])
+            .expect("Dervish moves onto the palace");
 
         assert!(
             !state.units.iter().any(|u| u.profile.identity.is_gordon()),
@@ -7123,8 +7022,7 @@ mod tests {
         let (mut state, adj) = fok_with_palace(palace);
         state.active_player = Player::Dervish;
         let dervish = make_dervish_tribal(&mut state, palace.neighbors()[1]);
-        apply_move_unit(&mut state, dervish, adj, MovementPoints::new(1), &[adj])
-            .expect("Dervish moves adjacent");
+        apply_move_unit(&mut state, dervish, adj, &[adj]).expect("Dervish moves adjacent");
         assert!(state.units.iter().any(|u| u.profile.identity.is_gordon()));
         assert_eq!(state.gordon_eliminated_turn, None);
         assert!(!state.game_over);
@@ -8036,7 +7934,6 @@ mod tests {
                 &GameEffect::MoveUnit {
                     unit_id: mover,
                     to: dest,
-                    cost: MovementPoints::new(1),
                     path: line_path(HexCoord::new(0, 0), dest),
                 }
             ),
@@ -9920,7 +9817,6 @@ mod tests {
             &GameEffect::MoveUnit {
                 unit_id: gunboat,
                 to: HexCoord::new(19, 10),
-                cost: MovementPoints::new(1),
                 path: vec![HexCoord::new(19, 10)],
             },
         )
@@ -10219,13 +10115,8 @@ mod tests {
         err
     }
 
-    fn move_effect(unit_id: UnitId, to: HexCoord, cost: i16, path: Vec<HexCoord>) -> GameEffect {
-        GameEffect::MoveUnit {
-            unit_id,
-            to,
-            cost: MovementPoints::new(cost),
-            path,
-        }
+    fn move_effect(unit_id: UnitId, to: HexCoord, path: Vec<HexCoord>) -> GameEffect {
+        GameEffect::MoveUnit { unit_id, to, path }
     }
 
     #[rulebook("§5.11")]
@@ -10236,14 +10127,12 @@ mod tests {
         // A teleport: one "step" of five hexes.
         let err = assert_rejected_untouched(
             &mut state,
-            move_effect(id, HexCoord::new(5, 0), 1, vec![HexCoord::new(5, 0)]),
+            move_effect(id, HexCoord::new(5, 0), vec![HexCoord::new(5, 0)]),
         );
         assert!(matches!(err, RuleError::PathNotContiguous { .. }));
         // The empty path is the single step to `to` -- never a jump.
-        let err = assert_rejected_untouched(
-            &mut state,
-            move_effect(id, HexCoord::new(5, 0), 1, Vec::new()),
-        );
+        let err =
+            assert_rejected_untouched(&mut state, move_effect(id, HexCoord::new(5, 0), Vec::new()));
         assert!(matches!(err, RuleError::PathNotContiguous { .. }));
         // A gap in the middle of the path.
         let err = assert_rejected_untouched(
@@ -10251,7 +10140,6 @@ mod tests {
             move_effect(
                 id,
                 HexCoord::new(3, 0),
-                3,
                 vec![HexCoord::new(1, 0), HexCoord::new(3, 0)],
             ),
         );
@@ -10262,7 +10150,6 @@ mod tests {
             move_effect(
                 id,
                 HexCoord::new(3, 0),
-                2,
                 line_path(HexCoord::new(0, 0), HexCoord::new(2, 0)),
             ),
         );
@@ -10273,7 +10160,6 @@ mod tests {
             move_effect(
                 id,
                 HexCoord::new(1, 0),
-                1,
                 vec![HexCoord::new(1, 0); MAX_MOVE_PATH_LEN + 1],
             ),
         );
@@ -10282,26 +10168,25 @@ mod tests {
 
     #[rulebook("§5.11")]
     #[test]
-    fn move_cost_is_engine_computed_and_caller_cost_ignored() {
+    fn move_cost_is_engine_computed() {
         let mut state = playing(Scenario::Campaign);
         let id = make_ae_infantry(&mut state, HexCoord::new(0, 0));
-        // A negative caller cost can neither refund MPs nor underpay: the
-        // engine charges one MP per clear hex.
+        // The effect carries no cost: the engine charges one MP per clear
+        // hex of the route.
         apply_effect(
             &mut state,
             &move_effect(
                 id,
                 HexCoord::new(2, 0),
-                -100,
                 line_path(HexCoord::new(0, 0), HexCoord::new(2, 0)),
             ),
         )
         .unwrap();
         assert_eq!(state.mp_spent(id), 2);
-        // An extreme caller cost does not overflow anything either.
+        // A further step adds its hex to the running total.
         apply_effect(
             &mut state,
-            &move_effect(id, HexCoord::new(3, 0), i16::MAX, vec![HexCoord::new(3, 0)]),
+            &move_effect(id, HexCoord::new(3, 0), vec![HexCoord::new(3, 0)]),
         )
         .unwrap();
         assert_eq!(state.mp_spent(id), 3);
@@ -10313,7 +10198,7 @@ mod tests {
         let mut state = playing(Scenario::Campaign);
         let id = make_ae_infantry(&mut state, HexCoord::new(0, 0));
         let far = HexCoord::new(i32::MAX, i32::MIN);
-        let err = assert_rejected_untouched(&mut state, move_effect(id, far, 1, vec![far]));
+        let err = assert_rejected_untouched(&mut state, move_effect(id, far, vec![far]));
         assert!(matches!(err, RuleError::CoordinateOutOfBounds(_)));
         state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
         let err = assert_rejected_untouched(
@@ -10344,7 +10229,6 @@ mod tests {
             move_effect(
                 id,
                 HexCoord::new(3, 0),
-                3,
                 line_path(HexCoord::new(0, 0), HexCoord::new(3, 0)),
             ),
         );
@@ -10362,7 +10246,6 @@ mod tests {
             move_effect(
                 id,
                 HexCoord::new(2, 0),
-                2,
                 line_path(HexCoord::new(0, 0), HexCoord::new(2, 0)),
             ),
         );
@@ -11792,7 +11675,7 @@ mod tests {
         state.zoc_stopped_this_turn.push(gone);
         apply_effect(
             &mut state,
-            &move_effect(alive, HexCoord::new(1, 0), 1, vec![HexCoord::new(1, 0)]),
+            &move_effect(alive, HexCoord::new(1, 0), vec![HexCoord::new(1, 0)]),
         )
         .unwrap();
         state.mp_spent_this_turn.clear();
@@ -13539,7 +13422,6 @@ mod tests {
             &GameEffect::MoveUnit {
                 unit_id: firers[0],
                 to: outside,
-                cost: MovementPoints::new(1),
                 path: vec![outside],
             },
         );

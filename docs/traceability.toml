@@ -311,7 +311,7 @@ tests = [
     "omdurman-rules::src::terrain_chart::step_cost_adds_the_crossed_hexside",
     "omdurman-rules::src::terrain_chart::engine_matches_the_transcribed_terrain_effects_chart",
     "omdurman-rules::src::effects::tests::extreme_coordinates_are_rejected_without_panicking",
-    "omdurman-rules::src::effects::tests::move_cost_is_engine_computed_and_caller_cost_ignored",
+    "omdurman-rules::src::effects::tests::move_cost_is_engine_computed",
     "omdurman-rules::src::effects::tests::move_path_must_be_contiguous_and_end_at_destination",
     "omdurman-rules::src::terrain_chart::clear_terrain_no_bonus",
     "omdurman-rules::src::terrain_chart::nile_is_impassable",

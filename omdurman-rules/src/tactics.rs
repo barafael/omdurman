@@ -23,8 +23,8 @@ use crate::effects::{GameEffect, GameState, RuleError, apply_effect};
 use crate::unit_profiles::profile_for_unit;
 use crate::{
     BattalionOrdinal, DieRoll, FireAttack, FireFactor, FireKind, FireModifier, FireSubPhase,
-    MeleeAttack, MeleeFactor, MeleeModifier, MovementAllowance, MovementPoints, Phase, UnitId,
-    UnitIdentity, UnitMovement, UnitPlacement, UnitProfile, UnitState, WeaponClass,
+    MeleeAttack, MeleeFactor, MeleeModifier, MovementAllowance, Phase, UnitId, UnitIdentity,
+    UnitMovement, UnitPlacement, UnitProfile, UnitState, WeaponClass,
 };
 
 /// A scripted step: either an effect that must be accepted, an effect that must
@@ -478,7 +478,6 @@ fn movement_allowance() -> TacticsScript {
             GameEffect::MoveUnit {
                 unit_id: mover,
                 to: HexCoord::new(30, 9),
-                cost: MovementPoints(1),
                 path: Vec::new(),
             },
         )
@@ -493,7 +492,6 @@ fn movement_allowance() -> TacticsScript {
             GameEffect::MoveUnit {
                 unit_id: mover,
                 to: HexCoord::new(22, 9),
-                cost: MovementPoints(8),
                 path: (22..=29).rev().map(|q| HexCoord::new(q, 9)).collect(),
             },
         )
@@ -520,7 +518,6 @@ fn walled_city_entry_artillery() -> TacticsScript {
             GameEffect::MoveUnit {
                 unit_id: UnitId::KhalifaAbdullah_0_1,
                 to: HexCoord::new(30, 39),
-                cost: MovementPoints(1),
                 path: Vec::new(),
             },
         )
@@ -550,7 +547,6 @@ fn walled_city_entry_denied() -> TacticsScript {
             GameEffect::MoveUnit {
                 unit_id: UnitId::Baggara_0_0,
                 to: HexCoord::new(30, 39),
-                cost: MovementPoints(1),
                 path: Vec::new(),
             },
         )
@@ -562,7 +558,6 @@ fn walled_city_entry_denied() -> TacticsScript {
             GameEffect::MoveUnit {
                 unit_id: UnitId::Baggara_0_1,
                 to: HexCoord::new(31, 38),
-                cost: MovementPoints(1),
                 path: Vec::new(),
             },
         )
@@ -582,7 +577,6 @@ fn gunboat_river_move() -> TacticsScript {
             GameEffect::MoveUnit {
                 unit_id: UnitId::BritishBoats_4_0,
                 to: HexCoord::new(34, 11),
-                cost: MovementPoints(1),
                 path: vec![HexCoord::new(34, 11)],
             },
         )
@@ -597,7 +591,6 @@ fn gunboat_river_move() -> TacticsScript {
             GameEffect::MoveUnit {
                 unit_id: UnitId::BritishBoats_4_0,
                 to: HexCoord::new(33, 11),
-                cost: MovementPoints(1),
                 path: vec![HexCoord::new(33, 11)],
             },
         )
@@ -1341,7 +1334,6 @@ fn zone_of_control() -> TacticsScript {
                 // transit through (30,9) makes the move illegal (ending at
                 // (30,8) itself would additionally be EnemyOccupied, §7.1).
                 to: HexCoord::new(31, 10),
-                cost: MovementPoints(2),
                 path: vec![HexCoord::new(30, 9), HexCoord::new(31, 10)],
             },
         )
@@ -1350,7 +1342,6 @@ fn zone_of_control() -> TacticsScript {
             GameEffect::MoveUnit {
                 unit_id: infantry,
                 to: HexCoord::new(30, 9),
-                cost: MovementPoints(1),
                 path: vec![HexCoord::new(30, 9)],
             },
         )
@@ -1383,7 +1374,6 @@ fn stacking_limits() -> TacticsScript {
             GameEffect::MoveUnit {
                 unit_id: mover,
                 to: HexCoord::new(30, 8),
-                cost: MovementPoints(1),
                 path: vec![HexCoord::new(30, 8)],
             },
         )
@@ -1407,7 +1397,6 @@ fn stacking_tribe_mix() -> TacticsScript {
         GameEffect::MoveUnit {
             unit_id: baggara,
             to: HexCoord::new(30, 11),
-            cost: MovementPoints(1),
             path: vec![HexCoord::new(30, 11)],
         },
     )
@@ -1427,7 +1416,6 @@ fn gordon_immobile() -> TacticsScript {
         GameEffect::MoveUnit {
             unit_id: UnitId::BritishBoats_3_1,
             to: HexCoord::new(14, 5),
-            cost: MovementPoints(1),
             path: Vec::new(),
         },
     )
@@ -1452,7 +1440,6 @@ fn disrupted_unit_inert() -> TacticsScript {
         GameEffect::MoveUnit {
             unit_id: unit,
             to: HexCoord::new(30, 9),
-            cost: MovementPoints(1),
             path: Vec::new(),
         },
     )

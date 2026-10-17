@@ -25,9 +25,7 @@ use omdurman_rules::combat_results_table::FireFactorRow;
 use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
 use omdurman_rules::unit_id_for_section_pos;
 use omdurman_rules::unit_profiles::profile_for_unit;
-use omdurman_rules::{
-    DieRoll, FireAttack, FireKind, FireModifier, MovementPoints, Phase, UnitId, UnitPlacement,
-};
+use omdurman_rules::{DieRoll, FireAttack, FireKind, FireModifier, Phase, UnitId, UnitPlacement};
 use omdurman_types::{HexCoord, Player, Scenario, SectionName};
 use proptest::prelude::*;
 
@@ -326,7 +324,6 @@ fn move_of_non_phase_player_is_rejected() {
     let eff = GameEffect::MoveUnit {
         unit_id: dervish,
         to: HexCoord::new(20, 12),
-        cost: MovementPoints::new(1),
         path: vec![],
     };
     assert!(apply_effect(&mut gs, &eff).is_err());
@@ -492,7 +489,6 @@ fn mutate(state: &GameState, rng: &mut BotRng) -> GameEffect {
         3 => GameEffect::MoveUnit {
             unit_id: any(rng),
             to: near(rng),
-            cost: MovementPoints::new(1),
             path: vec![],
         },
         // Re-deploy an existing unit (duplicate deploy).

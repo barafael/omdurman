@@ -174,13 +174,11 @@ impl MoveMemory {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use omdurman_rules::MovementPoints;
 
     fn step(unit_id: UnitId, to: HexCoord) -> GameEffect {
         GameEffect::MoveUnit {
             unit_id,
             to,
-            cost: MovementPoints::new(1),
             path: vec![to],
         }
     }

@@ -219,18 +219,13 @@ pub fn pick_validated(
                     break;
                 };
                 let part = path[..k].to_vec();
-                let cost = if unit.profile.kind.is_boat() {
-                    omdurman_rules::MovementPoints::new(k as i16)
-                } else {
-                    match state.movement_cost_for(unit, &part) {
-                        Some(cost) => cost,
-                        None => continue,
-                    }
-                };
+                // A land route the engine cannot price is not a route.
+                if !unit.profile.kind.is_boat() && state.movement_cost_for(unit, &part).is_none() {
+                    continue;
+                }
                 let shorter = GameEffect::MoveUnit {
                     unit_id: *unit_id,
                     to: part[k - 1],
-                    cost,
                     path: part,
                 };
                 if accepted(&shorter) {
@@ -362,17 +357,15 @@ fn rank_planned(
                      scored: &mut Vec<(i32, GameEffect)>| {
         let (way, gain) = memory.plan_way(state, unit.id, || plan_move(state, unit, player));
         let to = *way.last()?;
-        let cost = if unit.profile.kind.is_boat() {
-            omdurman_rules::MovementPoints::new(way.len() as i16)
-        } else {
-            state.movement_cost_for(unit, &way)?
-        };
+        // A land route the engine cannot price is not a route.
+        if !unit.profile.kind.is_boat() {
+            state.movement_cost_for(unit, &way)?;
+        }
         scored.push((
             10 + gain.clamp(1, 50),
             GameEffect::MoveUnit {
                 unit_id: unit.id,
                 to,
-                cost,
                 path: way,
             },
         ));
