@@ -645,7 +645,11 @@ fn los_rays(
     breached: impl Fn(HexCoord, HexCoord) -> bool,
 ) -> (Vec<HexCoord>, Option<LosBlock>) {
     let along = from.hexsides_along_line(to);
-    let [side, other_side] = los_ray_sides(from, to);
+    // (Kani cannot encode array-binding patterns; take the two sides
+    // through the iterator instead.)
+    let mut rays = los_ray_sides(from, to).into_iter();
+    let side = rays.next().expect("the near side always exists");
+    let other_side = rays.next().expect("the far side always exists");
     let first = los_walk(
         board,
         from,
@@ -698,7 +702,11 @@ pub fn los_clear_rays(
 ) -> Vec<Vec<HexCoord>> {
     use crate::FireKind;
 
-    let [side, other_side] = los_ray_sides(from, to);
+    // (Kani cannot encode array-binding patterns; take the two sides
+    // through the iterator instead.)
+    let mut rays = los_ray_sides(from, to).into_iter();
+    let side = rays.next().expect("the near side always exists");
+    let other_side = rays.next().expect("the far side always exists");
     if kind == FireKind::Howitzer {
         return vec![side];
     }
@@ -754,7 +762,10 @@ pub fn los_path_analysis(
 
     // Howitzer fire bypasses LOS (§6.64); every step is `Clear`.
     if kind == FireKind::Howitzer {
-        let [path, _] = los_ray_sides(from, to);
+        let path = los_ray_sides(from, to)
+            .into_iter()
+            .next()
+            .expect("the near side always exists");
         return path
             .into_iter()
             .map(|h| (h, LosStepResult::Clear))

@@ -369,12 +369,17 @@ pub fn capitalize(text: &str) -> String {
 }
 
 /// `items` as English prose: "a", "a and b", "a, b and c".
+/// (Written with `split_last` rather than a `[init @ .., last]` slice
+/// pattern: Kani cannot encode sub-slice bindings, and this function is
+/// reachable from proofs via the press path.)
 pub fn and_list(items: &[String]) -> String {
-    match items {
-        [] => String::new(),
-        [one] => one.clone(),
-        [init @ .., last] => format!("{} and {last}", init.join(", ")),
+    let Some((last, init)) = items.split_last() else {
+        return String::new();
+    };
+    if init.is_empty() {
+        return last.clone();
     }
+    format!("{} and {last}", init.join(", "))
 }
 
 /// The landmarks printed on the Campaign map that are not hex names in the

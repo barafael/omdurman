@@ -113,7 +113,12 @@ impl GameState {
         if !rays.is_empty() {
             return rays;
         }
-        let [path, _] = crate::los_table::los_ray_sides(firer.position, target_hex);
+        // (Kani cannot encode array-binding patterns; take the near side
+        // through the iterator instead.)
+        let path = crate::los_table::los_ray_sides(firer.position, target_hex)
+            .into_iter()
+            .next()
+            .expect("the near side always exists");
         vec![path]
     }
 
