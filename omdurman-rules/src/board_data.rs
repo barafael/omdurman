@@ -215,7 +215,7 @@ mod wall_ring_tests {
             assert!(
                 matches!(
                     board.terrain_at(*h),
-                    Some(Terrain::Building { .. } | Terrain::Huts { .. })
+                    Some(Terrain::Building | Terrain::Huts)
                 ) || board.locations.get(h) == Some(&Location::Palace),
                 "FoK city hex {h:?} must be built-up terrain or a landmark"
             );
@@ -234,7 +234,7 @@ mod wall_ring_tests {
         let mut buildings: Vec<&str> = map
             .tiles
             .values()
-            .filter(|t| matches!(t.terrain, Terrain::Building { .. }))
+            .filter(|t| matches!(t.terrain, Terrain::Building))
             .map(|t| t.name.as_deref().unwrap_or("(unnamed)"))
             .collect();
         buildings.sort_unstable();
@@ -244,20 +244,18 @@ mod wall_ring_tests {
         );
         let at = |q, r| &map.tiles[&(q, r)].terrain;
         // A town hex with a single hut icon, and one with three.
-        assert!(matches!(at(33, 32), Terrain::Huts { .. }));
-        assert!(matches!(at(27, 37), Terrain::Huts { .. }));
+        assert!(matches!(at(33, 32), Terrain::Huts));
+        assert!(matches!(at(27, 37), Terrain::Huts));
         for (q, r) in [(30, 35), (30, 38), (31, 41)] {
             assert!(
-                matches!(at(q, r), Terrain::Clear { .. }),
+                matches!(at(q, r), Terrain::Clear),
                 "({q},{r}) prints no hut icon"
             );
         }
         let town_huts = map
             .tiles
             .values()
-            .filter(|t| {
-                t.name.as_deref() == Some("Omdurman") && matches!(t.terrain, Terrain::Huts { .. })
-            })
+            .filter(|t| t.name.as_deref() == Some("Omdurman") && matches!(t.terrain, Terrain::Huts))
             .count();
         assert_eq!(town_huts, 102, "printed Omdurman hut hexes");
     }
@@ -273,7 +271,7 @@ mod wall_ring_tests {
         let mut buildings: Vec<&str> = map
             .tiles
             .values()
-            .filter(|t| matches!(t.terrain, Terrain::Building { .. }))
+            .filter(|t| matches!(t.terrain, Terrain::Building))
             .map(|t| t.name.as_deref().unwrap_or("(unnamed)"))
             .collect();
         buildings.sort_unstable();
@@ -292,9 +290,7 @@ mod wall_ring_tests {
         let town_huts = map
             .tiles
             .values()
-            .filter(|t| {
-                t.name.as_deref() == Some("Khartoum") && matches!(t.terrain, Terrain::Huts { .. })
-            })
+            .filter(|t| t.name.as_deref() == Some("Khartoum") && matches!(t.terrain, Terrain::Huts))
             .count();
         assert_eq!(town_huts, 15, "printed Khartoum hut hexes");
     }

@@ -113,7 +113,12 @@ impl GameState {
         if !rays.is_empty() {
             return rays;
         }
-        let [path, _] = crate::los_table::los_ray_sides(firer.position, target_hex);
+        // (Kani cannot encode array-binding patterns; take the near side
+        // through the iterator instead.)
+        let path = crate::los_table::los_ray_sides(firer.position, target_hex)
+            .into_iter()
+            .next()
+            .expect("the near side always exists");
         vec![path]
     }
 
@@ -584,6 +589,15 @@ impl GameState {
         match shot.mount {
             FireMount::Main => self.units_fired_this_phase.contains(&shot.unit),
             FireMount::GunboatMaxims => self.gunboat_maxims_fired_this_phase.contains(&shot.unit),
+        }
+    }
+
+    /// Book `shot`'s weapon as fired this fire subphase — the write side of
+    /// [`Self::has_fired`], so the mount → ledger mapping lives in one place.
+    pub fn record_fired(&mut self, shot: Shot) {
+        match shot.mount {
+            FireMount::Main => self.units_fired_this_phase.push(shot.unit),
+            FireMount::GunboatMaxims => self.gunboat_maxims_fired_this_phase.push(shot.unit),
         }
     }
 

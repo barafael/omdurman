@@ -467,44 +467,29 @@ impl HexDirection {
     }
 }
 
-/// Road state for a ground hex (§5.11 Terrain Effects Chart).
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum Road {
-    /// No road touching this hex.
-    #[default]
-    None,
-    /// A road touches this hex but stops at the edge.
-    Road,
-    /// Roads converge at this hex's centre (crossroad).
-    Crossroad,
-}
-
 /// Hex terrain types used on the Omdurman map (rulebook Terrain Effects Chart,
 /// §5.11, §6.23, §6.3).
 ///
-/// Ground variants carry a [`Road`] flag. The Nile variant carries the current
-/// direction for gunboat upstream/downstream movement (§5.24).
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::Display)]
+/// The Nile variant carries the current direction for gunboat
+/// upstream/downstream movement (§5.24). Roads are a property of the *links*
+/// between hexes (`MapData.roads` hexside list), not of the hex itself; the
+/// road rate is applied by following those links (`terrain_chart` §5.11).
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, strum::Display, Default)]
 pub enum Terrain {
-    Clear { road: Road },
-    Rough { road: Road },
-    Trees { road: Road },
-    Swamp { road: Road },
-    Nile { direction: HexDirection },
-    Hilltop { road: Road },
-    Huts { road: Road },
-    Building { road: Road },
+    #[default]
+    Clear,
+    Rough,
+    Trees,
+    Swamp,
+    Nile {
+        direction: HexDirection,
+    },
+    Hilltop,
+    Huts,
+    Building,
 }
 
-impl Default for Terrain {
-    fn default() -> Self {
-        Self::Clear {
-            road: Road::default(),
-        }
-    }
-}
-
-/// The underlying ground type of a hex, stripped of road state.
+/// The underlying ground type of a hex.
 #[derive(
     Serialize,
     Deserialize,
@@ -529,37 +514,17 @@ pub enum GroundKind {
 }
 
 impl Terrain {
-    /// Convenience constructor: ground terrain with no road.
+    /// Convenience constructor: ground terrain.
     pub fn ground(kind: GroundKind) -> Self {
-        Self::ground_with_road(kind, Road::None)
-    }
-
-    /// Ground terrain with explicit road state.
-    pub fn ground_with_road(kind: GroundKind, road: Road) -> Self {
         match kind {
-            GroundKind::Clear => Self::Clear { road },
-            GroundKind::Rough => Self::Rough { road },
-            GroundKind::Trees => Self::Trees { road },
-            GroundKind::Swamp => Self::Swamp { road },
-            GroundKind::Hilltop => Self::Hilltop { road },
-            GroundKind::Huts => Self::Huts { road },
-            GroundKind::Building => Self::Building { road },
+            GroundKind::Clear => Self::Clear,
+            GroundKind::Rough => Self::Rough,
+            GroundKind::Trees => Self::Trees,
+            GroundKind::Swamp => Self::Swamp,
+            GroundKind::Hilltop => Self::Hilltop,
+            GroundKind::Huts => Self::Huts,
+            GroundKind::Building => Self::Building,
         }
-    }
-
-    /// Strip road state, returning the underlying ground kind.
-    /// Returns `None` for Nile, which has no `GroundKind` equivalent.
-    pub fn ground_kind(self) -> Option<GroundKind> {
-        Some(match self {
-            Terrain::Clear { .. } => GroundKind::Clear,
-            Terrain::Rough { .. } => GroundKind::Rough,
-            Terrain::Trees { .. } => GroundKind::Trees,
-            Terrain::Swamp { .. } => GroundKind::Swamp,
-            Terrain::Nile { .. } => return None,
-            Terrain::Hilltop { .. } => GroundKind::Hilltop,
-            Terrain::Huts { .. } => GroundKind::Huts,
-            Terrain::Building { .. } => GroundKind::Building,
-        })
     }
 
     /// Whether this terrain may be entered by land units (rulebook §5.11).
@@ -574,14 +539,14 @@ impl Terrain {
     /// returns `true` only for Huts and Building (the always-blocking
     /// built-up terrain types).
     pub fn blocks_los(self) -> bool {
-        matches!(self, Terrain::Huts { .. } | Terrain::Building { .. })
+        matches!(self, Terrain::Huts | Terrain::Building)
     }
 
     /// Whether this terrain counts as "trees" for the LOS palm-grove rule
     /// (§6.3 note 1). Retained for compatibility; the full LOS engine
     /// checks `Terrain::Trees` directly.
     pub fn is_los_trees(self) -> bool {
-        matches!(self, Terrain::Trees { .. })
+        matches!(self, Terrain::Trees)
     }
 
     /// Whether this terrain is the Nile river (rulebook §5.11, §5.24).
@@ -594,58 +559,6 @@ impl Terrain {
         match self {
             Terrain::Nile { direction } => Some(direction),
             _ => None,
-        }
-    }
-
-    /// Rotate the Nile current by `delta` steps (positive = clockwise).
-    /// No-op for non-Nile terrain.
-    pub fn with_rotated_flow(self, delta: i8) -> Self {
-        match self {
-            Terrain::Nile { direction } => {
-                let d = ((direction as i8) + delta).rem_euclid(6);
-                Terrain::Nile {
-                    direction: HexDirection::from_index(d as u8),
-                }
-            }
-            other => other,
-        }
-    }
-
-    /// The road state for ground terrain ([`Road::None`] for Nile).
-    pub fn road(self) -> Road {
-        match self {
-            Terrain::Clear { road }
-            | Terrain::Rough { road }
-            | Terrain::Trees { road }
-            | Terrain::Swamp { road }
-            | Terrain::Hilltop { road }
-            | Terrain::Huts { road }
-            | Terrain::Building { road } => road,
-            Terrain::Nile { .. } => Road::None,
-        }
-    }
-
-    /// Whether this hex has any road touching it.
-    pub fn has_road(self) -> bool {
-        !matches!(self.road(), Road::None)
-    }
-
-    /// Whether roads converge at this hex's centre.
-    pub fn is_crossroad(self) -> bool {
-        matches!(self.road(), Road::Crossroad)
-    }
-
-    /// Return a copy with the road state changed (no-op for Nile).
-    pub fn with_road(self, road: Road) -> Self {
-        match self {
-            Terrain::Clear { .. } => Terrain::Clear { road },
-            Terrain::Rough { .. } => Terrain::Rough { road },
-            Terrain::Trees { .. } => Terrain::Trees { road },
-            Terrain::Swamp { .. } => Terrain::Swamp { road },
-            Terrain::Hilltop { .. } => Terrain::Hilltop { road },
-            Terrain::Huts { .. } => Terrain::Huts { road },
-            Terrain::Building { .. } => Terrain::Building { road },
-            Terrain::Nile { .. } => self,
         }
     }
 }
@@ -774,7 +687,8 @@ pub enum SetupLetter {
 
 /// Per-hex map data (rulebook mapsheet, §5.11, §6.23, §6.3).
 ///
-/// Road state lives on the [`Terrain`] variant; this struct adds only the
+/// Road state lives on the road *links* between hexes (`roads` below); this
+/// struct adds only the
 /// display name (the landmark lookups read it), setup letter and named
 /// area.
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -1321,15 +1235,6 @@ impl std::fmt::Display for CommandScope {
     }
 }
 
-/// One human's seat within a faction: the [`Player`] side they act for plus
-/// the [`CommandScope`] they gate on. Recorded in `GameEvent::StartGame`
-/// alongside the faction assignments, so replay and late joiners inherit it.
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
-pub struct Command {
-    pub player: Player,
-    pub scope: CommandScope,
-}
-
 /// Hex orientation: [diamond] pointy-top (vertices up/down) or [hexagon] flat-top (vertices left/right).
 ///
 /// Affects pixel-hex conversion formulas and which axis is staggered.
@@ -1597,7 +1502,7 @@ pub struct MapData {
     /// roads.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub roads: Vec<HexsideRef>,
-    /// Editor-time exclusions: `(q, r)` coords that fall *inside* the overlay
+    /// Playable-map exclusions: `(q, r)` coords that fall *inside* the overlay
     /// grid but are not part of the playable map (covered by a logo, the turn
     /// track, or other board furniture). Subtracted from the generated hex set,
     /// so excluded hexes carry no terrain and reject placement. A `BTreeSet`
@@ -1823,12 +1728,12 @@ mod tests {
 
     #[test]
     fn los_terrain_predicates() {
-        assert!(Terrain::Huts { road: Road::None }.blocks_los());
-        assert!(Terrain::Building { road: Road::None }.blocks_los());
-        assert!(!Terrain::Clear { road: Road::None }.blocks_los());
-        assert!(!Terrain::Trees { road: Road::None }.blocks_los());
-        assert!(Terrain::Trees { road: Road::None }.is_los_trees());
-        assert!(!Terrain::Clear { road: Road::None }.is_los_trees());
+        assert!(Terrain::Huts.blocks_los());
+        assert!(Terrain::Building.blocks_los());
+        assert!(!Terrain::Clear.blocks_los());
+        assert!(!Terrain::Trees.blocks_los());
+        assert!(Terrain::Trees.is_los_trees());
+        assert!(!Terrain::Clear.is_los_trees());
     }
 
     // §9.322 -- the FoK picker allowlist must expose the counter blocks that
@@ -2447,94 +2352,6 @@ mod verification {
         if n <= u8::MAX - 6 {
             assert!(HexDirection::from_index(n + 6) == d);
         }
-    }
-
-    /// The Nile flow rotation is rotation arithmetic on a six-sided ring:
-    /// rotating by `a` then `b` is rotating by `a+b` (mod 6), a full period
-    /// (6) is the identity, and non-Nile terrain passes through untouched.
-    /// The gunboat downstream step leans on this.
-    // §5.24
-    #[traceability_macro::rulebook("§5.24")]
-    #[kani::proof]
-    fn nile_flow_rotation_composes_and_never_leaves_the_nile() {
-        use super::{HexDirection, Road, Terrain};
-        // Rotation amounts are bounded away from `i8` overflow so the
-        // composition check stays exact (the engine's rotations are small
-        // calibration deltas).
-        let a: i8 = kani::any();
-        let b: i8 = kani::any();
-        kani::assume(a >= -30 && a <= 30);
-        kani::assume(b >= -30 && b <= 30);
-        let d0: u8 = kani::any();
-        let nile = Terrain::Nile {
-            direction: HexDirection::from_index(d0 % 6),
-        };
-        // Composition modulo the ring period.
-        let ab = nile.with_rotated_flow(a).with_rotated_flow(b);
-        let sum = nile.with_rotated_flow(a.saturating_add(b));
-        assert!(ab == sum);
-        // A full period is the identity.
-        assert!(nile.with_rotated_flow(6) == nile);
-        assert!(nile.with_rotated_flow(-6) == nile);
-        assert!(nile.with_rotated_flow(0) == nile);
-        // Rotation preserves Nile-ness and the direction accessor.
-        assert!(ab.is_nile());
-        assert!(ab.nile_direction().is_some());
-        // Non-Nile terrain is untouched by any rotation.
-        let g: usize = kani::any();
-        let ground = Terrain::ground_with_road(
-            match g % 7 {
-                0 => super::GroundKind::Clear,
-                1 => super::GroundKind::Rough,
-                2 => super::GroundKind::Trees,
-                3 => super::GroundKind::Swamp,
-                4 => super::GroundKind::Hilltop,
-                5 => super::GroundKind::Huts,
-                _ => super::GroundKind::Building,
-            },
-            Road::None,
-        );
-        assert!(ground.with_rotated_flow(a) == ground);
-    }
-
-    /// Road state round-trips: `with_road` sets exactly the road asked for
-    /// on ground terrain and is a no-op on the Nile (the river carries no
-    /// road), so the movement overlay authored on the map can never leak
-    /// into river hexes or silently change kind.
-    // §5.11
-    #[traceability_macro::rulebook("§5.11")]
-    #[kani::proof]
-    fn terrain_road_state_round_trips() {
-        use super::{GroundKind, Road, Terrain};
-        let g: usize = kani::any();
-        let kind = match g % 7 {
-            0 => GroundKind::Clear,
-            1 => GroundKind::Rough,
-            2 => GroundKind::Trees,
-            3 => GroundKind::Swamp,
-            4 => GroundKind::Hilltop,
-            5 => GroundKind::Huts,
-            _ => GroundKind::Building,
-        };
-        let r: usize = kani::any();
-        let road = match r % 3 {
-            0 => Road::None,
-            1 => Road::Road,
-            _ => Road::Crossroad,
-        };
-        let t = Terrain::ground(kind);
-        let with = t.with_road(road);
-        assert!(with.road() == road);
-        assert!(with.ground_kind() == Some(kind));
-        // Road flags agree with the state.
-        assert!(with.has_road() == (road != Road::None));
-        assert!(with.is_crossroad() == (road == Road::Crossroad));
-        // The Nile ignores road edits entirely.
-        let nile = Terrain::Nile {
-            direction: super::HexDirection::East,
-        };
-        assert!(nile.with_road(road) == nile);
-        assert!(nile.road() == Road::None);
     }
 }
 

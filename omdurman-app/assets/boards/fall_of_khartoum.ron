@@ -12,14 +12,10 @@
             ),
         )),
         ((2, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((2, 1), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((2, 2), (
             terrain: Nile(
@@ -32,24 +28,16 @@
             ),
         )),
         ((3, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((3, 1), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((3, 2), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((3, 3), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((3, 4), (
             terrain: Nile(
@@ -62,35 +50,23 @@
             ),
         )),
         ((4, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((4, 1), (
-            terrain: Building(
-                road: None,
-            ),
+            terrain: Building,
             name: Some("Fort Makran"),
         )),
         ((4, 2), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((4, 3), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((4, 4), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((4, 5), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((4, 6), (
             terrain: Nile(
@@ -109,34 +85,22 @@
             name: Some("Blue Nile Mouth"),
         )),
         ((5, 1), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((5, 2), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((5, 3), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((5, 4), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((5, 5), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((5, 6), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((5, 7), (
             terrain: Nile(
@@ -165,39 +129,25 @@
             ),
         )),
         ((6, 2), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((6, 3), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((6, 4), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((6, 5), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((6, 6), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((6, 7), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((6, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((6, 9), (
             terrain: Nile(
@@ -215,9 +165,7 @@
             ),
         )),
         ((7, 0), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((7, 1), (
             terrain: Nile(
@@ -230,44 +178,28 @@
             ),
         )),
         ((7, 3), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((7, 4), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((7, 5), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((7, 6), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((7, 7), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((7, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((7, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((7, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((7, 11), (
             terrain: Nile(
@@ -285,14 +217,10 @@
             ),
         )),
         ((8, 0), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((8, 1), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((8, 2), (
             terrain: Nile(
@@ -305,50 +233,32 @@
             ),
         )),
         ((8, 4), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Khartoum"),
         )),
         ((8, 5), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((8, 6), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((8, 7), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((8, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((8, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((8, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((8, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((8, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((8, 13), (
             terrain: Nile(
@@ -366,14 +276,10 @@
             ),
         )),
         ((9, 0), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((9, 1), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((9, 2), (
             terrain: Nile(
@@ -386,61 +292,39 @@
             ),
         )),
         ((9, 4), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Khartoum"),
         )),
         ((9, 5), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Khartoum"),
         )),
         ((9, 6), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((9, 7), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((9, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((9, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((9, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((9, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((9, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((9, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((9, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((9, 15), (
             terrain: Nile(
@@ -448,14 +332,10 @@
             ),
         )),
         ((10, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((10, 1), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((10, 2), (
             terrain: Nile(
@@ -468,79 +348,51 @@
             ),
         )),
         ((10, 4), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Khartoum"),
         )),
         ((10, 5), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Khartoum"),
         )),
         ((10, 6), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Khartoum"),
         )),
         ((10, 7), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Khartoum"),
         )),
         ((10, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((10, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((10, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((10, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((10, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((10, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((10, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((10, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((11, 0), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Tuti"),
         )),
         ((11, 1), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Tuti"),
         )),
         ((11, 2), (
@@ -559,72 +411,46 @@
             ),
         )),
         ((11, 5), (
-            terrain: Building(
-                road: None,
-            ),
+            terrain: Building,
             name: Some("Austrian Mission"),
         )),
         ((11, 6), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Khartoum"),
         )),
         ((11, 7), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Khartoum"),
         )),
         ((11, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((11, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((11, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((11, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((11, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((11, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((11, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((11, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((12, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((12, 1), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Tuti"),
         )),
         ((12, 2), (
@@ -643,72 +469,46 @@
             ),
         )),
         ((12, 5), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Khartoum"),
         )),
         ((12, 6), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Khartoum"),
         )),
         ((12, 7), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Khartoum"),
         )),
         ((12, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((12, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((12, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((12, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((12, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((12, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((12, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((12, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 1), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((13, 2), (
             terrain: Nile(
@@ -726,61 +526,39 @@
             ),
         )),
         ((13, 5), (
-            terrain: Building(
-                road: None,
-            ),
+            terrain: Building,
             name: Some("Palace"),
         )),
         ((13, 6), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Khartoum"),
         )),
         ((13, 7), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 0), (
             terrain: Nile(
@@ -789,14 +567,10 @@
             name: Some("Blue Nile Mouth"),
         )),
         ((14, 1), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 2), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((14, 3), (
             terrain: Nile(
@@ -809,61 +583,39 @@
             ),
         )),
         ((14, 5), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Khartoum"),
         )),
         ((14, 6), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Khartoum"),
         )),
         ((14, 7), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 0), (
             terrain: Nile(
@@ -877,9 +629,7 @@
             ),
         )),
         ((15, 2), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((15, 3), (
             terrain: Nile(
@@ -897,59 +647,37 @@
             ),
         )),
         ((15, 6), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((15, 7), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 1), (
             terrain: Nile(
@@ -972,9 +700,7 @@
             ),
         )),
         ((16, 5), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 6), (
             terrain: Nile(
@@ -982,60 +708,38 @@
             ),
         )),
         ((16, 7), (
-            terrain: Building(
-                road: None,
-            ),
+            terrain: Building,
             name: Some("Arsenal"),
         )),
         ((16, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 1), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Hogali"),
         )),
         ((17, 2), (
@@ -1054,9 +758,7 @@
             ),
         )),
         ((17, 5), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 6), (
             terrain: Nile(
@@ -1064,67 +766,43 @@
             ),
         )),
         ((17, 7), (
-            terrain: Building(
-                road: None,
-            ),
+            terrain: Building,
             name: Some("Barracks"),
         )),
         ((17, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             name: Some("Kalakla Gate"),
         )),
         ((17, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 1), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Hogali"),
         )),
         ((18, 2), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 3), (
             terrain: Nile(
@@ -1137,9 +815,7 @@
             ),
         )),
         ((18, 5), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 6), (
             terrain: Nile(
@@ -1152,54 +828,34 @@
             ),
         )),
         ((18, 8), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((18, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 2), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 3), (
-            terrain: Building(
-                road: None,
-            ),
+            terrain: Building,
             name: Some("North Fort"),
         )),
         ((19, 4), (
@@ -1223,50 +879,32 @@
             ),
         )),
         ((19, 8), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((19, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             name: Some("Messalamia Gate"),
         )),
         ((19, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 4), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 5), (
             terrain: Nile(
@@ -1284,45 +922,29 @@
             ),
         )),
         ((20, 8), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((20, 9), (
-            terrain: Building(
-                road: None,
-            ),
+            terrain: Building,
             name: Some("Fort Buri"),
         )),
         ((20, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 6), (
             terrain: Nile(
@@ -1335,147 +957,91 @@
             ),
         )),
         ((21, 8), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Buri"),
         )),
         ((21, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 9), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Buri"),
         )),
         ((22, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             name: Some("Buri Gate"),
         )),
         ((22, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
     ],
     hexsides: [

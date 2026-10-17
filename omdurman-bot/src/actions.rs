@@ -727,7 +727,7 @@ fn placement_preference(state: &GameState, hex: HexCoord) -> i32 {
     }
     if matches!(
         state.board.terrain_at(hex),
-        Some(Terrain::Building { .. } | Terrain::Huts { .. })
+        Some(Terrain::Building | Terrain::Huts)
     ) {
         score += 2;
     }

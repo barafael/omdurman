@@ -50,8 +50,6 @@ mod types_paths {
         let _ = Terrain::blocks_los;
         let _ = Terrain::is_los_trees;
         let _ = Terrain::passable_by_land;
-        let _ = Terrain::has_road;
-        let _ = Terrain::is_crossroad;
         let _ = UnitKind::is_boat;
         let _ = UnitKind::fires_twice;
         let _ = UnitKind::has_combat_factors;

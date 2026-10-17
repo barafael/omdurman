@@ -44,8 +44,7 @@ pub struct PlaneTextureStores<'a> {
 }
 
 /// Re-size and re-texture the existing map plane to a board's image and
-/// dimensions (§dual-map). Used when a scenario selects a board or the map
-/// editor switches the active map.
+/// dimensions (§dual-map). Used when a scenario selects a board.
 pub fn apply_map_data_to_plane(
     plane: &Query<(&Mesh3d, &MeshMaterial3d<StandardMaterial>), With<MapPlane>>,
     stores: &mut PlaneTextureStores<'_>,

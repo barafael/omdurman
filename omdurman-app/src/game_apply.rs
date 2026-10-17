@@ -13,8 +13,8 @@
 
 use bevy::prelude::*;
 use omdurman_net::GameEvent;
-use omdurman_rules::OptionalRule;
 use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
+use omdurman_rules::{MovementPoints, OptionalRule};
 use omdurman_rules::{Phase, UnitId, UnitPlacement, UnitState};
 use omdurman_types::{HexCoord, MapKind, Scenario, SpriteRef};
 
@@ -130,12 +130,11 @@ pub(crate) fn sprite_event_effect(event: &GameEvent, gs: &GameState) -> Option<G
             sprite,
             to_q,
             to_r,
-            cost,
             path,
         } => Some(GameEffect::MoveUnit {
             unit_id: unit_for_sprite(sprite)?,
             to: HexCoord::new(*to_q, *to_r),
-            cost: *cost,
+            cost: MovementPoints::default(),
             path: path.clone(),
         }),
         GameEvent::RemoveUnit { sprite } => Some(GameEffect::RemoveDeployedUnit {
@@ -151,18 +150,10 @@ pub(crate) fn sprite_event_effect(event: &GameEvent, gs: &GameState) -> Option<G
 }
 
 /// Extend a unit's turn path with an accepted move. `path` is the sequence of
-/// hexes *entered* this move (ending at `to`); when it is empty (legacy record)
-/// we fall back to a single hop straight to `to`.
-fn record_move_path(
-    paths: &mut UnitPaths,
-    unit_id: UnitId,
-    from: HexCoord,
-    path: &[HexCoord],
-    to: HexCoord,
-) {
+/// hexes *entered* this move, ending at the destination.
+fn record_move_path(paths: &mut UnitPaths, unit_id: UnitId, from: HexCoord, path: &[HexCoord]) {
     let mut prev = from;
-    let steps: &[HexCoord] = if path.is_empty() { &[to] } else { path };
-    for &step in steps {
+    for &step in path {
         if step != prev {
             paths.record_step(unit_id, prev, step);
             prev = step;
@@ -197,8 +188,8 @@ fn apply_engine_effect(effect: &GameEffect, sinks: &mut EventSinks<'_>) -> bool 
         // The arrows show the moves made *this* player-turn.
         sinks.unit_paths.0.clear();
     }
-    if let (GameEffect::MoveUnit { to, path, .. }, Some((uid, from))) = (effect, move_from) {
-        record_move_path(sinks.unit_paths, uid, from, path, *to);
+    if let (GameEffect::MoveUnit { path, .. }, Some((uid, from))) = (effect, move_from) {
+        record_move_path(sinks.unit_paths, uid, from, path);
     }
     true
 }

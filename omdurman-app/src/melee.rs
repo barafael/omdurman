@@ -448,6 +448,26 @@ pub fn melee_direction_arrow(
 /// Melee phase, show what the attack on the *hovered* hex would be -- attacker
 /// and defender sides, modifiers, and expected outcomes. (Phase gate: the
 /// `in_melee_phase` run condition on registration; see `ui_phase_state`.)
+///
+/// Everything the card draws is memoized (the same pattern as
+/// `fire::fire_combat_preview_ui`'s plan cache): re-derived only when the
+/// hovered target, the selection, or the engine state moved.
+pub(crate) struct MeleePreview {
+    atk_details: Vec<String>,
+    def_details: Vec<String>,
+    atk_total: u16,
+    def_total: u16,
+    atk_mod: i16,
+    def_mod: i16,
+    atk_mod_lines: Vec<String>,
+    def_mod_lines: Vec<String>,
+    atk_row: omdurman_rules::combat_results_table::FireFactorRow,
+    def_row: omdurman_rules::combat_results_table::FireFactorRow,
+    atk_bands: Vec<crate::combat_predict::OutcomeBand>,
+    def_bands: Vec<crate::combat_predict::OutcomeBand>,
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn melee_combat_preview_ui(
     mut contexts: EguiContexts,
     state: Res<PickerState>,
@@ -456,7 +476,15 @@ pub fn melee_combat_preview_ui(
     hovered: Res<crate::HoveredHex>,
     mut layout: ResMut<crate::ScreenLayout>,
     mut sticky: Local<Option<omdurman_types::HexCoord>>,
+    mut cache: Local<
+        Option<(
+            omdurman_types::HexCoord,
+            Vec<omdurman_rules::UnitId>,
+            MeleePreview,
+        )>,
+    >,
 ) {
+    let gs_moved = game_state.as_ref().is_some_and(|gs| gs.is_changed());
     let Some(gs) = game_state else { return };
     if gs.0.pending_melee.is_some() {
         return; // already declared -- show reaction UI instead
@@ -482,68 +510,93 @@ pub fn melee_combat_preview_ui(
         return;
     };
 
-    // Collect attacker and defender details (identical counters counted:
-    // "4\u{d7} Kehena: 6", not four lines of it).
-    let atk_details: Vec<String> = attack
-        .attackers
-        .iter()
-        .filter_map(|id| gs.0.find_unit(*id))
-        .map(|u| {
-            let mf = u.profile.melee.map(|m| m.value()).unwrap_or(0);
-            format!("{}: {}", u.profile.identity.label_in(gs.0.scenario), mf)
-        })
-        .collect();
-    let atk_details = crate::combat_ui::tally_names(atk_details);
-    let def_details: Vec<String> = attack
-        .defenders
-        .iter()
-        .filter_map(|id| gs.0.find_unit(*id))
-        .map(|u| {
-            let name = u.profile.identity.label_in(gs.0.scenario);
-            if u.state.disrupted {
-                // Disrupted units may not melee (reference notes).
-                format!("{name}: 0 (disrupted)")
-            } else {
+    // Re-derive the card contents only when something that feeds them moved.
+    let stale = gs_moved
+        || state.is_changed()
+        || cache.as_ref().is_none_or(|(key_target, key_units, _)| {
+            *key_target != target || *key_units != attack.attackers
+        });
+    if stale {
+        // Collect attacker and defender details (identical counters counted:
+        // "4\u{d7} Kehena: 6", not four lines of it).
+        let atk_details: Vec<String> = attack
+            .attackers
+            .iter()
+            .filter_map(|id| gs.0.find_unit(*id))
+            .map(|u| {
                 let mf = u.profile.melee.map(|m| m.value()).unwrap_or(0);
-                format!("{name}: {mf}")
-            }
-        })
-        .collect();
-    let def_details = crate::combat_ui::tally_names(def_details);
-
-    // The engine's own totals (§7.7): disrupted units add nothing.
-    let atk_total = omdurman_rules::effects::melee_strength(&gs.0, &attack.attackers);
-    let def_total = omdurman_rules::effects::melee_strength(&gs.0, &attack.defenders);
-
-    let atk_mod: i16 = attack
-        .attacker_modifiers
-        .iter()
-        .map(|m| m.die_modifier())
-        .sum();
-    let def_mod: i16 = attack
-        .defender_modifiers
-        .iter()
-        .map(|m| m.die_modifier())
-        .sum();
-
-    // Per-modifier detail with rulebook § citations.
-    let mod_lines = |mods: &[MeleeModifier]| -> Vec<String> {
-        mods.iter()
-            .map(|m| {
-                let line = crate::combat_ui::describe_melee_modifier(*m);
-                format!("{} (\u{00a7}{})", line.label, line.paragraph)
+                format!("{}: {}", u.profile.identity.label_in(gs.0.scenario), mf)
             })
-            .collect()
-    };
-    let atk_mod_lines = mod_lines(&attack.attacker_modifiers);
-    let def_mod_lines = mod_lines(&attack.defender_modifiers);
+            .collect();
+        let atk_details = crate::combat_ui::tally_names(atk_details);
+        let def_details: Vec<String> = attack
+            .defenders
+            .iter()
+            .filter_map(|id| gs.0.find_unit(*id))
+            .map(|u| {
+                let name = u.profile.identity.label_in(gs.0.scenario);
+                if u.state.disrupted {
+                    // Disrupted units may not melee (reference notes).
+                    format!("{name}: 0 (disrupted)")
+                } else {
+                    let mf = u.profile.melee.map(|m| m.value()).unwrap_or(0);
+                    format!("{name}: {mf}")
+                }
+            })
+            .collect();
+        let def_details = crate::combat_ui::tally_names(def_details);
 
-    // CRT outcome bands for both sides (shared CRT, §7.3).
-    use omdurman_rules::combat_results_table::FireFactorRow;
-    let atk_row = FireFactorRow::from_total(atk_total);
-    let def_row = FireFactorRow::from_total(def_total);
-    let atk_bands = crate::combat_predict::outcome_bands(atk_row, atk_mod);
-    let def_bands = crate::combat_predict::outcome_bands(def_row, def_mod);
+        // The engine's own totals (§7.7): disrupted units add nothing.
+        let atk_total = omdurman_rules::effects::melee_strength(&gs.0, &attack.attackers);
+        let def_total = omdurman_rules::effects::melee_strength(&gs.0, &attack.defenders);
+
+        let atk_mod: i16 = attack
+            .attacker_modifiers
+            .iter()
+            .map(|m| m.die_modifier())
+            .sum();
+        let def_mod: i16 = attack
+            .defender_modifiers
+            .iter()
+            .map(|m| m.die_modifier())
+            .sum();
+
+        // Per-modifier detail with rulebook § citations.
+        let mod_lines = |mods: &[MeleeModifier]| -> Vec<String> {
+            mods.iter()
+                .map(|m| {
+                    let line = crate::combat_ui::describe_melee_modifier(*m);
+                    format!("{} (\u{00a7}{})", line.label, line.paragraph)
+                })
+                .collect()
+        };
+        let atk_mod_lines = mod_lines(&attack.attacker_modifiers);
+        let def_mod_lines = mod_lines(&attack.defender_modifiers);
+
+        // CRT outcome bands for both sides (shared CRT, §7.3).
+        use omdurman_rules::combat_results_table::FireFactorRow;
+        let atk_row = FireFactorRow::from_total(atk_total);
+        let def_row = FireFactorRow::from_total(def_total);
+        *cache = Some((
+            target,
+            attack.attackers.clone(),
+            MeleePreview {
+                atk_details,
+                def_details,
+                atk_total,
+                def_total,
+                atk_mod,
+                def_mod,
+                atk_mod_lines,
+                def_mod_lines,
+                atk_row,
+                def_row,
+                atk_bands: crate::combat_predict::outcome_bands(atk_row, atk_mod),
+                def_bands: crate::combat_predict::outcome_bands(def_row, def_mod),
+            },
+        ));
+    }
+    let preview = &cache.as_ref().expect("just cached").2;
 
     let Ok(ctx) = contexts.ctx_mut() else { return };
     use bevy_egui::egui;
@@ -563,12 +616,13 @@ pub fn melee_combat_preview_ui(
             ui.colored_label(
                 crate::ui::palette::ATTACKER,
                 format!(
-                    "Attacker: {} unit(s), factor {} (mod {atk_mod:+})",
-                    atk_details.len(),
-                    atk_total,
+                    "Attacker: {} unit(s), factor {} (mod {:+})",
+                    preview.atk_details.len(),
+                    preview.atk_total,
+                    preview.atk_mod,
                 ),
             );
-            for d in &atk_details {
+            for d in &preview.atk_details {
                 ui.label(
                     bevy_egui::egui::RichText::new(format!("  {d}"))
                         .color(crate::ui::palette::TEXT_SOFT)
@@ -576,7 +630,7 @@ pub fn melee_combat_preview_ui(
                 );
             }
             // Per-modifier detail.
-            for line in &atk_mod_lines {
+            for line in &preview.atk_mod_lines {
                 crate::rulebook::refs_label(
                     ui,
                     &format!("  {line}"),
@@ -585,7 +639,8 @@ pub fn melee_combat_preview_ui(
                 );
             }
             // Attacker outcome bands.
-            let atk_bands_str = atk_bands
+            let atk_bands_str = preview
+                .atk_bands
                 .iter()
                 .map(|b| b.label())
                 .collect::<Vec<_>>()
@@ -593,7 +648,7 @@ pub fn melee_combat_preview_ui(
             ui.label(
                 bevy_egui::egui::RichText::new(format!(
                     "  CRT row {}: {atk_bands_str}",
-                    atk_row.label()
+                    preview.atk_row.label()
                 ))
                 .color(crate::ui::palette::FAVOURABLE)
                 .size(11.0)
@@ -606,12 +661,13 @@ pub fn melee_combat_preview_ui(
             ui.colored_label(
                 crate::ui::palette::DEFENDER,
                 format!(
-                    "Defender: {} unit(s), factor {} (mod {def_mod:+})",
-                    def_details.len(),
-                    def_total,
+                    "Defender: {} unit(s), factor {} (mod {:+})",
+                    preview.def_details.len(),
+                    preview.def_total,
+                    preview.def_mod,
                 ),
             );
-            for d in &def_details {
+            for d in &preview.def_details {
                 ui.label(
                     bevy_egui::egui::RichText::new(format!("  {d}"))
                         .color(crate::ui::palette::TEXT_SOFT)
@@ -619,7 +675,7 @@ pub fn melee_combat_preview_ui(
                 );
             }
             // Per-modifier detail.
-            for line in &def_mod_lines {
+            for line in &preview.def_mod_lines {
                 crate::rulebook::refs_label(
                     ui,
                     &format!("  {line}"),
@@ -628,7 +684,8 @@ pub fn melee_combat_preview_ui(
                 );
             }
             // Defender outcome bands.
-            let def_bands_str = def_bands
+            let def_bands_str = preview
+                .def_bands
                 .iter()
                 .map(|b| b.label())
                 .collect::<Vec<_>>()
@@ -636,7 +693,7 @@ pub fn melee_combat_preview_ui(
             ui.label(
                 bevy_egui::egui::RichText::new(format!(
                     "  CRT row {}: {def_bands_str}",
-                    def_row.label()
+                    preview.def_row.label()
                 ))
                 .color(crate::ui::palette::DEFENDER_DIM)
                 .size(11.0)

@@ -65,7 +65,7 @@ pub(crate) fn desired_hexes(overlay: &OverlayParams) -> HashSet<HexCoord> {
     desired
 }
 
-pub fn clip_hexes_to_overlay(game_map: &mut GameMap) {
+fn clip_hexes_to_overlay(game_map: &mut GameMap) {
     let mut desired = desired_hexes(&game_map.overlay);
     desired.retain(|coord| !game_map.excluded.contains(coord));
     game_map.hexes.retain(|coord, _| desired.contains(coord));

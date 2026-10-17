@@ -1,3644 +1,2210 @@
 (
     tiles: [
         ((2, 3), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((3, 3), (
-            terrain: Hilltop(
-                road: None,
-            ),
+            terrain: Hilltop,
         )),
         ((3, 4), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((3, 5), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((4, 3), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((4, 4), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((4, 5), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((4, 6), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((4, 7), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((5, 3), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((5, 4), (
-            terrain: Hilltop(
-                road: None,
-            ),
+            terrain: Hilltop,
         )),
         ((5, 5), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((5, 6), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((5, 7), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((5, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((5, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((6, 3), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((6, 4), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((6, 5), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((6, 6), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((6, 7), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((6, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((6, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((6, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((6, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((7, 2), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((7, 3), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((7, 4), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((7, 5), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((7, 6), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((7, 7), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((7, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((7, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((7, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((7, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((7, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((7, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((8, 2), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((8, 3), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((8, 4), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((8, 5), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((8, 6), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((8, 7), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((8, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((8, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((8, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((8, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((8, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((8, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((8, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(DervishWestEdge),
         )),
         ((8, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(DervishWestEdge),
         )),
         ((9, 2), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((9, 3), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((9, 4), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((9, 5), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((9, 6), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((9, 7), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((9, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((9, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((9, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((9, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((9, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((9, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((9, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((9, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((9, 16), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(DervishWestEdge),
         )),
         ((9, 17), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(DervishWestEdge),
         )),
         ((10, 2), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((10, 3), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((10, 4), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((10, 5), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((10, 6), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((10, 7), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((10, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((10, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((10, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((10, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((10, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((10, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((10, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((10, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((10, 16), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((10, 17), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((10, 18), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(DervishWestEdge),
         )),
         ((10, 19), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(DervishWestEdge),
         )),
         ((11, 2), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((11, 3), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((11, 4), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((11, 5), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((11, 6), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((11, 7), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((11, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((11, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((11, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((11, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((11, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((11, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((11, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((11, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((11, 16), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((11, 17), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((11, 18), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((11, 19), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((11, 20), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
             named_area: Some(DervishWestEdge),
         )),
         ((11, 21), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
             named_area: Some(DervishWestEdge),
         )),
         ((12, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((12, 1), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((12, 2), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((12, 3), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((12, 4), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((12, 5), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((12, 6), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((12, 7), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((12, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((12, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((12, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((12, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((12, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((12, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((12, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((12, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((12, 16), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((12, 17), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((12, 18), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((12, 19), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((12, 20), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((12, 21), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((12, 22), (
-            terrain: Hilltop(
-                road: None,
-            ),
+            terrain: Hilltop,
             named_area: Some(DervishWestEdge),
         )),
         ((12, 23), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
             named_area: Some(DervishWestEdge),
         )),
         ((13, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 1), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 2), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 3), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 4), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 5), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 6), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 7), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 16), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 17), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 18), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 19), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((13, 20), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((13, 21), (
-            terrain: Hilltop(
-                road: None,
-            ),
+            terrain: Hilltop,
         )),
         ((13, 22), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((13, 23), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((13, 24), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
             named_area: Some(DervishWestEdge),
         )),
         ((13, 25), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
             named_area: Some(DervishWestEdge),
         )),
         ((14, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 1), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 2), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 3), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 4), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 5), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 6), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 7), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 16), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 17), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 18), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 19), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 20), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 21), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((14, 22), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((14, 23), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((14, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((14, 25), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((14, 26), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
             named_area: Some(DervishWestEdge),
         )),
         ((14, 27), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
             named_area: Some(DervishWestEdge),
         )),
         ((15, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 1), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 2), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 3), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 4), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             setup_letter: Some(A),
         )),
         ((15, 5), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 6), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 7), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 16), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 17), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 18), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 19), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 20), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 21), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 22), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 25), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 26), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 27), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((15, 28), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(DervishWestEdge),
         )),
         ((15, 29), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(DervishWestEdge),
         )),
         ((16, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 1), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 2), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 3), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 4), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 5), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 6), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((16, 7), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((16, 8), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((16, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 16), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 17), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 18), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 19), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 20), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 21), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 22), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 25), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 26), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 27), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 28), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 29), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((16, 30), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(DervishWestEdge),
         )),
         ((16, 31), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(DervishWestEdge),
         )),
         ((17, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 1), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 2), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 3), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 4), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((17, 5), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((17, 6), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((17, 7), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((17, 8), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((17, 9), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((17, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 16), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 17), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 18), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 19), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 20), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 21), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 22), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 25), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 26), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 27), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 28), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 29), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 30), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 31), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((17, 32), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(DervishWestEdge),
         )),
         ((17, 33), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(DervishWestEdge),
         )),
         ((18, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 1), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 2), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 3), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 4), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((18, 5), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((18, 6), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((18, 7), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((18, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 16), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 17), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 18), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 19), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 20), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 21), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 22), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 25), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 26), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 27), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 28), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 29), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 30), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 31), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 32), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 33), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((18, 34), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(DervishWestEdge),
         )),
         ((18, 35), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(DervishWestEdge),
         )),
         ((19, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 1), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 2), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 3), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((19, 4), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((19, 5), (
-            terrain: Hilltop(
-                road: None,
-            ),
+            terrain: Hilltop,
         )),
         ((19, 6), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((19, 7), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((19, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 16), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 17), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 18), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 19), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 20), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 21), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 22), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 25), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 26), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 27), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 28), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 29), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 30), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 31), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 32), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 33), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 34), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 35), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((19, 36), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(DervishWestEdge),
         )),
         ((19, 37), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(DervishWestEdge),
         )),
         ((20, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 1), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 2), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 3), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((20, 4), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((20, 5), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((20, 6), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((20, 7), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((20, 8), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((20, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             setup_letter: Some(D),
         )),
         ((20, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 16), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 17), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 18), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 19), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 20), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 21), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 22), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 25), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 26), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 27), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 28), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 29), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 30), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 31), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 32), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 33), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 34), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 35), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 36), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 37), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((20, 38), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(DervishWestEdge),
         )),
         ((20, 39), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(DervishWestEdge),
         )),
         ((21, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 1), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 2), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 3), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((21, 4), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((21, 5), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((21, 6), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((21, 7), (
-            terrain: Hilltop(
-                road: None,
-            ),
+            terrain: Hilltop,
         )),
         ((21, 8), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((21, 9), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((21, 10), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((21, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 16), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 17), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 18), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 19), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 20), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 21), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 22), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 25), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 26), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 27), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 28), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 29), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 30), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 31), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 32), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 33), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 34), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 35), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 36), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 37), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 38), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 39), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((21, 40), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(DervishWestEdge),
         )),
         ((21, 41), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(DervishWestEdge),
         )),
         ((22, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 1), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 2), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 3), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((22, 4), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((22, 5), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((22, 6), (
-            terrain: Hilltop(
-                road: None,
-            ),
+            terrain: Hilltop,
         )),
         ((22, 7), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((22, 8), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((22, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 10), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((22, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 12), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((22, 13), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((22, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 16), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 17), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 18), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 19), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 20), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 21), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 22), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 25), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 26), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 27), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 28), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 29), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 30), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 31), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 32), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 33), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 34), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 35), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 36), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 37), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 38), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 39), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 40), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 41), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((22, 42), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(DervishWestEdge),
         )),
         ((22, 43), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(DervishWestEdge),
         )),
         ((23, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 1), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 2), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 3), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((23, 4), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((23, 5), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((23, 6), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((23, 7), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((23, 8), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((23, 9), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((23, 10), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((23, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 13), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((23, 14), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((23, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 16), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 17), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 18), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 19), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 20), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 21), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 22), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 25), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 26), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 27), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 28), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 29), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 30), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 31), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 32), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 33), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 34), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 35), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 36), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 37), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 38), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 39), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 40), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 41), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 42), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 43), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((23, 44), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(DervishWestEdge),
         )),
         ((23, 45), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(DervishWestEdge),
         )),
         ((24, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(AngloEgyptianEntrance),
         )),
         ((24, 1), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 2), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 3), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((24, 4), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((24, 5), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((24, 6), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((24, 7), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((24, 8), (
-            terrain: Hilltop(
-                road: None,
-            ),
+            terrain: Hilltop,
         )),
         ((24, 9), (
-            terrain: Hilltop(
-                road: None,
-            ),
+            terrain: Hilltop,
         )),
         ((24, 10), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((24, 11), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((24, 12), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((24, 13), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((24, 14), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((24, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 16), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 17), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 18), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 19), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 20), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 21), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 22), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 25), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 26), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 27), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 28), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 29), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 30), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 31), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 32), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 33), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 34), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 35), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 36), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 37), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 38), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 39), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 40), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 41), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 42), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 43), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 44), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 45), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((24, 46), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(DervishWestEdge),
         )),
         ((24, 47), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(DervishWestEdge),
         )),
         ((25, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(AngloEgyptianEntrance),
         )),
         ((25, 1), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 2), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 3), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((25, 4), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((25, 5), (
-            terrain: Hilltop(
-                road: None,
-            ),
+            terrain: Hilltop,
         )),
         ((25, 6), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((25, 7), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((25, 8), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((25, 9), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((25, 10), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((25, 11), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((25, 12), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((25, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 14), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((25, 15), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((25, 16), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 17), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 18), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 19), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 20), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 21), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 22), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 25), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 26), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 27), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 28), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 29), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 30), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 31), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 32), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 33), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 34), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 35), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 36), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 37), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 38), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 39), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 40), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 41), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 42), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 43), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 44), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 45), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 46), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((25, 47), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             named_area: Some(AngloEgyptianEntrance),
         )),
         ((26, 1), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 2), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 3), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((26, 4), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((26, 5), (
-            terrain: Hilltop(
-                road: None,
-            ),
+            terrain: Hilltop,
         )),
         ((26, 6), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((26, 7), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((26, 8), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((26, 9), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((26, 10), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((26, 11), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((26, 12), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((26, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 15), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((26, 16), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((26, 17), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             setup_letter: Some(Y),
         )),
         ((26, 18), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 19), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 20), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 21), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 22), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 25), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 26), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 27), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 28), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 29), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 30), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 31), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 32), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 33), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 34), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 35), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((26, 36), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((26, 37), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((26, 38), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((26, 39), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((26, 40), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((26, 41), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 42), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 43), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 44), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 45), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 46), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((26, 47), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((27, 0), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
             named_area: Some(AngloEgyptianEntrance),
         )),
         ((27, 1), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((27, 2), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((27, 3), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((27, 4), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((27, 5), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((27, 6), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((27, 7), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((27, 8), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((27, 9), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((27, 10), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((27, 11), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((27, 12), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((27, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((27, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((27, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((27, 16), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((27, 17), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((27, 18), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((27, 19), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((27, 20), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((27, 21), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((27, 22), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((27, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((27, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((27, 25), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((27, 26), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((27, 27), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((27, 28), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((27, 29), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((27, 30), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((27, 31), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((27, 32), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((27, 33), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((27, 34), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((27, 35), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((27, 36), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((27, 37), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((27, 38), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((27, 39), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((27, 40), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((27, 41), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((27, 42), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((27, 43), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((27, 44), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((27, 45), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((27, 46), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((27, 47), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((28, 0), (
             terrain: Nile(
@@ -3647,252 +2213,158 @@
             named_area: Some(GunboatNorthEdge),
         )),
         ((28, 1), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((28, 2), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((28, 3), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((28, 4), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((28, 5), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((28, 6), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((28, 7), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((28, 8), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((28, 9), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((28, 10), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((28, 11), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((28, 12), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((28, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((28, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((28, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((28, 16), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((28, 17), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((28, 18), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((28, 19), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((28, 20), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((28, 21), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             setup_letter: Some(K),
         )),
         ((28, 22), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((28, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((28, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((28, 25), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((28, 26), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((28, 27), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((28, 28), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((28, 29), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((28, 30), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((28, 31), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((28, 32), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((28, 33), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((28, 34), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((28, 35), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((28, 36), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((28, 37), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((28, 38), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((28, 39), (
-            terrain: Building(
-                road: None,
-            ),
+            terrain: Building,
             name: Some("Palace"),
         )),
         ((28, 40), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((28, 41), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((28, 42), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((28, 43), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((28, 44), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((28, 45), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((28, 46), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((28, 47), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((29, 0), (
             terrain: Nile(
@@ -3911,248 +2383,156 @@
             ),
         )),
         ((29, 3), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((29, 4), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((29, 5), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((29, 6), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((29, 7), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((29, 8), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((29, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((29, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((29, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((29, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((29, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((29, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((29, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((29, 16), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((29, 17), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((29, 18), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((29, 19), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((29, 20), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((29, 21), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((29, 22), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((29, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((29, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((29, 25), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((29, 26), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((29, 27), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((29, 28), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((29, 29), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((29, 30), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((29, 31), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((29, 32), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((29, 33), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((29, 34), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((29, 35), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((29, 36), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((29, 37), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((29, 38), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((29, 39), (
-            terrain: Building(
-                road: None,
-            ),
+            terrain: Building,
             name: Some("Grounds"),
         )),
         ((29, 40), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             name: Some("Omdurman"),
         )),
         ((29, 41), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((29, 42), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((29, 43), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((29, 44), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((29, 45), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((29, 46), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((29, 47), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((30, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((30, 1), (
             terrain: Nile(
@@ -4170,255 +2550,161 @@
             ),
         )),
         ((30, 4), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Kerreri"),
         )),
         ((30, 5), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Kerreri"),
         )),
         ((30, 6), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((30, 7), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((30, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((30, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((30, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((30, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((30, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((30, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((30, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((30, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((30, 16), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((30, 17), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((30, 18), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((30, 19), (
-            terrain: Hilltop(
-                road: None,
-            ),
+            terrain: Hilltop,
         )),
         ((30, 20), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((30, 21), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((30, 22), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((30, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((30, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((30, 25), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((30, 26), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((30, 27), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((30, 28), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((30, 29), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((30, 30), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((30, 31), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((30, 32), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((30, 33), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((30, 34), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((30, 35), (
-            terrain: Clear(
-                road: Crossroad,
-            ),
+            terrain: Clear,
             name: Some("Omdurman"),
         )),
         ((30, 36), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((30, 37), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((30, 38), (
-            terrain: Clear(
-                road: Crossroad,
-            ),
+            terrain: Clear,
             name: Some("Omdurman"),
         )),
         ((30, 39), (
-            terrain: Building(
-                road: None,
-            ),
+            terrain: Building,
             name: Some("Mahdi\'s Tomb"),
         )),
         ((30, 40), (
-            terrain: Clear(
-                road: Crossroad,
-            ),
+            terrain: Clear,
             name: Some("Omdurman"),
         )),
         ((30, 41), (
-            terrain: Building(
-                road: None,
-            ),
+            terrain: Building,
             name: Some("Arsenal"),
         )),
         ((30, 42), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((30, 43), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((30, 44), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((30, 45), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((30, 46), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((30, 47), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((31, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((31, 1), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((31, 2), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((31, 3), (
             terrain: Nile(
@@ -4431,255 +2717,161 @@
             ),
         )),
         ((31, 5), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((31, 6), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((31, 7), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((31, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((31, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((31, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((31, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((31, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((31, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((31, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((31, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((31, 16), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((31, 17), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((31, 18), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((31, 19), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((31, 20), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((31, 21), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((31, 22), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((31, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             setup_letter: Some(S),
         )),
         ((31, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((31, 25), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((31, 26), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((31, 27), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((31, 28), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((31, 29), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((31, 30), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((31, 31), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((31, 32), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((31, 33), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((31, 34), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((31, 35), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((31, 36), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((31, 37), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((31, 38), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((31, 39), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             name: Some("Omdurman"),
         )),
         ((31, 40), (
-            terrain: Clear(
-                road: Crossroad,
-            ),
+            terrain: Clear,
             name: Some("Omdurman"),
         )),
         ((31, 41), (
-            terrain: Clear(
-                road: Crossroad,
-            ),
+            terrain: Clear,
             name: Some("Omdurman"),
         )),
         ((31, 42), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             name: Some("Omdurman"),
         )),
         ((31, 43), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((31, 44), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((31, 45), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((31, 46), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((31, 47), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 0), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 1), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 2), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 3), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 4), (
             terrain: Nile(
@@ -4692,227 +2884,143 @@
             ),
         )),
         ((32, 6), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 7), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 16), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 17), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((32, 18), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((32, 19), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((32, 20), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((32, 21), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((32, 22), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((32, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 25), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 26), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 27), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 28), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 29), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 30), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 31), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 32), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((32, 33), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((32, 34), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((32, 35), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((32, 36), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((32, 37), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((32, 38), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((32, 39), (
-            terrain: Clear(
-                road: Crossroad,
-            ),
+            terrain: Clear,
             name: Some("Omdurman"),
         )),
         ((32, 40), (
-            terrain: Clear(
-                road: Crossroad,
-            ),
+            terrain: Clear,
             name: Some("Omdurman"),
         )),
         ((32, 41), (
-            terrain: Clear(
-                road: Crossroad,
-            ),
+            terrain: Clear,
             name: Some("Omdurman"),
         )),
         ((32, 42), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((32, 43), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((32, 44), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((32, 45), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 46), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((32, 47), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((33, 0), (
             terrain: Nile(
@@ -4926,19 +3034,13 @@
             ),
         )),
         ((33, 2), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((33, 3), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((33, 4), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((33, 5), (
             terrain: Nile(
@@ -4971,200 +3073,126 @@
             ),
         )),
         ((33, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((33, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((33, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((33, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             name: Some("Zariba"),
         )),
         ((33, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((33, 16), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((33, 17), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((33, 18), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((33, 19), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((33, 20), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((33, 21), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((33, 22), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((33, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             setup_letter: Some(O),
         )),
         ((33, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((33, 25), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((33, 26), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((33, 27), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((33, 28), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((33, 29), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((33, 30), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((33, 31), (
-            terrain: Clear(
-                road: Crossroad,
-            ),
+            terrain: Clear,
         )),
         ((33, 32), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((33, 33), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((33, 34), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((33, 35), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((33, 36), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((33, 37), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((33, 38), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((33, 39), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((33, 40), (
-            terrain: Building(
-                road: None,
-            ),
+            terrain: Building,
             name: Some("Treasury"),
         )),
         ((33, 41), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((33, 42), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((33, 43), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((33, 44), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((33, 45), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((33, 46), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((33, 47), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((34, 0), (
             terrain: Nile(
@@ -5188,14 +3216,10 @@
             ),
         )),
         ((34, 4), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((34, 5), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((34, 6), (
             terrain: Nile(
@@ -5233,157 +3257,99 @@
             ),
         )),
         ((34, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((34, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((34, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((34, 16), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((34, 17), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((34, 18), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((34, 19), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((34, 20), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((34, 21), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((34, 22), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((34, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((34, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((34, 25), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((34, 26), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((34, 27), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((34, 28), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((34, 29), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((34, 30), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((34, 31), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((34, 32), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((34, 33), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((34, 34), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((34, 35), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((34, 36), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((34, 37), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((34, 38), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((34, 39), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((34, 40), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((34, 41), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((34, 42), (
             terrain: Nile(
@@ -5416,9 +3382,7 @@
             ),
         )),
         ((35, 1), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((35, 2), (
             terrain: Nile(
@@ -5441,29 +3405,19 @@
             ),
         )),
         ((35, 6), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((35, 7), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((35, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((35, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((35, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((35, 11), (
             terrain: Nile(
@@ -5481,148 +3435,94 @@
             ),
         )),
         ((35, 14), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("El Egeiga"),
         )),
         ((35, 15), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("El Egeiga"),
         )),
         ((35, 16), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((35, 17), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((35, 18), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((35, 19), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((35, 20), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((35, 21), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((35, 22), (
-            terrain: Rough(
-                road: None,
-            ),
+            terrain: Rough,
         )),
         ((35, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((35, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((35, 25), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((35, 26), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((35, 27), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((35, 28), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((35, 29), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((35, 30), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((35, 31), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((35, 32), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((35, 33), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((35, 34), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((35, 35), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((35, 36), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((35, 37), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((35, 38), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((35, 39), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((35, 40), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((35, 41), (
             terrain: Nile(
@@ -5660,9 +3560,7 @@
             ),
         )),
         ((36, 3), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((36, 4), (
             terrain: Nile(
@@ -5685,29 +3583,19 @@
             ),
         )),
         ((36, 8), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((36, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((36, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((36, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((36, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((36, 13), (
             terrain: Nile(
@@ -5725,130 +3613,82 @@
             ),
         )),
         ((36, 16), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((36, 17), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((36, 18), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((36, 19), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((36, 20), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((36, 21), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((36, 22), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((36, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((36, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((36, 25), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((36, 26), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((36, 27), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((36, 28), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((36, 29), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((36, 30), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((36, 31), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((36, 32), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((36, 33), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((36, 34), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((36, 35), (
-            terrain: Huts(
-                road: Crossroad,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((36, 36), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((36, 37), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((36, 38), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((36, 39), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((36, 40), (
             terrain: Nile(
@@ -5891,9 +3731,7 @@
             ),
         )),
         ((37, 5), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((37, 6), (
             terrain: Nile(
@@ -5921,19 +3759,13 @@
             ),
         )),
         ((37, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((37, 12), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((37, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((37, 14), (
             terrain: Nile(
@@ -5956,118 +3788,74 @@
             ),
         )),
         ((37, 18), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((37, 19), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((37, 20), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((37, 21), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((37, 22), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((37, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((37, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((37, 25), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((37, 26), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((37, 27), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((37, 28), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((37, 29), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((37, 30), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((37, 31), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((37, 32), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((37, 33), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((37, 34), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((37, 35), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((37, 36), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((37, 37), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((37, 38), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((37, 39), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((37, 40), (
             terrain: Nile(
@@ -6100,20 +3888,14 @@
             ),
         )),
         ((37, 46), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
             name: Some("Makran Point"),
         )),
         ((37, 47), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((38, 7), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((38, 8), (
             terrain: Nile(
@@ -6176,107 +3958,67 @@
             ),
         )),
         ((38, 20), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((38, 21), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((38, 22), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((38, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((38, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((38, 25), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((38, 26), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((38, 27), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((38, 28), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((38, 29), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((38, 30), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((38, 31), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Shambat"),
         )),
         ((38, 32), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((38, 33), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((38, 34), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Omdurman"),
         )),
         ((38, 35), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((38, 36), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((38, 37), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((38, 38), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((38, 39), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((38, 40), (
             terrain: Nile(
@@ -6299,9 +4041,7 @@
             ),
         )),
         ((38, 44), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((38, 45), (
             terrain: Nile(
@@ -6314,19 +4054,13 @@
             ),
         )),
         ((38, 47), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((39, 9), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((39, 10), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((39, 11), (
             terrain: Nile(
@@ -6379,81 +4113,51 @@
             ),
         )),
         ((39, 21), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((39, 22), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((39, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((39, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((39, 25), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((39, 26), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((39, 27), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((39, 28), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((39, 29), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((39, 30), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((39, 31), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Shambat"),
         )),
         ((39, 32), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Shambat"),
         )),
         ((39, 33), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((39, 34), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((39, 35), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((39, 36), (
             terrain: Nile(
@@ -6491,19 +4195,13 @@
             ),
         )),
         ((39, 43), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((39, 44), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((39, 45), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((39, 46), (
             terrain: Nile(
@@ -6516,41 +4214,27 @@
             ),
         )),
         ((40, 11), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((40, 12), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Abu Alim"),
             named_area: Some(AbuAlimHut),
         )),
         ((40, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((40, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((40, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((40, 16), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((40, 17), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((40, 18), (
             terrain: Nile(
@@ -6573,19 +4257,13 @@
             ),
         )),
         ((40, 22), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((40, 23), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
         )),
         ((40, 24), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((40, 25), (
             terrain: Nile(
@@ -6678,24 +4356,16 @@
             ),
         )),
         ((40, 43), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((40, 44), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((40, 45), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((40, 46), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((40, 47), (
             terrain: Nile(
@@ -6703,39 +4373,25 @@
             ),
         )),
         ((41, 13), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((41, 14), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((41, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((41, 16), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((41, 17), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((41, 18), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((41, 19), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((41, 20), (
             terrain: Nile(
@@ -6853,59 +4509,37 @@
             ),
         )),
         ((41, 43), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((41, 44), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((41, 45), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((41, 46), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((41, 47), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((42, 15), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((42, 16), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((42, 17), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((42, 18), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((42, 19), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((42, 20), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((42, 21), (
             terrain: Nile(
@@ -7003,71 +4637,45 @@
             ),
         )),
         ((42, 40), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((42, 41), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((42, 42), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((42, 43), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((42, 44), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((42, 45), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((42, 46), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((42, 47), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((43, 17), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("El Debeba"),
         )),
         ((43, 18), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("El Debeba"),
         )),
         ((43, 19), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((43, 20), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((43, 21), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((43, 22), (
             terrain: Nile(
@@ -7085,49 +4693,31 @@
             ),
         )),
         ((43, 25), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((43, 26), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((43, 27), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((43, 28), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((43, 29), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((43, 30), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((43, 31), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((43, 32), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((43, 33), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((43, 34), (
             terrain: Nile(
@@ -7140,19 +4730,13 @@
             ),
         )),
         ((43, 36), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((43, 37), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((43, 38), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((43, 39), (
             terrain: Nile(
@@ -7165,64 +4749,40 @@
             ),
         )),
         ((43, 41), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((43, 42), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((43, 43), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((43, 44), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((43, 45), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((43, 46), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((43, 47), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((44, 19), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((44, 20), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((44, 21), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((44, 22), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((44, 23), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((44, 24), (
             terrain: Nile(
@@ -7240,39 +4800,25 @@
             ),
         )),
         ((44, 27), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((44, 28), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((44, 29), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((44, 30), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((44, 31), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((44, 32), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((44, 33), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((44, 34), (
             terrain: Nile(
@@ -7285,24 +4831,16 @@
             ),
         )),
         ((44, 36), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((44, 37), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((44, 38), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((44, 39), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((44, 40), (
             terrain: Nile(
@@ -7325,44 +4863,28 @@
             ),
         )),
         ((44, 44), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((44, 45), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((44, 46), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((44, 47), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((45, 21), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((45, 22), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((45, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((45, 24), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Halfaya"),
         )),
         ((45, 25), (
@@ -7381,34 +4903,22 @@
             ),
         )),
         ((45, 28), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((45, 29), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((45, 30), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((45, 31), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((45, 32), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((45, 33), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((45, 34), (
             terrain: Nile(
@@ -7421,29 +4931,19 @@
             ),
         )),
         ((45, 36), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((45, 37), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((45, 38), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((45, 39), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((45, 40), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((45, 41), (
             terrain: Nile(
@@ -7466,41 +4966,27 @@
             ),
         )),
         ((45, 45), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((45, 46), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((45, 47), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((46, 23), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((46, 24), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Halfaya"),
         )),
         ((46, 25), (
-            terrain: Huts(
-                road: None,
-            ),
+            terrain: Huts,
             name: Some("Halfaya"),
         )),
         ((46, 26), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((46, 27), (
             terrain: Nile(
@@ -7548,34 +5034,22 @@
             ),
         )),
         ((46, 36), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((46, 39), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((46, 40), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((46, 41), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((46, 42), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((46, 43), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((46, 44), (
             terrain: Nile(
@@ -7588,29 +5062,19 @@
             ),
         )),
         ((46, 46), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((46, 47), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((47, 25), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((47, 26), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((47, 27), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((47, 28), (
             terrain: Nile(
@@ -7653,29 +5117,19 @@
             ),
         )),
         ((47, 36), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((47, 41), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((47, 42), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((47, 43), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((47, 44), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((47, 45), (
             terrain: Nile(
@@ -7688,74 +5142,46 @@
             ),
         )),
         ((47, 47), (
-            terrain: Swamp(
-                road: None,
-            ),
+            terrain: Swamp,
         )),
         ((48, 27), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((48, 28), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((48, 29), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((48, 30), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((48, 31), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((48, 32), (
-            terrain: Trees(
-                road: None,
-            ),
+            terrain: Trees,
         )),
         ((48, 33), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((48, 34), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((48, 35), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((48, 36), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((48, 43), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((48, 44), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((48, 45), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((48, 46), (
             terrain: Nile(
@@ -7768,54 +5194,34 @@
             ),
         )),
         ((49, 29), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((49, 30), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((49, 31), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((49, 32), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((49, 33), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((49, 34), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((49, 35), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((49, 36), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((49, 45), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((49, 46), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((49, 47), (
             terrain: Nile(
@@ -7823,69 +5229,43 @@
             ),
         )),
         ((50, 31), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((50, 32), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((50, 33), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((50, 34), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((50, 35), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((50, 36), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((50, 47), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((51, 33), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((51, 34), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((51, 35), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((51, 36), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((52, 35), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
         ((52, 36), (
-            terrain: Clear(
-                road: None,
-            ),
+            terrain: Clear,
         )),
     ],
     hexsides: [

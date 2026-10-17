@@ -454,9 +454,7 @@ impl GameState {
         let terrain = self
             .board
             .terrain_at(to)
-            .unwrap_or(omdurman_types::Terrain::Clear {
-                road: Default::default(),
-            });
+            .unwrap_or(omdurman_types::Terrain::Clear);
         crate::terrain_chart::land_step_cost(
             terrain,
             self.board.road_links(from, to),

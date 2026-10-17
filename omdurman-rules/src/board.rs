@@ -292,7 +292,7 @@ impl BoardInfo {
                 }
                 match self.terrain_at(n) {
                     Some(Terrain::Nile { .. }) | None => continue,
-                    Some(Terrain::Building { .. } | Terrain::Huts { .. }) => {}
+                    Some(Terrain::Building | Terrain::Huts) => {}
                     _ if omdurman => {}
                     _ => continue,
                 }

@@ -191,14 +191,14 @@ pub enum LosStepResult {
 pub fn los_level(terrain: Terrain) -> LosLevel {
     use crate::tables_data::LosTerrainName as N;
     let name = match terrain {
-        Terrain::Clear { .. } => N::Clear,
-        Terrain::Rough { .. } => N::Rough,
-        Terrain::Trees { .. } => N::Trees,
-        Terrain::Swamp { .. } => N::Swamp,
+        Terrain::Clear => N::Clear,
+        Terrain::Rough => N::Rough,
+        Terrain::Trees => N::Trees,
+        Terrain::Swamp => N::Swamp,
         Terrain::Nile { .. } => N::Nile,
-        Terrain::Hilltop { .. } => N::Hilltop,
-        Terrain::Huts { .. } => N::Huts,
-        Terrain::Building { .. } => N::Building,
+        Terrain::Hilltop => N::Hilltop,
+        Terrain::Huts => N::Huts,
+        Terrain::Building => N::Building,
     };
     for (level, names) in crate::tables_data::LOS_LEVELS {
         if names.contains(&name) {
@@ -466,11 +466,11 @@ fn los_walk(
 
         // Update the cumulative huts / trees counts (Building counts as Huts).
         let hut_tree_count = match terrain {
-            Terrain::Huts { .. } | Terrain::Building { .. } => {
+            Terrain::Huts | Terrain::Building => {
                 huts_count += 1;
                 huts_count
             }
-            Terrain::Trees { .. } => {
+            Terrain::Trees => {
                 trees_count += 1;
                 trees_count
             }
@@ -499,14 +499,14 @@ fn los_walk(
                 LosFeature::Units => unit_level.is_some(),
                 // Fix 3: Building treated as Huts (rulebook §5.44).
                 LosFeature::Huts => {
-                    matches!(terrain, Terrain::Huts { .. } | Terrain::Building { .. })
+                    matches!(terrain, Terrain::Huts | Terrain::Building)
                 }
-                LosFeature::Trees => matches!(terrain, Terrain::Trees { .. }),
+                LosFeature::Trees => matches!(terrain, Terrain::Trees),
                 LosFeature::RoughTerrain => {
-                    matches!(terrain, Terrain::Rough { .. })
+                    matches!(terrain, Terrain::Rough)
                 }
                 LosFeature::HilltopTerrain => {
-                    matches!(terrain, Terrain::Hilltop { .. })
+                    matches!(terrain, Terrain::Hilltop)
                 }
                 // Wall and Crest are hexside features, checked separately.
                 LosFeature::Wall | LosFeature::Crest => false,
@@ -645,7 +645,11 @@ fn los_rays(
     breached: impl Fn(HexCoord, HexCoord) -> bool,
 ) -> (Vec<HexCoord>, Option<LosBlock>) {
     let along = from.hexsides_along_line(to);
-    let [side, other_side] = los_ray_sides(from, to);
+    // (Kani cannot encode array-binding patterns; take the two sides
+    // through the iterator instead.)
+    let mut rays = los_ray_sides(from, to).into_iter();
+    let side = rays.next().expect("the near side always exists");
+    let other_side = rays.next().expect("the far side always exists");
     let first = los_walk(
         board,
         from,
@@ -698,7 +702,11 @@ pub fn los_clear_rays(
 ) -> Vec<Vec<HexCoord>> {
     use crate::FireKind;
 
-    let [side, other_side] = los_ray_sides(from, to);
+    // (Kani cannot encode array-binding patterns; take the two sides
+    // through the iterator instead.)
+    let mut rays = los_ray_sides(from, to).into_iter();
+    let side = rays.next().expect("the near side always exists");
+    let other_side = rays.next().expect("the far side always exists");
     if kind == FireKind::Howitzer {
         return vec![side];
     }
@@ -754,7 +762,10 @@ pub fn los_path_analysis(
 
     // Howitzer fire bypasses LOS (§6.64); every step is `Clear`.
     if kind == FireKind::Howitzer {
-        let [path, _] = los_ray_sides(from, to);
+        let path = los_ray_sides(from, to)
+            .into_iter()
+            .next()
+            .expect("the near side always exists");
         return path
             .into_iter()
             .map(|h| (h, LosStepResult::Clear))
@@ -2061,7 +2072,7 @@ mod tests {
         let board = crate::board::BoardInfo::from_map_data(crate::board_data::campaign_map_data());
         assert!(matches!(
             board.terrain_at(HexCoord::new(35, 19)),
-            Some(Terrain::Rough { .. })
+            Some(Terrain::Rough)
         ));
         let (zariba, plain) = (HexCoord::new(36, 17), HexCoord::new(33, 23));
         let sees = |a, b| {
@@ -2342,7 +2353,7 @@ mod tests {
 mod verification {
     use super::{LosFeature, LosLevel, los_level, los_level_for_unit};
     use crate::tables_data::LOS_CELLS;
-    use omdurman_types::{GroundKind, HexCoord, Road, Terrain, UnitKind};
+    use omdurman_types::{GroundKind, HexCoord, Terrain, UnitKind};
 
     /// A symbolic ground kind.
     fn any_ground(i: usize) -> GroundKind {
@@ -2370,9 +2381,9 @@ mod verification {
     }
 
     /// The terrain-to-level mapping is a property of the *ground* alone:
-    /// road overlays and Nile flow direction never change a hex's LOS
-    /// level. If road state ever leaked into the level lookup, road hexes
-    /// would silently shadow the printed LOS table.
+    /// the Nile flow direction never changes a hex's LOS level. (Roads are
+    /// a property of the hexside links, so they cannot leak into the level
+    /// lookup by construction.)
     // §6.3
     #[traceability_macro::rulebook("§6.3")]
     #[kani::proof]
@@ -2381,13 +2392,6 @@ mod verification {
         let g: usize = kani::any();
         let kind = any_ground(g % 7);
         let plain = los_level(Terrain::ground(kind));
-        let r: usize = kani::any();
-        let road = match r % 3 {
-            0 => Road::None,
-            1 => Road::Road,
-            _ => Road::Crossroad,
-        };
-        assert!(los_level(Terrain::ground_with_road(kind, road)) == plain);
         // The Nile's level is flow-independent.
         let d0: u8 = kani::any();
         let nile = Terrain::Nile {

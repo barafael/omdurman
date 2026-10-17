@@ -10,7 +10,7 @@ use bevy::prelude::*;
 use crate::GameStateResource;
 
 pub use omdurman_board_ui::board_store::{
-    ActiveEditMap, LoadedAnnotations, MapLoadContext, PendingMapLoad,
+    ActiveBoard, LoadedAnnotations, MapLoadContext, PendingMapLoad,
 };
 
 /// The shared load context plus the game's engine state.
@@ -56,7 +56,7 @@ pub(crate) fn apply_map_selection(
 pub(crate) fn sync_board_to_game(
     mode: Res<State<crate::AppMode>>,
     game_state: Res<GameStateResource>,
-    active: Res<ActiveEditMap>,
+    active: Res<ActiveBoard>,
     mut pending: ResMut<PendingMapLoad>,
 ) {
     let desired = match **mode {

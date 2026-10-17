@@ -5,9 +5,8 @@
 //! shows the printed walls/khors, so only the engine's mutations are drawn
 //! here.
 //!
-//! The drawing is ported from the (since-retired) map editor's hexside tab: bars along the
-//! perpendicular-bisector segment of the two hex centres, with the same
-//! per-kind colours.
+//! The drawing shows bars along the perpendicular-bisector segment of the
+//! two hex centres, with per-kind colours.
 
 use bevy::prelude::*;
 use omdurman_hexmap::{HexLayout, HexOverlay, hex_world_pos};
@@ -60,7 +59,7 @@ const BREACH_HALO: f32 = 2.6;
 const BREACH_CORE: f32 = 1.3;
 const BREACH_HALO_COLOR: Color = Color::srgb(1.0, 0.95, 0.8);
 
-/// Per-kind hexside colours (those of the retired map editor's preview).
+/// Per-kind hexside colours (the board's printed convention).
 fn hexside_color(kind: HexsideKind) -> Color {
     match kind {
         HexsideKind::Wall => Color::srgb(0.75, 0.75, 0.75),

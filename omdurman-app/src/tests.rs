@@ -152,23 +152,29 @@ mod late_joiner_tests {
                 is_boat: ps[0].profile.kind.is_boat(),
             }),
             GameEffect::MoveUnit {
-                unit_id,
-                to,
-                cost,
-                path,
+                unit_id, to, path, ..
             } => Some(GameEvent::MoveUnit {
                 sprite: sprite_of(*unit_id),
                 to_q: to.q,
                 to_r: to.r,
-                cost: *cost,
                 path: path.clone(),
             }),
             _ => None,
         };
+        // `GameEvent::MoveUnit` carries no movement points (the engine
+        // computes them from the route, §5.11/§5.24), so compare the
+        // round-tripped effect with the cost normalized away.
+        let comparable = |effect: &GameEffect| {
+            let mut normalized = effect.clone();
+            if let GameEffect::MoveUnit { cost, .. } = &mut normalized {
+                *cost = MovementPoints::default();
+            }
+            format!("{normalized:?}")
+        };
         candidate
             .filter(|ev| {
-                game_apply::sprite_event_effect(ev, state).map(|e| format!("{e:?}"))
-                    == Some(format!("{effect:?}"))
+                game_apply::sprite_event_effect(ev, state).map(|e| comparable(&e))
+                    == Some(comparable(effect))
             })
             .unwrap_or_else(|| GameEvent::Effect(effect.clone()))
     }
@@ -371,7 +377,6 @@ mod late_joiner_tests {
             sprite,
             to_q: 7,
             to_r: 8,
-            cost: MovementPoints::new(2),
             path: vec![HexCoord::new(7, 7), HexCoord::new(7, 8)],
         };
         let gs = GameState::new(omdurman_types::Scenario::Campaign);
@@ -409,12 +414,7 @@ mod late_joiner_tests {
         let mut h = TestHarness::new();
         h.game_map.hexes.insert(
             HexCoord::new(99, 99),
-            omdurman_types::HexData::new(
-                Terrain::Swamp {
-                    road: omdurman_types::Road::None,
-                },
-                None,
-            ),
+            omdurman_types::HexData::new(Terrain::Swamp, None),
         );
         h.replay(&record, None);
 

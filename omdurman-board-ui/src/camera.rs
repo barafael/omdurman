@@ -37,7 +37,7 @@ pub struct RtsCameraState {
 /// How far (radians) the fitted view leans back from straight down: just
 /// enough that the board reads as a table seen from a chair, not a scan --
 /// about 7 degrees, well inside the fit's framing margin.
-pub const FIT_TILT: f32 = 0.12;
+const FIT_TILT: f32 = 0.12;
 
 /// The pitch of the fitted view (see [`FIT_TILT`]).
 fn fit_pitch(settings: &CameraSettings) -> f32 {
