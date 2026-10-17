@@ -270,7 +270,7 @@ every peer — when the send to any one peer fails.
   telegram, longer only while the host's own seated player is on the board with it unread.
   There is no in-app editor: the board and asset data files are edited as text (see §1).
   Behaviour is gated on the active mode, not a build flag.
-- **Dual-map.** `ActiveEditMap` (local) tracks the live board; `PendingMapLoad` defers a (re)load
+- **Dual-map.** `ActiveBoard` (local) tracks the live board; `PendingMapLoad` defers a (re)load
   to the next frame; `LoadedAnnotations` holds both boards (all three in `omdurman-board-ui`). A
   play view (Game) follows its scenario's board for the whole session.
 - **Board + sprite data.** `LoadedAnnotations` is seeded from the board RON files

@@ -452,7 +452,6 @@ pub fn melee_direction_arrow(
 /// Everything the card draws is memoized (the same pattern as
 /// `fire::fire_combat_preview_ui`'s plan cache): re-derived only when the
 /// hovered target, the selection, or the engine state moved.
-#[derive(Clone)]
 pub(crate) struct MeleePreview {
     atk_details: Vec<String>,
     def_details: Vec<String>,

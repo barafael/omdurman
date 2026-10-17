@@ -283,7 +283,7 @@ were routinely triggered by the harness around rejoins.
 ## Architecture: dual-map (campaign + Fall-of-Khartoum)
 
 The game uses two boards, switched by `MapKind` (`Campaign`, `FallOfKhartoum`).
-`ActiveEditMap` tracks which one is live.
+`ActiveBoard` tracks which one is live.
 `PendingMapLoad` is set by the `StartGame` handler (and the board reconciler) to (re)load a board
 on the next frame; `omdurman-app/src/board_state.rs` owns this bootstrap.
 
