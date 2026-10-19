@@ -3,8 +3,18 @@ use bevy::prelude::*;
 use omdurman_net::{GameEvent, GameRecord, InitialGameState, RecordedEvent, new_seed};
 
 /// Root directory holding one directory per game (native only).
-#[cfg(not(target_arch = "wasm32"))]
 pub const GAMES_DIR: &str = "games";
+
+/// Where the native recorder opens each game's directory: [`GAMES_DIR`],
+/// relative to the working directory, unless a test points it elsewhere.
+#[derive(Resource)]
+pub struct GamesDir(pub String);
+
+impl Default for GamesDir {
+    fn default() -> Self {
+        Self(GAMES_DIR.to_string())
+    }
+}
 
 /// Append-only log of every `GameEvent` this peer has seen.
 ///
@@ -51,18 +61,14 @@ pub struct GameRecorder {
 }
 
 impl GameRecorder {
-    pub fn init(seed: u64) -> Self {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            Self::init_in(GAMES_DIR, seed)
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            Self::with_record(GameRecord {
-                initial_state: InitialGameState { seed },
-                events: Vec::new(),
-            })
-        }
+    /// A recorder for a new game, its directory opened under `games_dir`
+    /// (native; the web keeps no files).
+    #[cfg(target_arch = "wasm32")]
+    pub fn init(_games_dir: &str, seed: u64) -> Self {
+        Self::with_record(GameRecord {
+            initial_state: InitialGameState { seed },
+            events: Vec::new(),
+        })
     }
 
     /// A recorder holding `record` with no on-disk location.
@@ -75,10 +81,9 @@ impl GameRecorder {
         recorder
     }
 
-    /// Native [`GameRecorder::init`] rooted at `games_dir` (tests use a
-    /// temporary directory).
+    /// A recorder for a new game, its directory opened under `games_dir`.
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn init_in(games_dir: &str, seed: u64) -> Self {
+    pub fn init(games_dir: &str, seed: u64) -> Self {
         // Millisecond precision plus a per-process random suffix so two
         // local instances starting in the same second cannot land on the
         // same directory and interleave their appends into one corrupt
@@ -257,13 +262,17 @@ impl GameRecorder {
 /// Initialize the game record on the very first frame.
 /// Every peer creates a local record;  the canonical host's record is the
 /// one distributed to late joiners via GameHistory.
-pub fn init_game_record(mut commands: Commands, mut recorder: ResMut<GameRecorder>) {
+pub fn init_game_record(
+    mut commands: Commands,
+    mut recorder: ResMut<GameRecorder>,
+    games_dir: Res<GamesDir>,
+) {
     if recorder.record.is_some() {
         return;
     }
     let seed = new_seed();
     commands.insert_resource(GameRng::from_seed(seed));
-    *recorder = GameRecorder::init(seed);
+    *recorder = GameRecorder::init(&games_dir.0, seed);
     info!(seed, "game record initialised");
 }
 
@@ -740,7 +749,7 @@ mod tests {
     #[test]
     fn install_history_rewrites_log_without_duplicates() {
         let dir = tempfile::tempdir().unwrap();
-        let mut recorder = GameRecorder::init_in(dir.path().to_str().unwrap(), 11);
+        let mut recorder = GameRecorder::init(dir.path().to_str().unwrap(), 11);
         recorder.push_event(&event(0), None, 0, Some(100));
         recorder.push_event(&event(1), None, 1, Some(101));
         let mut app = App::new();
@@ -774,7 +783,7 @@ mod tests {
     #[test]
     fn resync_reset_rewrites_on_next_event() {
         let dir = tempfile::tempdir().unwrap();
-        let mut recorder = GameRecorder::init_in(dir.path().to_str().unwrap(), 3);
+        let mut recorder = GameRecorder::init(dir.path().to_str().unwrap(), 3);
         recorder.push_event(&event(0), None, 0, Some(100));
         let mut app = App::new();
         app.insert_resource(recorder);
@@ -806,12 +815,12 @@ mod tests {
     fn saved_games_metadata_is_parsed_once_per_file_version() {
         let dir = tempfile::tempdir().unwrap();
         let games = dir.path().to_str().unwrap();
-        let mut a = GameRecorder::init_in(games, 1);
+        let mut a = GameRecorder::init(games, 1);
         a.push_event(&event(0), None, 0, Some(100));
         let mut app = App::new();
         app.insert_resource(a);
         flush(&mut app);
-        let _b = GameRecorder::init_in(games, 2);
+        let _b = GameRecorder::init(games, 2);
         let mut cache = SavedGamesCache::default();
         assert_eq!(cache.refresh_in(games), 2, "first scan parses both");
         assert_eq!(cache.games.len(), 2);

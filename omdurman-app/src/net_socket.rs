@@ -1851,7 +1851,7 @@ mod tests {
 
         let mut pending = PendingEdits::with_uid_base(1);
         pending.submit_game(event(1));
-        let mut recorder = GameRecorder::init_in(games, 5);
+        let mut recorder = GameRecorder::init(games, 5);
         recorder.push_event(&event(9), None, 0, Some(9));
         let artifacts = recorder.artifacts_dir();
         let mut game_state =
@@ -2129,7 +2129,7 @@ mod tests {
         );
         let dir = tempfile::tempdir().unwrap();
         let mut pending = PendingEdits::with_uid_base(1);
-        let mut recorder = GameRecorder::init_in(dir.path().to_str().unwrap(), 5);
+        let mut recorder = GameRecorder::init(dir.path().to_str().unwrap(), 5);
         recorder.push_event(&start_game(), None, 0, Some(40));
         recorder.push_event(&event(1), None, 1, Some(41));
         let mut game_state =

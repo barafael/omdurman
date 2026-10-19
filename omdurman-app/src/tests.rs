@@ -781,12 +781,6 @@ mod late_joiner_tests {
         }
     }
 
-    /// Serialises tests that swap the process-wide working directory (the
-    /// recorder's `games/` path is CWD-relative): the test harness runs them
-    /// on parallel threads otherwise.
-    #[cfg(not(target_arch = "wasm32"))]
-    static CWD_SWAP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     /// Run the game recording pipeline in isolation: create a JSONL file by
     /// starting the recorder, recording a PlaceUnit event the way
     /// `handle_socket` does on a host-sequenced receipt (`push_event` with a
@@ -794,16 +788,17 @@ mod late_joiner_tests {
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn jsonl_records_place_unit() {
-        let _cwd_guard = CWD_SWAP_LOCK.lock().unwrap();
         let tmp = tempfile::TempDir::new().unwrap();
-        let orig_cwd = std::env::current_dir().unwrap();
-        std::env::set_current_dir(tmp.path()).unwrap();
+        let games_dir = tmp.path().join("games");
 
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
 
         // Resources the pipeline needs
         app.insert_resource(game_record::GameRecorder::default());
+        app.insert_resource(game_record::GamesDir(
+            games_dir.to_str().unwrap().to_string(),
+        ));
         app.insert_resource(PendingEdits::default());
         app.insert_resource(PendingIncoming::default());
         app.insert_resource(NetState::default());
@@ -844,10 +839,6 @@ mod late_joiner_tests {
         // Frame 2: flush_game_record appends the recorded event to the JSONL.
         app.update();
 
-        // Restore CWD before reading / asserting (TempDir cleans up on drop).
-        std::env::set_current_dir(&orig_cwd).unwrap();
-
-        let games_dir = tmp.path().join("games");
         // The recorder writes one directory per game; find its events.jsonl.
         let mut jsonl_path = None;
         for entry in std::fs::read_dir(&games_dir).unwrap() {
@@ -889,14 +880,15 @@ mod late_joiner_tests {
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn flavour_artifacts_written() {
-        let _cwd_guard = CWD_SWAP_LOCK.lock().unwrap();
         let tmp = tempfile::TempDir::new().unwrap();
-        let orig_cwd = std::env::current_dir().unwrap();
-        std::env::set_current_dir(tmp.path()).unwrap();
+        let games_dir = tmp.path().join("games");
 
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
         app.insert_resource(game_record::GameRecorder::default());
+        app.insert_resource(game_record::GamesDir(
+            games_dir.to_str().unwrap().to_string(),
+        ));
         app.add_systems(Update, game_record::init_game_record);
         app.update(); // init_game_record creates games/<game>/
 
@@ -934,10 +926,6 @@ mod late_joiner_tests {
         );
         app.update();
 
-        // Restore CWD before reading / asserting (TempDir cleans up on drop).
-        std::env::set_current_dir(&orig_cwd).unwrap();
-
-        let games_dir = tmp.path().join("games");
         let mut game_dir = None;
         for entry in std::fs::read_dir(&games_dir).unwrap() {
             let path = entry.unwrap().path();
@@ -1002,9 +990,6 @@ mod artifact_fixture_tests {
     use crate::state::GameStateResource;
     use crate::telegram::TelegramLog;
 
-    /// Serialises against the other CWD-swapping tests.
-    static CWD_SWAP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     #[test]
     #[ignore = "fixture generator: writes into games/"]
     fn generate_artifact_fixtures() {
@@ -1018,23 +1003,10 @@ mod artifact_fixture_tests {
                 .collect();
             assert!(!records.is_empty(), "no record paths given");
 
-            let _cwd_guard = CWD_SWAP_LOCK.lock().unwrap();
-            // The recorder's games/ dir is CWD-relative; cargo test starts in
-            // the crate dir, so swap to the workspace root.
-            let crate_dir = std::env::current_dir().unwrap();
-            let workspace_root = crate_dir
-                .parent()
-                .expect("crate dir has a parent")
-                .to_path_buf();
-            let orig_cwd = std::env::current_dir().unwrap();
-            std::env::set_current_dir(&workspace_root).unwrap();
-
             for path in &records {
                 let dir = run_fixture(path);
                 eprintln!("artifacts written to {dir}");
             }
-
-            std::env::set_current_dir(&orig_cwd).unwrap();
         }
     }
 
@@ -1078,7 +1050,9 @@ mod artifact_fixture_tests {
         // A fresh game directory under games/ with the record's own seed
         // header, then the bot's event log installed so `flush_game_record`
         // appends the full trace after it.
-        let mut recorder = GameRecorder::init(record.initial_state.seed);
+        // The workspace's games/ (cargo test starts in the crate dir).
+        let games_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../games");
+        let mut recorder = GameRecorder::init(games_dir, record.initial_state.seed);
         recorder.install_history(record);
         app.insert_resource(recorder);
         app.insert_resource(GameStateResource(state));
@@ -1699,7 +1673,7 @@ fn ai_plays_headless(
             std::time::Duration::from_millis(250),
         ))
         // Records into the temp dir.
-        .insert_resource(crate::game_record::GameRecorder::init_in(
+        .insert_resource(crate::game_record::GameRecorder::init(
             games.path().to_str().expect("utf-8 temp path"),
             7,
         ))
@@ -1916,7 +1890,7 @@ fn a_review_runs_on_top_of_a_live_game() {
         .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
             std::time::Duration::from_millis(250),
         ))
-        .insert_resource(crate::game_record::GameRecorder::init_in(
+        .insert_resource(crate::game_record::GameRecorder::init(
             games.path().to_str().expect("utf-8 temp path"),
             7,
         ));

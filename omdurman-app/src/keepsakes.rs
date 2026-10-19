@@ -77,7 +77,7 @@ mod tests {
     #[test]
     fn each_keepsake_is_named_after_the_game_and_taken_once() {
         let games = tempfile::tempdir().expect("temp dir");
-        let recorder = crate::game_record::GameRecorder::init_in(
+        let recorder = crate::game_record::GameRecorder::init(
             games.path().to_str().expect("utf-8 temp path"),
             7,
         );

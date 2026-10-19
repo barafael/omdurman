@@ -196,6 +196,7 @@ fn add_game(app: &mut App, room: String) {
             omdurman_types::Scenario::Campaign,
         )))
         .insert_resource(game_record::GameRecorder::default())
+        .init_resource::<game_record::GamesDir>()
         // Present from the first frame (reseeded by `init_game_record` and
         // every rebuild): a system requiring a resource that a command
         // inserts later panics if it ever runs first.
