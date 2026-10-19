@@ -164,7 +164,6 @@ seat handling).
 - Polish: selection pulse, howitzer scatter animation, Zariba build animation.
 - Unconfirmed, from the play-test and review notes:
   - Fire slips pile up.
-  - The lobby shows "(claimed by a player)" twice.
   - Turn and phase are shown in five places (review 4.11).
   - Surfaces overlap (review 4.13).
 

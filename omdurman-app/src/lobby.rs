@@ -828,10 +828,18 @@ fn setup_tab(
                 ] {
                     let claimed = human_picked(faction);
                     let mut toggled = effective_ai.contains(&faction);
+                    // One row per faction; a faction a player has picked
+                    // says so in its own label (a line of its own pushed
+                    // the rows below it down).
                     ui.add_enabled_ui(!claimed, |ui| {
                         let label = format!(
-                            "AI \u{b7} {commander} ({})",
-                            crate::ui::faction_name(faction)
+                            "AI \u{b7} {commander} ({}){}",
+                            crate::ui::faction_name(faction),
+                            if claimed {
+                                " \u{2014} a player has this side"
+                            } else {
+                                ""
+                            }
                         );
                         if ui.checkbox(&mut toggled, label).changed() {
                             rules_changed = true;
@@ -844,13 +852,6 @@ fn setup_tab(
                             }
                         }
                     });
-                    if claimed {
-                        ui.label(
-                            egui::RichText::new("(claimed by a player)")
-                                .weak()
-                                .size(11.0),
-                        );
-                    }
                 }
                 ui.label(
                     egui::RichText::new(
