@@ -9,9 +9,7 @@ mod late_joiner_tests {
     use crate::{
         LoadedAnnotations, PendingEdits, PendingIncoming, PendingMapLoad, TurnState, game_apply,
         game_record, map_kind_for_scenario, picker::UnitPaths, rebuild_state_to,
-        timeline::RebuildState,
     };
-    use bevy::ecs::world::CommandQueue;
     use bevy::prelude::*;
     use chrono::Utc;
     use omdurman_hexmap::{GameMap, load_map_data};
@@ -41,12 +39,10 @@ mod late_joiner_tests {
     }
 
     /// Common setup for replay tests: holds all the mutable state that
-    /// [`rebuild_state_to`] reads and writes, so the triplicated
-    /// `World::new()` / `Commands::new()` / `GameMap::default()` / ...
-    /// stanza lives in one place.
+    /// [`rebuild_state_to`] reads and writes, so the `GameMap::default()` /
+    /// ... stanza lives in one place.
     struct TestHarness {
-        world: World,
-        queue: CommandQueue,
+        rng: crate::GameRng,
         game_map: GameMap,
         game_state: GameState,
         seats: crate::seats::Seats,
@@ -67,8 +63,7 @@ mod late_joiner_tests {
                 &mut game_map,
             );
             Self {
-                world: World::new(),
-                queue: CommandQueue::default(),
+                rng: crate::GameRng::from_seed(1),
                 game_map,
                 game_state: GameState::new(omdurman_types::Scenario::Campaign),
                 seats: crate::seats::Seats::default(),
@@ -88,7 +83,6 @@ mod late_joiner_tests {
                 seats: &mut self.seats,
                 local_setup_ready: &mut self.local_setup_ready,
                 bot_driver: &mut self.bot_driver,
-                loaded_annotations: &mut self.loaded_annotations,
                 pending_map_load: &mut self.pending_map_load,
                 unit_paths: &mut self.unit_paths,
                 press: &mut self.press,
@@ -96,28 +90,24 @@ mod late_joiner_tests {
         }
 
         /// Run `rebuild_state_to` with this harness's state. `upto = None`
-        /// means full replay; `Some(i)` scrubs to event `i`. Applies the
-        /// command queue afterwards so spawned entities are visible.
+        /// means full replay; `Some(i)` scrubs to event `i`.
         fn replay(&mut self, record: &GameRecord, upto: Option<usize>) {
-            {
-                let mut commands = Commands::new(&mut self.queue, &self.world);
-                let mut state = RebuildState {
-                    commands: &mut commands,
-                    game_map: &mut self.game_map,
-                    sinks: game_apply::EventSinks {
-                        game_state: &mut self.game_state,
-                        seats: &mut self.seats,
-                        local_setup_ready: &mut self.local_setup_ready,
-                        bot_driver: &mut self.bot_driver,
-                        loaded_annotations: &mut self.loaded_annotations,
-                        pending_map_load: &mut self.pending_map_load,
-                        unit_paths: &mut self.unit_paths,
-                        press: &mut self.press,
-                    },
-                };
-                rebuild_state_to(record, upto, &mut state);
-            }
-            self.queue.apply(&mut self.world);
+            rebuild_state_to(
+                record,
+                upto,
+                &mut self.rng,
+                &mut self.game_map,
+                &mut self.loaded_annotations,
+                &mut game_apply::EventSinks {
+                    game_state: &mut self.game_state,
+                    seats: &mut self.seats,
+                    local_setup_ready: &mut self.local_setup_ready,
+                    bot_driver: &mut self.bot_driver,
+                    pending_map_load: &mut self.pending_map_load,
+                    unit_paths: &mut self.unit_paths,
+                    press: &mut self.press,
+                },
+            );
         }
     }
 
@@ -1836,7 +1826,6 @@ fn replayed(
     let mut seats = crate::seats::Seats::default();
     let mut ready = crate::peers::LocalSetupReady::default();
     let mut driver = crate::bot_player::BotDriver::from_seed(1);
-    let mut annotations = crate::LoadedAnnotations::default();
     let mut map_load = crate::PendingMapLoad::default();
     let mut paths = crate::picker::UnitPaths::default();
     let mut press = crate::telegram::TelegramLog::default();
@@ -1845,7 +1834,6 @@ fn replayed(
         seats: &mut seats,
         local_setup_ready: &mut ready,
         bot_driver: &mut driver,
-        loaded_annotations: &mut annotations,
         pending_map_load: &mut map_load,
         unit_paths: &mut paths,
         press: &mut press,

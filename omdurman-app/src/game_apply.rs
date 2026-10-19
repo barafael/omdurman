@@ -16,7 +16,7 @@ use omdurman_net::GameEvent;
 use omdurman_rules::OptionalRule;
 use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
 use omdurman_rules::{Phase, UnitId, UnitPlacement, UnitState};
-use omdurman_types::{HexCoord, MapKind, Scenario, SpriteRef};
+use omdurman_types::{HexCoord, Scenario, SpriteRef};
 
 use crate::picker::UnitPaths;
 
@@ -29,7 +29,6 @@ pub(crate) struct EventSinks<'a> {
     pub seats: &'a mut crate::seats::Seats,
     pub local_setup_ready: &'a mut crate::peers::LocalSetupReady,
     pub bot_driver: &'a mut crate::bot_player::BotDriver,
-    pub loaded_annotations: &'a mut crate::board_state::LoadedAnnotations,
     pub pending_map_load: &'a mut crate::board_state::PendingMapLoad,
     /// Per-turn movement routes (drawn as arrows), recorded at the one point
     /// where a move is accepted, so live, remote and replayed moves of both
@@ -39,16 +38,7 @@ pub(crate) struct EventSinks<'a> {
     pub press: &'a mut crate::telegram::TelegramLog,
 }
 
-/// The host-committed fields of a `GameEvent::StartGame`, passed through
-/// to [`apply_start_game`] as a bundle.
-pub(crate) struct StartGameFields<'a> {
-    /// The seat table (humans by stable key, plus AI seats).
-    pub seats: &'a [omdurman_net::Seat],
-    pub scenario: Scenario,
-    pub optional_rules: &'a [OptionalRule],
-}
-
-/// State core of a `StartGame`:
+/// State core of a `StartGame`, from its host-committed fields:
 ///
 /// * install the committed seat table (§1.1 command scopes ride in it);
 /// * seed a fresh engine state — `GameState::new` sets the scenario's
@@ -61,12 +51,12 @@ pub(crate) struct StartGameFields<'a> {
 ///
 /// Caller-specific concerns (mode switches, snapshot requests) stay with the
 /// callers.
-pub(crate) fn apply_start_game(fields: StartGameFields<'_>, sinks: &mut EventSinks<'_>) -> MapKind {
-    let StartGameFields {
-        seats,
-        scenario,
-        optional_rules,
-    } = fields;
+fn apply_start_game(
+    seats: &[omdurman_net::Seat],
+    scenario: Scenario,
+    optional_rules: &[OptionalRule],
+    sinks: &mut EventSinks,
+) {
     // Seats ride in StartGame, so replays and late joiners gate on the same
     // seats (and §1.1 command scopes) the host started with.
     sinks.seats.0 = seats.to_vec();
@@ -88,7 +78,6 @@ pub(crate) fn apply_start_game(fields: StartGameFields<'_>, sinks: &mut EventSin
     // Movement routes and the press belong to the previous game.
     sinks.unit_paths.0.clear();
     *sinks.press = crate::telegram::TelegramLog::default();
-    map_kind
 }
 
 /// The rules identity of a counter sprite (deterministic: each physical
@@ -163,7 +152,7 @@ fn record_move_path(paths: &mut UnitPaths, unit_id: UnitId, from: HexCoord, path
 /// Apply one engine effect, recording the route of an accepted move and
 /// resetting the routes when the turn passes to the other player. Returns
 /// whether the engine accepted it.
-fn apply_engine_effect(effect: &GameEffect, sinks: &mut EventSinks<'_>) -> bool {
+fn apply_engine_effect(effect: &GameEffect, sinks: &mut EventSinks) -> bool {
     let active_before = sinks.game_state.active_player;
     let move_from = match effect {
         GameEffect::MoveUnit { unit_id, .. } => sinks
@@ -200,21 +189,14 @@ fn apply_engine_effect(effect: &GameEffect, sinks: &mut EventSinks<'_>) -> bool 
 ///
 /// The caller drains the engine's observations afterwards (live: into the UI
 /// queue; rebuild: discarded).
-pub(crate) fn apply_game_event(event: &GameEvent, sinks: &mut EventSinks<'_>) -> bool {
+pub(crate) fn apply_game_event(event: &GameEvent, sinks: &mut EventSinks) -> bool {
     match event {
         GameEvent::StartGame {
             seats,
             scenario,
             optional_rules,
         } => {
-            apply_start_game(
-                StartGameFields {
-                    seats,
-                    scenario: *scenario,
-                    optional_rules,
-                },
-                sinks,
-            );
+            apply_start_game(seats, *scenario, optional_rules, sinks);
             true
         }
         GameEvent::SeatAssigned {

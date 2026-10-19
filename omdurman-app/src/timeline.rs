@@ -38,15 +38,6 @@ use omdurman_rules::effects::GameState;
 
 use crate::{GameRng, game_apply};
 
-/// Mutable state bundle for [`rebuild_state_to`]: the command queue (to
-/// reseed the shared RNG), the live board, and the event-application sinks.
-/// NOT a `SystemParam` — this is a plain struct for a non-system function.
-pub(crate) struct RebuildState<'a, 'w, 's> {
-    pub commands: &'a mut Commands<'w, 's>,
-    pub game_map: &'a mut GameMap,
-    pub sinks: game_apply::EventSinks<'a>,
-}
-
 /// A scrub restarts from a checkpoint at most this many events before the
 /// cursor (memory: one engine-state clone per this many events). Counted in
 /// events because an event is one order of bounded replay cost (the
@@ -179,7 +170,6 @@ pub fn advance_timeline_playback(
 pub struct ScrubRebuild<'w, 's> {
     pub commands: Commands<'w, 's>,
     pub game_state: ResMut<'w, crate::GameStateResource>,
-    pub loaded_annotations: ResMut<'w, crate::LoadedAnnotations>,
     /// The reviewed scenario's board, loaded on the next frame.
     pub pending_map_load: ResMut<'w, crate::PendingMapLoad>,
     /// Movement routes, rebuilt by the replay.
@@ -227,7 +217,6 @@ pub fn scrub_rebuild(mut timeline: ResMut<SpectatorTimeline>, mut rebuild: Scrub
 
     let ScrubRebuild {
         game_state,
-        loaded_annotations,
         pending_map_load,
         unit_paths,
         press,
@@ -263,7 +252,6 @@ pub fn scrub_rebuild(mut timeline: ResMut<SpectatorTimeline>, mut rebuild: Scrub
         seats: &mut side.seats,
         local_setup_ready: &mut side.local_setup_ready,
         bot_driver: &mut side.bot_driver,
-        loaded_annotations,
         pending_map_load,
         unit_paths,
         press,
@@ -429,14 +417,12 @@ fn catch_up(stash: &mut LiveStash, live: &mut LiveSinks) {
     }
     // (Seats & co. are touched only now: a resource written every frame
     // would wake every `Peers::changed` reader every frame.)
-    let mut scratch_annotations = crate::LoadedAnnotations::default();
     let mut scratch_map_load = crate::PendingMapLoad::default();
     let mut sinks = game_apply::EventSinks {
         game_state: &mut stash.game_state,
         seats: &mut live.seats,
         local_setup_ready: &mut live.local_setup_ready,
         bot_driver: &mut live.bot_driver,
-        loaded_annotations: &mut scratch_annotations,
         pending_map_load: &mut scratch_map_load,
         unit_paths: &mut stash.unit_paths,
         press: &mut stash.press,
@@ -536,7 +522,10 @@ pub(crate) fn leave_review(exit: ReviewExit) {
 pub(crate) fn rebuild_state_to(
     record: &GameRecord,
     upto: Option<usize>,
-    state: &mut RebuildState<'_, '_, '_>,
+    rng: &mut GameRng,
+    game_map: &mut GameMap,
+    loaded_annotations: &mut crate::LoadedAnnotations,
+    sinks: &mut game_apply::EventSinks,
 ) {
     let upto = upto.unwrap_or(record.events.len().saturating_sub(1));
     info!(
@@ -551,32 +540,27 @@ pub(crate) fn rebuild_state_to(
     // fresh entropy instead of the record seed: restarting the record-seeded
     // stream at position 0 would make this peer's next rolls repeat the
     // rolls already made at the start of the game.
-    state
-        .commands
-        .insert_resource(GameRng::from_seed(omdurman_net::new_seed()));
-    state.game_map.hexes.clear();
-    state.sinks.unit_paths.0.clear();
+    *rng = GameRng::from_seed(omdurman_net::new_seed());
+    game_map.hexes.clear();
+    sinks.unit_paths.0.clear();
     // The seat table is part of the log's state too: only the replayed
     // `StartGame` (and seat events) may populate it.
-    state.sinks.seats.0.clear();
+    sinks.seats.0.clear();
 
     // Seed LoadedAnnotations from the board RON data and load the default
     // board (Fall-of-Khartoum) into the live map; the replayed `StartGame`
     // then queues the scenario's own board via `PendingMapLoad`.
-    *state.sinks.loaded_annotations = crate::board_state::LoadedAnnotations::from_board_ron();
+    *loaded_annotations = crate::board_state::LoadedAnnotations::from_board_ron();
     load_map_data(
-        state
-            .sinks
-            .loaded_annotations
-            .map(omdurman_types::MapKind::FallOfKhartoum),
-        &mut *state.game_map,
+        loaded_annotations.map(omdurman_types::MapKind::FallOfKhartoum),
+        game_map,
     );
 
     let end = (upto + 1).min(record.events.len());
     for event in &record.events[..end] {
-        game_apply::apply_game_event(&event.payload, &mut state.sinks);
+        game_apply::apply_game_event(&event.payload, sinks);
     }
-    let _stale = state.sinks.game_state.drain_observations();
+    let _stale = sinks.game_state.drain_observations();
 }
 
 /// The timeline scrubber panel: a slider over the event log, play/step controls,

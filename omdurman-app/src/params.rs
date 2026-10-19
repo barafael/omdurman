@@ -42,6 +42,8 @@ pub(crate) struct GameStateParams<'w> {
     pub bot_driver: ResMut<'w, crate::bot_player::BotDriver>,
     /// Per-turn movement routes, recorded where a move is accepted.
     pub unit_paths: ResMut<'w, UnitPaths>,
+    /// The local dice, reseeded when a history is installed.
+    pub rng: ResMut<'w, crate::GameRng>,
     /// The telegrams and Gazette, filed from recorded press events.
     pub press: ResMut<'w, crate::telegram::TelegramLog>,
     /// What each *live* event did to the counters, for the board effects
@@ -71,7 +73,6 @@ impl GameStateParams<'_> {
             seats: &mut self.seats,
             local_setup_ready: &mut self.local_setup_ready,
             bot_driver: &mut self.bot_driver,
-            loaded_annotations: &mut self.loaded_annotations,
             pending_map_load: &mut self.pending_map_load,
             unit_paths: &mut self.unit_paths,
             press: &mut self.press,

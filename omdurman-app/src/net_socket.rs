@@ -1,6 +1,6 @@
 use crate::{
     AppState, GameStateParams, PendingEdits, PendingIncoming, ReconnectRoom, TurnState, game_apply,
-    game_record, picker, rebuild_state_to, timeline::RebuildState,
+    game_record, picker, rebuild_state_to,
 };
 use bevy::prelude::*;
 use bevy_matchbox::prelude::*;
@@ -594,91 +594,83 @@ pub(crate) fn retry_snapshot_request(
         .push(NetMsg::Control(Control::RequestSnapshot));
 }
 
-/// Everything applying a ready `Sequenced` delivery touches, borrowed from
-/// [`handle_socket`]'s parameters.
-struct ApplyEnv<'a, 'w> {
-    net: &'a mut NetState,
-    pending: &'a mut PendingEdits,
-    turn: &'a mut TurnState,
-    gsp: &'a mut GameStateParams<'w>,
-    recorder: &'a mut game_record::GameRecorder,
-    state: &'a AppState,
-    next_state: &'a mut NextState<AppState>,
-    targeted: &'a mut Vec<(NetMsg, PeerId)>,
-    /// This instance's stable player key (seat binding identity).
-    local_key: omdurman_net::PlayerKey,
-}
-
 /// Record and apply deliveries that [`receive_sequenced`] /
 /// [`drain_contiguous`] released (already marked applied), in order.
-fn apply_ready(env: &mut ApplyEnv<'_, '_>, ready: Vec<SequencedDelivery>) {
+fn apply_ready(
+    net: &mut NetState,
+    pending: &mut PendingEdits,
+    turn: &mut TurnState,
+    gsp: &mut GameStateParams,
+    recorder: &mut game_record::GameRecorder,
+    state: &AppState,
+    next_state: &mut NextState<AppState>,
+    targeted: &mut Vec<(NetMsg, PeerId)>,
+    // This instance's stable player key (seat binding identity).
+    local_key: omdurman_net::PlayerKey,
+    ready: Vec<SequencedDelivery>,
+) {
     for delivery in ready {
-        apply_sequenced(env, delivery);
-    }
-}
-
-fn apply_sequenced(env: &mut ApplyEnv<'_, '_>, delivery: SequencedDelivery) {
-    let SequencedDelivery {
-        seq,
-        uid,
-        event: ev,
-        from,
-    } = delivery;
-    let sender_idx = env.net.sender_idx(from);
-    env.recorder.push_event(&ev, sender_idx, seq, Some(uid));
-    info!(seq, uid, "applied sequenced event");
-    // Our own submission made it through the host: stop retransmitting it.
-    env.pending.confirm(uid);
-    // The board shows a review: the event, now recorded, reaches the live
-    // state through `timeline::catch_up_live_stash` instead.
-    if !env.gsp.reviewing() {
-        apply_to_board(env, &ev);
-    }
-    let GameEvent::StartGame {
-        seats, scenario, ..
-    } = &ev
-    else {
-        return;
-    };
-    let first_start = !env.turn.game_started;
-    env.turn.game_started = true;
-    // The engine always takes the StartGame (the record is the state); only
-    // the *view* switch is gated on the lobby, so a player browsing the menu
-    // is not yanked.
-    if *env.state != AppState::Lobby {
-        info!(%scenario, "StartGame applied; view unchanged (not in lobby)");
-        return;
-    }
-    // Switch the view to the game board, so play opens on the scenario's
-    // board rather than whatever screen preceded the lobby. (The board data
-    // loads from `pending_map_load`; the board picked follows the scenario
-    // via `sync_board_to_game`.)
-    env.gsp.next_app_mode.set(crate::AppMode::Game);
-    env.next_state.set(AppState::InGame);
-    info!(%scenario, "game started via host StartGame");
-    // A guest without a seat is a spectator: request the full record from
-    // the host so it converges to every unit already placed, not just
-    // events seen after this point. (Seated guests are present from the
-    // start, so they don't need it.) Seats are keyed by the stable player
-    // key, never by the session `PeerId`.
-    let locally_assigned = crate::seats::seat_of(seats, env.local_key).is_some();
-    if first_start && !env.net.is_host && !locally_assigned && !env.net.snapshot_applied {
-        info!("no faction assigned to this peer; requesting snapshot as spectator");
-        env.net.needs_snapshot = true;
-        env.net.snapshot_retry_timer = 0.0;
-        if let Some(host) = env.net.host_id() {
-            env.targeted
-                .push((NetMsg::Control(Control::RequestSnapshot), host));
+        let SequencedDelivery {
+            seq,
+            uid,
+            event: ev,
+            from,
+        } = delivery;
+        let sender_idx = net.sender_idx(from);
+        recorder.push_event(&ev, sender_idx, seq, Some(uid));
+        info!(seq, uid, "applied sequenced event");
+        // Our own submission made it through the host: stop retransmitting it.
+        pending.confirm(uid);
+        // The board shows a review: the event, now recorded, reaches the live
+        // state through `timeline::catch_up_live_stash` instead.
+        if !gsp.reviewing() {
+            apply_to_board(gsp, &ev);
+        }
+        let GameEvent::StartGame {
+            seats, scenario, ..
+        } = &ev
+        else {
+            continue;
+        };
+        let first_start = !turn.game_started;
+        turn.game_started = true;
+        // The engine always takes the StartGame (the record is the state); only
+        // the *view* switch is gated on the lobby, so a player browsing the menu
+        // is not yanked.
+        if *state != AppState::Lobby {
+            info!(%scenario, "StartGame applied; view unchanged (not in lobby)");
+            continue;
+        }
+        // Switch the view to the game board, so play opens on the scenario's
+        // board rather than whatever screen preceded the lobby. (The board data
+        // loads from `pending_map_load`; the board picked follows the scenario
+        // via `sync_board_to_game`.)
+        gsp.next_app_mode.set(crate::AppMode::Game);
+        next_state.set(AppState::InGame);
+        info!(%scenario, "game started via host StartGame");
+        // A guest without a seat is a spectator: request the full record from
+        // the host so it converges to every unit already placed, not just
+        // events seen after this point. (Seated guests are present from the
+        // start, so they don't need it.) Seats are keyed by the stable player
+        // key, never by the session `PeerId`.
+        let locally_assigned = crate::seats::seat_of(seats, local_key).is_some();
+        if first_start && !net.is_host && !locally_assigned && !net.snapshot_applied {
+            info!("no faction assigned to this peer; requesting snapshot as spectator");
+            net.needs_snapshot = true;
+            net.snapshot_retry_timer = 0.0;
+            if let Some(host) = net.host_id() {
+                targeted.push((NetMsg::Control(Control::RequestSnapshot), host));
+            }
         }
     }
 }
 
 /// Apply a sequenced event to the board's engine state, with what it did to
 /// the counters (the board effects) and its observations (the UI).
-fn apply_to_board(env: &mut ApplyEnv<'_, '_>, ev: &GameEvent) {
+fn apply_to_board(gsp: &mut GameStateParams, ev: &GameEvent) {
     // What the event does to the counters, for the board effects: diffed
     // around the apply, live only (a rebuild never comes through here).
-    let before = (env.gsp.live_applied.is_some()
+    let before = (gsp.live_applied.is_some()
         && matches!(
             ev,
             GameEvent::Effect(_)
@@ -686,23 +678,22 @@ fn apply_to_board(env: &mut ApplyEnv<'_, '_>, ev: &GameEvent) {
                 | GameEvent::MoveUnit { .. }
                 | GameEvent::RemoveUnit { .. }
         ))
-    .then(|| crate::fx::LiveChange::snapshot(&env.gsp.game_state.0));
-    let setup = env.gsp.game_state.0.phase == omdurman_rules::Phase::Setup;
+    .then(|| crate::fx::LiveChange::snapshot(&gsp.game_state.0));
+    let setup = gsp.game_state.0.phase == omdurman_rules::Phase::Setup;
     // The one application path (shared with replay): every variant reaches
     // the engine synchronously, in seq order.
-    let accepted = game_apply::apply_game_event(ev, &mut env.gsp.sinks());
+    let accepted = game_apply::apply_game_event(ev, &mut gsp.sinks());
     if accepted && let Some(before) = before {
-        let change = crate::fx::LiveChange::between(&before, &env.gsp.game_state.0, setup);
-        if let Some(live) = env.gsp.live_applied.as_mut()
+        let change = crate::fx::LiveChange::between(&before, &gsp.game_state.0, setup);
+        if let Some(live) = gsp.live_applied.as_mut()
             && !change.is_empty()
         {
             live.0.push(change);
         }
     }
-    env.gsp
-        .pending_observations
+    gsp.pending_observations
         .0
-        .extend(env.gsp.game_state.0.drain_observations());
+        .extend(gsp.game_state.0.drain_observations());
 }
 
 /// What [`handle_socket`] remembers between frames: what it has already
@@ -1222,23 +1213,25 @@ fn install_foreign_history(
             bot_driver,
             unit_paths,
             press,
+            rng,
             ..
         } = gsp;
-        let mut state = RebuildState {
-            commands: &mut *commands,
+        rebuild_state_to(
+            &record,
+            None,
+            rng,
             game_map,
-            sinks: game_apply::EventSinks {
+            loaded_annotations,
+            &mut game_apply::EventSinks {
                 game_state: &mut game_state.0,
                 seats,
                 local_setup_ready,
                 bot_driver,
-                loaded_annotations,
                 pending_map_load,
                 unit_paths,
                 press,
             },
-        };
-        rebuild_state_to(&record, None, &mut state);
+        );
     }
     // The installed line replaces ours in one jump: the counters
     // snap to it instead of playing out the difference.
@@ -1265,18 +1258,7 @@ fn install_foreign_history(
     // contiguous with the installed history.
     let ready = drain_contiguous(net, pending);
     apply_ready(
-        &mut ApplyEnv {
-            net,
-            pending,
-            turn,
-            gsp,
-            recorder,
-            state,
-            next_state,
-            targeted,
-            local_key,
-        },
-        ready,
+        net, pending, turn, gsp, recorder, state, next_state, targeted, local_key, ready,
     );
 }
 
@@ -1421,17 +1403,15 @@ pub(crate) fn handle_socket(
                     },
                 );
                 apply_ready(
-                    &mut ApplyEnv {
-                        net: &mut net,
-                        pending: &mut pending,
-                        turn: &mut turn,
-                        gsp: &mut gsp,
-                        recorder: &mut ctx.recorder,
-                        state: state.get(),
-                        next_state: &mut next_state,
-                        targeted: &mut targeted,
-                        local_key: local_key.0,
-                    },
+                    &mut net,
+                    &mut pending,
+                    &mut turn,
+                    &mut gsp,
+                    &mut ctx.recorder,
+                    state.get(),
+                    &mut next_state,
+                    &mut targeted,
+                    local_key.0,
                     ready,
                 );
             }
@@ -1953,6 +1933,7 @@ mod tests {
             .init_resource::<crate::bot_player::BotDriver>()
             .init_resource::<crate::picker::UnitPaths>()
             .init_resource::<crate::telegram::TelegramLog>()
+            .insert_resource(crate::GameRng::from_seed(1))
             .add_systems(Update, handle_socket);
         app
     }
