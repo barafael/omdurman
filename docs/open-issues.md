@@ -170,9 +170,6 @@ seat handling).
 - The LOS overlay has no ray between two chosen hexes.
 - Artillery-only targets (§6.61–6.63) get a refusal card on hover, but no
   board marker before it.
-- The unit inspector has no status pips (loaded, engines lost/drifting,
-  constructing, demolishing, retreated this turn), and there is no right-click
-  unit card.
 - Melee: every melee-capable unit of the selected hex attacks (no holding
   units back), and the UI declares from one hex only, though the engine
   accepts attackers from several adjacent hexes (§7.6).

@@ -328,6 +328,9 @@ pub fn draw_actions_section(
         if unit.state.demolishing {
             ui.colored_label(crate::ui::palette::RAIL_DIM, "demolishing this turn.");
         }
+        for line in unit_status_lines(&state.0, unit_id) {
+            crate::rulebook::refs_label(ui, &line, crate::ui::palette::RAIL_DIM, 12.0);
+        }
         // §5.43: a unit in enemy ZOC may withdraw at the start of its next
         // movement phase (or move directly into another enemy ZOC).
         if state.0.hex_in_enemy_zoc(
@@ -667,6 +670,48 @@ fn advance_hint(gs: &omdurman_rules::effects::GameState, out: &mut Vec<ActionHin
     }
 }
 
+/// What else stands on a unit's record this turn, for the inspector: what
+/// its status pips say (moved, fired, meleed, stopped in a ZOC), aboard a
+/// gunboat (§5.21), engines lost (§10.12), a retreat made (§7.5), and --
+/// in its own Movement phase -- why it may not move.
+pub(crate) fn unit_status_lines(
+    gs: &omdurman_rules::effects::GameState,
+    unit_id: omdurman_rules::UnitId,
+) -> Vec<String> {
+    let Some(unit) = gs.find_unit(unit_id) else {
+        return Vec::new();
+    };
+    let mut lines: Vec<String> = crate::render::pips_of(gs, unit_id)
+        .into_iter()
+        .map(|pip| format!("{}.", crate::render::Pip::meaning(pip)))
+        .collect();
+    if let Some(boat) = unit.state.loaded_on {
+        lines.push(format!(
+            "aboard {} (§5.21).",
+            crate::combat_ui::unit_name(boat, Some(gs))
+        ));
+    }
+    if unit.state.engines_lost {
+        lines.push("engines lost: drifts with the current (§10.12).".to_string());
+    }
+    let retreated = gs.turn_events.iter().any(|e| {
+        matches!(e, omdurman_rules::turn_summary::TurnEventRecord::Retreat { unit, .. } if *unit == unit_id)
+    });
+    if retreated {
+        lines.push("retreated this turn -- one retreat a turn (§7.5).".to_string());
+    }
+    if gs.phase == Phase::Movement
+        && unit.profile.identity.owner() == gs.active_player
+        && let Some(why) = gs.movement_blocker(unit_id)
+        && !unit.state.disrupted
+        // (A ZOC stop is already the pip's line.)
+        && !matches!(why, omdurman_rules::effects::RuleError::StoppedInEnemyZoc(_))
+    {
+        lines.push(format!("cannot move this turn: {why}."));
+    }
+    lines
+}
+
 fn selected_movement_detail(
     gs: &omdurman_rules::effects::GameState,
     selected: Option<(omdurman_rules::UnitId, HexCoord)>,
@@ -872,5 +917,42 @@ mod tests {
             "Fire 3 \u{b7} Melee \u{2014} \u{b7} Move 4 MP\nWeapon: Rifle"
         );
         assert!(!line.contains("Some") && !line.contains("None") && !line.contains('"'));
+    }
+}
+
+#[cfg(test)]
+mod status_line_tests {
+    use omdurman_rules::{UnitId, UnitPlacement};
+    use omdurman_types::{HexCoord, Player, Scenario};
+
+    /// The inspector reads a unit's record: what it did this turn, aboard
+    /// a gunboat, engines lost, a retreat made, and why it may not move.
+    #[test]
+    fn the_inspector_lists_a_units_record() {
+        let mut gs = omdurman_rules::effects::GameState::new(Scenario::Campaign);
+        gs.phase = omdurman_rules::Phase::Movement;
+        gs.active_player = Player::AngloEgyptian;
+        let boat = UnitId::BritishBoats_3_0;
+        gs.units.push(UnitPlacement {
+            id: boat,
+            position: HexCoord::new(3, 3),
+            profile: omdurman_rules::unit_profiles::profile_for_unit(boat).unwrap(),
+            state: omdurman_rules::UnitState {
+                engines_lost: true,
+                ..Default::default()
+            },
+        });
+        let lines = super::unit_status_lines(&gs, boat);
+        assert!(
+            lines.iter().any(|l| l.contains("engines lost")),
+            "{lines:?}"
+        );
+        assert!(
+            lines.iter().any(|l| l.contains("cannot move this turn")),
+            "{lines:?}"
+        );
+        gs.zoc_stopped_this_turn.push(boat);
+        let lines = super::unit_status_lines(&gs, boat);
+        assert!(lines.iter().any(|l| l.contains("§5.43")), "{lines:?}");
     }
 }
