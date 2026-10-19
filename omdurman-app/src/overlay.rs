@@ -8,36 +8,35 @@ use omdurman_hexmap::hex_world_pos;
 use omdurman_types::{HexCoord, OverlayParams};
 
 use crate::params::HexRender;
-use crate::render::HexRingAssets;
 
 /// A fresh overlay batch: the previous entities are queued for despawn, and
 /// each [`ring`](RingBatch::ring) call spawns one hex ring (shared hex-ring
 /// mesh) at this frame's board geometry.
-pub(crate) struct RingBatch<'a, 'w, 's, 'r> {
-    commands: &'a mut Commands<'w, 's>,
-    assets: &'r HexRingAssets,
+pub(crate) struct RingBatch {
+    mesh: Handle<Mesh>,
     origin: Vec2,
-    params: &'r OverlayParams,
-    size: f32,
+    params: OverlayParams,
 }
 
-impl<'a, 'w, 's, 'r> RingBatch<'a, 'w, 's, 'r> {
+impl RingBatch {
     /// Spawn one hex ring at `coord`, `height` above the plane, scaled by
     /// `scale` (1.0 = the full hex outline) and tinted with `material`.
     pub(crate) fn ring(
-        &mut self,
+        &self,
+        commands: &mut Commands,
         marker: impl Component,
         coord: HexCoord,
         height: f32,
         scale: f32,
         material: &Handle<StandardMaterial>,
     ) {
-        let pos = hex_world_pos(coord, self.origin, self.params);
-        self.commands.spawn((
+        let pos = hex_world_pos(coord, self.origin, &self.params);
+        commands.spawn((
             marker,
-            Mesh3d(self.assets.mesh.clone()),
+            Mesh3d(self.mesh.clone()),
             MeshMaterial3d(material.clone()),
-            Transform::from_xyz(pos.x, height, pos.z).with_scale(Vec3::splat(self.size * scale)),
+            Transform::from_xyz(pos.x, height, pos.z)
+                .with_scale(Vec3::splat(self.params.hex_size * scale)),
             Visibility::Visible,
         ));
     }
@@ -50,38 +49,27 @@ impl<'a, 'w, 's, 'r> RingBatch<'a, 'w, 's, 'r> {
 
     /// The batch's hex size.
     pub(crate) fn size(&self) -> f32 {
-        self.size
+        self.params.hex_size
     }
 
     /// The batch's overlay params, for spawns needing full layout math.
     pub(crate) fn params(&self) -> &OverlayParams {
-        self.params
-    }
-
-    /// Direct access to the batch's command queue, for spawns outside the
-    /// plain ring shape.
-    pub(crate) fn commands(&mut self) -> &mut Commands<'w, 's> {
-        self.commands
+        &self.params
     }
 }
 
 /// Despawn the previous overlay batch and return a builder for the new one.
-pub(crate) fn ring_batch<'a, 'w, 's, 'r, I>(
-    commands: &'a mut Commands<'w, 's>,
-    hex: &'r HexRender,
-    existing: I,
-) -> RingBatch<'a, 'w, 's, 'r>
-where
-    I: IntoIterator<Item = Entity>,
-{
+pub(crate) fn ring_batch(
+    commands: &mut Commands,
+    hex: &HexRender,
+    existing: impl IntoIterator<Item = Entity>,
+) -> RingBatch {
     for e in existing {
         commands.entity(e).despawn();
     }
     RingBatch {
-        commands,
-        assets: &hex.assets,
+        mesh: hex.assets.mesh.clone(),
         origin: hex.layout.adjusted_origin(&hex.overlay.params),
-        params: &hex.overlay.params,
-        size: hex.overlay.params.hex_size,
+        params: hex.overlay.params.clone(),
     }
 }

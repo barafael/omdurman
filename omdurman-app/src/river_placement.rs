@@ -142,16 +142,30 @@ pub(crate) fn mine_chain_overlay_mesh(
     if last.as_ref() == Some(&key) {
         return;
     }
-    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    let rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
 
     // Mines: compact red rings on their Nile hexes.
     for &mine in &key.mines {
-        rings.ring(MineChainMarker, mine, 0.7, 0.35, &hex.assets.red);
+        rings.ring(
+            &mut commands,
+            MineChainMarker,
+            mine,
+            0.7,
+            0.35,
+            &hex.assets.red,
+        );
     }
     // Chain: a grey ring on each known chained hex, and -- for the seat that
     // knows the whole line -- grey bars spanning consecutive hexes.
     for &chained in &key.chain {
-        rings.ring(MineChainMarker, chained, 0.7, 0.35, &hex.assets.gray);
+        rings.ring(
+            &mut commands,
+            MineChainMarker,
+            chained,
+            0.7,
+            0.35,
+            &hex.assets.gray,
+        );
     }
     let chain = if key.whole {
         key.chain.clone()
@@ -175,7 +189,7 @@ pub(crate) fn mine_chain_overlay_mesh(
         })
         .collect();
     for (mid, len, angle) in bars {
-        rings.commands().spawn((
+        commands.spawn((
             MineChainMarker,
             Mesh3d(hex.assets.unit_square.clone()),
             MeshMaterial3d(hex.assets.gray.clone()),
@@ -238,7 +252,7 @@ pub(crate) fn river_placement_band(
     if last.as_ref() == Some(&key) {
         return;
     }
-    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    let rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
     if placement.placing_mine || placement.placing_chain {
         let mut nile: Vec<omdurman_types::HexCoord> = gs
             .board
@@ -257,11 +271,25 @@ pub(crate) fn river_placement_band(
                 !placement.chain_hexes.contains(&h) && gs.can_plot_chain(&line).is_ok()
             };
             if legal {
-                rings.ring(RiverBandMarker, h, 0.65, 0.9, &hex.assets.light_green);
+                rings.ring(
+                    &mut commands,
+                    RiverBandMarker,
+                    h,
+                    0.65,
+                    0.9,
+                    &hex.assets.light_green,
+                );
             }
         }
         for &h in &placement.chain_hexes {
-            rings.ring(RiverBandMarker, h, 0.7, 0.6, &hex.assets.gray);
+            rings.ring(
+                &mut commands,
+                RiverBandMarker,
+                h,
+                0.7,
+                0.6,
+                &hex.assets.gray,
+            );
         }
     }
     *last = Some(key);

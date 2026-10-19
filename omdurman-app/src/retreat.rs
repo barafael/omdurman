@@ -169,9 +169,10 @@ pub fn retreat_overlay_mesh(
     if last.as_ref() == Some(&key) {
         return;
     }
-    let mut rings = crate::overlay::ring_batch(&mut commands, &arrows.hex, existing.iter());
+    let rings = crate::overlay::ring_batch(&mut commands, &arrows.hex, existing.iter());
     for target in &key.1 {
         rings.ring(
+            &mut commands,
             RetreatTargetRing,
             *target,
             1.5,
@@ -181,7 +182,7 @@ pub fn retreat_overlay_mesh(
     }
     if let Some([from, mid, to]) = path {
         for (a, b) in [(from, mid), (mid, to)] {
-            crate::combat_ui::direction_arrow(rings.commands(), &arrows, a, b, RetreatTargetRing);
+            crate::combat_ui::direction_arrow(&mut commands, &arrows, a, b, RetreatTargetRing);
         }
     }
     *last = Some(key);

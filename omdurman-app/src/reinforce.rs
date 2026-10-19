@@ -168,9 +168,16 @@ pub fn reinforce_entry_overlay_mesh(
     if last.as_ref() == Some(&targets) {
         return;
     }
-    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    let rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
     for &target in &targets {
-        rings.ring(ReinforceEntryRing, target, 1.4, 1.0, &hex.assets.green);
+        rings.ring(
+            &mut commands,
+            ReinforceEntryRing,
+            target,
+            1.4,
+            1.0,
+            &hex.assets.green,
+        );
     }
     *last = Some(targets);
 }

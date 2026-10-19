@@ -531,7 +531,7 @@ pub fn movement_overlay_mesh(
     }
 
     // Selection or remaining MP changed: rebuild from scratch.
-    let mut rings = crate::overlay::ring_batch(
+    let rings = crate::overlay::ring_batch(
         &mut commands,
         &hex,
         existing_gray.iter().chain(existing_zoc.iter()),
@@ -602,12 +602,26 @@ pub fn movement_overlay_mesh(
     for &reached in reached.iter().filter(|&&h| h != start_coord) {
         if stops.contains(&reached) {
             // Yellow: a terminus inside an enemy ZOC.
-            rings.ring(MovementZocRing, reached, 1.5, 1.0, &hex.assets.yellow);
+            rings.ring(
+                &mut commands,
+                MovementZocRing,
+                reached,
+                1.5,
+                1.0,
+                &hex.assets.yellow,
+            );
             zoc_spawned += 1;
         } else {
             // One colour for every reachable hex: a second (light green) for
             // the adjacent ones read as a different kind of move.
-            rings.ring(MovementRangeRing, reached, 1.5, 1.0, &hex.assets.reach);
+            rings.ring(
+                &mut commands,
+                MovementRangeRing,
+                reached,
+                1.5,
+                1.0,
+                &hex.assets.reach,
+            );
             gray_spawned += 1;
         }
     }

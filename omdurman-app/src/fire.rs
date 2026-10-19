@@ -541,7 +541,7 @@ pub fn fire_target_overlay_mesh(
     // only -- the hexes this selection could reach but for that rule get a
     // small grey inner ring, so they do not read as out of range.
     let artillery_only = artillery_only_hexes(&gs.0, &kinds);
-    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    let rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
     for (&target, band) in targets.iter().zip(bands) {
         // Firers to pick (no kinds) are green; a target is coloured by the
         // best range band any weapon of the selection reaches it in (§6.22).
@@ -557,10 +557,17 @@ pub fn fire_target_overlay_mesh(
                 }
             }
         };
-        rings.ring(FireTargetRing, target, 1.5, 1.0, material);
+        rings.ring(&mut commands, FireTargetRing, target, 1.5, 1.0, material);
     }
     for at in artillery_only {
-        rings.ring(FireTargetRing, at, 1.5, 0.6, &hex.assets.gray);
+        rings.ring(
+            &mut commands,
+            FireTargetRing,
+            at,
+            1.5,
+            0.6,
+            &hex.assets.gray,
+        );
     }
     *last = Some((kinds, targets));
 }
@@ -1292,9 +1299,10 @@ pub fn howitzer_impact_markers(
     if last.as_ref() == Some(&impacts) {
         return;
     }
-    let mut rings = crate::overlay::ring_batch(&mut commands, &arrows.hex, existing.iter());
+    let rings = crate::overlay::ring_batch(&mut commands, &arrows.hex, existing.iter());
     for &(_, impact) in &impacts {
         rings.ring(
+            &mut commands,
             HowitzerImpactMarker,
             impact,
             1.3,
@@ -1306,7 +1314,7 @@ pub fn howitzer_impact_markers(
     for &(aimed, impact) in &impacts {
         if aimed != impact {
             crate::combat_ui::direction_arrow(
-                rings.commands(),
+                &mut commands,
                 &arrows,
                 aimed,
                 impact,

@@ -290,15 +290,22 @@ pub fn melee_target_overlay_mesh(
     if last.as_ref() == Some(&drawn) {
         return;
     }
-    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    let rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
     for &target in &drawn.1 {
-        rings.ring(MeleeTargetRing, target, 1.5, 1.0, &hex.assets.orange);
+        rings.ring(
+            &mut commands,
+            MeleeTargetRing,
+            target,
+            1.5,
+            1.0,
+            &hex.assets.orange,
+        );
     }
     let origin = rings.origin();
     for (edge, open) in sides {
         let transform =
             crate::hexside_layer::hexside_bar_transform(&edge, origin, &hex.overlay, 0.14, 1.6);
-        rings.commands().spawn((
+        commands.spawn((
             MeleeTargetRing,
             Mesh3d(hex.assets.unit_square.clone()),
             MeshMaterial3d(if open {
@@ -1012,9 +1019,16 @@ pub fn advance_target_overlay_mesh(
     if last.as_ref() == Some(&drawn) {
         return;
     }
-    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    let rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
     for &target in &drawn {
-        rings.ring(AdvanceTargetRing, target, 1.5, 1.0, &hex.assets.light_green);
+        rings.ring(
+            &mut commands,
+            AdvanceTargetRing,
+            target,
+            1.5,
+            1.0,
+            &hex.assets.light_green,
+        );
     }
     *last = Some(drawn);
 }

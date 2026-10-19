@@ -89,7 +89,7 @@ pub fn los_ray(
     if ends == *last && !moved {
         return;
     }
-    let mut bars = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    let bars = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
     *last = ends;
     let (Some((from, to)), Some(gs)) = (ends, game_state.as_deref()) else {
         return;
@@ -106,7 +106,7 @@ pub fn los_ray(
         let len = pa.distance(pb).max(0.001);
         let dir = (pb - pa) / len;
         let angle = (-dir.z).atan2(dir.x);
-        bars.commands().spawn((
+        commands.spawn((
             LosRayBar,
             Mesh3d(hex.assets.unit_square.clone()),
             MeshMaterial3d(if clear {
@@ -271,12 +271,26 @@ pub fn los_overlay_mesh(
 
     // Just under the movement-path arrows (1.45): at their height the two
     // shared depth wherever an arrow crossed a ring and flickered.
-    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing);
+    let rings = crate::overlay::ring_batch(&mut commands, &hex, existing);
     for target in &analysis.clear {
-        rings.ring(LosRing, *target, 1.43, 1.0, &hex.assets.light_green);
+        rings.ring(
+            &mut commands,
+            LosRing,
+            *target,
+            1.43,
+            1.0,
+            &hex.assets.light_green,
+        );
     }
     for (target, _) in &analysis.blocked {
-        rings.ring(LosRing, *target, 1.43, 1.0, &hex.assets.marker_red);
+        rings.ring(
+            &mut commands,
+            LosRing,
+            *target,
+            1.43,
+            1.0,
+            &hex.assets.marker_red,
+        );
     }
     *last = Some(from);
 }

@@ -416,7 +416,7 @@ pub fn road_overlay(
     if *shown == want && !toggle.is_changed() {
         return;
     }
-    let mut bars = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    let bars = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
     *shown = want;
     if want.is_none() {
         return;
@@ -430,7 +430,7 @@ pub fn road_overlay(
         let len = a.distance(b).max(0.001);
         let dir = (b - a) / len;
         let angle = (-dir.z).atan2(dir.x);
-        bars.commands().spawn((
+        commands.spawn((
             RoadBar,
             Mesh3d(hex.assets.unit_square.clone()),
             MeshMaterial3d(hex.assets.blue.clone()),
@@ -481,13 +481,13 @@ pub fn mahdis_tomb_marker(
     if last.as_ref() == Some(&shown) {
         return;
     }
-    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    let rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
     if let Some((tomb, holder)) = shown {
         let material = match holder {
             omdurman_types::Player::AngloEgyptian => &hex.assets.blue,
             omdurman_types::Player::Dervish => &hex.assets.orange,
         };
-        rings.ring(MahdisTombMarker, tomb, 1.45, 1.05, material);
+        rings.ring(&mut commands, MahdisTombMarker, tomb, 1.45, 1.05, material);
     }
     *last = Some(shown);
 }

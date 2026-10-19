@@ -106,13 +106,20 @@ pub fn zoc_overlay_mesh(
         return;
     }
 
-    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing);
+    let rings = crate::overlay::ring_batch(&mut commands, &hex, existing);
     // Inset inside the hex edge, each side on its own ring: drawn on the
     // edge at the movement / fire / melee rings' height, the overlay fought
     // them (and, spectating, the other side's ring) for the same pixels and
     // flickered between the two colours.
     for (hex, material, nth) in spawns {
-        rings.ring(ZocRing, hex, 1.47 - 0.01 * nth, 0.9 - 0.08 * nth, &material);
+        rings.ring(
+            &mut commands,
+            ZocRing,
+            hex,
+            1.47 - 0.01 * nth,
+            0.9 - 0.08 * nth,
+            &material,
+        );
     }
 
     *last_zoc = Some(union);
