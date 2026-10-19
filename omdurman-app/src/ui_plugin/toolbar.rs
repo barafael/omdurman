@@ -155,7 +155,8 @@ pub(crate) fn mode_toolbar_ui(
                                         ui,
                                         "LOS",
                                         los.visible,
-                                        "Line of sight: hover a hex -- green rings are clear, red blocked (§6.3)",
+                                        "Line of sight: hover a hex -- green rings are clear, red blocked (§6.3); P pins \
+                                         the hovered hex as the origin and draws the line to the next one hovered",
                                     ) {
                                         los.visible = !los.visible;
                                         crate::ui_trace::button("overlay: LOS");

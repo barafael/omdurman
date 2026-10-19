@@ -32,6 +32,149 @@ pub(crate) struct LosRing;
 #[derive(Resource, Default)]
 pub struct LosOverlay {
     pub visible: bool,
+    /// The origin pinned with P: the overlay reads from it whatever is
+    /// hovered, and the ray to the hovered hex is drawn.
+    pub pinned: Option<HexCoord>,
+}
+
+/// Marker for one segment of the drawn line of sight.
+#[derive(Component)]
+pub(crate) struct LosRayBar;
+
+/// With the LOS overlay on, P pins the hovered hex as the origin (again on
+/// the same hex: unpins). Turning the overlay off drops the pin.
+pub fn pin_los_origin(
+    keys: Res<ButtonInput<KeyCode>>,
+    hovered: Res<crate::render::HoveredHex>,
+    mut toggle: ResMut<LosOverlay>,
+) {
+    if !toggle.visible {
+        if toggle.pinned.is_some() {
+            toggle.pinned = None;
+        }
+        return;
+    }
+    if keys.just_pressed(KeyCode::KeyP) {
+        toggle.pinned = match (toggle.pinned, hovered.0) {
+            (Some(pinned), Some(at)) if pinned == at => None,
+            (_, Some(at)) => Some(at),
+            (pinned, None) => pinned,
+        };
+    }
+}
+
+/// The line of sight from the pinned origin to the hovered hex (§6.3):
+/// green as far as it runs clear, red from the feature that blocks it on
+/// (the blocked hexes' labels name it). Rebuilt when either end or the
+/// game changes.
+#[allow(clippy::too_many_arguments)]
+pub fn los_ray(
+    mut commands: Commands,
+    hex: crate::HexRender,
+    toggle: Res<LosOverlay>,
+    hovered: Res<crate::render::HoveredHex>,
+    game_state: Option<Res<GameStateResource>>,
+    existing: Query<Entity, With<LosRayBar>>,
+    mut last: Local<Option<(HexCoord, HexCoord)>>,
+    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
+) {
+    if generation.invalidates(&mut seen_generation) {
+        *last = None;
+    }
+    let ends = toggle
+        .pinned
+        .filter(|_| toggle.visible)
+        .zip(hovered.0)
+        .filter(|(from, to)| from != to);
+    let moved = game_state.as_ref().is_some_and(|gs| gs.is_changed());
+    if ends == *last && !moved {
+        return;
+    }
+    let mut bars = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    *last = ends;
+    let (Some((from, to)), Some(gs)) = (ends, game_state.as_deref()) else {
+        return;
+    };
+    let gs = &gs.0;
+    let segments = los_segments(gs, from, to);
+    let origin = bars.origin();
+    let params = &hex.overlay.params;
+    let size = bars.size();
+    for ((a, b), clear) in segments {
+        let pa = hex_world_pos(a, origin, params);
+        let pb = hex_world_pos(b, origin, params);
+        let mid = (pa + pb) * 0.5;
+        let len = pa.distance(pb).max(0.001);
+        let dir = (pb - pa) / len;
+        let angle = (-dir.z).atan2(dir.x);
+        bars.commands().spawn((
+            LosRayBar,
+            Mesh3d(hex.assets.unit_square.clone()),
+            MeshMaterial3d(if clear {
+                hex.assets.green.clone()
+            } else {
+                hex.assets.red.clone()
+            }),
+            Transform::from_translation(Vec3::new(mid.x, 1.7, mid.z))
+                .with_rotation(
+                    Quat::from_rotation_y(angle)
+                        * Quat::from_rotation_x(-std::f32::consts::PI / 2.0),
+                )
+                .with_scale(Vec3::new(len, size * 0.08, 1.0)),
+            Visibility::Visible,
+        ));
+    }
+}
+
+/// The line from `from` to `to` (§6.3) hex to hex, each step marked clear
+/// until the feature that blocks it: the engine's ray analysis, a ground
+/// level shot as the overlay reads.
+pub(crate) fn los_segments(
+    gs: &omdurman_rules::effects::GameState,
+    from: HexCoord,
+    to: HexCoord,
+) -> Vec<((HexCoord, HexCoord), bool)> {
+    let steps = los_path_analysis(
+        &gs.board,
+        from,
+        to,
+        FireKind::Direct,
+        gs.target_los_level(from),
+        gs.target_los_level(to),
+        gs.los_unit_blocker(),
+        |a, b| gs.wall_is_breached(a, b),
+    );
+    // Where the sight ends: the blocking hex, or the near side of a blocking
+    // hexside.
+    let block = steps.iter().find_map(|(_, r)| match r {
+        LosStepResult::Blocked { hex, .. } => Some(*hex),
+        LosStepResult::BlockedHexside { a, .. } => Some(*a),
+        LosStepResult::Clear => None,
+    });
+    let line: Vec<HexCoord> = steps
+        .iter()
+        .map(|(h, _)| *h)
+        .chain(
+            omdurman_rules::los_table::los_ray_sides(from, to)[0]
+                .iter()
+                .copied(),
+        )
+        .fold(Vec::new(), |mut line, h| {
+            if !line.contains(&h) {
+                line.push(h);
+            }
+            line
+        });
+    let mut clear = true;
+    line.windows(2)
+        .map(|pair| {
+            let segment = ((pair[0], pair[1]), clear);
+            if Some(pair[1]) == block || Some(pair[0]) == block {
+                clear = false;
+            }
+            segment
+        })
+        .collect()
 }
 
 /// Maximum direct-fire range on either board's range-effects table (§6.11):
@@ -63,7 +206,9 @@ pub fn update_los_analysis(
     mut analysis: ResMut<LosAnalysis>,
 ) {
     let hovered_from = hovered.0;
+    // A pinned origin (P) wins over the hovered hex and the firing group.
     let from = match game_state.as_deref() {
+        _ if toggle.pinned.is_some() => toggle.pinned,
         Some(gs) if gs.0.phase.is_fire() => {
             fire_selection(&picker, &placed_units, &gs.0).map(|g| g.firer_hex)
         }
@@ -311,5 +456,32 @@ mod tests {
         let mid = los_label_size(50.0).expect("a 50 px hex still carries a tag");
         assert!((7.0..11.0).contains(&mid), "{mid}");
         assert_eq!(los_label_size(30.0), None, "too small to carry a tag");
+    }
+}
+
+#[cfg(test)]
+mod ray_tests {
+    use omdurman_rules::{UnitId, UnitPlacement};
+    use omdurman_types::{HexCoord, Scenario};
+
+    /// §6.3: on open ground the line runs clear; a unit in its middle
+    /// blocks it from there on.
+    #[test]
+    fn a_unit_on_the_line_blocks_it_from_there_on() {
+        let mut gs = omdurman_rules::effects::GameState::new(Scenario::Campaign);
+        gs.board = omdurman_rules::board_data::board_info(omdurman_types::MapKind::Campaign);
+        let (from, to) = (HexCoord::new(20, 20), HexCoord::new(23, 20));
+        let open = super::los_segments(&gs, from, to);
+        assert_eq!(open.len(), 3, "{open:?}");
+        assert!(open.iter().all(|(_, clear)| *clear), "{open:?}");
+        gs.units.push(UnitPlacement {
+            id: UnitId::Baggara_0_0,
+            position: HexCoord::new(21, 20),
+            profile: omdurman_rules::unit_profiles::profile_for_unit(UnitId::Baggara_0_0).unwrap(),
+            state: Default::default(),
+        });
+        let blocked = super::los_segments(&gs, from, to);
+        assert!(blocked[0].1, "the sight reaches the unit");
+        assert!(blocked[1..].iter().all(|(_, clear)| !*clear), "{blocked:?}");
     }
 }

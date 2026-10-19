@@ -1126,6 +1126,7 @@ type OverlayRingEntities<'w, 's> = Query<
         With<crate::river_placement::RiverBandMarker>,
         With<crate::render::MahdisTombMarker>,
         With<crate::render::NileFlowArrow>,
+        With<crate::los::LosRayBar>,
         With<crate::reinforce::ReinforceEntryRing>,
     )>,
 >;

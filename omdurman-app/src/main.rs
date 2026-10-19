@@ -222,8 +222,10 @@ fn add_game(app: &mut App, room: String) {
             Update,
             (
                 crate::zoc::zoc_overlay_mesh,
+                crate::los::pin_los_origin.run_if(crate::hotkeys::keyboard_free),
                 crate::los::update_los_analysis,
                 crate::los::los_overlay_mesh,
+                crate::los::los_ray,
                 crate::los::los_blocked_labels,
             )
                 .chain()
