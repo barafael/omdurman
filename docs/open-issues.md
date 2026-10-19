@@ -171,8 +171,6 @@ seat handling).
   three-hex halo of the counter in hand (`historical_set_up_area`); the
   hover tooltip names why a hex is refused.
 - The LOS overlay has no ray between two chosen hexes.
-- Every fire target gets the same red ring (`fire_target_overlay_mesh`): there
-  is no colouring by range band (×3/×2/×1/×½).
 - Melee target rings don't mark wall hexsides as blocked, or gates and breaches
   as open (§7.2).
 - Artillery-only targets (§6.61–6.63) get a refusal card on hover, but no

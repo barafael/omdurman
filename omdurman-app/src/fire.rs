@@ -534,16 +534,62 @@ pub fn fire_target_overlay_mesh(
     {
         return;
     }
+    let bands: Vec<omdurman_rules::RangeBand> = targets
+        .iter()
+        .map(|&target| best_band(&gs.0, &kinds, target))
+        .collect();
     let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
-    let material = if kinds.is_empty() {
-        &hex.assets.green
-    } else {
-        &hex.assets.red
-    };
-    for &target in &targets {
+    for (&target, band) in targets.iter().zip(bands) {
+        // Firers to pick (no kinds) are green; a target is coloured by the
+        // best range band any weapon of the selection reaches it in (§6.22).
+        let material = if kinds.is_empty() {
+            &hex.assets.green
+        } else {
+            match band {
+                omdurman_rules::RangeBand::Tripled => &hex.assets.red,
+                omdurman_rules::RangeBand::Doubled => &hex.assets.orange,
+                omdurman_rules::RangeBand::Normal => &hex.assets.yellow,
+                omdurman_rules::RangeBand::Halved | omdurman_rules::RangeBand::OutOfRange => {
+                    &hex.assets.gray
+                }
+            }
+        };
         rings.ring(FireTargetRing, target, 1.5, 1.0, material);
     }
     *last = Some((kinds, targets));
+}
+
+/// The best range band (§6.22) any of `kinds`' weapons reaches `target`
+/// in: a unit's main weapon, or a named gunboat's Maxims (§2.32).
+fn best_band(
+    gs: &GameState,
+    kinds: &[(UnitId, FireKind)],
+    target: HexCoord,
+) -> omdurman_rules::RangeBand {
+    use omdurman_rules::RangeBand;
+    let rank = |b: RangeBand| match b {
+        RangeBand::Tripled => 4,
+        RangeBand::Doubled => 3,
+        RangeBand::Normal => 2,
+        RangeBand::Halved => 1,
+        RangeBand::OutOfRange => 0,
+    };
+    let maxims = gunboat_maxim_kind(gs);
+    kinds
+        .iter()
+        .flat_map(|&(id, kind)| {
+            let main = gs.find_unit(id).and_then(|u| {
+                omdurman_rules::effects::build_fire_attack_from(gs, u.position, &[id], target, kind)
+            });
+            let gunboat = maxims.and_then(|mk| {
+                omdurman_rules::effects::build_gunboat_maxim_attack(gs, id, target, mk)
+            });
+            main.into_iter().chain(gunboat)
+        })
+        .flat_map(|attack| omdurman_rules::effects::firer_contributions(gs, &attack))
+        .map(|c| c.band)
+        .max_by_key(|b| rank(*b))
+        .unwrap_or(RangeBand::OutOfRange)
 }
 
 // -- Fire direction arrow: red arrow from firer to hovered target ----------
@@ -1238,5 +1284,44 @@ mod tests {
         let third = click_attacks(&gs, &group, &kinds, target, &both);
         assert!(!third.is_empty());
         assert!(third.iter().all(|a| uses_allocated_weapon(a, &both)));
+    }
+}
+
+#[cfg(test)]
+mod band_ring_tests {
+    use omdurman_rules::{FireKind, Phase, RangeBand, UnitId, UnitPlacement};
+    use omdurman_types::{HexCoord, Player, Scenario};
+
+    /// A target's ring shows the best band the selection reaches it in
+    /// (§6.22): an adjacent target in a better band than a distant one.
+    #[test]
+    fn a_closer_target_rings_in_a_better_band() {
+        let mut gs = omdurman_rules::effects::GameState::new(Scenario::Campaign);
+        gs.phase = Phase::OffensiveFire(omdurman_rules::FireSubPhase::DirectFire);
+        gs.active_player = Player::AngloEgyptian;
+        for (id, hex) in [
+            (UnitId::BritishArmy_0_0, HexCoord::new(0, 0)),
+            (UnitId::Baggara_0_0, HexCoord::new(1, 0)),
+            (UnitId::Baggara_0_1, HexCoord::new(4, 0)),
+        ] {
+            gs.units.push(UnitPlacement {
+                id,
+                position: hex,
+                profile: omdurman_rules::unit_profiles::profile_for_unit(id).unwrap(),
+                state: Default::default(),
+            });
+        }
+        let kinds = [(UnitId::BritishArmy_0_0, FireKind::Direct)];
+        let near = super::best_band(&gs, &kinds, HexCoord::new(1, 0));
+        let far = super::best_band(&gs, &kinds, HexCoord::new(4, 0));
+        assert!(
+            matches!(near, RangeBand::Tripled | RangeBand::Doubled),
+            "{near:?}"
+        );
+        assert_ne!(near, far);
+        assert_eq!(
+            super::best_band(&gs, &kinds, HexCoord::new(9, 0)),
+            RangeBand::OutOfRange
+        );
     }
 }

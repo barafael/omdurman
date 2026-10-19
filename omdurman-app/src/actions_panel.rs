@@ -585,7 +585,13 @@ fn collect_hints(
                         ),
                         n => hint(
                             "Click an enemy hex to aim at it",
-                            n.map(|n| format!("{n} target hex{}", if n == 1 { "" } else { "es" })),
+                            n.map(|n| {
+                                format!(
+                                    "{n} target hex{}; rings by best range band (§6.22): red \
+                                     \u{d7}3, orange \u{d7}2, yellow \u{d7}1, grey \u{bd}",
+                                    if n == 1 { "" } else { "es" }
+                                )
+                            }),
                         ),
                     },
                 );
