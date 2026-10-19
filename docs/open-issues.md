@@ -173,9 +173,6 @@ seat handling).
 - The LOS overlay has no ray between two chosen hexes.
 - Artillery-only targets (§6.61–6.63) get a refusal card on hover, but no
   board marker before it.
-- Howitzer fire: impact rings are drawn and the result card names the impact
-  hex, but there is no aimed-to-impact arrow and no warning when the shot lands
-  on friendly units (§6.64).
 - The retreat overlay shows the destinations but not the two-hex path (§7.5).
 - The unit inspector has no status pips (loaded, engines lost/drifting,
   constructing, demolishing, retreated this turn), and there is no right-click
@@ -183,8 +180,6 @@ seat handling).
 - Melee: every melee-capable unit of the selected hex attacks (no holding
   units back), and the UI declares from one hex only, though the engine
   accepts attackers from several adjacent hexes (§7.6).
-- The fire tray lets artillery at a garrisoned fort choose the fort or the
-  garrison, but the preview card on hover shows the garrison shot only.
 - The phase-sequence indicator (`UiPhaseState::phase_sequence`) has four rungs,
   folding Direct and Maxim/Howitzer fire into one.
 - Polish: selection pulse, howitzer scatter animation, Zariba build animation.

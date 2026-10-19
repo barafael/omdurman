@@ -947,6 +947,60 @@ pub fn fire_combat_preview_ui(
     let bands = crate::combat_predict::outcome_bands(factor_row, net_mod);
     let special = omdurman_rules::effects::special_target_threshold(&gs.0, attack);
 
+    // §6.54/§6.62: at a garrisoned enemy fort the artillery may aim at the
+    // fort itself instead of the units inside -- the card shows that choice
+    // too, with its odds (destroyed on a "2" or more).
+    if !attack.at_fort
+        && let Some(at_fort) = omdurman_rules::effects::aim_at_fort(&gs.0, attack)
+        && let Ok(ctx) = contexts.ctx_mut()
+    {
+        let rolls = fort_destroying_rolls(&gs.0, &at_fort);
+        crate::ui::passive_stacked_card(
+            ctx,
+            &mut layout,
+            egui::Id::new("fire_preview_fort"),
+            crate::ui::frames::card(crate::ui::palette::CARD_FIRE),
+            |ui| {
+                crate::rulebook::refs_label(
+                    ui,
+                    &format!(
+                        "Or aim at the fort itself (§6.62): destroyed on {rolls} in 10, and \
+                         one unit inside falls with it -- switch the aim in the tray."
+                    ),
+                    crate::ui::palette::TEXT_MUTED,
+                    12.0,
+                );
+            },
+        );
+    }
+
+    // §6.64: "the results must take effect, even if the fire scatters into a
+    // friendly-occupied hex" -- say beforehand how often a shell would.
+    if kind == FireKind::Howitzer
+        && let Some((rolls, hexes)) = howitzer_friendly_risk(&gs.0, target, firing_player)
+        && let Ok(ctx) = contexts.ctx_mut()
+    {
+        let at: Vec<String> = hexes.iter().map(|h| h.to_string()).collect();
+        crate::ui::passive_stacked_card(
+            ctx,
+            &mut layout,
+            egui::Id::new("fire_preview_scatter"),
+            crate::ui::frames::card(crate::ui::palette::CARD_FIRE),
+            |ui| {
+                crate::rulebook::refs_label(
+                    ui,
+                    &format!(
+                        "Scatter risk: {rolls} in 10, a shell lands on your own units at {} \
+                         (§6.64).",
+                        at.join(", ")
+                    ),
+                    crate::ui::palette::CAUTION,
+                    12.0,
+                );
+            },
+        );
+    }
+
     let Ok(ctx) = contexts.ctx_mut() else { return };
     use bevy_egui::egui;
     crate::ui::passive_stacked_card(
@@ -1183,10 +1237,10 @@ pub fn fire_combat_preview_ui(
 /// the phase.
 pub fn howitzer_impact_markers(
     mut commands: Commands,
-    hex: crate::HexRender,
+    arrows: crate::DirectionArrowCtx,
     game_state: Res<GameStateResource>,
     existing: Query<Entity, With<HowitzerImpactMarker>>,
-    mut last: Local<Option<Vec<omdurman_types::HexCoord>>>,
+    mut last: Local<Option<Vec<(HexCoord, HexCoord)>>>,
     (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
     // Rebuilt only when the impacts change (the engine state moved) or the
@@ -1198,29 +1252,93 @@ pub fn howitzer_impact_markers(
         return;
     }
     let gs = game_state;
-    let impacts: Vec<omdurman_types::HexCoord> = gs
-        .0
-        .turn_events
-        .iter()
-        .filter_map(|e| match e {
-            omdurman_rules::turn_summary::TurnEventRecord::HowitzerImpact { at, .. } => Some(*at),
-            _ => None,
-        })
-        .collect();
+    // (aimed, landed) per shell this turn, a shell lost off the map apart.
+    let impacts: Vec<(HexCoord, HexCoord)> =
+        gs.0.turn_events
+            .iter()
+            .filter_map(|e| match e {
+                omdurman_rules::turn_summary::TurnEventRecord::HowitzerImpact {
+                    aimed,
+                    at,
+                    lost: false,
+                    ..
+                } => Some((*aimed, *at)),
+                _ => None,
+            })
+            .collect();
     if last.as_ref() == Some(&impacts) {
         return;
     }
-    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
-    for &impact in &impacts {
+    let mut rings = crate::overlay::ring_batch(&mut commands, &arrows.hex, existing.iter());
+    for &(_, impact) in &impacts {
         rings.ring(
             HowitzerImpactMarker,
             impact,
             1.3,
             1.0,
-            &hex.assets.fire_arrow,
+            &arrows.hex.assets.fire_arrow,
         );
     }
+    // §6.64: a scattered shell's way from the hex it was aimed at.
+    for &(aimed, impact) in &impacts {
+        if aimed != impact {
+            crate::combat_ui::direction_arrow(
+                rings.commands(),
+                &arrows,
+                aimed,
+                impact,
+                HowitzerImpactMarker,
+            );
+        }
+    }
     *last = Some(impacts);
+}
+
+/// How many of the ten rolls destroy the fort `attack` is aimed at (§6.62:
+/// a result of 2 or more), on the attack's factor row and modifiers.
+pub(crate) fn fort_destroying_rolls(gs: &GameState, attack: &FireAttack) -> u8 {
+    let contributions = omdurman_rules::effects::firer_contributions(gs, attack);
+    let row = omdurman_rules::combat_results_table::FireFactorRow::from_total(
+        omdurman_rules::effects::total_fire_factor(&contributions),
+    );
+    let (terrain, hexside) = target_defence_modifiers(gs, attack);
+    let net = attack.net_modifier() + terrain + hexside;
+    let needed = omdurman_rules::effects::special_target_threshold(gs, attack).unwrap_or(2);
+    crate::combat_predict::outcome_bands(row, net)
+        .iter()
+        .filter(|b| matches!(b.result, omdurman_rules::CombatResult::Eliminate(n) if n >= needed))
+        .map(|b| b.hi - b.lo + 1)
+        .sum()
+}
+
+/// How many of the ten impact rolls put a shell aimed at `target` on a hex
+/// holding `player`'s own units (§6.64 Scattergram), and those hexes;
+/// `None` when no roll does.
+pub(crate) fn howitzer_friendly_risk(
+    gs: &GameState,
+    target: HexCoord,
+    player: omdurman_types::Player,
+) -> Option<(usize, Vec<HexCoord>)> {
+    let mut rolls = 0;
+    let mut hexes: Vec<HexCoord> = Vec::new();
+    for value in 1..=10u16 {
+        let roll = omdurman_rules::DieRoll::try_from(value).ok()?;
+        let at = omdurman_rules::howitzer_scatter::scatter_impact_hex(
+            target,
+            omdurman_rules::howitzer_scatter::howitzer_scatter(roll),
+        );
+        if gs
+            .units
+            .iter()
+            .any(|u| u.position == at && u.profile.identity.owner() == player)
+        {
+            rolls += 1;
+            if !hexes.contains(&at) {
+                hexes.push(at);
+            }
+        }
+    }
+    (rolls > 0).then_some((rolls, hexes))
 }
 
 /// Marker component for a howitzer shell-burst ring.
@@ -1323,5 +1441,98 @@ mod band_ring_tests {
             super::best_band(&gs, &kinds, HexCoord::new(9, 0)),
             RangeBand::OutOfRange
         );
+    }
+}
+
+#[cfg(test)]
+mod scatter_risk_tests {
+    use omdurman_rules::{UnitId, UnitPlacement};
+    use omdurman_types::{HexCoord, Player, Scenario};
+
+    /// §6.64: a shell aimed beside one's own units may land on them; the
+    /// risk counts the impact rolls that would.
+    #[test]
+    fn the_scatter_risk_counts_rolls_onto_own_units() {
+        let mut gs = omdurman_rules::effects::GameState::new(Scenario::Campaign);
+        let target = HexCoord::new(5, 5);
+        let stray = omdurman_rules::howitzer_scatter::scatter_impact_hex(
+            target,
+            omdurman_rules::howitzer_scatter::howitzer_scatter(
+                omdurman_rules::DieRoll::try_from(1u16).unwrap(),
+            ),
+        );
+        assert!(super::howitzer_friendly_risk(&gs, target, Player::AngloEgyptian).is_none());
+        gs.units.push(UnitPlacement {
+            id: UnitId::BritishArmy_0_0,
+            position: stray,
+            profile: omdurman_rules::unit_profiles::profile_for_unit(UnitId::BritishArmy_0_0)
+                .unwrap(),
+            state: Default::default(),
+        });
+        let (rolls, hexes) =
+            super::howitzer_friendly_risk(&gs, target, Player::AngloEgyptian).expect("a risk");
+        assert_eq!(rolls, 1);
+        assert_eq!(hexes, vec![stray]);
+        assert!(super::howitzer_friendly_risk(&gs, target, Player::Dervish).is_none());
+    }
+}
+
+#[cfg(test)]
+mod fort_aim_tests {
+    use omdurman_rules::{FireKind, Phase, UnitId, UnitPlacement};
+    use omdurman_types::{HexCoord, Player, Scenario};
+
+    /// §6.62: batteries next to a garrisoned fort may aim at the fort; the
+    /// preview's odds count the rolls of 2 or more.
+    #[test]
+    fn a_garrisoned_fort_offers_its_own_odds() {
+        let mut gs = omdurman_rules::effects::GameState::new(Scenario::Campaign);
+        gs.phase = Phase::OffensiveFire(omdurman_rules::FireSubPhase::DirectFire);
+        gs.active_player = Player::AngloEgyptian;
+        let fort = UnitId::ALL
+            .iter()
+            .copied()
+            .find(|id| {
+                omdurman_rules::unit_profiles::profile_for_unit(*id).is_some_and(|p| {
+                    matches!(p.identity, omdurman_rules::UnitIdentity::DervishFort)
+                })
+            })
+            .expect("a Dervish fort");
+        let battery = UnitId::ALL
+            .iter()
+            .copied()
+            .find(|id| {
+                omdurman_rules::unit_profiles::profile_for_unit(*id).is_some_and(|p| {
+                    matches!(
+                        p.identity,
+                        omdurman_rules::UnitIdentity::AngloEgyptianArtillery
+                    )
+                })
+            })
+            .expect("a battery");
+        let target = HexCoord::new(1, 0);
+        for (id, hex) in [
+            (battery, HexCoord::new(0, 0)),
+            (fort, target),
+            (UnitId::Baggara_0_0, target),
+        ] {
+            gs.units.push(UnitPlacement {
+                id,
+                position: hex,
+                profile: omdurman_rules::unit_profiles::profile_for_unit(id).unwrap(),
+                state: Default::default(),
+            });
+        }
+        let attack = omdurman_rules::effects::build_fire_attack_from(
+            &gs,
+            HexCoord::new(0, 0),
+            &[battery],
+            target,
+            FireKind::Direct,
+        )
+        .expect("the battery may fire");
+        let at_fort = omdurman_rules::effects::aim_at_fort(&gs, &attack).expect("artillery");
+        let rolls = super::fort_destroying_rolls(&gs, &at_fort);
+        assert!((1..=10).contains(&rolls), "{rolls}");
     }
 }
