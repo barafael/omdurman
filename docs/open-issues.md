@@ -161,9 +161,6 @@ seat handling).
 
 ## UI
 
-- The dispatch line says "may advance" for every `HexVacatedByCombat`, even
-  after a §7.6 forced advance, and the rail's `advance_hint` calls every
-  advance "optional (§6.82)". There is no advance reminder at End Phase.
 - Deployment traps get no warning (e.g. the Hogali pocket in Fall of Khartoum).
 - Fired pips are never drawn: the acted rings mark movement only
   (`TODO(acted-universal)` in `render.rs`; the engine's

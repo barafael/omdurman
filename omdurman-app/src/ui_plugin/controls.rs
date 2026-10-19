@@ -36,6 +36,43 @@ pub(crate) fn end_phase_preview(
     })
 }
 
+/// The hexes ending the phase would close to an advance after combat that a
+/// unit of the phasing side could still make (§6.82; §7.6 for the
+/// Anglo-Egyptian player, whose advance is optional) -- the End Phase
+/// button asks before letting them lapse.
+pub(crate) fn advances_lost_by_ending(
+    gs: &omdurman_rules::effects::GameState,
+    unconfirmed: &[omdurman_net::GameEvent],
+) -> Vec<omdurman_types::HexCoord> {
+    let now = crate::submit::projected_state(gs, unconfirmed);
+    let open: Vec<omdurman_types::HexCoord> = now
+        .vacated_by_combat
+        .iter()
+        .filter(|(hex, eligible)| {
+            eligible
+                .iter()
+                .any(|&id| now.can_advance_after_combat(id, **hex).is_ok())
+        })
+        .map(|(hex, _)| *hex)
+        .collect();
+    if open.is_empty() {
+        return open;
+    }
+    let mut next = now.clone();
+    if omdurman_rules::effects::apply_effect(
+        &mut next,
+        &omdurman_rules::effects::GameEffect::AdvancePhase,
+    )
+    .is_err()
+    {
+        return Vec::new();
+    }
+    // The §6.42 bridge keeps the windows open into the second subphase.
+    open.into_iter()
+        .filter(|hex| !next.vacated_by_combat.contains_key(hex))
+        .collect()
+}
+
 /// The End Phase request for the phase `gs` is in, stamped with it (§4): the
 /// engine refuses it once that phase has ended, so a second request for the
 /// same phase -- a double click, a teammate's click within the same round
@@ -96,6 +133,8 @@ fn end_phase_hotkey(modifiers: egui::Modifiers, events: &[egui::Event]) -> bool 
 struct EndPhasePreviewCache {
     unconfirmed_len: usize,
     next: Result<String, omdurman_rules::effects::RuleError>,
+    /// [`advances_lost_by_ending`].
+    lost_advances: Vec<omdurman_types::HexCoord>,
 }
 
 pub(crate) fn game_control_section(
@@ -236,22 +275,24 @@ fn end_phase_button(
     let cached = ui
         .data(|d| d.get_temp::<EndPhasePreviewCache>(preview_id))
         .filter(|c| !state_moved && c.unconfirmed_len == unconfirmed_len);
-    let next = match cached {
-        Some(cached) => cached.next,
+    let (next, lost_advances) = match cached {
+        Some(cached) => (cached.next, cached.lost_advances),
         None => {
             let unconfirmed: Vec<omdurman_net::GameEvent> =
                 pending.unconfirmed.iter().map(|(_, e)| e.clone()).collect();
             let next = end_phase_preview(&state.0, &unconfirmed);
+            let lost_advances = advances_lost_by_ending(&state.0, &unconfirmed);
             ui.data_mut(|d| {
                 d.insert_temp(
                     preview_id,
                     EndPhasePreviewCache {
                         unconfirmed_len,
                         next: next.clone(),
+                        lost_advances: lost_advances.clone(),
                     },
                 )
             });
-            next
+            (next, lost_advances)
         }
     };
     let current = crate::ui_phase_state::UiPhaseState::derive(&state.0).phase_label();
@@ -282,7 +323,10 @@ fn end_phase_button(
     let staged = allocation
         .as_ref()
         .filter(|a| !a.committed)
-        .map_or(0, |a| a.attacks.len());
+        .map_or(0, |a| a.staged());
+    // Ending the phase would discard staged fire or let an advance lapse:
+    // ask first.
+    let needs_confirm = staged > 0 || !lost_advances.is_empty();
     // The armed (awaiting-confirm) state is keyed on the phase, so it never
     // survives into the next phase.
     let armed_id = egui::Id::new("end_phase_discard_armed");
@@ -292,22 +336,38 @@ fn end_phase_button(
         state.0.active_player,
         state.0.phase
     );
-    let armed = staged > 0
+    let armed = needs_confirm
         && ui.data(|d| d.get_temp::<String>(armed_id)).as_deref() == Some(phase_key.as_str());
     let hover = format!("End {current}; next: {next}");
     if armed {
         let s = if staged == 1 { "" } else { "s" };
+        let hexes: Vec<String> = lost_advances.iter().map(|h| h.to_string()).collect();
+        let (question, why) = match (staged, hexes.is_empty()) {
+            (0, _) => (
+                format!("Skip the advance into {} & end phase?", hexes.join(", ")),
+                "Units may still advance into the vacated hex (§6.82, §7.6).",
+            ),
+            (_, true) => (
+                format!("Discard {staged} attack{s} & end phase?"),
+                "The staged fire allocations have not been resolved.",
+            ),
+            _ => (
+                format!(
+                    "Discard {staged} attack{s}, skip the advance into {} & end phase?",
+                    hexes.join(", ")
+                ),
+                "Staged fire is unresolved, and units may still advance (§6.82, §7.6).",
+            ),
+        };
         let confirm = ui
-            .add(
-                egui::Button::new(format!("Discard {staged} attack{s} & end phase?"))
-                    .fill(crate::ui::palette::BTN_DANGER),
-            )
-            .on_hover_text("The staged fire allocations have not been resolved.");
-        let keep = ui.button("Keep them");
+            .add(egui::Button::new(question).fill(crate::ui::palette::BTN_DANGER))
+            .on_hover_text(why);
+        let keep = ui.button("Go back");
         if confirm.clicked() {
             ui.data_mut(|d| d.remove::<String>(armed_id));
             if let Some(allocation) = allocation {
                 allocation.attacks.clear();
+                allocation.specials.clear();
                 allocation.panel_open = false;
             }
             crate::ui_trace::button("End Phase (discard allocations)");
@@ -327,7 +387,7 @@ fn end_phase_button(
         .clicked()
         || hotkey
     {
-        if staged > 0 {
+        if needs_confirm {
             ui.data_mut(|d| d.insert_temp(armed_id, phase_key));
         } else {
             crate::ui_trace::button("End Phase");
@@ -871,6 +931,30 @@ mod tests {
             .expect_err("an empty deployment cannot advance");
         let got = end_phase_preview(&gs, &[]).expect_err("preview must refuse too");
         assert_eq!(got.to_string(), expected.to_string());
+    }
+
+    /// §6.82/§7.6: ending the phase asks first when it would let an open
+    /// advance lapse -- not when the §6.42 bridge keeps it open.
+    #[test]
+    fn an_open_advance_is_one_ending_the_phase_would_let_lapse() {
+        use omdurman_rules::{UnitId, UnitPlacement, unit_profiles::profile_for_unit};
+        use omdurman_types::{HexCoord, Player};
+        let mut gs = GameState::new(Scenario::Campaign);
+        gs.active_player = Player::AngloEgyptian;
+        let battalion = UnitId::BritishArmy_0_0;
+        gs.units.push(UnitPlacement {
+            id: battalion,
+            position: HexCoord::new(0, 0),
+            profile: profile_for_unit(battalion).unwrap(),
+            state: Default::default(),
+        });
+        let vacated = HexCoord::new(1, 0);
+        gs.vacated_by_combat.insert(vacated, vec![battalion]);
+        gs.phase = Phase::Melee;
+        assert_eq!(super::advances_lost_by_ending(&gs, &[]), vec![vacated]);
+        // Direct fire to the Maxim subphase: the window stays open.
+        gs.phase = Phase::OffensiveFire(omdurman_rules::FireSubPhase::DirectFire);
+        assert!(super::advances_lost_by_ending(&gs, &[]).is_empty());
     }
 
     #[test]

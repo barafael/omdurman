@@ -654,7 +654,7 @@ fn advance_hint(gs: &omdurman_rules::effects::GameState, out: &mut Vec<ActionHin
         out.push(ActionHint {
             label: format!("May advance into {hex}: select a unit, then click the hex"),
             detail: Some(format!(
-                "optional (\u{00a7}6.82): {}",
+                "optional (\u{00a7}6.82 after fire, \u{00a7}7.6 after melee): {}",
                 crate::combat_ui::tally_names(names).join(", ")
             )),
         });
