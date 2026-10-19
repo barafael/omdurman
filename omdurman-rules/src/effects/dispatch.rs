@@ -646,33 +646,12 @@ pub fn finish_game(state: &mut GameState) {
 
     match state.scenario {
         Scenario::Campaign => {
-            // §9.14 alternative auto-decisive conditions:
-            //   AE decisive if every Dervish unit (incl. gunboats and forts)
-            //   has been eliminated.
-            //   Dervish decisive if all Anglo-Egyptian *west-bank* units
-            //   (excl. gunboats) have been eliminated -- judged only once
-            //   there were such units: some fell on the west bank and none
-            //   stand there now. "Friendlies" count once carried across
-            //   (§5.21); on the east bank they are not west-bank units.
-            let no_dervish = !state
-                .units
-                .iter()
-                .any(|u| u.profile.identity.owner() == Player::Dervish);
-            let no_ae_west_bank = state.ae_lost_on_west_bank
-                && !state.units.iter().any(|u| {
-                    u.profile.identity.owner() == Player::AngloEgyptian
-                        && !matches!(u.profile.kind, UnitKind::Gunboat { .. })
-                        && state.board.bank_of(u.position) == Some(crate::board::NileBank::West)
-                });
             let ae = state.victory.total_for(Player::AngloEgyptian);
             let d = state.victory.total_for(Player::Dervish);
             let superiority = ae.0 - d.0;
-            let level = if no_dervish {
-                CampaignVictoryLevel::Decisive(Player::AngloEgyptian)
-            } else if no_ae_west_bank {
-                CampaignVictoryLevel::Decisive(Player::Dervish)
-            } else {
-                CampaignVictoryLevel::from_superiority(crate::VictoryPoints(superiority))
+            let level = match campaign_decisive_by(state) {
+                Some(winner) => CampaignVictoryLevel::Decisive(winner),
+                None => CampaignVictoryLevel::from_superiority(crate::VictoryPoints(superiority)),
             };
             state.game_result = Some(crate::GameResult::Campaign(level));
         }
@@ -696,6 +675,33 @@ pub fn finish_game(state: &mut GameState) {
             );
             state.game_result = Some(crate::GameResult::FoK(level));
         }
+    }
+}
+
+/// The Campaign's alternative decisive victories (§9.14), whatever the
+/// victory points: the Anglo-Egyptian player's when every Dervish unit
+/// (gunboats and forts included) has been eliminated; the Dervish player's
+/// when all Anglo-Egyptian *west-bank* units (gunboats excepted) have been
+/// -- judged only once there were such units: some fell on the west bank and
+/// none stand there now. "Friendlies" count once carried across (§5.21); on
+/// the east bank they are not west-bank units.
+pub fn campaign_decisive_by(state: &GameState) -> Option<Player> {
+    let no_dervish = !state
+        .units
+        .iter()
+        .any(|u| u.profile.identity.owner() == Player::Dervish);
+    let no_ae_west_bank = state.ae_lost_on_west_bank
+        && !state.units.iter().any(|u| {
+            u.profile.identity.owner() == Player::AngloEgyptian
+                && !matches!(u.profile.kind, UnitKind::Gunboat { .. })
+                && state.board.bank_of(u.position) == Some(crate::board::NileBank::West)
+        });
+    if no_dervish {
+        Some(Player::AngloEgyptian)
+    } else if no_ae_west_bank {
+        Some(Player::Dervish)
+    } else {
+        None
     }
 }
 

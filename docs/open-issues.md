@@ -189,9 +189,6 @@ seat handling).
 - The unit inspector has no status pips (loaded, engines lost/drifting,
   constructing, demolishing, retreated this turn), and there is no right-click
   unit card.
-- The game-over screen leaves out the victory arithmetic (§9.14 superiority
-  table, §9.24 level subtraction, the alternative decisive victories), and the
-  VP ledger hides zero-count rows.
 - Melee: every melee-capable unit of the selected hex attacks (no holding
   units back), and the UI declares from one hex only, though the engine
   accepts attackers from several adjacent hexes (§7.6).

@@ -437,7 +437,6 @@ fn historical_scoreboard(ui: &mut egui::Ui, state: &crate::GameStateResource) {
 /// `game_control_section` so the FoK scenario can swap in its own
 /// victory-progress panel ([`crate::fok_panel::fok_status_section`]) instead.
 fn victory_point_scoreboard(ui: &mut egui::Ui, state: &crate::GameStateResource) {
-    use omdurman_rules::VpSource;
     let ae_vp = state
         .0
         .victory
@@ -498,68 +497,19 @@ fn victory_point_scoreboard(ui: &mut egui::Ui, state: &crate::GameStateResource)
             crate::ui::palette::TEXT_MUTED,
             12.0,
         );
-        let tally = |src: VpSource| -> i32 {
-            state
-                .0
-                .victory
-                .events
-                .iter()
-                .filter(|e| e.source == src)
-                .map(|e| e.source.points().value())
-                .sum()
-        };
-        let ae_sources = [
-            VpSource::MahdisTombTaken,
-            VpSource::IsaZachneihEliminated,
-            VpSource::KhalifaEliminated,
-            VpSource::DervishUnitEliminated,
-        ];
-        let dv_sources = [
-            VpSource::MahdisTombHeld,
-            VpSource::BritishLeaderEliminated,
-            VpSource::BritishGunboatSunk,
-            VpSource::FriendliesEastBankEliminated,
-            VpSource::FriendliesWestBankEliminated,
-            VpSource::AngloEgyptianLandUnitEliminated,
-        ];
-        let has_ae = ae_sources.iter().any(|s| tally(*s) > 0);
-        let has_dv = dv_sources.iter().any(|s| tally(*s) > 0);
-        if has_ae {
-            ui.colored_label(crate::ui::palette::AE, "Anglo-Egyptian:");
-            for src in &ae_sources {
-                let pts = tally(*src);
-                if pts > 0 {
-                    ui.label(format!("  {src}: {pts}"));
+        // Every source, its count and points -- a zero row says what is
+        // still to be won (§9.14).
+        for (player, sources) in super::victory::VP_SOURCES {
+            ui.colored_label(crate::ui::faction_color(player), format!("{player}:"));
+            for &src in sources {
+                let n = super::victory::vp_count(&state.0, src);
+                let pts = src.points().value();
+                let line = format!("  {src}: {n} \u{d7} {pts}");
+                if n == 0 {
+                    ui.colored_label(crate::ui::palette::TEXT_DIM, line);
+                } else {
+                    ui.label(format!("{line} = {}", n as i32 * pts));
                 }
-            }
-        }
-        if has_dv {
-            ui.colored_label(crate::ui::palette::DERVISH, "Dervish:");
-            for src in &dv_sources {
-                let pts = tally(*src);
-                if pts > 0 {
-                    ui.label(format!("  {src}: {pts}"));
-                }
-            }
-        }
-        if !has_ae && !has_dv {
-            ui.colored_label(crate::ui::palette::TEXT_DIM, "No scoring yet.");
-        }
-
-        // Last 5 VP events (most recent last).
-        let recent: Vec<&omdurman_rules::VpEvent> =
-            state.0.victory.events.iter().rev().take(5).collect();
-        if !recent.is_empty() {
-            ui.add_space(2.0);
-            ui.colored_label(crate::ui::palette::TEXT_MUTED, "Recent:");
-            for ev in recent.iter().rev() {
-                let who = ev.source.who_scores();
-                let pts = ev.source.points().value();
-                let color = crate::ui::faction_color(who);
-                ui.colored_label(
-                    color,
-                    format!("  T{}: {} (+{pts})", ev.turn.value(), ev.source),
-                );
             }
         }
     });

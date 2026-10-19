@@ -324,7 +324,7 @@ impl FoKVictoryLevel {
     /// `gordon_died_turn` is `None` if GORDON was still alive at scenario end;
     /// `scenario_end_turn` is the 1-based turn on which the game ended (the
     /// scenario's max is 8 per the FoK turn track).
-    fn base(gordon_died_turn: Option<u8>, scenario_end_turn: u8) -> Self {
+    pub fn base(gordon_died_turn: Option<u8>, scenario_end_turn: u8) -> Self {
         match gordon_died_turn {
             Some(t) if t <= 4 => FoKVictoryLevel::DervishDecisive,
             Some(5) => FoKVictoryLevel::DervishTactical,
