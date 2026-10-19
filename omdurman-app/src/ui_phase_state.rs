@@ -232,26 +232,47 @@ impl UiPhaseState {
     }
 
     /// Compact phase-sequence indicator: four labels with the current one
-    /// bracketed and completed ones checked.  Used by the status bar.
+    /// bracketed and completed ones checked -- a fire phase in progress
+    /// naming its subphase, Direct (§6.41) or Maxim/Howitzer (§6.42). Used
+    /// by the status bar.
     pub fn phase_sequence(self) -> String {
-        let (m, d, o, me): (&str, &str, &str, &str) = match self {
+        let sub = |s: FireSubKind| match s {
+            FireSubKind::Direct => "Direct",
+            FireSubKind::MaximHowitzer => "Maxim/Howitzer",
+        };
+        let (m, d, o, me): (String, String, String, String) = match self {
             Self::NoGame | Self::Setup | Self::GameOver => return self.phase_label().to_string(),
             Self::Turn {
                 phase: PhaseKind::Movement,
                 ..
-            } => ("[Mov]", "Def", "Off", "Melee"),
+            } => ("[Mov]".into(), "Def".into(), "Off".into(), "Melee".into()),
             Self::Turn {
-                phase: PhaseKind::DefensiveFire(_),
+                phase: PhaseKind::DefensiveFire(s),
                 ..
-            } => ("\u{2713} Mov", "[Def]", "Off", "Melee"),
+            } => (
+                "\u{2713} Mov".into(),
+                format!("[Def: {}]", sub(s)),
+                "Off".into(),
+                "Melee".into(),
+            ),
             Self::Turn {
-                phase: PhaseKind::OffensiveFire(_),
+                phase: PhaseKind::OffensiveFire(s),
                 ..
-            } => ("\u{2713} Mov", "\u{2713} Def", "[Off]", "Melee"),
+            } => (
+                "\u{2713} Mov".into(),
+                "\u{2713} Def".into(),
+                format!("[Off: {}]", sub(s)),
+                "Melee".into(),
+            ),
             Self::Turn {
                 phase: PhaseKind::Melee,
                 ..
-            } => ("\u{2713} Mov", "\u{2713} Def", "\u{2713} Off", "[Melee]"),
+            } => (
+                "\u{2713} Mov".into(),
+                "\u{2713} Def".into(),
+                "\u{2713} Off".into(),
+                "[Melee]".into(),
+            ),
         };
         format!("{m} > {d} > {o} > {me}")
     }
@@ -624,6 +645,24 @@ mod tests {
         assert!(seq.contains("Def"));
         // §4: defensive fire comes after movement, not before it.
         assert!(!seq.contains("\u{2713} Def"));
+    }
+
+    /// The fire rung in progress names its subphase (§6.41, §6.42).
+    #[test]
+    fn phase_sequence_names_the_fire_subphase() {
+        let seq = |phase| {
+            UiPhaseState::Turn {
+                active: Player::AngloEgyptian,
+                night: false,
+                phase,
+            }
+            .phase_sequence()
+        };
+        assert!(seq(PhaseKind::DefensiveFire(FireSubKind::Direct)).contains("[Def: Direct]"));
+        assert!(
+            seq(PhaseKind::OffensiveFire(FireSubKind::MaximHowitzer))
+                .contains("[Off: Maxim/Howitzer]")
+        );
     }
 
     #[test]

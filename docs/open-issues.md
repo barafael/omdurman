@@ -176,8 +176,6 @@ seat handling).
 - Melee: every melee-capable unit of the selected hex attacks (no holding
   units back), and the UI declares from one hex only, though the engine
   accepts attackers from several adjacent hexes (§7.6).
-- The phase-sequence indicator (`UiPhaseState::phase_sequence`) has four rungs,
-  folding Direct and Maxim/Howitzer fire into one.
 - Polish: selection pulse, howitzer scatter animation, Zariba build animation.
 - Unconfirmed, from the play-test and review notes:
   - Fire slips pile up.
