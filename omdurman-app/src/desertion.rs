@@ -193,11 +193,18 @@ pub(crate) fn desertion_panel_ui(
                         if unit.profile.identity.owner() != Player::Dervish {
                             continue;
                         }
+                        let label = unit.profile.identity.short_label();
+                        // The Khalifa, gunboats, artillery and forts may not
+                        // desert (§8.2): listed, greyed out, saying why.
                         if unit.profile.identity.is_desertion_exempt() {
+                            ui.add_enabled(false, egui::Button::selectable(false, label))
+                                .on_disabled_hover_text(
+                                    "Exempt (§8.2): the Khalifa, gunboats, artillery and forts \
+                                     never desert.",
+                                );
                             continue;
                         }
                         let is_selected = desertion.selected.contains(&unit.id);
-                        let label = unit.profile.identity.short_label();
                         if ui.selectable_label(is_selected, label).clicked() {
                             if is_selected {
                                 desertion.selected.retain(|id| id != &unit.id);
@@ -208,6 +215,9 @@ pub(crate) fn desertion_panel_ui(
                     }
                 }
             });
+            ui.label(crate::ui::text::note(
+                "Deserters leave the game: they score no victory points for either side (§8.2).",
+            ));
             ui.add_space(4.0);
             let (status, done) = desertion_status(count, desertion.selected.len());
             ui.label(

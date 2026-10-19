@@ -172,8 +172,6 @@ seat handling).
 - Historical set-up shows the union of the leaders' zones, not the per-leader
   three-hex halo of the counter in hand (`historical_set_up_area`); the
   hover tooltip names why a hex is refused.
-- The desertion panel hides exempt units instead of greying them out, and has
-  no "no VP for deserters" note (§8.2).
 - The LOS overlay has no ray between two chosen hexes.
 - Every fire target gets the same red ring (`fire_target_overlay_mesh`): there
   is no colouring by range band (×3/×2/×1/×½).
