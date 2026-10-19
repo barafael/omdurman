@@ -555,7 +555,7 @@ fn shadow_offsets() -> Vec<Vec2> {
 
 /// Show the screen that is up, lay it out for the window, and point the
 /// backdrop at the show's current pose.
-#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+#[allow(clippy::type_complexity)]
 pub(super) fn sync_splash_screen(
     app_state: Res<State<AppState>>,
     screen_up: Option<Res<State<Screen>>>,

@@ -247,7 +247,6 @@ fn spawn_transient(
 }
 
 /// Turn [`FxRequest`]s into marks at this board's geometry.
-#[allow(clippy::too_many_arguments)]
 pub fn spawn_fx(
     mut requests: MessageReader<FxRequest>,
     settings: Res<MotionSettings>,

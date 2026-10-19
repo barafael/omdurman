@@ -7,8 +7,8 @@
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use omdurman_hexmap::{
-    GameMap, HexLayout, HexOverlay, MapDims, MapPlane, MapTextureCache, PlaneTextureStores,
-    apply_map_data_to_plane, load_map_data,
+    GameMap, HexLayout, HexOverlay, MapDims, MapPlane, MapTextureCache, apply_map_data_to_plane,
+    load_map_data,
 };
 use omdurman_types::{HexCoord, MapData, MapKind};
 
@@ -155,12 +155,10 @@ pub fn load_board(
     *ctx.layout = calibrated_layout(map);
     apply_map_data_to_plane(
         plane,
-        &mut PlaneTextureStores {
-            meshes,
-            materials,
-            cache: &mut ctx.cache,
-            asset_server,
-        },
+        meshes,
+        materials,
+        &mut ctx.cache,
+        asset_server,
         &map.image,
         map.img_w,
         map.img_h,

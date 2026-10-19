@@ -34,30 +34,18 @@ impl MapTextureCache {
     }
 }
 
-/// Bundle of the mutable asset stores + the asset server + the texture cache
-/// so [`apply_map_data_to_plane`] stays under clippy's argument limit.
-pub struct PlaneTextureStores<'a> {
-    pub meshes: &'a mut Assets<Mesh>,
-    pub materials: &'a mut Assets<StandardMaterial>,
-    pub cache: &'a mut MapTextureCache,
-    pub asset_server: &'a AssetServer,
-}
-
 /// Re-size and re-texture the existing map plane to a board's image and
 /// dimensions (§dual-map). Used when a scenario selects a board.
 pub fn apply_map_data_to_plane(
     plane: &Query<(&Mesh3d, &MeshMaterial3d<StandardMaterial>), With<MapPlane>>,
-    stores: &mut PlaneTextureStores<'_>,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    cache: &mut MapTextureCache,
+    asset_server: &AssetServer,
     image: &str,
     img_w: f32,
     img_h: f32,
 ) {
-    let PlaneTextureStores {
-        meshes,
-        materials,
-        cache,
-        asset_server,
-    } = stores;
     let Ok((mesh, material)) = plane.single() else {
         return;
     };

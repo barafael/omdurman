@@ -96,19 +96,16 @@ fn log_observation(obs: &Observation) {
         ),
         Observation::MeleeResolved {
             attack,
-            attacker_roll,
-            attacker_result,
-            defender_roll,
-            defender_result,
-            attacker_losses,
+            attacker,
+            defender,
             ..
         } => info!(
             attack = ?attack,
-            attacker_roll = ?attacker_roll,
-            attacker_result = ?attacker_result,
-            defender_roll = ?defender_roll,
-            defender_result = ?defender_result,
-            attacker_losses = attacker_losses.len(),
+            attacker_roll = ?attacker.roll,
+            attacker_result = ?attacker.result,
+            defender_roll = ?defender.roll,
+            defender_result = ?defender.result,
+            attacker_losses = attacker.losses.len(),
             "melee resolved"
         ),
         Observation::UnitEliminated { id, cause, .. } => {

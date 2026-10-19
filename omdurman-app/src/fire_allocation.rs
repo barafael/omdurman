@@ -277,22 +277,15 @@ pub(crate) fn draw_staged_attacks(
     gs: &omdurman_rules::effects::GameState,
     allocation: &mut FireAllocationState,
 ) {
-    let mut remove_self: Option<usize> = None;
+    let mut row_action: Option<(usize, RowAction)> = None;
     let mut remove_special: Option<usize> = None;
-    let mut toggle_aim: Option<usize> = None;
-    // (index, up): move an attack one place earlier or later -- the order
-    // the attacks resolve in (§6.41: "in any order he wishes").
-    let mut reorder: Option<(usize, bool)> = None;
     let count = allocation.attacks.len();
     ui.scope(|ui| {
         ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
         for (i, attack) in allocation.attacks.iter().enumerate() {
-            let row = RowActions {
-                remove_self: &mut remove_self,
-                toggle_aim: &mut toggle_aim,
-                reorder: (count > 1).then_some(&mut reorder),
-            };
-            draw_allocation_row(ui, gs, attack, row, i, count);
+            if let Some(action) = draw_allocation_row(ui, gs, attack, i, count) {
+                row_action = Some((i, action));
+            }
             ui.add_space(4.0);
         }
         for (i, order) in allocation.specials.iter().enumerate() {
@@ -331,27 +324,29 @@ pub(crate) fn draw_staged_attacks(
     if let Some(idx) = remove_special {
         allocation.specials.remove(idx);
     }
-    if let Some((idx, up)) = reorder {
-        let other = if up {
-            idx.checked_sub(1)
-        } else {
-            Some(idx + 1)
-        };
-        if let Some(other) = other.filter(|&o| o < allocation.attacks.len()) {
-            allocation.attacks.swap(idx, other);
+    let Some((idx, action)) = row_action else {
+        return;
+    };
+    match action {
+        RowAction::Remove => {
+            allocation.attacks.remove(idx);
         }
-    }
-    if let Some(idx) = remove_self {
-        allocation.attacks.remove(idx);
-    } else if let Some(idx) = toggle_aim
-        && let Some(attack) = allocation.attacks.get_mut(idx)
-    {
-        // §6.54/§6.62: artillery at a garrisoned fort fires at the fort or
-        // at the units inside it.
-        if attack.at_fort {
-            attack.at_fort = false;
-        } else if let Some(aimed) = omdurman_rules::effects::aim_at_fort(gs, attack) {
-            *attack = aimed;
+        RowAction::Earlier if idx > 0 => allocation.attacks.swap(idx, idx - 1),
+        RowAction::Later if idx + 1 < allocation.attacks.len() => {
+            allocation.attacks.swap(idx, idx + 1)
+        }
+        RowAction::Earlier | RowAction::Later => {}
+        RowAction::ToggleAim => {
+            let Some(attack) = allocation.attacks.get_mut(idx) else {
+                return;
+            };
+            // §6.54/§6.62: artillery at a garrisoned fort fires at the fort
+            // or at the units inside it.
+            if attack.at_fort {
+                attack.at_fort = false;
+            } else if let Some(aimed) = omdurman_rules::effects::aim_at_fort(gs, attack) {
+                *attack = aimed;
+            }
         }
     }
 }
@@ -404,28 +399,25 @@ fn draw_special_row(
 /// One allocation row: firers (with factors) → target, kind, range band, the
 /// net die modifier (mandatory set + which sections contribute), and the CRT
 /// row. Keep it dense enough to scan several attacks at once.
-/// What a click in an allocation row asks for: remove it, toggle its aim
-/// at a garrisoned fort, move it up or down (`None`: a lone attack has no
-/// order to change).
-pub(crate) struct RowActions<'a> {
-    pub remove_self: &'a mut Option<usize>,
-    pub toggle_aim: &'a mut Option<usize>,
-    pub reorder: Option<&'a mut Option<(usize, bool)>>,
+/// What a click in an allocation row asks for.
+pub(crate) enum RowAction {
+    Remove,
+    /// Toggle its aim at a garrisoned fort: the fort or the garrison.
+    ToggleAim,
+    /// Resolve it one place earlier or later -- the order the attacks
+    /// resolve in (§6.41: "in any order he wishes").
+    Earlier,
+    Later,
 }
 
 fn draw_allocation_row(
     ui: &mut egui::Ui,
     gs: &omdurman_rules::effects::GameState,
     attack: &FireAttack,
-    actions: RowActions<'_>,
     index: usize,
     count: usize,
-) {
-    let RowActions {
-        remove_self,
-        toggle_aim,
-        reorder,
-    } = actions;
+) -> Option<RowAction> {
+    let mut action = None;
     let kind = match attack.kind {
         FireKind::Direct => "Direct",
         FireKind::MaximSecondFire => "Maxim 2nd",
@@ -505,23 +497,24 @@ fn draw_allocation_row(
                 )
                 .clicked()
             {
-                *remove_self = Some(index);
+                action = Some(RowAction::Remove);
             }
-            // The order the attacks resolve in (§6.41).
-            if let Some(reorder) = reorder {
+            // The order the attacks resolve in (§6.41); a lone attack has
+            // none to change.
+            if count > 1 {
                 if ui
                     .add_enabled(index > 0, egui::Button::new("\u{25b2}").small())
                     .on_hover_text("Resolve earlier")
                     .clicked()
                 {
-                    *reorder = Some((index, true));
+                    action = Some(RowAction::Earlier);
                 }
                 if ui
                     .add_enabled(index + 1 < count, egui::Button::new("\u{25bc}").small())
                     .on_hover_text("Resolve later")
                     .clicked()
                 {
-                    *reorder = Some((index, false));
+                    action = Some(RowAction::Later);
                 }
             }
             // Wraps: a combined fire lists a dozen weapons.
@@ -565,10 +558,11 @@ fn draw_allocation_row(
                 "Aimed at the garrison, -3 (§6.54) -- aim at the fort instead"
             };
             if ui.small_button(label).clicked() {
-                *toggle_aim = Some(index);
+                action = Some(RowAction::ToggleAim);
             }
         }
     });
+    action
 }
 
 /// Consume the [`FireAllocationState`] list: pre-roll dice for every
@@ -856,12 +850,7 @@ mod tray_layout_tests {
                 egui::Frame::NONE,
                 |ui| {
                     ui.set_width(width);
-                    let row = RowActions {
-                        remove_self: &mut None,
-                        toggle_aim: &mut None,
-                        reorder: None,
-                    };
-                    draw_allocation_row(ui, &gs, &attack, row, 0, 1);
+                    draw_allocation_row(ui, &gs, &attack, 0, 1);
                 },
             );
         });

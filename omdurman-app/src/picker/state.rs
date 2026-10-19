@@ -209,8 +209,8 @@ pub struct TileSelection {
 
 /// Owned snapshot of the picker state driving a click or hotkey. Copied out
 /// of `PickerState` before the match so the arms can re-borrow it mutably
-/// (to hand `&mut` back into a [`SelectedClick`] / [`SelectedStackClick`]
-/// or to build a replacement state) without aliasing the match scrutinee.
+/// (to hand the picker context to a click handler or to build a
+/// replacement state) without aliasing the match scrutinee.
 pub(crate) enum ActiveSelection {
     Idle,
     Placing {

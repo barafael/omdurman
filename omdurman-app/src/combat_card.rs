@@ -22,7 +22,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 
 use omdurman_rules::combat_results_table::FireFactorRow;
-use omdurman_rules::effects::Observation;
+use omdurman_rules::effects::{MeleeSide, Observation};
 use omdurman_rules::{CombatResult, DieRoll, FireAttack, MeleeAttack, MeleeModifier, UnitId};
 use omdurman_types::{HexCoord, Player};
 
@@ -48,18 +48,6 @@ struct FireResolution {
     factor_row: FireFactorRow,
     effective_factor: u16,
     result: CombatResult,
-}
-
-/// Bundle of one melee side's resolution outputs (roll, modifiers, result,
-/// factor, losses) so [`build_melee_card`] stays under clippy's argument limit.
-/// Used for both the attacker and defender halves of a melee resolution.
-struct MeleeSideResolution<'a> {
-    roll: DieRoll,
-    total_modifier: i16,
-    modified_roll: DieRoll,
-    result: CombatResult,
-    factor: u16,
-    losses: &'a [UnitId],
 }
 
 pub struct CombatCardPlugin;
@@ -244,39 +232,15 @@ fn drain_combat_observations(
             }
             Observation::MeleeResolved {
                 attack,
-                attacker_roll,
-                attacker_total_modifier,
-                attacker_modified_roll,
-                attacker_result,
-                defender_roll,
-                defender_total_modifier,
-                defender_modified_roll,
-                defender_result,
-                attacker_factor,
-                defender_factor,
-                attacker_losses,
-                defender_losses,
+                attacker,
+                defender,
                 mandatory_advance,
                 paragraphs,
             } => build_melee_card(
                 attack,
                 *mandatory_advance,
-                MeleeSideResolution {
-                    roll: *attacker_roll,
-                    total_modifier: *attacker_total_modifier,
-                    modified_roll: *attacker_modified_roll,
-                    result: *attacker_result,
-                    factor: *attacker_factor,
-                    losses: attacker_losses,
-                },
-                MeleeSideResolution {
-                    roll: *defender_roll,
-                    total_modifier: *defender_total_modifier,
-                    modified_roll: *defender_modified_roll,
-                    result: *defender_result,
-                    factor: *defender_factor,
-                    losses: defender_losses,
-                },
+                attacker,
+                defender,
                 paragraphs,
                 gs,
             ),
@@ -387,56 +351,41 @@ fn build_fire_card(
 fn build_melee_card(
     attack: &MeleeAttack,
     mandatory_advance: Option<u8>,
-    attacker: MeleeSideResolution,
-    defender: MeleeSideResolution,
+    attacker: &MeleeSide,
+    defender: &MeleeSide,
     paragraphs: &[String],
     gs: Option<&omdurman_rules::effects::GameState>,
 ) -> CombatCardEntry {
-    let MeleeSideResolution {
-        roll: attacker_roll,
-        total_modifier: attacker_total_modifier,
-        modified_roll: attacker_modified_roll,
-        result: attacker_result,
-        factor: attacker_factor,
-        losses: attacker_losses,
-    } = attacker;
-    let MeleeSideResolution {
-        roll: defender_roll,
-        total_modifier: defender_total_modifier,
-        modified_roll: defender_modified_roll,
-        result: defender_result,
-        factor: defender_factor,
-        losses: defender_losses,
-    } = defender;
-    let att_row = FireFactorRow::from_total(attacker_factor);
-    let def_row = FireFactorRow::from_total(defender_factor);
-    let attacker = CombatSide {
+    let attacker_card = CombatSide {
         player: attack.attacker_player,
         units_label: list_units(&attack.attackers, gs),
-        factor: attacker_factor,
-        factor_row_label: att_row.label().to_string(),
-        roll: attacker_roll,
-        modifiers: melee_modifier_lines(&attack.attacker_modifiers, attacker_total_modifier),
-        net_modifier: attacker_total_modifier,
-        modified_roll: attacker_modified_roll,
+        factor: attacker.factor,
+        factor_row_label: FireFactorRow::from_total(attacker.factor)
+            .label()
+            .to_string(),
+        roll: attacker.roll,
+        modifiers: melee_modifier_lines(&attack.attacker_modifiers, attacker.total_modifier),
+        net_modifier: attacker.total_modifier,
+        modified_roll: attacker.modified_roll,
         // Melee is simultaneous: each roll strikes the other side, so the
         // result says whom -- beside "lost:", the side's own casualties, a
         // bare "→ Disrupt" read as what befell the side itself.
-        result_label: format!("{} on the defenders", describe_result(attacker_result)),
-        losses: list_unit_names(attacker_losses, gs),
+        result_label: format!("{} on the defenders", describe_result(attacker.result)),
+        losses: list_unit_names(&attacker.losses, gs),
     };
-    let defender_player = attack.attacker_player.opponent();
-    let defender = CombatSide {
-        player: defender_player,
+    let defender_card = CombatSide {
+        player: attack.attacker_player.opponent(),
         units_label: list_units(&attack.defenders, gs),
-        factor: defender_factor,
-        factor_row_label: def_row.label().to_string(),
-        roll: defender_roll,
-        modifiers: melee_modifier_lines(&attack.defender_modifiers, defender_total_modifier),
-        net_modifier: defender_total_modifier,
-        modified_roll: defender_modified_roll,
-        result_label: format!("{} on the attackers", describe_result(defender_result)),
-        losses: list_unit_names(defender_losses, gs),
+        factor: defender.factor,
+        factor_row_label: FireFactorRow::from_total(defender.factor)
+            .label()
+            .to_string(),
+        roll: defender.roll,
+        modifiers: melee_modifier_lines(&attack.defender_modifiers, defender.total_modifier),
+        net_modifier: defender.total_modifier,
+        modified_roll: defender.modified_roll,
+        result_label: format!("{} on the attackers", describe_result(defender.result)),
+        losses: list_unit_names(&defender.losses, gs),
     };
     let hex_label = target_hex_label(attack.defender_hex, gs);
     let paragraphs = paragraphs.to_vec();
@@ -464,8 +413,8 @@ fn build_melee_card(
         kind: CombatKind::Melee,
         target_hex: attack.defender_hex,
         hex_label,
-        attacker,
-        defender: Some(defender),
+        attacker: attacker_card,
+        defender: Some(defender_card),
         paragraphs,
         note,
         focus: vec![attack.attacker_hex, attack.defender_hex],

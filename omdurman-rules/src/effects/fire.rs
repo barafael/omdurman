@@ -524,7 +524,6 @@ pub(crate) fn fort_occupants(
 /// Infallible: all legality was established by [`validate_fire_resolution`].
 /// `chosen` is the owner's choice of the units a numbered result (or a
 /// destroyed fort, §6.62) takes (§7.7); `None` takes them in casualty order.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn commit_fire_attack(
     state: &mut GameState,
     attack: &FireAttack,

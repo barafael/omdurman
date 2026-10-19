@@ -105,7 +105,6 @@ fn frame_begins(mut stats: ResMut<FrameStats>) {
     stats.frame_start = Some(Instant::now());
 }
 
-#[allow(clippy::too_many_arguments)]
 fn frame_ends(
     mut stats: ResMut<FrameStats>,
     activity: Res<crate::activity::Activity>,

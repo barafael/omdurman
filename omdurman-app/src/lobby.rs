@@ -254,16 +254,17 @@ fn start_clicked(battle_active: bool, confirm_restart: &mut bool) -> bool {
 }
 
 /// The lobby's view of a battle in progress: whether one is, the host's
-/// pending "abandon it?" confirmation, and the "Return to game" request.
-struct RunningBattle<'a> {
+/// pending "abandon it?" confirmation, and this frame's "Return to game"
+/// request.
+#[derive(Default)]
+pub struct RunningBattle {
     active: bool,
-    confirm_restart: &'a mut bool,
+    confirm_restart: bool,
     return_to_game: bool,
 }
 
 /// The lobby screen. Shown only in [`AppState::Lobby`] (gated at the system
 /// registration site).
-#[allow(clippy::too_many_arguments)]
 pub fn lobby_ui(
     mut contexts: EguiContexts,
     mut commands: Commands,
@@ -272,20 +273,16 @@ pub fn lobby_ui(
     mut ctx: LobbyContext,
     mut progress: LobbyGameProgress,
     mut editing_session: Local<String>,
-    mut confirm_restart: Local<bool>,
+    mut running: Local<RunningBattle>,
 ) {
     let Ok(egui_ctx) = contexts.ctx_mut() else {
         return;
     };
-    let active = battle_in_progress(&ctx.recorder, progress.game_state.0.game_over);
-    if !active {
-        *confirm_restart = false;
+    running.active = battle_in_progress(&ctx.recorder, progress.game_state.0.game_over);
+    running.return_to_game = false;
+    if !running.active {
+        running.confirm_restart = false;
     }
-    let mut running = RunningBattle {
-        active,
-        confirm_restart: &mut confirm_restart,
-        return_to_game: false,
-    };
     // The period-map background and the floating panel are native UI under
     // egui (`splash`), with their frames from its ambient pacing; an egui
     // repaint request here would force display-rate frames even unfocused.
@@ -379,25 +376,9 @@ pub fn lobby_ui(
                                     &net,
                                     &mut local,
                                     &roster,
-                                    LocalFactionPick {
-                                        local_faction: &mut ctx.local_faction,
-                                        local_spectator: &mut ctx.local_spectator,
-                                        local_command: &mut ctx.local_command,
-                                    },
-                                    LobbySetupChoices {
-                                        remote_scenario: &ctx.remote_scenario,
-                                        lobby_scenario: &mut ctx.lobby_scenario,
-                                        optional_rule: &mut ctx.local_optional_rule,
-                                        local_ai: &mut ctx.local_ai,
-                                    },
-                                    SessionControls {
-                                        pending: &mut ctx.pending,
-                                        commands: &mut commands,
-                                        room: &ctx.room,
-                                        editing_session: &mut editing_session,
-                                        local_key: ctx.local_key.0,
-                                    },
-                                    &ctx.recorder,
+                                    &mut ctx,
+                                    &mut commands,
+                                    &mut editing_session,
                                     &mut running,
                                 );
                             });
@@ -426,68 +407,30 @@ pub(crate) fn lobby_column_width(avail: f32) -> f32 {
     (avail * 0.55).clamp(460.0_f32.min(avail), 900.0)
 }
 
-/// Mutable session-level state for the lobby "Setup" tab: the pending-edits
-/// queue, command buffer, room id, and the in-progress session-id text. Bundled
-/// so [`setup_tab`] stays under clippy's argument limit.
-struct SessionControls<'a, 'b, 'c> {
-    pending: &'a mut PendingEdits,
-    commands: &'a mut Commands<'b, 'c>,
-    room: &'a RoomId,
-    editing_session: &'a mut String,
-    local_key: PlayerKey,
-}
-
-/// Bundle of the local faction + spectator + command picks so [`setup_tab`]
-/// stays under clippy's argument limit.
-struct LocalFactionPick<'a> {
-    local_faction: &'a mut LocalFaction,
-    local_spectator: &'a mut LocalSpectator,
-    local_command: &'a mut LocalCommand,
-}
-
-/// Bundles the host-broadcast scenario preview, the host's scenario pick, the
-/// optional rule, and the AI-commander toggles so [`setup_tab`] stays under
-/// clippy's argument limit.
-struct LobbySetupChoices<'a> {
-    remote_scenario: &'a RemoteScenario,
-    lobby_scenario: &'a mut LobbyScenario,
-    optional_rule: &'a mut LocalOptionalRule,
-    local_ai: &'a mut LocalAiCommanders,
-}
-
 /// The lobby's "Setup" sub-tab: session, identity, faction / scenario picks,
 /// the player roster, the host's start control, and preferences.
 #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
-#[allow(clippy::too_many_arguments)]
 fn setup_tab(
     ui: &mut egui::Ui,
     net: &NetState,
     local: &mut LocalPlayerSettings,
     roster: &[RosterEntry],
-    faction_pick: LocalFactionPick,
-    lobby: LobbySetupChoices,
-    session: SessionControls,
-    recorder: &GameRecorder,
+    ctx: &mut LobbyContext,
+    commands: &mut Commands,
+    editing_session: &mut String,
     running: &mut RunningBattle,
 ) {
-    let LocalFactionPick {
-        local_faction,
-        local_spectator,
-        local_command,
-    } = faction_pick;
-    let LobbySetupChoices {
-        remote_scenario,
-        lobby_scenario,
-        optional_rule,
-        local_ai,
-    } = lobby;
-    let SessionControls {
-        pending,
-        commands,
-        room,
-        editing_session,
-        local_key,
-    } = session;
+    let local_faction = &mut *ctx.local_faction;
+    let local_spectator = &mut *ctx.local_spectator;
+    let local_command = &mut *ctx.local_command;
+    let remote_scenario = &*ctx.remote_scenario;
+    let lobby_scenario = &mut *ctx.lobby_scenario;
+    let optional_rule = &mut *ctx.local_optional_rule;
+    let local_ai = &mut *ctx.local_ai;
+    let pending = &mut *ctx.pending;
+    let room = &*ctx.room;
+    let local_key = ctx.local_key.0;
+    let recorder = &*ctx.recorder;
     ui.label(
         egui::RichText::new("Choose your faction, then the host starts the battle.")
             .color(crate::ui::palette::TEXT_MUTED),
@@ -923,7 +866,7 @@ fn setup_tab(
             // A new StartGame resets every peer's game: while a battle is
             // being fought, starting another takes an explicit second click.
             let mut start = false;
-            if *running.confirm_restart {
+            if running.confirm_restart {
                 ui.label(
                     egui::RichText::new(
                         "Abandon the current game and start a new one? \
@@ -937,10 +880,10 @@ fn setup_tab(
                         .clicked()
                     {
                         start = true;
-                        *running.confirm_restart = false;
+                        running.confirm_restart = false;
                     }
                     if ui.button("Cancel").clicked() {
-                        *running.confirm_restart = false;
+                        running.confirm_restart = false;
                     }
                 });
             } else {
@@ -954,7 +897,7 @@ fn setup_tab(
                         .add(egui::Button::new(egui::RichText::new(label).size(18.0)))
                         .clicked()
                     {
-                        start = start_clicked(running.active, running.confirm_restart);
+                        start = start_clicked(running.active, &mut running.confirm_restart);
                     }
                 });
             }
@@ -1177,7 +1120,6 @@ fn collect_seats(roster: &[RosterEntry], ai: &[Player]) -> Vec<Seat> {
 /// "whole faction", "Army" (communal units only), and a checkbox list of the
 /// picked faction's tribes (Dervish) or brigades (Anglo-Egyptian). A
 /// tribe/brigade another member already claims is shown disabled.
-#[allow(clippy::too_many_arguments)]
 fn command_scope_widget(
     ui: &mut egui::Ui,
     faction: Option<Player>,

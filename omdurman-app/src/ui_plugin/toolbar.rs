@@ -1,7 +1,6 @@
 //! The top toolbar switching between Menu / Game / Spectate modes.
 use super::*;
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn mode_toolbar_ui(
     mut contexts: EguiContexts,
     mode: Res<State<crate::AppMode>>,

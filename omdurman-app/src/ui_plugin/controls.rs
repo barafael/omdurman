@@ -2,15 +2,6 @@
 //! setup controls, and the game log.
 use super::*;
 
-/// The rail's per-game mutable bits beside the outbound queue: the staged
-/// fire allocations (End Phase discards them) and the victory modal's
-/// dismissed flag (the rail reopens it). Bundled to keep
-/// [`game_control_section`] under clippy's argument limit.
-pub(crate) struct GameControlExtras<'a> {
-    pub allocation: Option<&'a mut crate::fire_allocation::FireAllocationState>,
-    pub victory: Option<&'a mut VictoryModalState>,
-}
-
 /// What ending the current phase would do: `Ok(label of the phase that
 /// follows)` — with the new turn owner when the turn passes — or the
 /// engine's refusal. Dry-runs `AdvancePhase` on a clone of the engine state
@@ -143,7 +134,10 @@ pub(crate) fn game_control_section(
     peers: &Peers,
     pending: Option<&mut crate::PendingEdits>,
     local_setup_ready: Option<&mut crate::peers::LocalSetupReady>,
-    extras: GameControlExtras<'_>,
+    // The staged fire allocations: End Phase discards them.
+    allocation: Option<&mut crate::fire_allocation::FireAllocationState>,
+    // The victory modal: the rail reopens it.
+    victory: &mut VictoryModalState,
     state_moved: bool,
 ) {
     let Some(pending) = pending else {
@@ -164,10 +158,7 @@ pub(crate) fn game_control_section(
                 None => "Game over".to_string(),
             },
         );
-        if let Some(victory) = extras.victory
-            && victory.dismissed
-            && ui.button("Show result").clicked()
-        {
+        if victory.dismissed && ui.button("Show result").clicked() {
             victory.dismissed = false;
         }
     } else if in_setup {
@@ -179,7 +170,7 @@ pub(crate) fn game_control_section(
     } else if my_turn {
         // Each player ends their *own* turn: the End Phase button is shown only
         // to whoever controls the active faction.
-        end_phase_button(ui, state, pending, extras.allocation, state_moved);
+        end_phase_button(ui, state, pending, allocation, state_moved);
     }
 }
 

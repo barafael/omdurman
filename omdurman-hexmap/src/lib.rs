@@ -9,10 +9,7 @@ pub use layout::{CalibrationAnchor, HexLayout, MapDims, pixel_to_world_dims};
 // map.rs
 pub use map::{GameMap, load_map_data};
 // plane.rs
-pub use plane::{
-    HexOverlay, MapPlane, MapTextureCache, PlaneTextureStores, apply_map_data_to_plane,
-    hex_ring_mesh,
-};
+pub use plane::{HexOverlay, MapPlane, MapTextureCache, apply_map_data_to_plane, hex_ring_mesh};
 // world.rs
 pub use world::{hex_world_pos, hit_to_hex};
 

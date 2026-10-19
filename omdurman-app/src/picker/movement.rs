@@ -172,14 +172,9 @@ pub(crate) fn unit_remaining_mp(
     }
 }
 
-/// Borrowed context for resolving a click while a unit is selected.
-///
-/// As with [`PlacingClick`], the map query is passed to
-/// [`handle`](Self::handle) rather than stored, so the invariant `Query`
-/// lifetimes never couple to the struct's `Commands` borrow.
 /// Shared facts about one proposed movement-path leg. Computed identically for
-/// single-unit ([`SelectedClick`]) and whole-stack ([`SelectedStackClick`])
-/// path building; only the affordability predicate differs between the two.
+/// single-unit (`single_click`) and whole-stack (`stack_click`) path
+/// building; only the affordability predicate differs between the two.
 pub(crate) struct MovementLegCheck {
     /// A unit may not move into an enemy-occupied hex (that's melee / advance
     /// after combat, not movement) -- except the §9.346 palace waiver: a
@@ -325,7 +320,6 @@ pub(crate) fn movement_leg_check(
 /// usable as the goal; stacking binds at the goal alone (§5.51). `budget` is
 /// the largest remaining MP of the mover(s). Returns the hexes after `start`,
 /// or `None` if the goal is out of reach.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn auto_route(
     game_map: &GameMap,
     placed_units: &Query<(Entity, &PlacedUnit)>,
@@ -353,7 +347,6 @@ pub(crate) fn auto_route(
 /// no `gunboat` cap it prices an unreachable move -- the "costs 19 MP, you
 /// have 15" a refusal should tell the player. A `gunboat` budget prices the
 /// route under §5.24: the search state is (hex, went upstream yet).
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn cheapest_route(
     game_map: &GameMap,
     placed_units: &Query<(Entity, &PlacedUnit)>,

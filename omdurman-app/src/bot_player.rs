@@ -211,7 +211,6 @@ impl HostView<'_> {
 /// event. Runs in the game states (Setup included — the AI deploys its own
 /// force), paced by [`BotDriver`]'s cooldown -- on whatever screen the host
 /// is, against the live state (also under a review, `timeline::LiveGame`).
-#[allow(clippy::too_many_arguments)]
 pub fn bot_player_act(
     time: Res<Time>,
     net: Res<NetState>,

@@ -133,7 +133,6 @@ pub fn arrival_allowance(gs: &GameState) -> Option<String> {
 /// or -- with nothing picked -- the entrance areas of every counter that may
 /// still enter. The rings are rebuilt only when the set changes (or the
 /// overlays were cleared).
-#[allow(clippy::too_many_arguments)]
 pub fn reinforce_entry_overlay_mesh(
     mut commands: Commands,
     hex: crate::HexRender,

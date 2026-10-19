@@ -21,7 +21,6 @@ pub struct RailPicker<'w, 's> {
     pub placed_units: Query<'w, 's, (Entity, &'static PlacedUnit)>,
 }
 
-#[allow(clippy::too_many_arguments)]
 /// The command rail: the one left panel of the game view. Top to bottom:
 /// the phase's control (End phase / set-up Ready), **Next step** (what to
 /// do now, the selected unit, the plotted move), the **counter tray** when
@@ -147,10 +146,8 @@ pub fn unit_overview_ui(
                                     &peers,
                                     pending.as_deref_mut(),
                                     local_setup_ready.as_deref_mut(),
-                                    crate::ui_plugin::GameControlExtras {
-                                        allocation: allocation.as_deref_mut(),
-                                        victory: Some(&mut victory),
-                                    },
+                                    allocation.as_deref_mut(),
+                                    &mut victory,
                                     state_moved,
                                 );
                                 ui.add_space(8.0);

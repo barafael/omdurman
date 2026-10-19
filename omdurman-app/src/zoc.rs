@@ -28,7 +28,6 @@ pub struct ZocOverlay {
 
 // -- Overlay system ----------------------------------------------------------
 
-#[allow(clippy::too_many_arguments)]
 /// Spawn yellow hex rings on every hex in enemy ZOC. While the toggle is on
 /// the zones are recomputed when the game state or the viewpoint (spectating,
 /// local faction) changes, and the rings rebuilt only when the zones do.

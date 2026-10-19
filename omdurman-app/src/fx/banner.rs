@@ -19,7 +19,6 @@ pub(super) struct Banner {
 /// When the side to act becomes one the local player commands, say so for a
 /// moment above the board ("Your move -- Offensive Fire"). Never modal,
 /// never clickable; off with marks off; never for a spectator.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn your_move_banner_ui(
     mut contexts: EguiContexts,
     time: Res<Time>,

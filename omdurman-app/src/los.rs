@@ -67,7 +67,6 @@ pub fn pin_los_origin(
 /// green as far as it runs clear, red from the feature that blocks it on
 /// (the blocked hexes' labels name it). Rebuilt when either end or the
 /// game changes.
-#[allow(clippy::too_many_arguments)]
 pub fn los_ray(
     mut commands: Commands,
     hex: crate::HexRender,

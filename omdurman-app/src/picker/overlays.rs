@@ -69,7 +69,6 @@ pub(crate) struct PreviewHexRing;
 /// -- and the "not placing" idle path commands nothing at all once cleared.
 type PreviewCache = (Option<HexCoord>, bool);
 
-#[allow(clippy::too_many_arguments)]
 pub fn placement_preview_mesh(
     mut commands: Commands,
     hex: crate::HexRender,
@@ -415,7 +414,6 @@ pub(crate) enum MovementOverlayKey {
     Stack(Vec<(Entity, i16)>),
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn movement_overlay_mesh(
     mut commands: Commands,
     hex: crate::HexRender,
@@ -642,7 +640,6 @@ type ZoneKey = (
 /// faction's zone (or, in an unbound session, the active player's). Cleared
 /// automatically once play leaves Setup. Rebuilt only when the phase/faction key
 /// changes, to avoid per-frame entity churn (cf. `movement_overlay_mesh`).
-#[allow(clippy::too_many_arguments)]
 pub fn deployment_zone_overlay_mesh(
     mut commands: Commands,
     hex: crate::HexRender,
@@ -877,7 +874,6 @@ pub(crate) struct HoverRing;
 /// click hit-test (`nearest_placed_unit_at`) so hover and click always agree
 /// on which unit is targeted. In a bound game only the local faction's units
 /// are highlighted (those a click could actually select).
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn update_hovered_unit(
     ground: Res<crate::picking::PointerGroundHit>,
     layout: Res<HexLayout>,
@@ -980,7 +976,6 @@ pub fn hover_outline_mesh(
 /// Rebuilt only when the paths or the hovered hex change (not every frame): the
 /// arrow entities otherwise churn, and -- as with the reachable-range overlay --
 /// unconditional per-frame despawn/respawn risks a one-frame flash.
-#[allow(clippy::too_many_arguments)]
 pub fn movement_path_arrows(
     mut commands: Commands,
     assets: Res<crate::render::MovementArrowAssets>,

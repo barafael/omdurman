@@ -3,7 +3,6 @@
 //! optional-rule (mine/chain) setup UI.
 use super::*;
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn friendlies_transport_ui(
     mut contexts: EguiContexts,
     game_state: Option<Res<crate::GameStateResource>>,
@@ -94,7 +93,6 @@ pub(crate) struct OptionalRulePlacement {
     pub placing_chain: bool,
 }
 
-#[allow(clippy::too_many_arguments)]
 /// Floating panel for §5.3 Zariba construction and §6.53 Demolition actions.
 /// Appears during Movement phase when a relevant unit is selected (the phase
 /// gate is the `in_movement_phase` run condition; see `ui_phase_state`).
@@ -460,7 +458,6 @@ pub(crate) struct BreachCardMemo {
     offer: Option<BreachOffer>,
 }
 
-#[allow(clippy::too_many_arguments)]
 /// §6.63 Artillery Breach: with an artillery/howitzer unit selected during a
 /// fire sub-phase, list every Wall hexside the engine's `can_fire_at_wall`
 /// accepts for it; a click pre-rolls the d10 and broadcasts
@@ -695,7 +692,6 @@ pub(crate) fn artillery_breach_ui(
 
 // -- Top bar (cross-cutting) -------------------------------------------------
 
-#[allow(clippy::too_many_arguments)]
 /// The full-width top bar: mode-switching controls on the left and
 /// phase/turn info beside them. Publishes its measured height to
 /// [`crate::ScreenLayout::top_bar_height`] so every band below it (left rail,

@@ -92,31 +92,15 @@ fn load_egui_texture(
     Some(ctx.load_texture(label, color_image, egui::TextureOptions::LINEAR))
 }
 
-/// Render the visible picker units belonging to `faction`, grouped by section
-/// with a label per section and a wrapped grid of sprite cells. Records a click
-/// or drag-start into `clicked_idx` / `drag_idx` (an index into
-/// `picker.available`). Shared by both faction categories in the picker.
-///
-/// When `annotations` is `Some`, each sprite cell gains a hover tooltip
-/// showing the counter's resolved profile -- identity (e.g. "1B 1st Btn"),
-/// fire/melee/movement factors, weapon class, and the rulebook paragraph for
-/// its section. The tooltip is informational; clicking still picks the unit.
-/// Bundle of `&UnitPicker` + `&PickerState` so [`render_faction_units`] stays
-/// under clippy's argument limit. Plain struct (the consumer is not a system).
-struct PickerRead<'a> {
-    picker: &'a UnitPicker,
-    state: &'a PickerState,
-}
-
-/// Bundle of the `clicked_idx` + `drag_idx` + `drag_cancelled`
-/// out-parameters so [`render_faction_units`] stays under clippy's argument
-/// limit.
-struct DragState<'a> {
-    clicked_idx: &'a mut Option<usize>,
-    drag_idx: &'a mut Option<usize>,
+/// What the pointer did to the tray's counters this frame (indices into
+/// `UnitPicker::available`).
+#[derive(Default)]
+struct TrayGestures {
+    clicked: Option<usize>,
+    dragged: Option<usize>,
     /// A counter's drag ended over the UI (the sidebar, a card) instead of
     /// the board: no drop happened.
-    drag_cancelled: &'a mut bool,
+    drag_cancelled: bool,
 }
 
 /// The picker state after a sidebar drag ends over the UI rather than the
@@ -135,16 +119,6 @@ fn state_after_cancelled_drag(state: &PickerState) -> Option<PickerState> {
     .then_some(PickerState::Idle)
 }
 
-/// Bundle of the optional annotations + the rulebook reference so
-/// [`render_faction_units`] stays under clippy's argument limit.
-struct UnitAnnotations<'a> {
-    rulebook: &'a crate::rulebook::Rulebook,
-    /// Counters placed this phase: their slots stay, empty.
-    ghosts: &'a [UnitId],
-    /// Show counters that may not be placed now, dimmed (Movement phases).
-    show_unavailable: bool,
-}
-
 /// Bundle of the image assets + sprite annotations + rulebook reference
 /// consumed by [`unit_picker_ui`], so the system stays under Bevy's
 /// system-parameter limit.
@@ -153,26 +127,31 @@ pub(crate) struct PickerAssetCtx<'w> {
     pub images: Res<'w, Assets<Image>>,
 }
 
+/// Render the visible picker units belonging to `faction`, grouped by section
+/// with a label per section and a wrapped grid of sprite cells. Records a click
+/// or drag on a counter into `gestures`. Shared by both faction categories in
+/// the picker.
+///
+/// Each sprite cell has a hover tooltip showing the counter's resolved
+/// profile -- identity (e.g. "1B 1st Btn"), fire/melee/movement factors,
+/// weapon class, and the rulebook paragraph for its section. The tooltip is
+/// informational; clicking still picks the unit.
+///
+/// `ghosts`: counters placed this phase, whose slots stay, empty.
+/// `show_unavailable`: show counters that may not be placed now, dimmed
+/// (Movement phases).
 fn render_faction_units(
     ui: &mut egui::Ui,
-    picker: PickerRead,
+    picker: &UnitPicker,
+    state: &PickerState,
     faction: omdurman_types::Player,
     cell_size: f32,
     sprite_size: f32,
-    drag: DragState,
-    ctx: UnitAnnotations,
+    gestures: &mut TrayGestures,
+    rulebook: &crate::rulebook::Rulebook,
+    ghosts: &[UnitId],
+    show_unavailable: bool,
 ) {
-    let PickerRead { picker, state } = picker;
-    let DragState {
-        clicked_idx,
-        drag_idx,
-        drag_cancelled,
-    } = drag;
-    let UnitAnnotations {
-        rulebook,
-        ghosts,
-        show_unavailable,
-    } = ctx;
     // Grouped by what the units are, not by counter sheet: leaders,
     // gunboats, one group per brigade (brigade integrity, §5.54), mounted
     // units, guns -- and each Dervish tribe apart (tribes may not stack
@@ -342,13 +321,13 @@ fn render_faction_units(
                     }
 
                     if response.clicked() {
-                        *clicked_idx = Some(j);
+                        gestures.clicked = Some(j);
                     }
                     if response.drag_started() {
-                        *drag_idx = Some(j);
+                        gestures.dragged = Some(j);
                     }
                     if response.drag_stopped() && ui.ctx().is_pointer_over_egui() {
-                        *drag_cancelled = true;
+                        gestures.drag_cancelled = true;
                     }
 
                     // Hover tooltip: the counter's resolved profile, sourced
@@ -529,9 +508,7 @@ pub(crate) fn draw_tray(
     show_unavailable: bool,
 ) {
     use omdurman_types::Player;
-    let mut clicked_idx: Option<usize> = None;
-    let mut drag_idx: Option<usize> = None;
-    let mut drag_cancelled = false;
+    let mut gestures = TrayGestures::default();
     let sprite_size = 44.0;
     let cell_size = sprite_size + 4.0;
     let factions: Vec<Player> = [Player::Dervish, Player::AngloEgyptian]
@@ -554,20 +531,15 @@ pub(crate) fn draw_tray(
         }
         render_faction_units(
             ui,
-            PickerRead { picker, state },
+            picker,
+            state,
             faction,
             cell_size,
             sprite_size,
-            DragState {
-                clicked_idx: &mut clicked_idx,
-                drag_idx: &mut drag_idx,
-                drag_cancelled: &mut drag_cancelled,
-            },
-            UnitAnnotations {
-                rulebook,
-                ghosts,
-                show_unavailable,
-            },
+            &mut gestures,
+            rulebook,
+            ghosts,
+            show_unavailable,
         );
     }
     ui.add_space(2.0);
@@ -585,7 +557,7 @@ pub(crate) fn draw_tray(
             .map(|u| format!("{} {},{}", u.section_name.display_name(), u.col, u.row))
             .unwrap_or_else(|| format!("tray#{idx}"))
     };
-    if let Some(idx) = clicked_idx {
+    if let Some(idx) = gestures.clicked {
         match &*state {
             PickerState::Placing { unit_idx, .. } if *unit_idx == idx => {
                 *state = PickerState::Idle;
@@ -601,10 +573,12 @@ pub(crate) fn draw_tray(
             }
         }
     }
-    if drag_cancelled && let Some(next) = state_after_cancelled_drag(state) {
+    if gestures.drag_cancelled
+        && let Some(next) = state_after_cancelled_drag(state)
+    {
         *state = next;
     }
-    if let Some(idx) = drag_idx {
+    if let Some(idx) = gestures.dragged {
         crate::ui_trace::placement_pick(&pick_label(picker, idx), "drag", stamp);
         *state = PickerState::Placing {
             unit_idx: idx,
@@ -779,7 +753,6 @@ fn refresh_visibility(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn unit_picker_ui(
     mut contexts: EguiContexts,
     mode: Res<State<crate::AppMode>>,

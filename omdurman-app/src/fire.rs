@@ -457,7 +457,6 @@ pub(crate) struct FireTargetRing;
 /// movement/deployment overlays' rebuild-only-on-change discipline.
 type FireOverlayCache = (Vec<(UnitId, FireKind)>, Vec<HexCoord>);
 
-#[allow(clippy::too_many_arguments)]
 pub fn fire_target_overlay_mesh(
     mut commands: Commands,
     hex: crate::HexRender,
@@ -630,7 +629,6 @@ pub(crate) struct FireDirectionArrow;
 /// selection itself survives target allocation, so the arrow keeps previewing
 /// further shots until the player dismisses the tile or executes the
 /// allocations.
-#[allow(clippy::too_many_arguments)]
 pub fn fire_direction_arrow(
     mut commands: Commands,
     render: crate::DirectionArrowCtx,
@@ -752,7 +750,6 @@ pub(crate) fn target_defence_modifiers(
 /// the shot before committing. Only shown to the firing player on a legal,
 /// in-LOS target. (Phase gate: the mirrored machine's fire-phase run
 /// condition on registration; see `ui_phase_state`.)
-#[allow(clippy::too_many_arguments)]
 pub fn fire_combat_preview_ui(
     mut contexts: EguiContexts,
     state: Res<PickerState>,

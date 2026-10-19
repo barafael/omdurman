@@ -673,10 +673,8 @@ mod tests {
             .iter()
             .find_map(|o| match o {
                 Observation::MeleeResolved {
-                    attacker_total_modifier,
-                    defender_total_modifier,
-                    ..
-                } => Some((*attacker_total_modifier, *defender_total_modifier)),
+                    attacker, defender, ..
+                } => Some((attacker.total_modifier, defender.total_modifier)),
                 _ => None,
             })
             .unwrap();
@@ -12351,9 +12349,7 @@ mod tests {
         )
         .unwrap();
         let resolved = state.observations.iter().find_map(|o| match o {
-            Observation::MeleeResolved {
-                defender_result, ..
-            } => Some(*defender_result),
+            Observation::MeleeResolved { defender, .. } => Some(defender.result),
             _ => None,
         });
         assert!(

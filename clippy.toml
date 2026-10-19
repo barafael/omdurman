@@ -1,0 +1,4 @@
+# Bevy systems take their resources and queries as parameters (up to 16),
+# and egui helpers take what they draw: a long parameter list there is the
+# plain form, not a smell to bundle away behind borrowed structs.
+too-many-arguments-threshold = 16

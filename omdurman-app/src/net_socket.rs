@@ -987,7 +987,6 @@ fn collect_decoded(
 /// submissions while sequencing is not allowed (or while our record is
 /// missing the game they belong to), otherwise assign the next sequence
 /// number and echo onto the broadcast + our own loopback.
-#[allow(clippy::too_many_arguments)]
 fn host_handle_game(
     net: &mut NetState,
     incoming: &mut PendingIncoming,
@@ -1111,7 +1110,6 @@ fn serve_snapshot(
 /// whether the record wins; the install replaces the local record wholesale,
 /// re-queues own events the canonical line lacks, and rebuilds the world
 /// from the record (§divergence healing).
-#[allow(clippy::too_many_arguments)]
 fn install_foreign_history(
     net: &mut NetState,
     recorder: &mut game_record::GameRecorder,
@@ -1286,7 +1284,6 @@ fn install_foreign_history(
 /// messages) when a socket exists, then the loopback / sequencing / apply
 /// path -- which runs *without* a socket too, so offline self-host mode
 /// (`OfflineMode`) sequences and applies its own submissions.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn handle_socket(
     mut socket: Option<ResMut<MatchboxSocket>>,
     traffic: NetTraffic,

@@ -127,7 +127,6 @@ fn place_hexside_quad(
 /// Rebuild the hexside bar pool from the hexsides whose engine kind differs
 /// from the authored map (breaches) or that the Campaign has built (§5.3). Runs only when the
 /// game state changed. Unused pooled quads are parked invisible.
-#[allow(clippy::too_many_arguments)]
 fn update_dynamic_hexside_bars(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -242,7 +241,6 @@ const HIGHLIGHT_COLOR: Color = Color::srgb(0.95, 0.1, 0.1);
 
 /// Draw (or hide) the [`HighlightedHexside`] bar: wider than the dynamic
 /// bars and above them, so the aimed-at wall stands out on the printed map.
-#[allow(clippy::too_many_arguments)]
 fn update_hexside_highlight(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,

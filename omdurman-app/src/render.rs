@@ -248,7 +248,6 @@ type CounterPips = Vec<(Entity, Vec<Pip>)>;
 /// along each counter's top edge, children of the counter so they follow
 /// it through the stack layout. Rebuilt only when what they show changed
 /// (or the overlays were cleared, see [`crate::picker::OverlayGeneration`]).
-#[allow(clippy::too_many_arguments)]
 pub fn update_acted_markers(
     mut commands: Commands,
     game_state: Res<crate::GameStateResource>,
@@ -327,7 +326,6 @@ pub struct NileFlowArrow;
 /// current (§5.24): a step with it is downstream, a step against it
 /// upstream, on the boat's smaller upstream allowance. Built when a boat is
 /// selected, cleared when it is not.
-#[allow(clippy::too_many_arguments)]
 pub fn nile_flow_arrows(
     mut commands: Commands,
     arrows: crate::DirectionArrowCtx,

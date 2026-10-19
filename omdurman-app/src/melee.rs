@@ -237,7 +237,6 @@ pub struct MeleeTargetRing;
 /// every frame.
 type MeleeOverlayCache = (UnitId, Vec<HexCoord>);
 
-#[allow(clippy::too_many_arguments)]
 pub fn melee_target_overlay_mesh(
     mut commands: Commands,
     hex: crate::HexRender,
@@ -357,7 +356,6 @@ pub(crate) fn melee_hexsides(
 /// On left-click of a valid adjacent enemy hex while a melee-capable unit is
 /// selected during the Melee phase, broadcast a `DeclareMelee` effect with both
 /// pre-rolled dice.
-#[allow(clippy::too_many_arguments)]
 pub fn handle_melee_combat(
     mut clicks: bevy::ecs::message::MessageReader<MeleeClick>,
     mut state: ResMut<PickerState>,
@@ -608,7 +606,6 @@ pub(crate) struct MeleeDirectionArrow;
 /// melee target hex, giving the player a visual preview of the melee direction.
 /// Rebuilt only when the arrow's endpoints change (selection, hover, engine
 /// state, or the overlays were cleared) -- not every frame.
-#[allow(clippy::too_many_arguments)]
 pub fn melee_direction_arrow(
     mut commands: Commands,
     render: crate::DirectionArrowCtx,
@@ -776,7 +773,6 @@ fn melee_preview_for(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn melee_combat_preview_ui(
     mut contexts: EguiContexts,
     state: Res<PickerState>,
@@ -956,7 +952,6 @@ pub(crate) struct AdvanceTargetRing;
 /// advances the first member the engine accepts for the clicked hex). Rebuilt
 /// only when the selection or the engine state changed (or the overlays were
 /// cleared) -- not every frame.
-#[allow(clippy::too_many_arguments)]
 pub fn advance_target_overlay_mesh(
     mut commands: Commands,
     hex: crate::HexRender,

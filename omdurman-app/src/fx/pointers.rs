@@ -122,7 +122,6 @@ pub fn edge_anchor(
 /// card's hexes) out of view; a click pans the camera there. With
 /// [`MotionSettings::follow_opponent`], a fresh sighting out of view pans by
 /// itself.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn offscreen_pointers_ui(
     mut contexts: EguiContexts,
     time: Res<Time>,

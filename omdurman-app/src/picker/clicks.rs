@@ -9,17 +9,9 @@ use bevy::ecs::message::MessageReader;
 /// double-click (select-the-whole-stack, movement phase).
 const DOUBLE_CLICK_SECS: f64 = 0.35;
 
-/// Bundle of `&mut PickerState` + `&mut Commands` for [`handle_idle_click`].
-/// Plain struct (the consumer is not a system).
-struct IdleSelectionCtx<'a, 'b, 'c> {
-    state: &'a mut PickerState,
-    commands: &'a mut Commands<'b, 'c>,
-}
-
 /// The spatial facts of one board click: the ground-plane hit point, the
 /// clicked hex's centre in world space, and the stack spread used to pick
-/// among stacked counters. Bundled so [`handle_idle_click`] stays under
-/// clippy's argument limit.
+/// among stacked counters.
 struct ClickGeometry {
     hit: Vec3,
     center: Vec3,
@@ -102,7 +94,7 @@ fn picker_click(
 ) -> Option<String> {
     // §turn-order: a unit may only be moved on its owner's turn. When a game is
     // live, gate interactive movement on the local player being the rules
-    // engine's active player (`handle_idle_click`/move path below). Placement
+    // engine's active player (the Idle arm / move path below). Placement
     // during set-up is not gated. With no game state (editor) there is no gate.
     // (The click router already drops clicks outside the seat's phase unless
     // a counter is in hand; this stays as the picker's own backstop.)
@@ -245,15 +237,12 @@ fn picker_click(
 
     match ActiveSelection::snapshot(&picker_ctx.state) {
         // Selecting a unit to move is only meaningful on your own turn.
-        ActiveSelection::Idle if may_move => {
-            handle_idle_click(
-                pressed,
-                coord,
+        ActiveSelection::Idle if may_move && pressed => {
+            select_single_unit(
+                &mut picker_ctx.state,
+                &mut picker_ctx.commands,
                 &picker_ctx.placed_units,
-                IdleSelectionCtx {
-                    state: &mut picker_ctx.state,
-                    commands: &mut picker_ctx.commands,
-                },
+                coord,
                 game_state,
                 restrict_to,
                 &scope_ok,
@@ -286,23 +275,14 @@ fn picker_click(
             });
         }
         // (Deployment-zone and every other set-up refusal comes from the
-        // engine through `PlacingClick::handle`, with its reason.)
+        // engine through `place_click`, with its reason.)
         ActiveSelection::Placing {
             unit_idx,
             drag_drop,
         } => {
-            let mut placing = PlacingClick {
-                picker: &mut picker_ctx.picker,
-                state: &mut picker_ctx.state,
-                overlay: &picker_ctx.overlay,
-                game_map: &picker_ctx.game_map,
-                commands: &mut picker_ctx.commands,
-                meshes: &mut picker_ctx.meshes,
-                materials: &mut picker_ctx.materials,
+            match place_click(
+                picker_ctx,
                 origin,
-            };
-            match placing.handle(
-                &picker_ctx.placed_units,
                 released && !pressed,
                 unit_idx,
                 drag_drop,
@@ -324,25 +304,22 @@ fn picker_click(
             remaining_mp,
             forced_stop,
         } if game_state.is_none_or(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Movement)) => {
-            let mut sel = SelectedClick {
-                state: &mut picker_ctx.state,
-                game_map: &picker_ctx.game_map,
+            let mut plan = SingleRoute {
                 remaining_mp,
                 forced_stop,
-                movement_path: &mut picker_ctx.movement_path,
             };
             // Legs only extend the path (committed on confirm); a refusal
             // is a destination out of reach.
-            let refusal = sel
-                .handle(
-                    &picker_ctx.placed_units,
-                    released,
-                    source,
-                    start_coord,
-                    coord,
-                    game_state,
-                )
-                .err();
+            let refusal = single_click(
+                picker_ctx,
+                &mut plan,
+                released,
+                source,
+                start_coord,
+                coord,
+                game_state,
+            )
+            .err();
             if matches!(&*picker_ctx.state, PickerState::Idle) {
                 picker_ctx.commands.entity(source).remove::<Selected>();
             }
@@ -406,17 +383,14 @@ fn picker_click(
             // only the units that can afford them; slower units are dropped at
             // their last affordable hex. Commit (Enter) splits the path into
             // per-unit prefix `MoveUnit` events.
-            let mut sel_click = SelectedStackClick {
-                state: &mut picker_ctx.state,
-                game_map: &picker_ctx.game_map,
-                commands: &mut picker_ctx.commands,
+            let mut plan = StackRoute {
                 remaining_mp: sel.remaining_mp.clone(),
                 initial_mp: sel.initial_mp.clone(),
                 forced_stop: sel.forced_stop,
-                movement_path: &mut picker_ctx.movement_path,
             };
-            if let Err(reason) = sel_click.handle(
-                &picker_ctx.placed_units,
+            if let Err(reason) = stack_click(
+                picker_ctx,
+                &mut plan,
                 released,
                 &sel.sources,
                 sel.start_coord,
@@ -488,9 +462,15 @@ fn picker_click(
     None
 }
 
-/// Idle: a left-press on a placed unit selects it (single counter, every
-/// phase).  During setup, it removes the unit from the board (re-pickup for
-/// re-placement). The whole-tile selection is the *double-click's* job in
+/// The single-counter selection shared by the Idle arm and the tile arm of
+/// the click handler: pick the counter nearest the cursor in the hex (stacks
+/// fan out, so the rendered position decides), respecting the faction and
+/// §1.1 command-scope gates. Leaves everything untouched (returns `false`)
+/// when the click misses every counter or hits one the player may not take —
+/// so a caller can keep its current selection instead.
+///
+/// Idle, a left-press on a placed unit selects it this way (single counter,
+/// every phase). The whole-tile selection is the *double-click's* job in
 /// every phase — group move in Movement ([`handle_stack_double_click`]),
 /// fire group / melee attackers in the combat phases
 /// ([`select_combat_tile`]) — so a click on a unit and a double-click
@@ -501,40 +481,6 @@ fn picker_click(
 /// their own turn.  `None` (unbound session / single-seat) allows selecting
 /// either side, so solo play/testing can drive both factions. `scope_ok`
 /// additionally gates on the §1.1 multi-player command scopes.
-#[allow(clippy::too_many_arguments)]
-fn handle_idle_click(
-    pressed: bool,
-    coord: HexCoord,
-    placed_units: &Query<(Entity, &PlacedUnit)>,
-    selection: IdleSelectionCtx,
-    game_state: Option<&crate::GameStateResource>,
-    restrict_to: Option<omdurman_types::Player>,
-    scope_ok: &dyn Fn(&omdurman_rules::UnitIdentity) -> bool,
-    click: &ClickGeometry,
-) {
-    let IdleSelectionCtx { state, commands } = selection;
-    if !pressed {
-        return;
-    }
-    select_single_unit(
-        state,
-        commands,
-        placed_units,
-        coord,
-        game_state,
-        restrict_to,
-        scope_ok,
-        click,
-    );
-}
-
-/// The single-counter selection shared by the Idle arm and the tile arm of
-/// the click handler: pick the counter nearest the cursor in the hex (stacks
-/// fan out, so the rendered position decides), respecting the faction and
-/// §1.1 command-scope gates. Leaves everything untouched (returns `false`)
-/// when the click misses every counter or hits one the player may not take —
-/// so a caller can keep its current selection instead.
-#[allow(clippy::too_many_arguments)]
 fn select_single_unit(
     state: &mut PickerState,
     commands: &mut Commands,
@@ -607,7 +553,6 @@ fn select_single_unit(
 /// selection is discarded: the new stack starts a path of its own (a leftover
 /// leg would be submitted for the new stack's units and refused as a
 /// non-contiguous route, §5.11).
-#[allow(clippy::too_many_arguments)]
 fn handle_stack_double_click(
     state: &mut PickerState,
     commands: &mut Commands,
@@ -834,181 +779,162 @@ pub(crate) fn deploy_candidate(
     })
 }
 
-/// Borrowed context for resolving a click while placing a counter.
-///
-/// The map query is *not* stored here -- it is passed to [`handle`](Self::handle)
-/// as a parameter. `Query` is invariant over its data, so coupling its
-/// world/state lifetimes to the struct's other borrows (notably `Commands`)
-/// would make the struct unconstructible from a normal Bevy system.
-struct PlacingClick<'a, 'w, 's> {
-    picker: &'a mut UnitPicker,
-    state: &'a mut PickerState,
-    overlay: &'a HexOverlay,
-    game_map: &'a GameMap,
-    commands: &'a mut Commands<'w, 's>,
-    meshes: &'a mut Assets<Mesh>,
-    materials: &'a mut Assets<StandardMaterial>,
+/// Resolve a click while placing a counter.
+fn place_click(
+    ctx: &mut PickerContext,
     origin: Vec2,
-}
-
-impl PlacingClick<'_, '_, '_> {
-    fn handle(
-        &mut self,
-        placed_units: &Query<(Entity, &PlacedUnit)>,
-        released: bool,
-        unit_idx: usize,
-        drag_drop: bool,
-        coord: HexCoord,
-        game_state: Option<&crate::GameStateResource>,
-    ) -> Result<Option<GameEvent>, String> {
-        if released && !drag_drop {
-            *self.state = PickerState::Placing {
-                unit_idx,
-                preview_hex: None,
-                preview_valid: false,
-                drag_drop: false,
-            };
-            return Ok(None);
-        }
-
-        let Some(unit) = self.picker.available.get(unit_idx) else {
-            *self.state = PickerState::Idle;
-            return Ok(None);
+    released: bool,
+    unit_idx: usize,
+    drag_drop: bool,
+    coord: HexCoord,
+    game_state: Option<&crate::GameStateResource>,
+) -> Result<Option<GameEvent>, String> {
+    if released && !drag_drop {
+        *ctx.state = PickerState::Placing {
+            unit_idx,
+            preview_hex: None,
+            preview_valid: false,
+            drag_drop: false,
         };
+        return Ok(None);
+    }
 
-        // Gate placement on the *same* engine predicate the apply path uses
-        // (phase + deployment zone + full stacking, §9.2/§9.3/§5.51-5.53), so
-        // the preview ring and the click can never disagree with what the
-        // engine will accept on the sequenced echo (barring a race between
-        // peers). The editor / unbound non-setup path has no engine state to
-        // consult, so it falls back to passable-and-vacant.
-        //
-        // Movement-phase placement is *reinforcement entry* (§9.112/§9.113
-        // Campaign order of appearance, §9.322 FoK entry edge): the click
-        // will apply `PlaceReinforcements`, so the gate runs that check.
-        // The engine's refusal, if any: reported to the player (the unit stays
-        // in hand) instead of silently dropping the selection.
-        let mut refusal = None;
-        let can_place = if let Some(gs) = game_state {
-            let candidate = deploy_candidate(self.picker, unit_idx, coord);
-            let engine_check = match gs.0.phase {
-                omdurman_rules::Phase::Setup => Some(candidate.map(|c| gs.0.can_deploy_unit(&c))),
-                omdurman_rules::Phase::Movement => {
-                    Some(candidate.map(|c| gs.0.can_place_single_reinforcement(&c)))
-                }
-                _ => None,
+    let Some(unit) = ctx.picker.available.get(unit_idx) else {
+        *ctx.state = PickerState::Idle;
+        return Ok(None);
+    };
+
+    // Gate placement on the *same* engine predicate the apply path uses
+    // (phase + deployment zone + full stacking, §9.2/§9.3/§5.51-5.53), so
+    // the preview ring and the click can never disagree with what the
+    // engine will accept on the sequenced echo (barring a race between
+    // peers). The editor / unbound non-setup path has no engine state to
+    // consult, so it falls back to passable-and-vacant.
+    //
+    // Movement-phase placement is *reinforcement entry* (§9.112/§9.113
+    // Campaign order of appearance, §9.322 FoK entry edge): the click
+    // will apply `PlaceReinforcements`, so the gate runs that check.
+    // The engine's refusal, if any: reported to the player (the unit stays
+    // in hand) instead of silently dropping the selection.
+    let mut refusal = None;
+    let can_place = if let Some(gs) = game_state {
+        let candidate = deploy_candidate(&ctx.picker, unit_idx, coord);
+        let engine_check = match gs.0.phase {
+            omdurman_rules::Phase::Setup => Some(candidate.map(|c| gs.0.can_deploy_unit(&c))),
+            omdurman_rules::Phase::Movement => {
+                Some(candidate.map(|c| gs.0.can_place_single_reinforcement(&c)))
+            }
+            _ => None,
+        };
+        if let Some(check) = engine_check {
+            // No candidate (unresolvable sprite): not placeable, no reason.
+            refusal = check.as_ref().and_then(|r| r.clone().err());
+            check.is_some_and(|r| r.is_ok())
+        } else {
+            let occupied = ctx.placed_units.iter().any(|(_, u)| u.coord == coord);
+            !occupied && coord_passable(&ctx.game_map, coord, unit.is_boat)
+        }
+    } else {
+        let occupied = ctx.placed_units.iter().any(|(_, u)| u.coord == coord);
+        !occupied && coord_passable(&ctx.game_map, coord, unit.is_boat)
+    };
+
+    if can_place {
+        let pos = hex_world_pos(coord, origin, &ctx.overlay.params);
+        let unit = ctx.picker.available.remove(unit_idx);
+
+        // Boat-ness from the sprite profile (the engine's source of truth),
+        // not the cached `PickerUnit.is_boat` flag -- that flag is only
+        // populated lazily from annotations and is unreliable (e.g. it
+        // resets to `false` when a counter is returned to the picker). This
+        // keeps the spawned counter and the wire event consistent with what
+        // `can_deploy_unit`/`apply_effect` decided.
+        let is_boat = unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
+            .and_then(omdurman_rules::unit_profiles::profile_for_unit)
+            .is_some_and(|p| p.kind.is_boat());
+
+        // Optimistic sprite: shown at once, bound to its rules unit (or
+        // dropped, if the engine rejects the placement) by
+        // `reconcile_unit_sprites` when the sequenced echo is applied.
+        let optimistic = spawn_placed_unit(
+            &mut ctx.commands,
+            &mut ctx.meshes,
+            &mut ctx.materials,
+            unit.handle.clone(),
+            &ctx.overlay,
+            pos,
+            PlacedUnit {
+                coord,
+                section_name: unit.section_name,
+                col: unit.col,
+                row: unit.row,
+                is_boat,
+                unit_id: None,
+                disrupted: false,
+            },
+        );
+        ctx.commands
+            .entity(optimistic)
+            .try_insert(PendingPlacement::default());
+
+        info!(
+            section_name = %unit.section_name,
+            col = unit.col,
+            row = unit.row,
+            coord.q = coord.q,
+            coord.r = coord.r,
+            "placing unit"
+        );
+        // Auto-select the next available unit in the same section so the
+        // player can keep placing without returning to the picker panel.
+        if ctx.picker.auto_place_next {
+            // After `remove(unit_idx)` the next unit is now at the same
+            // index (or we've reached the end).  Scan forward for the
+            // next visible unit in the same section.
+            // The next counter of the same tray group (see
+            // `sidebar::tray_group`), as the tray shows them.
+            let group_of = |u: &PickerUnit| {
+                unit_id_for_section_pos(u.section_name, u.col as u8, u.row as u8)
+                    .and_then(omdurman_rules::unit_profiles::profile_for_unit)
+                    .map(|p| super::sidebar::tray_group(&p.identity))
             };
-            if let Some(check) = engine_check {
-                // No candidate (unresolvable sprite): not placeable, no reason.
-                refusal = check.as_ref().and_then(|r| r.clone().err());
-                check.is_some_and(|r| r.is_ok())
+            let group = group_of(&unit);
+            let next = ctx
+                .picker
+                .available
+                .iter()
+                .skip(unit_idx)
+                .position(|u| u.shown() && group.is_some() && group_of(u) == group)
+                .map(|p| unit_idx + p);
+            if let Some(next_idx) = next {
+                *ctx.state = PickerState::Placing {
+                    unit_idx: next_idx,
+                    preview_hex: None,
+                    preview_valid: false,
+                    drag_drop: false,
+                };
             } else {
-                let occupied = placed_units.iter().any(|(_, u)| u.coord == coord);
-                !occupied && coord_passable(self.game_map, coord, unit.is_boat)
+                *ctx.state = PickerState::Idle;
             }
         } else {
-            let occupied = placed_units.iter().any(|(_, u)| u.coord == coord);
-            !occupied && coord_passable(self.game_map, coord, unit.is_boat)
-        };
-
-        if can_place {
-            let pos = hex_world_pos(coord, self.origin, &self.overlay.params);
-            let unit = self.picker.available.remove(unit_idx);
-
-            // Boat-ness from the sprite profile (the engine's source of truth),
-            // not the cached `PickerUnit.is_boat` flag -- that flag is only
-            // populated lazily from annotations and is unreliable (e.g. it
-            // resets to `false` when a counter is returned to the picker). This
-            // keeps the spawned counter and the wire event consistent with what
-            // `can_deploy_unit`/`apply_effect` decided.
-            let is_boat =
-                unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
-                    .and_then(omdurman_rules::unit_profiles::profile_for_unit)
-                    .is_some_and(|p| p.kind.is_boat());
-
-            // Optimistic sprite: shown at once, bound to its rules unit (or
-            // dropped, if the engine rejects the placement) by
-            // `reconcile_unit_sprites` when the sequenced echo is applied.
-            let optimistic = spawn_placed_unit(
-                self.commands,
-                self.meshes,
-                self.materials,
-                unit.handle.clone(),
-                self.overlay,
-                pos,
-                PlacedUnit {
-                    coord,
-                    section_name: unit.section_name,
-                    col: unit.col,
-                    row: unit.row,
-                    is_boat,
-                    unit_id: None,
-                    disrupted: false,
-                },
-            );
-            self.commands
-                .entity(optimistic)
-                .try_insert(PendingPlacement::default());
-
-            info!(
-                section_name = %unit.section_name,
-                col = unit.col,
-                row = unit.row,
-                coord.q = coord.q,
-                coord.r = coord.r,
-                "placing unit"
-            );
-            // Auto-select the next available unit in the same section so the
-            // player can keep placing without returning to the picker panel.
-            if self.picker.auto_place_next {
-                // After `remove(unit_idx)` the next unit is now at the same
-                // index (or we've reached the end).  Scan forward for the
-                // next visible unit in the same section.
-                // The next counter of the same tray group (see
-                // `sidebar::tray_group`), as the tray shows them.
-                let group_of = |u: &PickerUnit| {
-                    unit_id_for_section_pos(u.section_name, u.col as u8, u.row as u8)
-                        .and_then(omdurman_rules::unit_profiles::profile_for_unit)
-                        .map(|p| super::sidebar::tray_group(&p.identity))
-                };
-                let group = group_of(&unit);
-                let next = self
-                    .picker
-                    .available
-                    .iter()
-                    .skip(unit_idx)
-                    .position(|u| u.shown() && group.is_some() && group_of(u) == group)
-                    .map(|p| unit_idx + p);
-                if let Some(next_idx) = next {
-                    *self.state = PickerState::Placing {
-                        unit_idx: next_idx,
-                        preview_hex: None,
-                        preview_valid: false,
-                        drag_drop: false,
-                    };
-                } else {
-                    *self.state = PickerState::Idle;
-                }
-            } else {
-                *self.state = PickerState::Idle;
-            }
-            return Ok(Some(GameEvent::PlaceUnit {
-                sprite: omdurman_types::SpriteRef {
-                    section_name: unit.section_name,
-                    col: unit.col,
-                    row: unit.row,
-                },
-                coord: omdurman_types::HexCoord::new(coord.q, coord.r),
-                is_boat,
-            }));
+            *ctx.state = PickerState::Idle;
         }
-        if let Some(error) = refusal {
-            // Keep the counter in hand so the player can try another hex.
-            return Err(error.to_string());
-        }
-        *self.state = PickerState::Idle;
-        Ok(None)
+        return Ok(Some(GameEvent::PlaceUnit {
+            sprite: omdurman_types::SpriteRef {
+                section_name: unit.section_name,
+                col: unit.col,
+                row: unit.row,
+            },
+            coord: omdurman_types::HexCoord::new(coord.q, coord.r),
+            is_boat,
+        }));
     }
+    if let Some(error) = refusal {
+        // Keep the counter in hand so the player can try another hex.
+        return Err(error.to_string());
+    }
+    *ctx.state = PickerState::Idle;
+    Ok(None)
 }
 
 /// The slip for a destination the route finder cannot reach (§5.11-§5.4:
@@ -1147,601 +1073,590 @@ fn unroutable_reason(
     }
 }
 
-struct SelectedClick<'a> {
-    state: &'a mut PickerState,
-    game_map: &'a GameMap,
+/// A selected unit's budget while its route is plotted.
+struct SingleRoute {
     remaining_mp: i16,
     forced_stop: bool,
-    movement_path: &'a mut MovementPath,
 }
 
-impl SelectedClick<'_> {
-    /// Plot the [`auto_route`] from `start` to `goal` through the ordinary
-    /// per-leg click path, stopping at the first leg it refuses.
-    fn plot_route(
-        &mut self,
-        placed_units: &Query<(Entity, &PlacedUnit)>,
-        source: Entity,
-        start: HexCoord,
-        goal: HexCoord,
-        game_state: Option<&crate::GameStateResource>,
-    ) -> Result<(), String> {
-        let Ok((_, placed)) = placed_units.get(source) else {
-            return Ok(());
-        };
-        let budget = if self.forced_stop {
-            0
-        } else {
-            self.remaining_mp
-        };
-        let gunboat = GunboatBudget::of(game_state, placed, self.movement_path);
-        let Some(route) = auto_route(
-            self.game_map,
-            placed_units,
+/// Plot the [`auto_route`] from `start` to `goal` through the ordinary
+/// per-leg click path, stopping at the first leg it refuses.
+fn plot_single_route(
+    ctx: &mut PickerContext,
+    plan: &mut SingleRoute,
+    source: Entity,
+    start: HexCoord,
+    goal: HexCoord,
+    game_state: Option<&crate::GameStateResource>,
+) -> Result<(), String> {
+    let Ok((_, placed)) = ctx.placed_units.get(source) else {
+        return Ok(());
+    };
+    let budget = if plan.forced_stop {
+        0
+    } else {
+        plan.remaining_mp
+    };
+    let gunboat = GunboatBudget::of(game_state, placed, &ctx.movement_path);
+    let Some(route) = auto_route(
+        &ctx.game_map,
+        &ctx.placed_units,
+        placed,
+        start,
+        goal,
+        budget,
+        gunboat,
+        game_state,
+    ) else {
+        info!(?start, ?goal, budget, "no legal route to the clicked hex");
+        let movers: Vec<_> = placed.unit_id.into_iter().collect();
+        let (cheapest, have) = price_unreachable(
+            &ctx.game_map,
+            &ctx.placed_units,
             placed,
-            start,
-            goal,
+            (start, goal),
             budget,
             gunboat,
             game_state,
-        ) else {
-            info!(?start, ?goal, budget, "no legal route to the clicked hex");
-            let movers: Vec<_> = placed.unit_id.into_iter().collect();
-            let (cheapest, have) = price_unreachable(
-                self.game_map,
-                placed_units,
-                placed,
-                (start, goal),
-                budget,
-                gunboat,
-                game_state,
-            );
-            return Err(unroutable_reason(
-                game_state.map(|gs| &gs.0),
-                &movers,
-                goal,
-                have,
-                cheapest,
-            ));
-        };
-        let mut from = start;
-        for hex in route {
-            self.handle(placed_units, true, source, from, hex, game_state)?;
-            match *self.state {
-                PickerState::Selected {
-                    start_coord,
-                    remaining_mp,
-                    forced_stop,
-                    ..
-                } if start_coord == hex => {
-                    from = hex;
-                    self.remaining_mp = remaining_mp;
-                    self.forced_stop = forced_stop;
-                }
-                _ => break,
+        );
+        return Err(unroutable_reason(
+            game_state.map(|gs| &gs.0),
+            &movers,
+            goal,
+            have,
+            cheapest,
+        ));
+    };
+    let mut from = start;
+    for hex in route {
+        single_click(ctx, plan, true, source, from, hex, game_state)?;
+        match *ctx.state {
+            PickerState::Selected {
+                start_coord,
+                remaining_mp,
+                forced_stop,
+                ..
+            } if start_coord == hex => {
+                from = hex;
+                plan.remaining_mp = remaining_mp;
+                plan.forced_stop = forced_stop;
             }
+            _ => break,
         }
-        // The engine's per-leg check refused a step the search accepted:
-        // say where the route stops instead of leaving it short silently.
-        if from != goal {
+    }
+    // The engine's per-leg check refused a step the search accepted:
+    // say where the route stops instead of leaving it short silently.
+    if from != goal {
+        return Err(format!(
+            "The route to {goal} stops at {from}: the next step was refused."
+        ));
+    }
+    Ok(())
+}
+
+fn single_click(
+    ctx: &mut PickerContext,
+    plan: &mut SingleRoute,
+    released: bool,
+    source: Entity,
+    start_coord: HexCoord,
+    coord: HexCoord,
+    game_state: Option<&crate::GameStateResource>,
+) -> Result<(), String> {
+    if !released {
+        return Ok(());
+    }
+    if coord == start_coord {
+        return Ok(());
+    }
+    let Ok((_, placed)) = ctx.placed_units.get(source) else {
+        *ctx.state = PickerState::Idle;
+        return Ok(());
+    };
+    // During Setup, `Selected` is focus-only (the player hits Del to return
+    // the counter to the picker). There's no movement during deployment, so
+    // don't build path legs -- bail without changing state.
+    if game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup)) {
+        return Ok(());
+    }
+    // §9.345 (FALL OF KHARTOUM): a gunboat lying on one Nile mouth
+    // crosses to the other off the board, as a move of its own -- the
+    // engine takes it as the single step of a move, so it is only
+    // offered before any other leg is plotted, and ends the move.
+    if let (Some(gs), Some(uid)) = (game_state, placed.unit_id)
+        && placed.is_boat
+        && gs.0.is_nile_mouth_crossing(start_coord, coord)
+    {
+        if !ctx.movement_path.legs.is_empty() {
             return Err(format!(
-                "The route to {goal} stops at {from}: the next step was refused."
+                "The off-board crossing to {coord} is a move of its own (§9.345): \
+                 undo the plotted steps first."
             ));
         }
-        Ok(())
+        let cost = omdurman_rules::effects::NILE_MOUTH_CROSSING_MP;
+        gs.0.can_move_gunboat(uid, coord, &[coord], MovementPoints::new(cost))
+            .map_err(|error| format!("Cannot cross to {coord} (§9.345): {error}"))?;
+        ctx.movement_path.legs.push((start_coord, coord));
+        ctx.movement_path.cost_so_far += cost;
+        *ctx.state = PickerState::Selected {
+            source,
+            start_coord: coord,
+            remaining_mp: 0,
+            forced_stop: true,
+        };
+        return Ok(());
+    }
+    // A distant hex -- or a neighbour behind a wall -- plot the cheapest
+    // legal route to it, leg by leg (round through a gate).
+    if !start_coord.neighbors().contains(&coord)
+        || hexside_blocks_step(&ctx.game_map, start_coord, coord, game_state)
+    {
+        return plot_single_route(ctx, plan, source, start_coord, coord, game_state);
     }
 
-    fn handle(
-        &mut self,
-        placed_units: &Query<(Entity, &PlacedUnit)>,
-        released: bool,
-        source: Entity,
-        start_coord: HexCoord,
-        coord: HexCoord,
-        game_state: Option<&crate::GameStateResource>,
-    ) -> Result<(), String> {
-        if !released {
-            return Ok(());
-        }
-        if coord == start_coord {
-            return Ok(());
-        }
-        let Ok((_, placed)) = placed_units.get(source) else {
-            *self.state = PickerState::Idle;
-            return Ok(());
-        };
-        // During Setup, `Selected` is focus-only (the player hits Del to return
-        // the counter to the picker). There's no movement during deployment, so
-        // don't build path legs -- bail without changing state.
-        if game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup)) {
-            return Ok(());
-        }
-        // §9.345 (FALL OF KHARTOUM): a gunboat lying on one Nile mouth
-        // crosses to the other off the board, as a move of its own -- the
-        // engine takes it as the single step of a move, so it is only
-        // offered before any other leg is plotted, and ends the move.
-        if let (Some(gs), Some(uid)) = (game_state, placed.unit_id)
-            && placed.is_boat
-            && gs.0.is_nile_mouth_crossing(start_coord, coord)
-        {
-            if !self.movement_path.legs.is_empty() {
-                return Err(format!(
-                    "The off-board crossing to {coord} is a move of its own (§9.345): \
-                     undo the plotted steps first."
-                ));
-            }
-            let cost = omdurman_rules::effects::NILE_MOUTH_CROSSING_MP;
-            gs.0.can_move_gunboat(uid, coord, &[coord], MovementPoints::new(cost))
-                .map_err(|error| format!("Cannot cross to {coord} (§9.345): {error}"))?;
-            self.movement_path.legs.push((start_coord, coord));
-            self.movement_path.cost_so_far += cost;
-            *self.state = PickerState::Selected {
-                source,
-                start_coord: coord,
-                remaining_mp: 0,
-                forced_stop: true,
-            };
-            return Ok(());
-        }
-        // A distant hex -- or a neighbour behind a wall -- plot the cheapest
-        // legal route to it, leg by leg (round through a gate).
-        if !start_coord.neighbors().contains(&coord)
-            || hexside_blocks_step(self.game_map, start_coord, coord, game_state)
-        {
-            return self.plot_route(placed_units, source, start_coord, coord, game_state);
-        }
-
-        let leg = movement_leg_check(
-            self.game_map,
-            placed_units,
+    let leg = movement_leg_check(
+        &ctx.game_map,
+        &ctx.placed_units,
+        placed,
+        start_coord,
+        coord,
+        game_state,
+    );
+    let affordable = leg.cost > 0
+        && plan.remaining_mp >= leg.cost
+        && gunboat_cap_ok(
+            game_state,
             placed,
+            &ctx.movement_path,
             start_coord,
             coord,
-            game_state,
+            leg.cost,
         );
-        let affordable = leg.cost > 0
-            && self.remaining_mp >= leg.cost
-            && gunboat_cap_ok(
-                game_state,
-                placed,
-                self.movement_path,
-                start_coord,
-                coord,
-                leg.cost,
-            );
 
-        if leg.accepted(affordable, self.forced_stop) {
-            let new_remaining = self.remaining_mp - leg.cost;
-            info!(
-                "path leg accepted: {:?} -> {:?}, cost={}, remaining_mp={}, entering_zoc={}",
-                start_coord, coord, leg.cost, new_remaining, leg.entering_enemy_zoc
-            );
-            // Accumulate the leg in the path resource.
-            self.movement_path.legs.push((start_coord, coord));
-            self.movement_path.cost_so_far += leg.cost;
+    if leg.accepted(affordable, plan.forced_stop) {
+        let new_remaining = plan.remaining_mp - leg.cost;
+        info!(
+            "path leg accepted: {:?} -> {:?}, cost={}, remaining_mp={}, entering_zoc={}",
+            start_coord, coord, leg.cost, new_remaining, leg.entering_enemy_zoc
+        );
+        // Accumulate the leg in the path resource.
+        ctx.movement_path.legs.push((start_coord, coord));
+        ctx.movement_path.cost_so_far += leg.cost;
 
-            // Stay in Selected so the player can confirm or (if not pinned by
-            // ZOC) keep adding legs. §5.43 forces a stop once a leg enters an
-            // enemy ZOC; the flag is sticky for the rest of the selection.
-            *self.state = PickerState::Selected {
-                source,
-                start_coord: coord,
-                remaining_mp: new_remaining,
-                forced_stop: self.forced_stop || leg.entering_enemy_zoc,
-            };
-            // No GameEvent yet — committed on confirm.
-            Ok(())
-        } else {
-            info!(
-                source = source.to_bits(),
-                adjacent = leg.adjacent,
-                enemy_occupied = leg.enemy_occupied,
-                passable = leg.passable,
-                affordable,
-                stacking_ok = leg.stacking_ok,
-                forced_stop = self.forced_stop,
-                entering_zoc = leg.entering_enemy_zoc,
-                cost = leg.cost,
-                remaining_mp = self.remaining_mp,
-                "path leg rejected",
-            );
-            self.movement_path.refused = Some(coord);
-            // A rejected click does not discard the work already plotted: the
-            // selection and the accumulated legs stay, so the player can click
-            // a legal continuation, Backspace-undo a leg, Enter-confirm, or
-            // right-click/Delete to cancel. (Previously a single bad click —
-            // e.g. an over-cap friendly pass-through hex per §5.51 — nuked the
-            // whole path.)
-            Ok(())
-        }
+        // Stay in Selected so the player can confirm or (if not pinned by
+        // ZOC) keep adding legs. §5.43 forces a stop once a leg enters an
+        // enemy ZOC; the flag is sticky for the rest of the selection.
+        *ctx.state = PickerState::Selected {
+            source,
+            start_coord: coord,
+            remaining_mp: new_remaining,
+            forced_stop: plan.forced_stop || leg.entering_enemy_zoc,
+        };
+        // No GameEvent yet — committed on confirm.
+        Ok(())
+    } else {
+        info!(
+            source = source.to_bits(),
+            adjacent = leg.adjacent,
+            enemy_occupied = leg.enemy_occupied,
+            passable = leg.passable,
+            affordable,
+            stacking_ok = leg.stacking_ok,
+            forced_stop = plan.forced_stop,
+            entering_zoc = leg.entering_enemy_zoc,
+            cost = leg.cost,
+            remaining_mp = plan.remaining_mp,
+            "path leg rejected",
+        );
+        ctx.movement_path.refused = Some(coord);
+        // A rejected click does not discard the work already plotted: the
+        // selection and the accumulated legs stay, so the player can click
+        // a legal continuation, Backspace-undo a leg, Enter-confirm, or
+        // right-click/Delete to cancel. (Previously a single bad click —
+        // e.g. an over-cap friendly pass-through hex per §5.51 — nuked the
+        // whole path.)
+        Ok(())
+    }
+}
+
+/// Commit the accumulated multi-leg path as a single MoveUnit event.
+///
+/// Called when the player confirms (Enter / UI button). The full path
+/// is sent in one event so the rules engine processes it atomically.
+pub(crate) fn commit_single_path(
+    ctx: &mut PickerContext,
+    source: Entity,
+    game_state: Option<&crate::GameStateResource>,
+) -> Result<Option<GameEvent>, String> {
+    if ctx.movement_path.legs.is_empty() {
+        return Ok(None);
+    }
+    let Ok((_, placed)) = ctx.placed_units.get(source) else {
+        *ctx.state = PickerState::Idle;
+        ctx.movement_path.reset();
+        return Ok(None);
+    };
+
+    // The final destination is the last leg's `to`.
+    let final_dest = ctx.movement_path.legs.last().unwrap().1;
+    let total_cost = ctx.movement_path.cost_so_far;
+
+    // §5.51: the stacking cap applies where the mover *ends* its move.
+    // Pass-through legs are plotted freely; block the commit if the final
+    // hex would exceed the cap (mirroring the engine's apply-time check),
+    // and keep the selection so the player can route on past the hex, undo
+    // a leg, or cancel — instead of committing a move the engine would
+    // reject on echo (animate then snap back).
+    if let (Some(uid), Some(gs)) = (placed.unit_id, game_state)
+        && let Some(mover) = gs.0.find_unit(uid)
+        && let Err(error) = gs.0.check_stacking(mover, final_dest)
+    {
+        warn!(
+            section_name = %placed.section_name,
+            final_dest.q = final_dest.q,
+            final_dest.r = final_dest.r,
+            "commit rejected: final destination breaks the §5.51 stacking cap",
+        );
+        return Err(format!("Cannot end a move on {final_dest}: {error}"));
     }
 
-    /// Commit the accumulated multi-leg path as a single MoveUnit event.
-    ///
-    /// Called when the player confirms (Enter / UI button). The full path
-    /// is sent in one event so the rules engine processes it atomically.
-    pub(crate) fn commit_path(
-        &mut self,
-        placed_units: &Query<(Entity, &PlacedUnit)>,
-        source: Entity,
-        game_state: Option<&crate::GameStateResource>,
-    ) -> Result<Option<GameEvent>, String> {
-        if self.movement_path.legs.is_empty() {
-            return Ok(None);
+    // No local animation: the counter glides along this route once the
+    // engine accepts the move on the echo (`reconcile_unit_sprites`).
+    let path: Vec<HexCoord> = ctx.movement_path.legs.iter().map(|&(_, to)| to).collect();
+
+    info!(
+        section_name = %placed.section_name,
+        legs = path.len(),
+        total_cost,
+        "committing path"
+    );
+
+    ctx.movement_path.reset();
+    *ctx.state = PickerState::Idle;
+
+    Ok(Some(GameEvent::MoveUnit {
+        sprite: omdurman_types::SpriteRef {
+            section_name: placed.section_name,
+            col: placed.col,
+            row: placed.row,
+        },
+        to_q: final_dest.q,
+        to_r: final_dest.r,
+        path,
+    }))
+}
+
+/// A selected stack's budgets while its route is plotted (movement-phase
+/// double-click). Like [`SingleRoute`] but per unit: a leg is accepted if
+/// *any* unit can afford it, and only the affordable units are charged.
+/// Slower units stop (drop) at their last affordable hex;
+/// [`commit_stack_path`] turns the one plotted path into one `MoveUnit` per
+/// unit, each along the longest prefix of the path its budget covers -- so
+/// after the move every unit is independent.
+struct StackRoute {
+    remaining_mp: Vec<i16>,
+    initial_mp: Vec<i16>,
+    forced_stop: bool,
+}
+
+/// Stack variant of [`plot_single_route`]: routed with the
+/// fastest unit's budget; slower units drop off along it as usual.
+fn plot_stack_route(
+    ctx: &mut PickerContext,
+    plan: &mut StackRoute,
+    sources: &[Entity],
+    start: HexCoord,
+    goal: HexCoord,
+    game_state: Option<&crate::GameStateResource>,
+) -> Result<(), String> {
+    let Some(Ok((_, placed))) = sources.first().map(|&s| ctx.placed_units.get(s)) else {
+        return Ok(());
+    };
+    // The whole group must fit at its goal (§5.51-5.53): checking only
+    // the representative unit let a four-stack be routed onto a hex
+    // holding two, and the commit then moved two and silently left the
+    // rest behind.
+    if let Some(gs) = game_state {
+        let movers: Vec<_> = sources
+            .iter()
+            .filter_map(|&s| ctx.placed_units.get(s).ok().and_then(|(_, p)| p.unit_id))
+            .collect();
+        if let Err(error) = gs.0.check_group_stacking(&movers, goal) {
+            return Err(format!(
+                "The stack cannot end its move on {goal} together: {error}. Move fewer \
+                 units, or pick another hex."
+            ));
         }
-        let Ok((_, placed)) = placed_units.get(source) else {
-            *self.state = PickerState::Idle;
-            self.movement_path.reset();
-            return Ok(None);
-        };
-
-        // The final destination is the last leg's `to`.
-        let final_dest = self.movement_path.legs.last().unwrap().1;
-        let total_cost = self.movement_path.cost_so_far;
-
-        // §5.51: the stacking cap applies where the mover *ends* its move.
-        // Pass-through legs are plotted freely; block the commit if the final
-        // hex would exceed the cap (mirroring the engine's apply-time check),
-        // and keep the selection so the player can route on past the hex, undo
-        // a leg, or cancel — instead of committing a move the engine would
-        // reject on echo (animate then snap back).
-        if let (Some(uid), Some(gs)) = (placed.unit_id, game_state)
-            && let Some(mover) = gs.0.find_unit(uid)
-            && let Err(error) = gs.0.check_stacking(mover, final_dest)
-        {
-            warn!(
-                section_name = %placed.section_name,
-                final_dest.q = final_dest.q,
-                final_dest.r = final_dest.r,
-                "commit rejected: final destination breaks the §5.51 stacking cap",
-            );
-            return Err(format!("Cannot end a move on {final_dest}: {error}"));
+    }
+    let budget = if plan.forced_stop {
+        0
+    } else {
+        plan.remaining_mp.iter().copied().max().unwrap_or(0)
+    };
+    let gunboat = GunboatBudget::of(game_state, placed, &ctx.movement_path);
+    let Some(route) = auto_route(
+        &ctx.game_map,
+        &ctx.placed_units,
+        placed,
+        start,
+        goal,
+        budget,
+        gunboat,
+        game_state,
+    ) else {
+        info!(?start, ?goal, budget, "no legal route to the clicked hex");
+        let movers: Vec<_> = sources
+            .iter()
+            .filter_map(|&s| ctx.placed_units.get(s).ok().and_then(|(_, p)| p.unit_id))
+            .collect();
+        let (cheapest, have) = price_unreachable(
+            &ctx.game_map,
+            &ctx.placed_units,
+            placed,
+            (start, goal),
+            budget,
+            gunboat,
+            game_state,
+        );
+        return Err(unroutable_reason(
+            game_state.map(|gs| &gs.0),
+            &movers,
+            goal,
+            have,
+            cheapest,
+        ));
+    };
+    let mut from = start;
+    for hex in route {
+        stack_click(ctx, plan, true, sources, from, hex, game_state)?;
+        match &*ctx.state {
+            PickerState::SelectedStack(sel) if sel.start_coord == hex => {
+                from = hex;
+                plan.remaining_mp = sel.remaining_mp.clone();
+                plan.forced_stop = sel.forced_stop;
+            }
+            _ => break,
         }
+    }
+    // The engine's per-leg check refused a step the search accepted:
+    // say where the route stops instead of leaving it short silently.
+    if from != goal {
+        return Err(format!(
+            "The route to {goal} stops at {from}: the next step was refused."
+        ));
+    }
+    Ok(())
+}
 
-        // No local animation: the counter glides along this route once the
-        // engine accepts the move on the echo (`reconcile_unit_sprites`).
-        let path: Vec<HexCoord> = self.movement_path.legs.iter().map(|&(_, to)| to).collect();
+fn stack_click(
+    ctx: &mut PickerContext,
+    plan: &mut StackRoute,
+    released: bool,
+    sources: &[Entity],
+    start_coord: HexCoord,
+    coord: HexCoord,
+    game_state: Option<&crate::GameStateResource>,
+) -> Result<(), String> {
+    if !released {
+        return Ok(());
+    }
+    if coord == start_coord {
+        return Ok(());
+    }
+    let Ok((_, placed)) = ctx.placed_units.get(sources[0]) else {
+        *ctx.state = PickerState::Idle;
+        return Ok(());
+    };
+    // No movement during Setup (the stack selection itself is movement
+    // phase only, but a stale state could outlive a phase change).
+    if game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup)) {
+        return Ok(());
+    }
+    // A distant hex -- or a neighbour behind a wall -- plot the cheapest
+    // legal route to it, leg by leg (round through a gate).
+    if !start_coord.neighbors().contains(&coord)
+        || hexside_blocks_step(&ctx.game_map, start_coord, coord, game_state)
+    {
+        return plot_stack_route(ctx, plan, sources, start_coord, coord, game_state);
+    }
 
-        info!(
-            section_name = %placed.section_name,
-            legs = path.len(),
-            total_cost,
-            "committing path"
+    // Stacking pre-check uses the first unit as the group's representative
+    // (the engine re-validates each unit's move at commit, so this is a
+    // courtesy gate for the common case -- moving a stack into a hex that
+    // already pushes past the §5.51 cap).
+    let leg = movement_leg_check(
+        &ctx.game_map,
+        &ctx.placed_units,
+        placed,
+        start_coord,
+        coord,
+        game_state,
+    );
+    // A leg is affordable if at least one unit's budget covers it. Units
+    // that can't afford it keep their remaining (they are dropped here).
+    let affordable = leg.cost > 0
+        && plan.remaining_mp.iter().any(|&mp| mp >= leg.cost)
+        && gunboat_cap_ok(
+            game_state,
+            placed,
+            &ctx.movement_path,
+            start_coord,
+            coord,
+            leg.cost,
         );
 
-        self.movement_path.reset();
-        *self.state = PickerState::Idle;
+    if leg.accepted(affordable, plan.forced_stop) {
+        let new_remaining: Vec<i16> = plan
+            .remaining_mp
+            .iter()
+            .map(|&mp| if mp >= leg.cost { mp - leg.cost } else { mp })
+            .collect();
+        info!(
+            "stack path leg accepted: {:?} -> {:?}, cost={}, affordable_units={}, entering_zoc={}",
+            start_coord,
+            coord,
+            leg.cost,
+            new_remaining
+                .iter()
+                .zip(&plan.remaining_mp)
+                .filter(|(nr, mp)| **nr < **mp)
+                .count(),
+            leg.entering_enemy_zoc,
+        );
+        ctx.movement_path.legs.push((start_coord, coord));
+        ctx.movement_path.cost_so_far += leg.cost;
+        *ctx.state = PickerState::SelectedStack(StackSelection {
+            sources: sources.to_vec(),
+            start_coord: coord,
+            remaining_mp: new_remaining,
+            initial_mp: plan.initial_mp.clone(),
+            forced_stop: plan.forced_stop || leg.entering_enemy_zoc,
+        });
+        Ok(())
+    } else {
+        info!(
+            adjacent = leg.adjacent,
+            enemy_occupied = leg.enemy_occupied,
+            passable = leg.passable,
+            affordable,
+            stacking_ok = leg.stacking_ok,
+            forced_stop = plan.forced_stop,
+            entering_zoc = leg.entering_enemy_zoc,
+            cost = leg.cost,
+            "stack path leg rejected",
+        );
+        ctx.movement_path.refused = Some(coord);
+        // Keep the group and the plotted path: a rejected click (an
+        // over-cap friendly pass-through hex per §5.51, a non-adjacent or
+        // out-of-budget hex, or a post-ZOC stop) must not discard the route
+        // already plotted. The player can click a legal continuation,
+        // Backspace-undo, Enter-confirm, or right-click/Delete to cancel.
+        Ok(())
+    }
+}
 
-        Ok(Some(GameEvent::MoveUnit {
+/// Commit the plotted path as one `MoveUnit` per unit, each along the
+/// longest prefix of the path its remaining budget covers.
+///
+/// Units whose budget can't reach even the first hex stay put (no event).
+/// This is what "lower-movement units are dropped along the path": every
+/// unit stops at its last affordable hex, and afterwards the units are
+/// plain independent counters again.
+pub(crate) fn commit_stack_path(
+    ctx: &mut PickerContext,
+    initial_mp: &[i16],
+    sources: &[Entity],
+    game_state: Option<&crate::GameStateResource>,
+) -> Vec<GameEvent> {
+    if ctx.movement_path.legs.is_empty() {
+        return Vec::new();
+    }
+    let mut events = Vec::new();
+
+    for (i, &source) in sources.iter().enumerate() {
+        // The unit's budget for the whole plotted path is what it had when
+        // the stack was selected: `remaining_mp` has already been charged
+        // for the plotted legs.
+        let remaining = initial_mp[i];
+        let Ok((_, placed)) = ctx.placed_units.get(source) else {
+            continue;
+        };
+        // Longest prefix whose cumulative terrain cost fits the budget.
+        let mut cum = 0i16;
+        let mut prefix: Vec<HexCoord> = Vec::new();
+        for &(from, to) in &ctx.movement_path.legs {
+            let leg_cost = floor_movement_cost(
+                &ctx.game_map,
+                from,
+                to,
+                placed.is_boat,
+                game_state.map(|gs| &gs.0),
+            );
+            if cum + leg_cost > remaining {
+                break;
+            }
+            cum += leg_cost;
+            prefix.push(to);
+        }
+        if prefix.is_empty() {
+            // Ran out of movement before the first leg: stays in place.
+            continue;
+        }
+        let to = *prefix.last().unwrap();
+        // §5.51 end-of-move cap, per unit: a unit whose final stop would
+        // break stacking is skipped (the engine would reject exactly that
+        // unit's event on echo anyway; the player can route it on past the
+        // hex or cancel). Only the *stop* is checked — intermediate
+        // pass-through legs never bind.
+        let stacking_ok = match (placed.unit_id, game_state) {
+            (Some(uid), Some(gs)) if let Some(mover) = gs.0.find_unit(uid) => {
+                gs.0.check_stacking(mover, to).is_ok()
+            }
+            _ => true,
+        };
+        if !stacking_ok {
+            warn!(
+                section_name = %placed.section_name,
+                to.q = to.q,
+                to.r = to.r,
+                "stack commit: unit's final stop breaks the §5.51 stacking cap -- skipped",
+            );
+            continue;
+        }
+        info!(
+            section_name = %placed.section_name,
+            legs = prefix.len(),
+            cost = cum,
+            to.q = to.q,
+            to.r = to.r,
+            "committing stack path for unit",
+        );
+        events.push(GameEvent::MoveUnit {
             sprite: omdurman_types::SpriteRef {
                 section_name: placed.section_name,
                 col: placed.col,
                 row: placed.row,
             },
-            to_q: final_dest.q,
-            to_r: final_dest.r,
-            path,
-        }))
-    }
-}
-
-/// Borrowed context for resolving a click while a whole stack is selected
-/// (movement-phase double-click). Mirrors [`SelectedClick`] but tracks a
-/// per-unit movement budget: a leg is accepted if *any* unit can afford it,
-/// and only the affordable units are charged. Slower units stop (drop) at
-/// their last affordable hex; [`commit_path`](Self::commit_path) turns the one
-/// plotted path into one `MoveUnit` per unit, each along the longest prefix of
-/// the path its budget covers -- so after the move every unit is independent.
-struct SelectedStackClick<'a, 'w, 's> {
-    state: &'a mut PickerState,
-    game_map: &'a GameMap,
-    commands: &'a mut Commands<'w, 's>,
-    remaining_mp: Vec<i16>,
-    initial_mp: Vec<i16>,
-    forced_stop: bool,
-    movement_path: &'a mut MovementPath,
-}
-
-impl SelectedStackClick<'_, '_, '_> {
-    /// Stack variant of [`SelectedClick::plot_route`]: routed with the
-    /// fastest unit's budget; slower units drop off along it as usual.
-    fn plot_route(
-        &mut self,
-        placed_units: &Query<(Entity, &PlacedUnit)>,
-        sources: &[Entity],
-        start: HexCoord,
-        goal: HexCoord,
-        game_state: Option<&crate::GameStateResource>,
-    ) -> Result<(), String> {
-        let Some(Ok((_, placed))) = sources.first().map(|&s| placed_units.get(s)) else {
-            return Ok(());
-        };
-        // The whole group must fit at its goal (§5.51-5.53): checking only
-        // the representative unit let a four-stack be routed onto a hex
-        // holding two, and the commit then moved two and silently left the
-        // rest behind.
-        if let Some(gs) = game_state {
-            let movers: Vec<_> = sources
-                .iter()
-                .filter_map(|&s| placed_units.get(s).ok().and_then(|(_, p)| p.unit_id))
-                .collect();
-            if let Err(error) = gs.0.check_group_stacking(&movers, goal) {
-                return Err(format!(
-                    "The stack cannot end its move on {goal} together: {error}. Move fewer \
-                     units, or pick another hex."
-                ));
-            }
-        }
-        let budget = if self.forced_stop {
-            0
-        } else {
-            self.remaining_mp.iter().copied().max().unwrap_or(0)
-        };
-        let gunboat = GunboatBudget::of(game_state, placed, self.movement_path);
-        let Some(route) = auto_route(
-            self.game_map,
-            placed_units,
-            placed,
-            start,
-            goal,
-            budget,
-            gunboat,
-            game_state,
-        ) else {
-            info!(?start, ?goal, budget, "no legal route to the clicked hex");
-            let movers: Vec<_> = sources
-                .iter()
-                .filter_map(|&s| placed_units.get(s).ok().and_then(|(_, p)| p.unit_id))
-                .collect();
-            let (cheapest, have) = price_unreachable(
-                self.game_map,
-                placed_units,
-                placed,
-                (start, goal),
-                budget,
-                gunboat,
-                game_state,
-            );
-            return Err(unroutable_reason(
-                game_state.map(|gs| &gs.0),
-                &movers,
-                goal,
-                have,
-                cheapest,
-            ));
-        };
-        let mut from = start;
-        for hex in route {
-            self.handle(placed_units, true, sources, from, hex, game_state)?;
-            match &*self.state {
-                PickerState::SelectedStack(sel) if sel.start_coord == hex => {
-                    from = hex;
-                    self.remaining_mp = sel.remaining_mp.clone();
-                    self.forced_stop = sel.forced_stop;
-                }
-                _ => break,
-            }
-        }
-        // The engine's per-leg check refused a step the search accepted:
-        // say where the route stops instead of leaving it short silently.
-        if from != goal {
-            return Err(format!(
-                "The route to {goal} stops at {from}: the next step was refused."
-            ));
-        }
-        Ok(())
+            to_q: to.q,
+            to_r: to.r,
+            path: prefix,
+        });
     }
 
-    fn handle(
-        &mut self,
-        placed_units: &Query<(Entity, &PlacedUnit)>,
-        released: bool,
-        sources: &[Entity],
-        start_coord: HexCoord,
-        coord: HexCoord,
-        game_state: Option<&crate::GameStateResource>,
-    ) -> Result<(), String> {
-        if !released {
-            return Ok(());
-        }
-        if coord == start_coord {
-            return Ok(());
-        }
-        let Ok((_, placed)) = placed_units.get(sources[0]) else {
-            *self.state = PickerState::Idle;
-            return Ok(());
-        };
-        // No movement during Setup (the stack selection itself is movement
-        // phase only, but a stale state could outlive a phase change).
-        if game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup)) {
-            return Ok(());
-        }
-        // A distant hex -- or a neighbour behind a wall -- plot the cheapest
-        // legal route to it, leg by leg (round through a gate).
-        if !start_coord.neighbors().contains(&coord)
-            || hexside_blocks_step(self.game_map, start_coord, coord, game_state)
-        {
-            return self.plot_route(placed_units, sources, start_coord, coord, game_state);
-        }
-
-        // Stacking pre-check uses the first unit as the group's representative
-        // (the engine re-validates each unit's move at commit, so this is a
-        // courtesy gate for the common case -- moving a stack into a hex that
-        // already pushes past the §5.51 cap).
-        let leg = movement_leg_check(
-            self.game_map,
-            placed_units,
-            placed,
-            start_coord,
-            coord,
-            game_state,
-        );
-        // A leg is affordable if at least one unit's budget covers it. Units
-        // that can't afford it keep their remaining (they are dropped here).
-        let affordable = leg.cost > 0
-            && self.remaining_mp.iter().any(|&mp| mp >= leg.cost)
-            && gunboat_cap_ok(
-                game_state,
-                placed,
-                self.movement_path,
-                start_coord,
-                coord,
-                leg.cost,
-            );
-
-        if leg.accepted(affordable, self.forced_stop) {
-            let new_remaining: Vec<i16> = self
-                .remaining_mp
-                .iter()
-                .map(|&mp| if mp >= leg.cost { mp - leg.cost } else { mp })
-                .collect();
-            info!(
-                "stack path leg accepted: {:?} -> {:?}, cost={}, affordable_units={}, entering_zoc={}",
-                start_coord,
-                coord,
-                leg.cost,
-                new_remaining
-                    .iter()
-                    .zip(&self.remaining_mp)
-                    .filter(|(nr, mp)| **nr < **mp)
-                    .count(),
-                leg.entering_enemy_zoc,
-            );
-            self.movement_path.legs.push((start_coord, coord));
-            self.movement_path.cost_so_far += leg.cost;
-            *self.state = PickerState::SelectedStack(StackSelection {
-                sources: sources.to_vec(),
-                start_coord: coord,
-                remaining_mp: new_remaining,
-                initial_mp: self.initial_mp.clone(),
-                forced_stop: self.forced_stop || leg.entering_enemy_zoc,
-            });
-            Ok(())
-        } else {
-            info!(
-                adjacent = leg.adjacent,
-                enemy_occupied = leg.enemy_occupied,
-                passable = leg.passable,
-                affordable,
-                stacking_ok = leg.stacking_ok,
-                forced_stop = self.forced_stop,
-                entering_zoc = leg.entering_enemy_zoc,
-                cost = leg.cost,
-                "stack path leg rejected",
-            );
-            self.movement_path.refused = Some(coord);
-            // Keep the group and the plotted path: a rejected click (an
-            // over-cap friendly pass-through hex per §5.51, a non-adjacent or
-            // out-of-budget hex, or a post-ZOC stop) must not discard the route
-            // already plotted. The player can click a legal continuation,
-            // Backspace-undo, Enter-confirm, or right-click/Delete to cancel.
-            Ok(())
-        }
+    // The group move is over: the stack is deselected and each unit is an
+    // independent counter again. If nothing was committed (every unit was
+    // budget-dropped or stacking-skipped), keep the plot so the player can
+    // extend or cancel instead of silently losing it.
+    if events.is_empty() && !ctx.movement_path.legs.is_empty() {
+        warn!("stack commit produced no moves; keeping the plotted path");
+        return events;
     }
-
-    /// Commit the plotted path as one `MoveUnit` per unit, each along the
-    /// longest prefix of the path its remaining budget covers.
-    ///
-    /// Units whose budget can't reach even the first hex stay put (no event).
-    /// This is what "lower-movement units are dropped along the path": every
-    /// unit stops at its last affordable hex, and afterwards the units are
-    /// plain independent counters again.
-    pub(crate) fn commit_path(
-        &mut self,
-        placed_units: &Query<(Entity, &PlacedUnit)>,
-        sources: &[Entity],
-        game_state: Option<&crate::GameStateResource>,
-    ) -> Vec<GameEvent> {
-        if self.movement_path.legs.is_empty() {
-            return Vec::new();
-        }
-        let mut events = Vec::new();
-
-        for (i, &source) in sources.iter().enumerate() {
-            // The unit's budget for the whole plotted path is what it had when
-            // the stack was selected: `remaining_mp` has already been charged
-            // for the plotted legs.
-            let remaining = self.initial_mp[i];
-            let Ok((_, placed)) = placed_units.get(source) else {
-                continue;
-            };
-            // Longest prefix whose cumulative terrain cost fits the budget.
-            let mut cum = 0i16;
-            let mut prefix: Vec<HexCoord> = Vec::new();
-            for &(from, to) in &self.movement_path.legs {
-                let leg_cost = floor_movement_cost(
-                    self.game_map,
-                    from,
-                    to,
-                    placed.is_boat,
-                    game_state.map(|gs| &gs.0),
-                );
-                if cum + leg_cost > remaining {
-                    break;
-                }
-                cum += leg_cost;
-                prefix.push(to);
-            }
-            if prefix.is_empty() {
-                // Ran out of movement before the first leg: stays in place.
-                continue;
-            }
-            let to = *prefix.last().unwrap();
-            // §5.51 end-of-move cap, per unit: a unit whose final stop would
-            // break stacking is skipped (the engine would reject exactly that
-            // unit's event on echo anyway; the player can route it on past the
-            // hex or cancel). Only the *stop* is checked — intermediate
-            // pass-through legs never bind.
-            let stacking_ok = match (placed.unit_id, game_state) {
-                (Some(uid), Some(gs)) if let Some(mover) = gs.0.find_unit(uid) => {
-                    gs.0.check_stacking(mover, to).is_ok()
-                }
-                _ => true,
-            };
-            if !stacking_ok {
-                warn!(
-                    section_name = %placed.section_name,
-                    to.q = to.q,
-                    to.r = to.r,
-                    "stack commit: unit's final stop breaks the §5.51 stacking cap -- skipped",
-                );
-                continue;
-            }
-            info!(
-                section_name = %placed.section_name,
-                legs = prefix.len(),
-                cost = cum,
-                to.q = to.q,
-                to.r = to.r,
-                "committing stack path for unit",
-            );
-            events.push(GameEvent::MoveUnit {
-                sprite: omdurman_types::SpriteRef {
-                    section_name: placed.section_name,
-                    col: placed.col,
-                    row: placed.row,
-                },
-                to_q: to.q,
-                to_r: to.r,
-                path: prefix,
-            });
-        }
-
-        // The group move is over: the stack is deselected and each unit is an
-        // independent counter again. If nothing was committed (every unit was
-        // budget-dropped or stacking-skipped), keep the plot so the player can
-        // extend or cancel instead of silently losing it.
-        if events.is_empty() && !self.movement_path.legs.is_empty() {
-            warn!("stack commit produced no moves; keeping the plotted path");
-            return events;
-        }
-        for &source in sources {
-            self.commands.entity(source).remove::<Selected>();
-        }
-        self.movement_path.reset();
-        *self.state = PickerState::Idle;
-        events
+    for &source in sources {
+        ctx.commands.entity(source).remove::<Selected>();
     }
+    ctx.movement_path.reset();
+    *ctx.state = PickerState::Idle;
+    events
 }
 
 /// Clear the accumulated movement path when the picker is idle.
@@ -1793,14 +1708,7 @@ pub(crate) fn confirm_movement_path(
     );
     match ActiveSelection::snapshot(&picker_ctx.state) {
         ActiveSelection::Single { source, .. } => {
-            let mut sel = SelectedClick {
-                state: &mut picker_ctx.state,
-                game_map: &picker_ctx.game_map,
-                remaining_mp: 0,
-                forced_stop: false,
-                movement_path: &mut picker_ctx.movement_path,
-            };
-            match sel.commit_path(&picker_ctx.placed_units, source, game_state.as_deref()) {
+            match commit_single_path(&mut picker_ctx, source, game_state.as_deref()) {
                 Ok(Some(event)) => {
                     picker_ctx
                         .action_writer
@@ -1817,17 +1725,9 @@ pub(crate) fn confirm_movement_path(
             }
         }
         ActiveSelection::Stack(sel) => {
-            let mut sel_click = SelectedStackClick {
-                state: &mut picker_ctx.state,
-                game_map: &picker_ctx.game_map,
-                commands: &mut picker_ctx.commands,
-                remaining_mp: sel.remaining_mp.clone(),
-                initial_mp: sel.initial_mp.clone(),
-                forced_stop: sel.forced_stop,
-                movement_path: &mut picker_ctx.movement_path,
-            };
-            for event in sel_click.commit_path(
-                &picker_ctx.placed_units,
+            for event in commit_stack_path(
+                &mut picker_ctx,
+                &sel.initial_mp,
                 &sel.sources,
                 game_state.as_deref(),
             ) {

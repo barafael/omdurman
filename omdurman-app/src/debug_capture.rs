@@ -413,7 +413,6 @@ fn parse_input_steps(text: &str) -> Vec<InputStep> {
 
 /// Serve a `<probe>.input` request (see [`HexProbePlugin`]): one step per
 /// frame, through the messages winit's input would arrive by.
-#[allow(clippy::too_many_arguments)]
 fn probe_input(
     path: Res<HexProbePath>,
     time: Res<Time>,

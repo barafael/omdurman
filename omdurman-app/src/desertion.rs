@@ -84,7 +84,6 @@ pub(crate) fn detect_desertion_turn(
 }
 
 /// Render the desertion overlay panel.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn desertion_panel_ui(
     mut contexts: EguiContexts,
     desertion: Option<ResMut<DesertionTurn>>,

@@ -105,7 +105,6 @@ pub struct RetreatTargetRing;
 /// destinations, and the path to the hovered one.
 type RetreatOverlayKey = (UnitId, Vec<HexCoord>, Option<[HexCoord; 3]>);
 
-#[allow(clippy::too_many_arguments)]
 pub fn retreat_overlay_mesh(
     mut commands: Commands,
     arrows: crate::DirectionArrowCtx,

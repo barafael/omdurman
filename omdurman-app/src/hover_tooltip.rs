@@ -36,7 +36,6 @@ impl Plugin for HoverTooltipPlugin {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn draw_hover_tooltip(
     mut contexts: EguiContexts,
     game_map: Res<GameMap>,

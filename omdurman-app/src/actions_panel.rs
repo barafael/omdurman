@@ -62,7 +62,6 @@ pub struct HintsCache {
     hints: Vec<ActionHint>,
 }
 
-#[allow(clippy::too_many_arguments)]
 /// Render the action panel into the right sidebar's "Actions" section.
 /// Called by [`crate::overview::unit_overview_ui`] so it shares the sidebar
 /// with the Game-control and Unit-list sections. `ui_state` is the mirrored
@@ -417,7 +416,6 @@ pub fn draw_actions_section(
 /// (`can_fire_at` sweeps, the §7.5 retreat candidate scan), so it is
 /// re-derived only when the inputs in `cx`/the selection/the engine state
 /// moved.
-#[allow(clippy::too_many_arguments)]
 fn collect_hints(
     gs: &omdurman_rules::effects::GameState,
     phase: Phase,

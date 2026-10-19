@@ -372,7 +372,6 @@ fn adjacent_to_hexside(hex: HexCoord, a: HexCoord, b: HexCoord) -> bool {
 /// unit features), then the hexsides crossed, then those run along (notes d
 /// and e). Stops at the first block, so a boolean caller pays no more than
 /// the annotated path would.
-#[allow(clippy::too_many_arguments)]
 fn los_walk(
     board: &crate::board::BoardInfo,
     from: HexCoord,
@@ -598,7 +597,6 @@ fn los_walk(
 /// The `breached` closure reports §6.53/§6.63 wall breaches, which do not
 /// block (pass `|_, _| false` when the caller holds no game state, e.g. in
 /// board-only tools).
-#[allow(clippy::too_many_arguments)]
 pub fn has_los(
     board: &crate::board::BoardInfo,
     from: HexCoord,
@@ -689,7 +687,6 @@ fn los_rays(
 /// it enters the target through (§6.23), a thorn hedge it crosses (§9.231)
 /// -- must look along: the shot is seen along a clear ray, which may be
 /// either side of a tie.
-#[allow(clippy::too_many_arguments)]
 pub fn los_clear_rays(
     board: &crate::board::BoardInfo,
     from: HexCoord,
@@ -747,7 +744,6 @@ pub fn los_clear_rays(
 /// (use [`los_level_for_unit`] at the call site) and a `breached` closure for
 /// §6.53/§6.63 wall breaches (pass `|_, _| false` when no game state is at
 /// hand).
-#[allow(clippy::too_many_arguments)]
 pub fn los_path_analysis(
     board: &crate::board::BoardInfo,
     from: HexCoord,

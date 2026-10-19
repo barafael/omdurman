@@ -47,6 +47,21 @@ impl std::fmt::Display for ElimCause {
 /// changes themselves -- `apply_effect` mutates `GameState` synchronously
 /// regardless of whether observations are drained.
 ///
+/// One side of a resolved melee (§7.7): its roll, what modified it, the
+/// result it dealt the other side, and the side's own losses.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct MeleeSide {
+    pub roll: DieRoll,
+    pub total_modifier: i16,
+    pub modified_roll: DieRoll,
+    /// The result this side's roll dealt the *other* side.
+    pub result: CombatResult,
+    /// The melee factor the side rolled on (post-sum, pre-band). The CRT
+    /// row is derived from it via [`FireFactorRow::from_total`].
+    pub factor: u16,
+    pub losses: Vec<UnitId>,
+}
+
 /// Pushed by the engine onto [`GameState::observations`]; the app drains them
 /// after each `apply_effect` call.  Serialized so that replay / late-join
 /// produces the same observation stream (the user sees the full event flow
@@ -146,20 +161,8 @@ pub enum Observation {
     /// simultaneous, so each side's roll is applied to the *other*.
     MeleeResolved {
         attack: MeleeAttack,
-        attacker_roll: DieRoll,
-        attacker_total_modifier: i16,
-        attacker_modified_roll: DieRoll,
-        attacker_result: CombatResult,
-        defender_roll: DieRoll,
-        defender_total_modifier: i16,
-        defender_modified_roll: DieRoll,
-        defender_result: CombatResult,
-        /// Melee factors each side rolled on (post-sum, pre-band). The CRT
-        /// row is derived from these via [`FireFactorRow::from_total`].
-        attacker_factor: u16,
-        defender_factor: u16,
-        attacker_losses: Vec<UnitId>,
-        defender_losses: Vec<UnitId>,
+        attacker: MeleeSide,
+        defender: MeleeSide,
         /// Whether the mandatory Dervish advance-after-melee (§7.6) fired, and
         /// how many units moved into the vacated hex.
         mandatory_advance: Option<u8>,
