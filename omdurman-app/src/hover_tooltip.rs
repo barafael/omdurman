@@ -156,6 +156,19 @@ fn draw_hover_tooltip(
                                         crate::ui::palette::INK
                                     };
                                     ui.colored_label(color, label);
+                                    // What the counter's status pips say.
+                                    let pips: Vec<&str> = crate::render::pips_of(gs, u.id)
+                                        .into_iter()
+                                        .map(crate::render::Pip::meaning)
+                                        .collect();
+                                    if !pips.is_empty() {
+                                        crate::rulebook::refs_rich(
+                                            ui,
+                                            &format!("    {}", pips.join("; ")),
+                                            11.0,
+                                            |t| t.color(crate::ui::palette::FAINT_INK),
+                                        );
+                                    }
                                 }
                                 // §5.54 brigade integrity: when all four
                                 // battalions of an Anglo-Egyptian brigade are

@@ -1005,7 +1005,6 @@ mod tests {
             yellow: default(),
             path_shadow: default(),
             fire_arrow: default(),
-            acted: default(),
         }
     }
 

@@ -162,13 +162,9 @@ seat handling).
 ## UI
 
 - Deployment traps get no warning (e.g. the Hogali pocket in Fall of Khartoum).
-- Fired pips are never drawn: the acted rings mark movement only
-  (`TODO(acted-universal)` in `render.rs`; the engine's
-  `units_fired_this_phase` / `units_meleed_this_turn` can feed them).
 - The Mahdi's Tomb has a VP-card line naming its holder but no board marker.
 - The chart sheet (`charts.rs`) has no LOS table or Scattergram tab.
-- There are no Nile flow arrows (`flow_at`) and no marker for units stopped in
-  an enemy ZOC (`zoc_stopped_this_turn`).
+- There are no Nile flow arrows (`flow_at`).
 - River mine and chain placement (`river_placement.rs`) shows no legal band;
   the engine refuses hexes outside it.
 - Campaign Dervish set-up has no per-class groups, placed/total counters or

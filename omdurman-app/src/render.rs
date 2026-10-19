@@ -38,8 +38,6 @@ pub mod overlay_palette {
     pub const RING_REACH: Color = Color::srgb(0.05, 0.62, 0.72);
     /// Translucent yellow ring / fill.
     pub const RING_YELLOW: Color = Color::srgba(1.0, 0.85, 0.0, 0.4);
-    /// Grey-blue "unit has acted" ring.
-    pub const RING_ACTED: Color = Color::srgba(0.45, 0.60, 0.80, 0.35);
     /// Cursor-hex fill when placement is legal.
     pub const MARKER_LEGAL: Color = Color::srgba(0.0, 1.0, 0.0, 0.25);
     /// Cursor-hex fill when placement is illegal.
@@ -175,62 +173,146 @@ pub fn update_selection_marker(
     }
 }
 
-// -- Acted marker ---------------------------------------------------------------
+// -- Acted markers -------------------------------------------------------------
 
-/// Translucent grey-blue ring drawn on top of a unit's hex to indicate it
-/// has already acted (fired, moved, etc.) during the current phase.
+/// A status pip on a counter: what the unit has done or suffered this
+/// phase or turn, the counter's own marker as on the tabletop.
 #[derive(Component)]
 pub struct ActedMarker;
 
-/// Spawn or despawn acted-outline rings for every unit that has spent
-/// movement points this phase. The rings are rebuilt only when the set of
-/// marked hexes changes (or the overlays were cleared, see
-/// [`crate::picker::OverlayGeneration`]) -- not every frame.
-///
-/// TODO(acted-universal): extend to fire allocations and melee once the
-/// rules engine has a universal `acted` field on `UnitState`.
+/// What a status pip says, in drawing order along the counter's top edge.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Pip {
+    /// Spent movement points this turn (§5.12).
+    Moved,
+    /// Fired in this fire subphase (§6.14) -- or its Maxims did (§2.32).
+    Fired,
+    /// Melee-attacked this turn (§7.5).
+    Meleed,
+    /// Stopped in an enemy zone of control: no further this turn (§5.43).
+    ZocStopped,
+}
+
+impl Pip {
+    fn color(self) -> Color {
+        match self {
+            Pip::Moved => Color::srgb(0.35, 0.55, 0.95),
+            Pip::Fired => Color::srgb(1.0, 0.55, 0.1),
+            Pip::Meleed => Color::srgb(0.85, 0.1, 0.1),
+            Pip::ZocStopped => Color::srgb(1.0, 0.9, 0.2),
+        }
+    }
+
+    /// The legend line for a pip (the hover tooltip lists them).
+    pub(crate) fn meaning(self) -> &'static str {
+        match self {
+            Pip::Moved => "moved this turn (§5.12)",
+            Pip::Fired => "fired this subphase (§6.14)",
+            Pip::Meleed => "melee-attacked this turn (§7.5)",
+            Pip::ZocStopped => "stopped in an enemy ZOC -- no further this turn (§5.43)",
+        }
+    }
+}
+
+/// The pips `unit` carries in `gs`.
+pub(crate) fn pips_of(
+    gs: &omdurman_rules::effects::GameState,
+    unit: omdurman_rules::UnitId,
+) -> Vec<Pip> {
+    let mut pips = Vec::new();
+    if gs.mp_spent(unit) > 0 {
+        pips.push(Pip::Moved);
+    }
+    if gs.phase.is_fire()
+        && (gs.units_fired_this_phase.contains(&unit)
+            || gs.gunboat_maxims_fired_this_phase.contains(&unit))
+    {
+        pips.push(Pip::Fired);
+    }
+    if gs.units_meleed_this_turn.contains(&unit) {
+        pips.push(Pip::Meleed);
+    }
+    if gs.zoc_stopped_this_turn.contains(&unit) {
+        pips.push(Pip::ZocStopped);
+    }
+    pips
+}
+
+/// The pip square and one material per [`Pip`], made on first use.
+type PipAssets = (Handle<Mesh>, Vec<(Pip, Handle<StandardMaterial>)>);
+
+/// Every counter carrying pips, with them: what was last drawn.
+type CounterPips = Vec<(Entity, Vec<Pip>)>;
+
+/// Hang status pips ([`Pip`]) on the counters: small coloured squares
+/// along each counter's top edge, children of the counter so they follow
+/// it through the stack layout. Rebuilt only when what they show changed
+/// (or the overlays were cleared, see [`crate::picker::OverlayGeneration`]).
+#[allow(clippy::too_many_arguments)]
 pub fn update_acted_markers(
     mut commands: Commands,
-    hex: crate::HexRender,
     game_state: Res<crate::GameStateResource>,
+    counters: Query<(Entity, &crate::picker::PlacedUnit)>,
     existing: Query<Entity, With<ActedMarker>>,
-    mut last: Local<Option<Vec<HexCoord>>>,
+    overlay: Res<HexOverlay>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut assets: Local<Option<PipAssets>>,
+    mut last: Local<Option<CounterPips>>,
     (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
     if generation.invalidates(&mut seen_generation) {
         *last = None;
     }
-    // Rebuilt only when the engine state moved (like `howitzer_impact_markers`)
-    // or the overlays were cleared -- not every frame: an idle board re-runs
-    // neither the per-unit `mp_spent` scan nor the marker comparison.
-    if last.is_some() && !game_state.is_changed() {
-        return;
-    }
-    let gs = game_state;
-    let marked: Vec<HexCoord> =
-        gs.0.units
-            .iter()
-            .filter(|u| u.state.disrupted || gs.0.mp_spent(u.id) > 0)
-            .map(|u| u.position)
-            .collect();
+    let gs = &game_state.0;
+    let mut marked: CounterPips = counters
+        .iter()
+        .filter_map(|(entity, placed)| {
+            let pips = pips_of(gs, placed.unit_id?);
+            (!pips.is_empty()).then_some((entity, pips))
+        })
+        .collect();
+    marked.sort_by_key(|(e, _)| e.to_bits());
     if last.as_ref() == Some(&marked) {
         return;
     }
     let existing: Vec<Entity> = existing.iter().collect();
     crate::ui::despawn_all(&mut commands, &existing);
 
-    let origin = hex.layout.adjusted_origin(&hex.overlay.params);
-    let size = hex.overlay.params.hex_size;
-
-    for &position in &marked {
-        let pos = hex_world_pos(position, origin, &hex.overlay.params);
-        commands.spawn((
-            ActedMarker,
-            Mesh3d(hex.assets.mesh.clone()),
-            MeshMaterial3d(hex.assets.acted.clone()),
-            Transform::from_xyz(pos.x, 0.8, pos.z).with_scale(Vec3::splat(size)),
-            Visibility::Visible,
-        ));
+    let sprite = overlay.params.hex_size * crate::picker::SPRITE_HEX_FRACTION;
+    let pip = sprite * 0.16;
+    let (mesh, colors) = assets.get_or_insert_with(|| {
+        let mesh = meshes.add(Rectangle::new(1.0, 1.0));
+        let colors = [Pip::Moved, Pip::Fired, Pip::Meleed, Pip::ZocStopped]
+            .into_iter()
+            .map(|p| {
+                let material = materials.add(StandardMaterial {
+                    base_color: p.color(),
+                    unlit: true,
+                    ..default()
+                });
+                (p, material)
+            })
+            .collect();
+        (mesh, colors)
+    });
+    for (counter, pips) in &marked {
+        for (i, kind) in pips.iter().enumerate() {
+            let Some((_, material)) = colors.iter().find(|(p, _)| p == kind) else {
+                continue;
+            };
+            // Along the top edge from the right corner, in the counter's own
+            // plane (local +Y is the counter's top), a hair above it.
+            let x = sprite * 0.5 - pip * (0.7 + 1.15 * i as f32);
+            let y = sprite * 0.5 - pip * 0.7;
+            commands.entity(*counter).with_child((
+                ActedMarker,
+                Mesh3d(mesh.clone()),
+                MeshMaterial3d(material.clone()),
+                Transform::from_xyz(x, y, 0.02).with_scale(Vec3::splat(pip)),
+                Visibility::Inherited,
+            ));
+        }
     }
     *last = Some(marked);
 }
@@ -266,8 +348,6 @@ pub struct HexRingAssets {
     pub yellow: Handle<StandardMaterial>,
     pub path_shadow: Handle<StandardMaterial>,
     pub fire_arrow: Handle<StandardMaterial>,
-    /// Grey-blue for the per-unit "acted" ring.
-    pub acted: Handle<StandardMaterial>,
 }
 
 fn unlit_alpha_material(color: Color) -> StandardMaterial {
@@ -302,9 +382,6 @@ pub fn spawn_hex_ring_assets(
     let yellow = materials.add(unlit_alpha_material(op::RING_YELLOW));
     let path_shadow = materials.add(unlit_alpha_material(op::PATH_SHADOW));
     let fire_arrow = materials.add(unlit_alpha_material(op::FIRE_ARROW));
-    // Grey-blue for "acted" outline — slightly transparent so the unit
-    // counter underneath is still visible.
-    let acted = materials.add(unlit_alpha_material(op::RING_ACTED));
     commands.insert_resource(HexRingAssets {
         mesh,
         unit_square,
@@ -322,7 +399,6 @@ pub fn spawn_hex_ring_assets(
         yellow,
         path_shadow,
         fire_arrow,
-        acted,
     });
 }
 
@@ -388,7 +464,7 @@ pub fn spawn_movement_arrow_assets(
 }
 
 /// Registers all render-domain resources and systems: the map plane, hex
-/// selection marker, and the acted markers.
+/// selection marker, and the counters' status pips.
 pub struct RenderPlugin;
 
 impl Plugin for RenderPlugin {
