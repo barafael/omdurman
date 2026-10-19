@@ -505,7 +505,18 @@ fn movement_hint(
             };
             let mut probe = gs.clone();
             probe.units.retain(|u| u.id != unit_id);
+            // FALL OF KHARTOUM: a land unit north of the Blue Nile can
+            // never reach Khartoum (§5.22).
+            let cut_off = gs.scenario == omdurman_types::Scenario::FallOfKhartoum
+                && !unit.profile.kind.is_boat()
+                && gs
+                    .board
+                    .hex_of_location(omdurman_types::Location::Palace)
+                    .is_some_and(|palace| !gs.board.land_region(palace).contains(&hex));
             Some(match probe.can_deploy_unit(&placement) {
+                Ok(()) if cut_off => "May set up here -- but the Nile cuts this ground off: \
+                     units set up here can never reach Khartoum (§5.22)."
+                    .to_string(),
                 Ok(()) => "May set up here.".to_string(),
                 Err(reason) => format!("Cannot set up here: {reason}."),
             })

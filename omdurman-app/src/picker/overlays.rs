@@ -740,6 +740,16 @@ pub fn deployment_zone_overlay_mesh(
     // -- its own area in the Campaign (§9.111), its own leader's three-hex
     // halo out of sight in the Historical scenario (§9.212), the stacking
     // law everywhere -- judged as if it were not yet on the board.
+    // FALL OF KHARTOUM: ground no land route joins to the Palace (the Hogali
+    // pocket north of the Blue Nile, §5.22) is legal set-up but a trap --
+    // ringed amber instead of green.
+    let reachable = (gs.0.scenario == omdurman_types::Scenario::FallOfKhartoum)
+        .then(|| {
+            gs.0.board
+                .hex_of_location(omdurman_types::Location::Palace)
+                .map(|palace| gs.0.board.land_region(palace))
+        })
+        .flatten();
     let without_hand = hand.map(|(id, _)| {
         let mut probe = gs.0.clone();
         probe.units.retain(|u| u.id != id);
@@ -772,10 +782,17 @@ pub fn deployment_zone_overlay_mesh(
             let pos = hex_world_pos(*coord, origin, &overlay.params);
             // Saturated green: the pale ring read as part of the printed
             // hex grid on the sepia map.
+            let cut_off = reachable
+                .as_ref()
+                .is_some_and(|region| !region.contains(coord) && !gs.0.board.is_nile(*coord));
             commands.spawn((
                 DeploymentZoneRing,
                 Mesh3d(assets.mesh.clone()),
-                MeshMaterial3d(assets.green.clone()),
+                MeshMaterial3d(if cut_off {
+                    assets.orange.clone()
+                } else {
+                    assets.green.clone()
+                }),
                 Transform::from_xyz(pos.x, 1.4, pos.z).with_scale(Vec3::splat(size)),
                 Visibility::Visible,
             ));

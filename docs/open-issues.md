@@ -161,7 +161,6 @@ seat handling).
 
 ## UI
 
-- Deployment traps get no warning (e.g. the Hogali pocket in Fall of Khartoum).
 - Melee: every melee-capable unit of the selected hex attacks (no holding
   units back), and the UI declares from one hex only, though the engine
   accepts attackers from several adjacent hexes (§7.6).

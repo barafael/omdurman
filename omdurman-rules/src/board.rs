@@ -406,6 +406,27 @@ impl BoardInfo {
         self.terrain_at(hex).is_some_and(Terrain::is_nile)
     }
 
+    /// The land hexes a land unit at `from` could ever walk to, walls aside
+    /// (they can be breached, §6.53/§6.63): every land hex joined to it
+    /// without crossing the Nile (§5.22). Empty when `from` is no land hex.
+    pub fn land_region(&self, from: HexCoord) -> std::collections::BTreeSet<HexCoord> {
+        let mut region = std::collections::BTreeSet::new();
+        let land = |h: HexCoord| self.terrain_at(h).is_some_and(|t| !t.is_nile());
+        if !land(from) {
+            return region;
+        }
+        let mut frontier = vec![from];
+        region.insert(from);
+        while let Some(hex) = frontier.pop() {
+            for next in hex.neighbors() {
+                if land(next) && region.insert(next) {
+                    frontier.push(next);
+                }
+            }
+        }
+        region
+    }
+
     /// The Nile current direction at a hex, if annotated (§5.24).
     pub fn flow_at(&self, hex: HexCoord) -> Option<HexDirection> {
         self.terrain_at(hex)?.nile_direction()
@@ -893,5 +914,36 @@ mod tests {
             Some(HexCoord::new(3, 5))
         );
         assert_eq!(board.hex_of_location(Location::Tuti), None);
+    }
+}
+
+#[cfg(test)]
+mod land_region_tests {
+    use omdurman_types::{HexCoord, Location, MapKind};
+
+    /// FALL OF KHARTOUM: Hogali, the North Fort and (20,4) lie north of the
+    /// Blue Nile -- no land route joins them to the Palace (§5.22).
+    #[test]
+    fn the_hogali_pocket_is_cut_off_from_the_palace() {
+        let board = crate::board_data::board_info(MapKind::FallOfKhartoum);
+        let palace = board.hex_of_location(Location::Palace).expect("the Palace");
+        let region = board.land_region(palace);
+        assert!(region.contains(&palace));
+        for pocket in [
+            HexCoord::new(18, 0),
+            HexCoord::new(19, 3),
+            HexCoord::new(20, 4),
+        ] {
+            assert!(
+                board.terrain_at(pocket).is_some(),
+                "{pocket} is on the board"
+            );
+            assert!(!region.contains(&pocket), "{pocket} is cut off");
+        }
+        assert!(
+            board
+                .land_region(HexCoord::new(18, 0))
+                .contains(&HexCoord::new(20, 4))
+        );
     }
 }
