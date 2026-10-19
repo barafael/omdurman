@@ -202,3 +202,67 @@ pub(crate) struct MineChainKey {
 /// Marker component for mine/chain board markers.
 #[derive(Component)]
 pub(crate) struct MineChainMarker;
+
+/// What [`river_placement_band`] last drew for: mine armed, chain armed,
+/// the plotted chain, the mines on the board.
+type RiverBandKey = (bool, bool, Vec<omdurman_types::HexCoord>, usize);
+
+/// Marker for the legal-hex band of a mine or chain placement.
+#[derive(Component)]
+pub(crate) struct RiverBandMarker;
+
+/// While a mine or the chain is being placed (§10.11, §10.21), ring every
+/// hex the engine would take next -- a mine on any free Nile hex south of
+/// the Khor Shambat's mouth, the chain on a hex that continues the line
+/// plotted so far -- and the hexes already plotted in grey. Rebuilt only
+/// when the placement or the board's mines change.
+pub(crate) fn river_placement_band(
+    mut commands: Commands,
+    hex: crate::HexRender,
+    game_state: Res<GameStateResource>,
+    placement: Res<OptionalRulePlacement>,
+    existing: Query<Entity, With<RiverBandMarker>>,
+    mut last: Local<Option<RiverBandKey>>,
+    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
+) {
+    if generation.invalidates(&mut seen_generation) {
+        *last = None;
+    }
+    let gs = &game_state.0;
+    let key = (
+        placement.placing_mine,
+        placement.placing_chain,
+        placement.chain_hexes.clone(),
+        gs.mines.len(),
+    );
+    if last.as_ref() == Some(&key) {
+        return;
+    }
+    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    if placement.placing_mine || placement.placing_chain {
+        let mut nile: Vec<omdurman_types::HexCoord> = gs
+            .board
+            .terrain
+            .keys()
+            .copied()
+            .filter(|h| gs.board.is_nile(*h))
+            .collect();
+        nile.sort();
+        for h in nile {
+            let legal = if placement.placing_mine {
+                gs.can_place_mine(h).is_ok()
+            } else {
+                let mut line = placement.chain_hexes.clone();
+                line.push(h);
+                !placement.chain_hexes.contains(&h) && gs.can_plot_chain(&line).is_ok()
+            };
+            if legal {
+                rings.ring(RiverBandMarker, h, 0.65, 0.9, &hex.assets.light_green);
+            }
+        }
+        for &h in &placement.chain_hexes {
+            rings.ring(RiverBandMarker, h, 0.7, 0.6, &hex.assets.gray);
+        }
+    }
+    *last = Some(key);
+}

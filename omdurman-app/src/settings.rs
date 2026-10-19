@@ -160,10 +160,9 @@ pub(crate) fn persist_player_settings(
     if saved.as_ref() == Some(&stored) {
         return;
     }
-    // The first look only records what was loaded (or rolled): nothing new.
-    if saved.is_some() {
-        write_stored(&stored);
-    }
+    // The first look saves too: a name and colour rolled on a first launch
+    // are the player's from then on.
+    write_stored(&stored);
     *saved = Some(stored);
 }
 

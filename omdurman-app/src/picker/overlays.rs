@@ -1123,6 +1123,7 @@ type OverlayRingEntities<'w, 's> = Query<
         With<crate::render::ActedMarker>,
         With<crate::fire::HowitzerImpactMarker>,
         With<crate::river_placement::MineChainMarker>,
+        With<crate::river_placement::RiverBandMarker>,
         With<crate::reinforce::ReinforceEntryRing>,
     )>,
 >;

@@ -165,8 +165,6 @@ seat handling).
 - The Mahdi's Tomb has a VP-card line naming its holder but no board marker.
 - The chart sheet (`charts.rs`) has no LOS table or Scattergram tab.
 - There are no Nile flow arrows (`flow_at`).
-- River mine and chain placement (`river_placement.rs`) shows no legal band;
-  the engine refuses hexes outside it.
 - Campaign Dervish set-up has no per-class groups, placed/total counters or
   per-class zone tints (§9.111).
 - Historical set-up shows the union of the leaders' zones, not the per-leader

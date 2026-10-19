@@ -494,6 +494,8 @@ impl Plugin for RenderPlugin {
                         crate::fire::howitzer_impact_markers,
                         // §10.11/§10.21 Dervish-secret mine & chain markers.
                         crate::river_placement::mine_chain_overlay_mesh,
+                        // §10.11/§10.21: where the mine or chain may go.
+                        crate::river_placement::river_placement_band,
                     )
                         .run_if(crate::on_board),
                 ),
