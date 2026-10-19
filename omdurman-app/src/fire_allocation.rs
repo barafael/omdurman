@@ -280,10 +280,19 @@ pub(crate) fn draw_staged_attacks(
     let mut remove_self: Option<usize> = None;
     let mut remove_special: Option<usize> = None;
     let mut toggle_aim: Option<usize> = None;
+    // (index, up): move an attack one place earlier or later -- the order
+    // the attacks resolve in (§6.41: "in any order he wishes").
+    let mut reorder: Option<(usize, bool)> = None;
+    let count = allocation.attacks.len();
     ui.scope(|ui| {
         ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
         for (i, attack) in allocation.attacks.iter().enumerate() {
-            draw_allocation_row(ui, gs, attack, &mut remove_self, &mut toggle_aim, i);
+            let row = RowActions {
+                remove_self: &mut remove_self,
+                toggle_aim: &mut toggle_aim,
+                reorder: (count > 1).then_some(&mut reorder),
+            };
+            draw_allocation_row(ui, gs, attack, row, i, count);
             ui.add_space(4.0);
         }
         for (i, order) in allocation.specials.iter().enumerate() {
@@ -321,6 +330,16 @@ pub(crate) fn draw_staged_attacks(
 
     if let Some(idx) = remove_special {
         allocation.specials.remove(idx);
+    }
+    if let Some((idx, up)) = reorder {
+        let other = if up {
+            idx.checked_sub(1)
+        } else {
+            Some(idx + 1)
+        };
+        if let Some(other) = other.filter(|&o| o < allocation.attacks.len()) {
+            allocation.attacks.swap(idx, other);
+        }
     }
     if let Some(idx) = remove_self {
         allocation.attacks.remove(idx);
@@ -385,14 +404,28 @@ fn draw_special_row(
 /// One allocation row: firers (with factors) → target, kind, range band, the
 /// net die modifier (mandatory set + which sections contribute), and the CRT
 /// row. Keep it dense enough to scan several attacks at once.
+/// What a click in an allocation row asks for: remove it, toggle its aim
+/// at a garrisoned fort, move it up or down (`None`: a lone attack has no
+/// order to change).
+pub(crate) struct RowActions<'a> {
+    pub remove_self: &'a mut Option<usize>,
+    pub toggle_aim: &'a mut Option<usize>,
+    pub reorder: Option<&'a mut Option<(usize, bool)>>,
+}
+
 fn draw_allocation_row(
     ui: &mut egui::Ui,
     gs: &omdurman_rules::effects::GameState,
     attack: &FireAttack,
-    remove_self: &mut Option<usize>,
-    toggle_aim: &mut Option<usize>,
+    actions: RowActions<'_>,
     index: usize,
+    count: usize,
 ) {
+    let RowActions {
+        remove_self,
+        toggle_aim,
+        reorder,
+    } = actions;
     let kind = match attack.kind {
         FireKind::Direct => "Direct",
         FireKind::MaximSecondFire => "Maxim 2nd",
@@ -473,6 +506,23 @@ fn draw_allocation_row(
                 .clicked()
             {
                 *remove_self = Some(index);
+            }
+            // The order the attacks resolve in (§6.41).
+            if let Some(reorder) = reorder {
+                if ui
+                    .add_enabled(index > 0, egui::Button::new("\u{25b2}").small())
+                    .on_hover_text("Resolve earlier")
+                    .clicked()
+                {
+                    *reorder = Some((index, true));
+                }
+                if ui
+                    .add_enabled(index + 1 < count, egui::Button::new("\u{25bc}").small())
+                    .on_hover_text("Resolve later")
+                    .clicked()
+                {
+                    *reorder = Some((index, false));
+                }
             }
             // Wraps: a combined fire lists a dozen weapons.
             ui.add(
@@ -806,7 +856,12 @@ mod tray_layout_tests {
                 egui::Frame::NONE,
                 |ui| {
                     ui.set_width(width);
-                    draw_allocation_row(ui, &gs, &attack, &mut None, &mut None, 0);
+                    let row = RowActions {
+                        remove_self: &mut None,
+                        toggle_aim: &mut None,
+                        reorder: None,
+                    };
+                    draw_allocation_row(ui, &gs, &attack, row, 0, 1);
                 },
             );
         });

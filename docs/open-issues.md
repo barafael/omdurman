@@ -176,7 +176,6 @@ seat handling).
 - Howitzer fire: impact rings are drawn and the result card names the impact
   hex, but there is no aimed-to-impact arrow and no warning when the shot lands
   on friendly units (§6.64).
-- The fire-allocation tray cannot reorder attacks (§6.41: resolve "in any order").
 - The retreat overlay shows the destinations but not the two-hex path (§7.5).
 - The unit inspector has no status pips (loaded, engines lost/drifting,
   constructing, demolishing, retreated this turn), and there is no right-click
