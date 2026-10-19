@@ -481,8 +481,12 @@ fn mutate(state: &GameState, rng: &mut BotRng) -> GameEffect {
                 modifiers: vec![],
                 gunboat_maxims: Vec::new(),
             },
-            combat_results_table_roll: rng.roll_d10(),
-            impact_roll: rng.roll_d10(),
+            shells: vec![omdurman_rules::ShellRoll {
+                impact: rng.roll_d10(),
+                roll: rng.roll_d10(),
+                disruption: omdurman_rules::DisruptionDraw::default(),
+            }],
+            roll: rng.roll_d10(),
             disruption: omdurman_rules::DisruptionDraw::default(),
         },
         // Move an arbitrary unit (possibly the opponent's) to a nearby hex.

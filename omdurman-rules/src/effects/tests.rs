@@ -8067,8 +8067,12 @@ mod tests {
             &mut state,
             &GameEffect::HowitzerFire {
                 attack: howitzer,
-                combat_results_table_roll: DieRoll::One,
-                impact_roll: DieRoll::Ten,
+                shells: vec![crate::ShellRoll {
+                    impact: DieRoll::Ten,
+                    roll: DieRoll::One,
+                    disruption: crate::DisruptionDraw::default(),
+                }],
+                roll: DieRoll::One,
                 disruption: DisruptionDraw::default(),
             },
         )
@@ -8079,12 +8083,13 @@ mod tests {
         ));
     }
 
-    /// §6.42: "Howitzer fire may be combined with Maxim fire, but only if the
-    /// howitzer fire impacts in the intended hex." A shell that lands where
-    /// it was aimed and the Maxims' second fire may both strike one hex, in
-    /// either order; a second shell may not (§6.14), and a shell that
-    /// scatters is an ordinary attack on whoever it lands on.
-    #[rulebook("§6.42")]
+    /// §6.42: "Howitzer fire may be combined with Maxim fire, but only if
+    /// the howitzer fire impacts in the intended hex" -- a shell on target
+    /// and the Maxims make one attack, summed and rolled once; a shell that
+    /// scatters resolves alone where it lands, and the Maxims fire at the
+    /// intended hex on their own. Either way the hex is then fired at
+    /// (§6.14): no second attack may follow.
+    #[rulebook("§6.42", "§6.64")]
     #[test]
     fn howitzer_on_target_combines_with_maxim_second_fire() {
         let at = HexCoord::new(0, 0);
@@ -8097,54 +8102,93 @@ mod tests {
             make_dervish_tribal(&mut state, target);
             (state, gb)
         };
-        let shell = |state: &mut GameState, gb: UnitId, impact_roll: DieRoll| {
-            let from = state.find_unit(gb).unwrap().position;
-            let attack =
-                build_fire_attack_from(state, from, &[gb], target, FireKind::Howitzer).unwrap();
+        // The gunboat's shell with its own Maxims' second fire joined to it
+        // (§2.32): one howitzer attack.
+        let combined = |state: &GameState, gb: UnitId| {
+            let shell =
+                build_fire_attack_from(state, at, &[gb], target, FireKind::Howitzer).unwrap();
+            let maxims =
+                build_gunboat_maxim_attack(state, gb, target, FireKind::MaximSecondFire).unwrap();
+            let attack = combine_fire_attacks(state, &shell, &maxims).unwrap();
+            assert_eq!(attack.kind, FireKind::Howitzer);
+            assert_eq!(attack.gunboat_maxims, vec![gb]);
+            attack
+        };
+        let fire = |state: &mut GameState, attack: FireAttack, impacts: &[DieRoll]| {
+            let shells = impacts
+                .iter()
+                .map(|&impact| crate::ShellRoll {
+                    impact,
+                    roll: DieRoll::One,
+                    disruption: DisruptionDraw::default(),
+                })
+                .collect();
             apply_effect(
                 state,
                 &GameEffect::HowitzerFire {
                     attack,
-                    combat_results_table_roll: DieRoll::One,
-                    impact_roll,
-                    disruption: DisruptionDraw::default(),
-                },
-            )
-        };
-        let maxims = |state: &mut GameState, gb: UnitId| {
-            let attack = build_gunboat_maxim_attack(state, gb, target, FireKind::MaximSecondFire)
-                .ok_or(RuleError::NoFirers)?;
-            apply_effect(
-                state,
-                &GameEffect::FireCombat {
-                    attack,
+                    shells,
                     roll: DieRoll::One,
                     disruption: DisruptionDraw::default(),
                 },
             )
         };
+        let resolved = |state: &mut GameState| -> Vec<(HexCoord, FireKind, u16, i16)> {
+            state
+                .drain_observations()
+                .into_iter()
+                .filter_map(|o| match o {
+                    Observation::FireResolved {
+                        attack,
+                        effective_factor,
+                        total_modifier,
+                        impact,
+                        ..
+                    } => Some((
+                        impact.map_or(attack.target_hex, |(_, hex)| hex),
+                        attack.kind,
+                        effective_factor,
+                        total_modifier,
+                    )),
+                    _ => None,
+                })
+                .collect()
+        };
 
-        // The shell lands on its hex, then the Maxims fire at it.
+        // On target: one attack, the shell (howitzer line) and the Maxims
+        // (Maxims line) summed, with no §6.24 direct-fire +1.
         let (mut state, gb) = set_up();
-        shell(&mut state, gb, DieRoll::Ten).unwrap();
-        maxims(&mut state, gb).unwrap();
-
-        // The other order.
-        let (mut state, gb) = set_up();
-        maxims(&mut state, gb).unwrap();
-        shell(&mut state, gb, DieRoll::Ten).unwrap();
-
-        // A second shell on the same units is fire at them twice (§6.14).
-        let (mut state, gb) = set_up();
+        let attack = combined(&state, gb);
+        let factor = total_fire_factor(&firer_contributions(&state, &attack));
+        let shell_only = FireAttack {
+            gunboat_maxims: Vec::new(),
+            ..attack.clone()
+        };
+        assert!(factor > total_fire_factor(&firer_contributions(&state, &shell_only)));
+        fire(&mut state, attack, &[DieRoll::Ten]).unwrap();
+        let fired: Vec<_> = resolved(&mut state)
+            .into_iter()
+            .map(|(hex, kind, f, _)| (hex, kind, f))
+            .collect();
+        assert_eq!(fired, vec![(target, FireKind::Howitzer, factor)]);
+        // The hex is fired at: the Maxims of another boat may not follow.
         let other = make_named_gunboat(&mut state, HexCoord::new(1, -1));
-        shell(&mut state, gb, DieRoll::Ten).unwrap();
+        let late =
+            build_gunboat_maxim_attack(&state, other, target, FireKind::MaximSecondFire).unwrap();
         assert!(matches!(
-            shell(&mut state, other, DieRoll::Ten),
+            apply_effect(
+                &mut state,
+                &GameEffect::FireCombat {
+                    attack: late,
+                    roll: DieRoll::One,
+                    disruption: DisruptionDraw::default(),
+                },
+            ),
             Err(RuleError::AlreadyFiredAt(_))
         ));
 
-        // A shell that scatters onto other units is not combined fire: the
-        // Maxims may not fire at those units again.
+        // Scattered: the shell strikes the bystander where it lands, and
+        // the Maxims fire at the intended hex alone, as Maxim fire (+1).
         let (mut state, gb) = set_up();
         let stray = crate::howitzer_scatter::scatter_impact_hex(
             target,
@@ -8152,9 +8196,192 @@ mod tests {
         );
         assert_ne!(stray, target);
         let bystander = make_dervish_tribal(&mut state, stray);
-        shell(&mut state, gb, DieRoll::One).unwrap();
+        let attack = combined(&state, gb);
+        fire(&mut state, attack, &[DieRoll::One]).unwrap();
+        let fired: Vec<_> = resolved(&mut state)
+            .into_iter()
+            .map(|(hex, kind, _, _)| (hex, kind))
+            .collect();
+        assert_eq!(
+            fired,
+            vec![
+                (target, FireKind::MaximSecondFire),
+                (stray, FireKind::Howitzer)
+            ]
+        );
         assert!(state.units_fired_at_this_phase.contains(&bystander));
-        maxims(&mut state, gb).unwrap();
+        assert!(state.has_fired(Shot {
+            unit: gb,
+            mount: FireMount::Main
+        }));
+        assert!(state.has_fired(Shot {
+            unit: gb,
+            mount: FireMount::GunboatMaxims
+        }));
+
+        // §6.64: every shell rolls its own dice.
+        let (mut state, gb) = set_up();
+        let attack = combined(&state, gb);
+        assert!(matches!(
+            fire(&mut state, attack.clone(), &[]),
+            Err(RuleError::ShellRollCount {
+                shells: 1,
+                rolls: 0
+            })
+        ));
+        // The Maxims join a shell; they do not make a howitzer attack alone.
+        let maxims_only = FireAttack {
+            firers: Vec::new(),
+            ..attack
+        };
+        assert!(matches!(
+            fire(&mut state, maxims_only, &[]),
+            Err(RuleError::HowitzerAttackWithoutShell)
+        ));
+    }
+
+    /// §6.64: every shell rolls on its own. With two gunboats firing, the
+    /// shell that lands on target joins the Maxims (§6.42) and the other
+    /// resolves alone where it scatters; a shell scattering onto a garrisoned
+    /// fort strikes the garrison, not the fort, whatever the attack aimed at.
+    #[rulebook("§6.64")]
+    #[test]
+    fn each_shell_lands_and_resolves_on_its_own() {
+        let target = HexCoord::new(5, 0);
+        let stray = crate::howitzer_scatter::scatter_impact_hex(
+            target,
+            crate::howitzer_scatter::howitzer_scatter(DieRoll::One),
+        );
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::MaximSecondAndHowitzer);
+        state.active_player = Player::AngloEgyptian;
+        let hits = make_named_gunboat(&mut state, HexCoord::new(0, 0));
+        let strays = make_named_gunboat(&mut state, HexCoord::new(1, -1));
+        let maxim = make_maxim(&mut state, HexCoord::new(3, 0));
+        make_dervish_tribal(&mut state, target);
+        make_dervish_tribal(&mut state, stray);
+        let attack_of = |state: &GameState, at, firers: &[UnitId], kind| {
+            build_fire_attack_from(state, at, firers, target, kind).unwrap()
+        };
+        let mut attack = attack_of(&state, HexCoord::new(0, 0), &[hits], FireKind::Howitzer);
+        for joining in [
+            attack_of(&state, HexCoord::new(1, -1), &[strays], FireKind::Howitzer),
+            attack_of(
+                &state,
+                HexCoord::new(3, 0),
+                &[maxim],
+                FireKind::MaximSecondFire,
+            ),
+            build_gunboat_maxim_attack(&state, hits, target, FireKind::MaximSecondFire).unwrap(),
+        ] {
+            attack = combine_fire_attacks(&state, &attack, &joining).unwrap();
+        }
+        assert_eq!(attack.kind, FireKind::Howitzer);
+        let factor_of = |state: &GameState, firers: Vec<UnitId>, gunboat_maxims: Vec<UnitId>| {
+            let part = FireAttack {
+                firers,
+                gunboat_maxims,
+                ..attack.clone()
+            };
+            total_fire_factor(&firer_contributions(state, &part))
+        };
+        let mut on_target = vec![hits, maxim];
+        on_target.sort_unstable();
+        // The shell on target joins both Maxims; the stray shell is alone.
+        let expected = [
+            (target, factor_of(&state, on_target.clone(), vec![hits])),
+            (stray, factor_of(&state, vec![strays], Vec::new())),
+        ];
+        let shells = shell_gunboats(&state, &attack)
+            .iter()
+            .map(|&g| crate::ShellRoll {
+                impact: if g == hits {
+                    DieRoll::Ten
+                } else {
+                    DieRoll::One
+                },
+                roll: DieRoll::One,
+                disruption: DisruptionDraw::default(),
+            })
+            .collect();
+        apply_effect(
+            &mut state,
+            &GameEffect::HowitzerFire {
+                attack: attack.clone(),
+                shells,
+                roll: DieRoll::One,
+                disruption: DisruptionDraw::default(),
+            },
+        )
+        .unwrap();
+        let resolved: Vec<(HexCoord, u16, Vec<UnitId>)> = state
+            .drain_observations()
+            .into_iter()
+            .filter_map(|o| match o {
+                Observation::FireResolved {
+                    attack,
+                    effective_factor,
+                    impact,
+                    ..
+                } => Some((
+                    impact.map_or(attack.target_hex, |(_, hex)| hex),
+                    effective_factor,
+                    attack.firers,
+                )),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            resolved,
+            vec![
+                (expected[0].0, expected[0].1, on_target),
+                (expected[1].0, expected[1].1, vec![strays]),
+            ]
+        );
+
+        // Aimed at a fort, scattered onto another garrisoned fort: the
+        // garrison takes the shell, the fort stands.
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::MaximSecondAndHowitzer);
+        state.active_player = Player::AngloEgyptian;
+        let gb = make_named_gunboat(&mut state, HexCoord::new(0, 0));
+        make_fort(&mut state, target);
+        make_dervish_tribal(&mut state, target);
+        let fort = make_fort(&mut state, stray);
+        let garrison = make_dervish_tribal(&mut state, stray);
+        let at_fort = aim_at_fort(
+            &state,
+            &attack_of(&state, HexCoord::new(0, 0), &[gb], FireKind::Howitzer),
+        )
+        .unwrap();
+        apply_effect(
+            &mut state,
+            &GameEffect::HowitzerFire {
+                attack: at_fort,
+                shells: vec![crate::ShellRoll {
+                    impact: DieRoll::One,
+                    roll: DieRoll::Ten,
+                    disruption: DisruptionDraw::default(),
+                }],
+                roll: DieRoll::One,
+                disruption: DisruptionDraw::default(),
+            },
+        )
+        .unwrap();
+        assert!(state.find_unit(fort).is_some(), "the fort stands");
+        assert!(
+            state.find_unit(garrison).is_none_or(|u| u.state.disrupted),
+            "the garrison took the shell"
+        );
+        let aimed_at_fort: Vec<bool> = state
+            .drain_observations()
+            .into_iter()
+            .filter_map(|o| match o {
+                Observation::FireResolved { attack, .. } => Some(attack.at_fort),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(aimed_at_fort, vec![false], "a stray shell aims at nothing");
     }
 
     /// §2.32/§6.14: a named gunboat's Maxims join other fire at one hex as a
@@ -8672,12 +8899,10 @@ mod tests {
                 ),
             };
             state.units_fired_at_this_phase.push(shot_at);
-            state.units_shelled_this_phase.push(shot_at);
             state.units_fired_this_phase.push(firer);
             advance_phase(&mut state).unwrap();
             assert_eq!(state.phase, Phase::OffensiveFire(FireSubPhase::DirectFire));
             assert!(state.units_fired_at_this_phase.is_empty(), "{mover:?}");
-            assert!(state.units_shelled_this_phase.is_empty(), "{mover:?}");
             assert!(state.units_fired_this_phase.is_empty(), "{mover:?}");
             let attack = direct_attack(mover, vec![firer], target);
             apply_effect(
@@ -11186,8 +11411,12 @@ mod tests {
             &mut state,
             GameEffect::HowitzerFire {
                 attack,
-                combat_results_table_roll: DieRoll::Ten,
-                impact_roll: DieRoll::Two,
+                shells: vec![crate::ShellRoll {
+                    impact: DieRoll::Two,
+                    roll: DieRoll::Ten,
+                    disruption: crate::DisruptionDraw::default(),
+                }],
+                roll: DieRoll::Ten,
                 disruption: crate::DisruptionDraw::default(),
             },
         );
@@ -11219,8 +11448,12 @@ mod tests {
             &mut state,
             &GameEffect::HowitzerFire {
                 attack,
-                combat_results_table_roll: DieRoll::Ten,
-                impact_roll,
+                shells: vec![crate::ShellRoll {
+                    impact: impact_roll,
+                    roll: DieRoll::Ten,
+                    disruption: crate::DisruptionDraw::default(),
+                }],
+                roll: DieRoll::Ten,
                 disruption: crate::DisruptionDraw::default(),
             },
         )
@@ -13684,8 +13917,12 @@ mod tests {
             &mut state,
             &GameEffect::HowitzerFire {
                 attack,
-                combat_results_table_roll: DieRoll::Ten,
-                impact_roll,
+                shells: vec![crate::ShellRoll {
+                    impact: impact_roll,
+                    roll: DieRoll::Ten,
+                    disruption: crate::DisruptionDraw::default(),
+                }],
+                roll: DieRoll::Ten,
                 disruption: crate::DisruptionDraw::default(),
             },
         )

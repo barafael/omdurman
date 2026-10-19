@@ -1334,7 +1334,7 @@ title = "Maxim Second Fire and Howitzer Fire Subphase"
 status = "implemented"
 clause = "Anglo-Egyptian named gunboats may now fire their artillery factor as howitzer fire (see 6.64) and all Maxim guns may fire a second time."
 witness = "omdurman-rules::src::effects::tests::maxim_may_fire_twice_per_turn"
-approximation = "\"Howitzer fire may be combined with Maxim fire, but only if the howitzer fire impacts in the intended hex\" is not resolved as one attack on one die roll: a shell that lands in the hex it was aimed at and the Maxims' second fire may both be laid on that hex in the subphase, each as its own attack (in either order). A shell that scatters is an ordinary attack on whoever it lands on."
+note = "\"Howitzer fire may be combined with Maxim fire, but only if the howitzer fire impacts in the intended hex\": a HowitzerFire attack carries its shells and any Maxims (shot_kind); the shells that land on the intended hex and the Maxims resolve there as one attack on one roll, without the §6.24 direct-fire +1 (it is howitzer fire); each scattered shell resolves alone where it lands, and with no shell on target the Maxims fire there on their own, as Maxim fire. Either way the hex has been fired at (§6.14)."
 proofs = [
     "omdurman-types::src::lib::unit_kind_fire_and_movement_capability_law_is_exact",
 ]
@@ -1354,6 +1354,10 @@ tests = [
 [[mapping.impl]]
 file = "omdurman-rules/src/turn.rs"
 symbol = "MaximSecondAndHowitzer"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/fire.rs"
+symbol = "shot_kind"
 
 [[mapping.impl]]
 file = "omdurman-types/src/lib.rs"
@@ -1603,6 +1607,8 @@ witness = "omdurman-rules::src::howitzer_scatter::scatter_is_center_exactly_for_
 approximation = "A shell that scatters off the map (the aimed hex lay on the edge) is lost: nothing is resolved, the gunboat has fired."
 note = "The printed Scattergram's directions are the map's, north up (1 lower-right, 2 lower-left, 3 left, 4 upper-left, 5 upper-right, 6 right; 7-10 on target -- the diagram is printed upside down), one hex off the designated hex (scatter_impact_hex). Results take effect on every unit in the impact hex, friend or foe; legality is validated against the aimed hex. The 4-10 hex target window is pinned under §6.22's range tests. The impact roll and hex are reported on FireResolved."
 tests = [
+    "omdurman-rules::src::effects::tests::each_shell_lands_and_resolves_on_its_own",
+    "omdurman-rules::src::effects::tests::howitzer_on_target_combines_with_maxim_second_fire",
     "omdurman-rules::src::effects::tests::a_shell_scattered_off_the_map_is_lost",
     "omdurman-rules::src::howitzer_scatter::howitzer_on_target_7_to_10",
     "omdurman-rules::src::howitzer_scatter::howitzer_scatters_below_7",

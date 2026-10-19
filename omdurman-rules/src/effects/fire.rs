@@ -15,12 +15,56 @@ pub fn apply_fire_combat(
     resolve_fire_attack(state, attack, attack.target_hex, roll, disruption)
 }
 
-/// Validate and apply a howitzer fire attack (scatter path) (rulebook §6.64).
+/// Whether `shot` fires a howitzer shell in an attack of `kind` (§6.64): a
+/// named gunboat's artillery in a howitzer attack.
+pub fn is_shell(state: &GameState, kind: FireKind, shot: Shot) -> bool {
+    kind == FireKind::Howitzer
+        && shot.mount == FireMount::Main
+        && state
+            .find_unit(shot.unit)
+            .is_some_and(UnitPlacement::carries_howitzer)
+}
+
+/// The kind of fire `shot` delivers in an attack of `kind`. In a howitzer
+/// attack every weapon but the shells is Maxim fire combined with them
+/// (§6.42), aimed at a hex it sees and banded on the Maxims line.
+pub fn shot_kind(state: &GameState, kind: FireKind, shot: Shot) -> FireKind {
+    if kind == FireKind::Howitzer && !is_shell(state, kind, shot) {
+        FireKind::MaximSecondFire
+    } else {
+        kind
+    }
+}
+
+/// The gunboats firing a shell in a howitzer attack, in `firers` order --
+/// the order of the effect's [`ShellRoll`]s.
+pub fn shell_gunboats(state: &GameState, attack: &FireAttack) -> Vec<UnitId> {
+    attack
+        .firers
+        .iter()
+        .copied()
+        .filter(|&unit| {
+            is_shell(
+                state,
+                attack.kind,
+                Shot {
+                    unit,
+                    mount: FireMount::Main,
+                },
+            )
+        })
+        .collect()
+}
+
+/// Validate and apply a howitzer fire attack (rulebook §6.42, §6.64): every
+/// shell rolls for its impact; the shells on the intended hex and the
+/// Maxims combine into one attack there, and each scattered shell resolves
+/// alone where it lands.
 pub fn apply_howitzer_fire(
     state: &mut GameState,
     attack: &FireAttack,
-    combat_results_table_roll: DieRoll,
-    impact_roll: DieRoll,
+    shells: &[ShellRoll],
+    roll: DieRoll,
     disruption: DisruptionDraw,
 ) -> Result<(), RuleError> {
     if attack.kind != FireKind::Howitzer {
@@ -30,67 +74,125 @@ pub fn apply_howitzer_fire(
     // *aimed* hex -- the shot the player declared -- before anything is
     // mutated: a rejected effect must leave the state untouched.
     validate_fire_resolution(state, attack)?;
-    //
-    // AMBIGUITY (§6.42): "Howitzer fire may be combined with Maxim fire,
-    // but only if the howitzer fire impacts in the intended hex."  The
-    // manual does not clarify what happens to the Maxim fire when the
-    // howitzer scatters.  The code treats howitzer and Maxim attacks as
-    // independent fire actions — a scattered howitzer does not prevent a
-    // Maxim from firing at the original target hex separately.
+    let gunboats = shell_gunboats(state, attack);
+    if shells.len() != gunboats.len() {
+        return Err(RuleError::ShellRollCount {
+            shells: gunboats.len(),
+            rolls: shells.len(),
+        });
+    }
 
     // ---- validation complete; from here on the state is mutated ----
-    // §6.64: roll twice -- the first roll resolves on the Combat Results Table,
-    // the second (impact) roll places the shell. The target hex is hit on 7-10;
-    // otherwise the shell scatters and "the results must take effect, even if
-    // the fire scatters into a friendly-occupied hex."
-    let actual_target = crate::howitzer_scatter::scatter_impact_hex(
-        attack.target_hex,
-        howitzer_scatter(impact_roll),
-    );
-    // A shell aimed at a hex on the map's edge may scatter off the map: it
-    // is spent, with nothing to resolve. (The aimed hex lies 4 to 10 hexes
-    // from the gunboat, so the shell never lands on the gunboat itself.)
-    let lost = if state.board.terrain.is_empty() {
-        super::dispatch::check_coord(actual_target).is_err()
-    } else {
-        state.board.terrain_at(actual_target).is_none()
-    };
-    // §6.64: record where the shell actually landed so every seat (and the
-    // UI's impact marker) can show the scatter, not just the aimed hex.
-    state.turn_events.push(TurnEventRecord::HowitzerImpact {
-        at: actual_target,
-        scattered: actual_target != attack.target_hex,
-        lost,
-    });
-    if lost {
-        commit_fired_markers(state, attack, &[], false);
-        return Ok(());
+    // §6.64: each shell rolls twice -- the impact roll places it, on the
+    // target hex on 7-10, otherwise scattered, and "the results must take
+    // effect, even if the fire scatters into a friendly-occupied hex."
+    let mut on_target: Vec<(UnitId, DieRoll)> = Vec::new();
+    let mut scattered: Vec<(UnitId, HexCoord, ShellRoll)> = Vec::new();
+    for (&gunboat, shell) in gunboats.iter().zip(shells) {
+        let at = crate::howitzer_scatter::scatter_impact_hex(
+            attack.target_hex,
+            howitzer_scatter(shell.impact),
+        );
+        // A shell aimed at a hex on the map's edge may scatter off the map:
+        // it is spent, with nothing to resolve. (The aimed hex lies 4 to 10
+        // hexes from the gunboat, so the shell never lands on the gunboat
+        // itself.)
+        let lost = if state.board.terrain.is_empty() {
+            super::dispatch::check_coord(at).is_err()
+        } else {
+            state.board.terrain_at(at).is_none()
+        };
+        // §6.64: record where the shell actually landed so every seat (and
+        // the UI's impact marker) can show the scatter, not just the aim.
+        state.turn_events.push(TurnEventRecord::HowitzerImpact {
+            gunboat,
+            aimed: attack.target_hex,
+            at,
+            scattered: at != attack.target_hex,
+            lost,
+        });
+        if at == attack.target_hex {
+            on_target.push((gunboat, shell.impact));
+        } else if lost {
+            let spent = Shot {
+                unit: gunboat,
+                mount: FireMount::Main,
+            };
+            state.record_fired(spent);
+        } else {
+            scattered.push((gunboat, at, *shell));
+        }
     }
-    // §6.64: "the results must take effect" on *everyone* in the impact hex,
-    // friend or foe -- at a fort, on the units inside it (§6.54), or on the
-    // fort itself when the shell hits the fort it was aimed at or an empty
-    // one.
-    let everyone: Vec<&UnitPlacement> = state.units_in_hex(actual_target);
-    let aimed_at_fort = attack.at_fort && actual_target == attack.target_hex;
-    let garrison: Vec<UnitId> = everyone
+
+    // §6.42: "Howitzer fire may be combined with Maxim fire, but only if the
+    // howitzer fire impacts in the intended hex" -- the shells that hit and
+    // every Maxim make one attack on the intended hex. With no shell there
+    // the Maxims still fire, on their own.
+    let combined_firers: Vec<UnitId> = attack
+        .firers
         .iter()
-        .filter(|u| !matches!(u.profile.kind, UnitKind::Fort { .. }))
-        .map(|u| u.id)
+        .copied()
+        .filter(|id| !gunboats.contains(id) || on_target.iter().any(|(g, _)| g == id))
         .collect();
-    let target_units: Vec<UnitId> = if aimed_at_fort || garrison.is_empty() {
-        everyone.iter().map(|u| u.id).collect()
-    } else {
-        garrison
-    };
-    commit_fire_attack(
-        state,
-        attack,
-        actual_target,
-        &target_units,
-        combat_results_table_roll,
-        disruption,
-        Some((impact_roll, actual_target)),
-    );
+    if !combined_firers.is_empty() || !attack.gunboat_maxims.is_empty() {
+        let kind = if on_target.is_empty() {
+            FireKind::MaximSecondFire
+        } else {
+            FireKind::Howitzer
+        };
+        let mut combined = FireAttack {
+            kind,
+            firers: combined_firers,
+            ..attack.clone()
+        };
+        combined.modifiers = mandatory_fire_modifiers(state, &combined);
+        let targets = fire_target_units(state, &combined, attack.target_hex);
+        let impact = on_target
+            .first()
+            .map(|&(_, impact)| (impact, attack.target_hex));
+        commit_fire_attack(
+            state,
+            &combined,
+            attack.target_hex,
+            &targets,
+            roll,
+            disruption,
+            impact,
+        );
+    }
+
+    // §6.64: a scattered shell strikes *everyone* in the hex it lands on,
+    // friend or foe -- at a fort, the units inside it (§6.54), or the fort
+    // itself when it stands empty.
+    for (gunboat, at, shell) in scattered {
+        let mut lone = FireAttack {
+            firers: vec![gunboat],
+            gunboat_maxims: Vec::new(),
+            at_fort: false,
+            ..attack.clone()
+        };
+        lone.modifiers = mandatory_fire_modifiers(state, &lone);
+        let everyone: Vec<&UnitPlacement> = state.units_in_hex(at);
+        let garrison: Vec<UnitId> = everyone
+            .iter()
+            .filter(|u| !matches!(u.profile.kind, UnitKind::Fort { .. }))
+            .map(|u| u.id)
+            .collect();
+        let targets: Vec<UnitId> = if garrison.is_empty() {
+            everyone.iter().map(|u| u.id).collect()
+        } else {
+            garrison
+        };
+        commit_fire_attack(
+            state,
+            &lone,
+            at,
+            &targets,
+            shell.roll,
+            shell.disruption,
+            Some((shell.impact, at)),
+        );
+    }
     Ok(())
 }
 
@@ -143,7 +245,7 @@ fn first_non_artillery_shot(state: &GameState, attack: &FireAttack) -> Option<Un
         .find(|shot| {
             !state.find_unit(shot.unit).is_some_and(|u| {
                 matches!(
-                    u.weapon_line(shot.mount, attack.kind),
+                    u.weapon_line(shot.mount, shot_kind(state, attack.kind, *shot)),
                     WeaponClass::Artillery | WeaponClass::Howitzer
                 )
             })
@@ -173,30 +275,16 @@ pub(crate) fn night_capped_distance(
 ///
 /// §6.14's parenthetical "(exceptions: Maxim guns and gunboats -- see 6.4)"
 /// is about *firing*: they fire again in the second subphase (§6.42). Every
-/// unit, a Maxim or a gunboat included, is fired at once per subphase.
-///
-/// §6.42: a howitzer shell that lands in the hex it was aimed at marks its
-/// targets as *shelled* only, so the Maxims' second fire may still be laid
-/// on them ("Howitzer fire may be combined with Maxim fire, but only if the
-/// howitzer fire impacts in the intended hex"); a shell that scatters is an
-/// ordinary fire attack on whoever it lands on.
-fn commit_fired_markers(
-    state: &mut GameState,
-    attack: &FireAttack,
-    target_units: &[UnitId],
-    on_target_shell: bool,
-) {
+/// unit, a Maxim or a gunboat included, is fired at once per subphase; the
+/// howitzer shells and the Maxims that fire at one hex are one combined
+/// attack (§6.42).
+fn commit_fired_markers(state: &mut GameState, attack: &FireAttack, target_units: &[UnitId]) {
     for shot in attack.shots() {
         state.record_fired(shot);
     }
-    for &tid in target_units {
-        if attack.kind == FireKind::Howitzer {
-            state.units_shelled_this_phase.push(tid);
-        }
-        if !on_target_shell {
-            state.units_fired_at_this_phase.push(tid);
-        }
-    }
+    state
+        .units_fired_at_this_phase
+        .extend_from_slice(target_units);
 }
 
 /// Validate and resolve a fire attack at `target_hex`: compute range, look up
@@ -295,17 +383,10 @@ fn validate_fire_resolution(state: &GameState, attack: &FireAttack) -> Result<()
     // once" (the Maxim and gunboat exceptions are to firing once, §6.42).
     // Any target unit already fired at this phase makes the attack illegal
     // -- two attacks on the same hex (or its survivors) in one phase fire at
-    // the same units.
-    // §6.42: howitzer fire "may be combined with Maxim fire" on its intended
-    // hex -- the shell answers to the shelled list, every other fire to the
-    // fired-at list, so one of each may strike the same units.
-    let fired_at = if attack.kind == FireKind::Howitzer {
-        &state.units_shelled_this_phase
-    } else {
-        &state.units_fired_at_this_phase
-    };
+    // the same units. Howitzer and Maxim fire at one hex combine into one
+    // attack (§6.42).
     for &tid in &target_units {
-        if fired_at.contains(&tid) {
+        if state.units_fired_at_this_phase.contains(&tid) {
             return Err(RuleError::AlreadyFiredAt(tid));
         }
     }
@@ -380,8 +461,7 @@ fn commit_fire_attack(
             .find_unit(*id)
             .is_some_and(|u| u.profile.identity.owner() == opponent)
     });
-    let on_target_shell = attack.kind == FireKind::Howitzer && target_hex == attack.target_hex;
-    commit_fired_markers(state, attack, target_units, on_target_shell);
+    commit_fired_markers(state, attack, target_units);
     // The turn record (the telegrams, the newspaper, the bot's log) holds
     // every fire combat; the observation feeds the UI's resolution card.
     let record_fire =
@@ -637,9 +717,10 @@ pub fn firer_contributions(state: &GameState, attack: &FireAttack) -> Vec<FirerC
     attack
         .shots()
         .into_iter()
-        .filter_map(|shot| state.find_unit(shot.unit).map(|u| (u, shot.mount)))
-        .map(|(u, mount)| {
-            let weapon = u.weapon_line(mount, attack.kind);
+        .filter_map(|shot| state.find_unit(shot.unit).map(|u| (u, shot)))
+        .map(|(u, shot)| {
+            let mount = shot.mount;
+            let weapon = u.weapon_line(mount, shot_kind(state, attack.kind, shot));
             let fire = u.fire_factor(mount);
             let table_player = range_table_player_for(state.scenario, u);
             let distance = HexDistance(u.position.distance(attack.target_hex) as u16);
@@ -921,15 +1002,24 @@ pub fn build_gunboat_maxim_attack(
 /// (rulebook §6.14): units may combine their fire into one attack from any
 /// hexes, and a hex may only be fired at once per phase -- so a second group
 /// joining an already-allocated target must join that attack, not open a
-/// second one the engine would refuse. `None` when the attacks differ in
-/// target, kind or firing player, or share a firer (§6.13).
+/// second one the engine would refuse. Maxim second fire joins howitzer
+/// fire as one howitzer attack (§6.42). `None` when the attacks differ in
+/// target, kind (beyond that pair) or firing player, or share a firer
+/// (§6.13).
 pub fn combine_fire_attacks(
     gs: &GameState,
     existing: &FireAttack,
     joining: &FireAttack,
 ) -> Option<FireAttack> {
+    let second_fire = |k: FireKind| matches!(k, FireKind::Howitzer | FireKind::MaximSecondFire);
+    let kind = if existing.kind == joining.kind {
+        existing.kind
+    } else if second_fire(existing.kind) && second_fire(joining.kind) {
+        FireKind::Howitzer
+    } else {
+        return None;
+    };
     if existing.target_hex != joining.target_hex
-        || existing.kind != joining.kind
         || existing.at_fort != joining.at_fort
         || existing.firing_player != joining.firing_player
         || existing.firers.iter().any(|f| joining.firers.contains(f))
@@ -949,6 +1039,7 @@ pub fn combine_fire_attacks(
     .concat();
     gunboat_maxims.sort_unstable();
     let mut attack = FireAttack {
+        kind,
         firers,
         gunboat_maxims,
         ..existing.clone()
@@ -1070,13 +1161,31 @@ pub fn validate_fire_attack(state: &GameState, attack: &FireAttack) -> Result<()
     }
     reject_duplicate_units(&attack.firers)?;
     reject_duplicate_units(&attack.gunboat_maxims)?;
+    // In a howitzer attack every weapon but the shells is Maxim fire
+    // combined with them (§6.42), checked as such ([`shot_kind`]).
     for &id in &attack.firers {
-        state.can_fire_at(id, attack.target_hex, attack.kind)?;
+        let shot = Shot {
+            unit: id,
+            mount: FireMount::Main,
+        };
+        state.can_fire_at(id, attack.target_hex, shot_kind(state, attack.kind, shot))?;
     }
     // A named gunboat's Maxims (§2.32): a weapon of their own, checked on
     // the Maxims line and their own once-per-subphase tracker.
     for &id in &attack.gunboat_maxims {
-        state.can_fire_gunboat_maxims_at(id, attack.target_hex, attack.kind)?;
+        let shot = Shot {
+            unit: id,
+            mount: FireMount::GunboatMaxims,
+        };
+        state.can_fire_gunboat_maxims_at(
+            id,
+            attack.target_hex,
+            shot_kind(state, attack.kind, shot),
+        )?;
+    }
+    // §6.42: the Maxims join a howitzer attack only through its shells.
+    if attack.kind == FireKind::Howitzer && shell_gunboats(state, attack).is_empty() {
+        return Err(RuleError::HowitzerAttackWithoutShell);
     }
     // Every firer belongs to the phase player (checked above), so the
     // attack's `firing_player` -- which decides the targets, the table and

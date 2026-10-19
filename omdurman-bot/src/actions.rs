@@ -1051,10 +1051,8 @@ fn fire_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>) 
     // *all* its occupants, so a hex holding any already-fired-at unit is not
     // a legal target again this phase.
     let enemy = firer_player.opponent();
-    let fired_at = |u: &omdurman_rules::UnitPlacement| {
-        state.units_fired_at_this_phase.contains(&u.id)
-            || state.units_shelled_this_phase.contains(&u.id)
-    };
+    let fired_at =
+        |u: &omdurman_rules::UnitPlacement| state.units_fired_at_this_phase.contains(&u.id);
     let mut target_hexes: Vec<HexCoord> = state
         .units
         .iter()
@@ -1087,11 +1085,19 @@ fn fire_actions(state: &GameState, rng: &mut BotRng, out: &mut Vec<GameEffect>) 
                 {
                     match kind {
                         FireKind::Howitzer => {
-                            // Howitzer needs two dice (§6.64).
+                            // Every shell rolls its own two dice (§6.64).
+                            let shells = omdurman_rules::effects::shell_gunboats(state, &attack)
+                                .iter()
+                                .map(|_| omdurman_rules::ShellRoll {
+                                    impact: rng.roll_d10(),
+                                    roll: rng.roll_d10(),
+                                    disruption: rng.disruption_draw(),
+                                })
+                                .collect();
                             out.push(GameEffect::HowitzerFire {
                                 attack,
-                                combat_results_table_roll: rng.roll_d10(),
-                                impact_roll: rng.roll_d10(),
+                                shells,
+                                roll: rng.roll_d10(),
                                 disruption: rng.disruption_draw(),
                             });
                         }

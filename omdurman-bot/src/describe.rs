@@ -217,15 +217,19 @@ pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
         }
         GameEffect::HowitzerFire {
             attack,
-            combat_results_table_roll,
-            impact_roll,
+            shells,
+            roll,
             ..
         } => {
+            let impacts: Vec<String> = shells
+                .iter()
+                .map(|s| s.impact.value().to_string())
+                .collect();
             format!(
-                "{} [CRT roll {}, impact roll {}]",
+                "{} [roll {}, impact roll(s) {}]",
                 describe_fire_attack(attack, "howitzer bombardment"),
-                combat_results_table_roll.value(),
-                impact_roll.value()
+                roll.value(),
+                impacts.join("/")
             )
         }
         GameEffect::DeclareMelee {
@@ -577,6 +581,7 @@ pub fn describe_turn_event(ev: &TurnEventRecord) -> String {
             at,
             scattered,
             lost,
+            ..
         } => {
             if *lost {
                 format!("Howitzer shell scattered off the map at {}", hex(*at))

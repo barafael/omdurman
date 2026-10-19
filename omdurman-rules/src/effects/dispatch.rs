@@ -29,16 +29,10 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
         } => apply_fire_combat(state, attack, *roll, *disruption),
         GameEffect::HowitzerFire {
             attack,
-            combat_results_table_roll,
-            impact_roll,
+            shells,
+            roll,
             disruption,
-        } => apply_howitzer_fire(
-            state,
-            attack,
-            *combat_results_table_roll,
-            *impact_roll,
-            *disruption,
-        ),
+        } => apply_howitzer_fire(state, attack, shells, *roll, *disruption),
         GameEffect::DeclareMelee {
             attack,
             attacker_roll,
@@ -502,14 +496,13 @@ fn end_zariba_construction(state: &mut GameState) {
     }
 }
 
-/// The four per-fire-phase ledgers (§6.14), in one place so the phase reset
+/// The three per-fire-phase ledgers (§6.14), in one place so the phase reset
 /// ([`clear_fire_trackers`]) and the post-apply prune
 /// ([`prune_dead_trackers`]) cannot drift apart when a tracker is added.
 const FIRE_PHASE_TRACKERS: &[fn(&mut GameState) -> &mut Vec<UnitId>] = &[
     |s| &mut s.units_fired_this_phase,
     |s| &mut s.gunboat_maxims_fired_this_phase,
     |s| &mut s.units_fired_at_this_phase,
-    |s| &mut s.units_shelled_this_phase,
 ];
 
 /// Clear per-phase / per-turn tracking (§5.13: MP never carry over).

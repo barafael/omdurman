@@ -162,6 +162,7 @@ mod rules_effects_paths {
         let _ = omdurman_rules::effects::apply_demolition;
         let _ = omdurman_rules::effects::apply_friendlies_transport;
         let _ = omdurman_rules::effects::apply_howitzer_fire;
+        let _ = omdurman_rules::effects::shot_kind;
         let _ = omdurman_rules::effects::apply_resolve_melee;
         let _ = omdurman_rules::effects::apply_place_reinforcements;
         let _ = omdurman_rules::effects::apply_retreat_before_melee;

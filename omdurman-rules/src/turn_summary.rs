@@ -68,10 +68,12 @@ pub enum TurnEventRecord {
     Desertion { units: Vec<UnitId>, roll: DieRoll },
     /// A unit was eliminated.
     UnitEliminated { unit: UnitId, cause: ElimCause },
-    /// A howitzer shell impacted at `at` (§6.64) — `scattered` when the
-    /// impact roll moved the shell off the aimed hex, `lost` when it
-    /// carried it off the map (nothing to resolve).
+    /// `gunboat`'s howitzer shell, aimed at `aimed`, impacted at `at`
+    /// (§6.64) — `scattered` when the impact roll moved the shell off the
+    /// aimed hex, `lost` when it carried it off the map (nothing to resolve).
     HowitzerImpact {
+        gunboat: UnitId,
+        aimed: HexCoord,
         at: HexCoord,
         scattered: bool,
         #[serde(default)]
@@ -199,16 +201,18 @@ impl TurnEventRecord {
                 format!("{} eliminated ({cause})", unit)
             }
             TurnEventRecord::HowitzerImpact {
+                gunboat,
+                aimed,
                 at,
                 scattered,
                 lost,
             } => {
                 if *lost {
-                    format!("Howitzer shell scattered off the map at {} (§6.64)", at)
+                    format!("{gunboat}'s shell at {aimed} scattered off the map at {at} (§6.64)")
                 } else if *scattered {
-                    format!("Howitzer shell scattered to {} (§6.64)", at)
+                    format!("{gunboat}'s shell at {aimed} scattered to {at} (§6.64)")
                 } else {
-                    format!("Howitzer shell on target at {}", at)
+                    format!("{gunboat}'s shell on target at {at}")
                 }
             }
             TurnEventRecord::VpScored {

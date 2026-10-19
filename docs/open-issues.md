@@ -11,10 +11,6 @@ seat handling).
 
 ## Rules engine: deviations from the manual
 
-- **§6.42 Maxim + howitzer.** The rule lets howitzer fire combine with Maxim
-  fire when it impacts in the intended hex. The engine resolves them as
-  independent attacks (a documented AMBIGUITY note), and a combined howitzer
-  attack of several gunboats shares one impact roll.
 - **§10.11 / §10.21 secrecy.** Mines and the chain are "secretly recorded".
   The board and the event viewer hide them from the Anglo-Egyptian seat
   until a gunboat strikes them, and artillery may fire only at a chained hex
@@ -45,8 +41,16 @@ seat handling).
 - **§6.14 "fired at once".** [The Maxim and gunboat exception is to *firing*
   twice (§6.42); every unit, Maxims and gunboats included, may be fired at
   only once per fire *subphase* (§6.42: Maxims "may fire at enemy units
-  fired at in Direct Fire Subphase"). A howitzer shell on its intended hex and a Maxim
-  second fire may both strike the same hex in the second subphase.]
+  fired at in Direct Fire Subphase"). Shells and Maxims at one hex are one combined
+  attack (§6.42).]
+- **§6.42 combined howitzer and Maxim fire.** "Howitzer fire may be
+  combined with Maxim fire, but only if the howitzer fire impacts in the
+  intended hex." [One attack carries the shells and the Maxims; every shell
+  rolls its own impact and Combat Results Table dice (§6.64). The shells on
+  target and the Maxims resolve as one attack on one roll, without the
+  §6.24 +1 (it is howitzer fire); each scattered shell resolves alone where
+  it lands; with no shell on target the Maxims fire alone at the intended
+  hex, as Maxim fire with the +1.]
 - **§6.24 Maxim second fire.** [The +1 accuracy bonus applies to Maxim fire,
   first and second, and to batteries breaching walls or firing at the chain;
   not to howitzer fire, which ignores line of sight and scatters.]
@@ -253,7 +257,6 @@ seat handling).
   - §6.11: nothing checks that each counter carries its printed fire factor.
   - §6.41: nothing asserts allocate-everything-then-resolve (the engine does
     not enforce it; see the approximation).
-  - §6.42: no test shows a named gunboat firing howitzer fire.
   - §9.33: nothing pins the early end when GORDON falls.
   - §9.344: nothing checks that the North Fort fort may fire its guns.
   - §9.345: nothing checks that six upstream movement points are debited.

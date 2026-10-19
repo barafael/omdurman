@@ -162,6 +162,19 @@ impl FireAttack {
     }
 }
 
+/// The dice of one howitzer shell (§6.64: "roll the ten-sided die twice"):
+/// the impact roll that places it ([`crate::howitzer_scatter`]) and the
+/// Combat Results Table roll it resolves with should it scatter -- a shell
+/// that lands in the intended hex joins the attack there instead (§6.42),
+/// which rolls once for all its weapons. `disruption` picks the units a `D`
+/// disrupts where it scatters to.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub struct ShellRoll {
+    pub impact: crate::DieRoll,
+    pub roll: crate::DieRoll,
+    pub disruption: DisruptionDraw,
+}
+
 /// A single row of the Combat Results Table, expressed as an enum (rulebook §6.22, §7.7).
 /// Notation from the reference table at the foot of the manual:
 ///

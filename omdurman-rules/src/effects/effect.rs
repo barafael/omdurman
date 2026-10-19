@@ -75,24 +75,30 @@ pub enum GameEffect {
         disruption: DisruptionDraw,
     },
 
-    /// Resolve a howitzer bombardment (two rolls: CRT + impact scatter)
-    /// (rulebook §6.64).
+    /// Resolve a howitzer bombardment (rulebook §6.42, §6.64): the named
+    /// gunboats' shells, with any Maxim fire combined into the attack.
     ///
     /// **Preconditions:**
-    /// - Active phase is `OffensiveFire(MaximSecondAndHowitzer)`.
-    /// - All firers have Howitzer weapon class.
-    /// - Target hex is within range 4-10 (§6.64).
-    /// - It is not night (§8.1: howitzers may not fire at night).
-    /// - Target hex is occupied by enemy units.
+    /// - The Maxim Second Fire and Howitzer subphase; no night (§6.64).
+    /// - At least one shell: a named gunboat's artillery among `firers`, its
+    ///   target hex 4-10 hexes off (line of sight ignored); every other
+    ///   weapon is a Maxim (a Maxim battery in `firers`, a named gunboat's
+    ///   Maxims in `gunboat_maxims`) in range and sight of the target.
+    /// - `shells` holds one [`ShellRoll`] per shell, in `firers` order.
+    /// - The target hex is enemy-occupied and not yet fired at.
     ///
-    /// **Postconditions:**
-    /// - Impact hex determined by scatter roll.
-    /// - CRT result applied to units at impact hex (not the original target).
-    /// - Firers marked as fired.
+    /// **Postconditions:** each shell's impact roll places it. The shells
+    /// that land in the intended hex combine with the Maxims into one attack
+    /// there, resolved with `roll` and `disruption` (§6.42: "Howitzer fire
+    /// may be combined with Maxim fire, but only if the howitzer fire
+    /// impacts in the intended hex"); with no shell on target the Maxims
+    /// fire there alone. Each scattered shell resolves alone on whoever it
+    /// lands on, friend or foe, with its own roll (§6.64). Every weapon is
+    /// marked as fired.
     HowitzerFire {
         attack: FireAttack,
-        combat_results_table_roll: DieRoll,
-        impact_roll: DieRoll,
+        shells: Vec<ShellRoll>,
+        roll: DieRoll,
         disruption: DisruptionDraw,
     },
 

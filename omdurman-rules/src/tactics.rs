@@ -831,8 +831,12 @@ fn howitzer_on_target() -> TacticsScript {
                     HexCoord::new(30, 12),
                     vec![],
                 ),
-                combat_results_table_roll: DieRoll::Ten,
-                impact_roll: DieRoll::Ten,
+                shells: vec![crate::ShellRoll {
+                    impact: DieRoll::Ten,
+                    roll: DieRoll::Ten,
+                    disruption: crate::DisruptionDraw::default(),
+                }],
+                roll: DieRoll::Ten,
                 disruption: crate::DisruptionDraw::default(),
             },
         )
@@ -865,8 +869,12 @@ fn howitzer_scatter_miss() -> TacticsScript {
                     HexCoord::new(30, 13),
                     vec![],
                 ),
-                combat_results_table_roll: DieRoll::Ten,
-                impact_roll: DieRoll::Two,
+                shells: vec![crate::ShellRoll {
+                    impact: DieRoll::Two,
+                    roll: DieRoll::Ten,
+                    disruption: crate::DisruptionDraw::default(),
+                }],
+                roll: DieRoll::Ten,
                 disruption: crate::DisruptionDraw::default(),
             },
         )
@@ -898,8 +906,12 @@ fn no_howitzer_at_night() -> TacticsScript {
                 HexCoord::new(30, 12),
                 vec![],
             ),
-            combat_results_table_roll: DieRoll::Ten,
-            impact_roll: DieRoll::Ten,
+            shells: vec![crate::ShellRoll {
+                impact: DieRoll::Ten,
+                roll: DieRoll::Ten,
+                disruption: crate::DisruptionDraw::default(),
+            }],
+            roll: DieRoll::Ten,
             disruption: crate::DisruptionDraw::default(),
         },
     )

@@ -444,6 +444,16 @@ pub enum RuleError {
     )]
     FireKindMismatch,
 
+    /// A howitzer attack with no named gunboat's shell in it (§6.42: Maxim
+    /// fire combines with howitzer fire, it does not stand in for it).
+    #[error("a howitzer attack needs a named gunboat's shell (§6.42, §6.64)")]
+    HowitzerAttackWithoutShell,
+
+    /// A howitzer attack whose shells and dice do not pair up (§6.64: every
+    /// shell rolls its own impact and Combat Results Table dice).
+    #[error("{shells} howitzer shell(s) but {rolls} set(s) of shell dice (§6.64)")]
+    ShellRollCount { shells: usize, rolls: usize },
+
     /// The defender already declined the §7.5 retreat from the pending melee.
     #[error("the defenders have chosen to stand against this melee (§7.5)")]
     RetreatDeclined,

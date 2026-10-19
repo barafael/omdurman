@@ -536,7 +536,6 @@ fn same_rule_state(a: &GameState, b: &GameState) -> bool {
         && a.next_alloc_index == b.next_alloc_index
         && a.units_fired_this_phase == b.units_fired_this_phase
         && a.units_fired_at_this_phase == b.units_fired_at_this_phase
-        && a.units_shelled_this_phase == b.units_shelled_this_phase
         && a.mp_spent_this_turn == b.mp_spent_this_turn
         && a.gunboats_upstream_this_turn == b.gunboats_upstream_this_turn
         && a.zoc_stopped_this_turn == b.zoc_stopped_this_turn
@@ -587,7 +586,6 @@ fn invariants_hold(state: &GameState) -> bool {
         && state.eliminated.iter().all(|id| !on_board(id))
         && state.units_fired_this_phase.iter().all(on_board)
         && state.units_fired_at_this_phase.iter().all(on_board)
-        && state.units_shelled_this_phase.iter().all(on_board)
         && state.zoc_stopped_this_turn.iter().all(on_board)
         && state.mp_spent_this_turn.keys().all(on_board)
         && state
@@ -825,8 +823,12 @@ fn howitzer_fire_is_safe() {
         attack: biased(any_fire_attack(), || {
             plausible_fire(&state, FireKind::Howitzer)
         }),
-        combat_results_table_roll: any_roll(),
-        impact_roll: any_roll(),
+        shells: vec![crate::ShellRoll {
+            impact: any_roll(),
+            roll: any_roll(),
+            disruption: crate::DisruptionDraw::default(),
+        }],
+        roll: any_roll(),
         disruption: any_disruption(),
     };
     check(state, effect);
@@ -1515,8 +1517,12 @@ fn any_effect(kind: usize) -> GameEffect {
         },
         3 => GameEffect::HowitzerFire {
             attack: any_fire_attack(),
-            combat_results_table_roll: any_roll(),
-            impact_roll: any_roll(),
+            shells: vec![crate::ShellRoll {
+                impact: any_roll(),
+                roll: any_roll(),
+                disruption: crate::DisruptionDraw::default(),
+            }],
+            roll: any_roll(),
             disruption: any_disruption(),
         },
         4 => GameEffect::DeclareMelee {

@@ -44,14 +44,6 @@ pub struct GameState {
     /// `units_fired_this_phase` at each phase change and turn end.
     #[serde(default)]
     pub units_fired_at_this_phase: Vec<UnitId>,
-    /// Units a howitzer shell has struck in the hex it was aimed at this
-    /// fire subphase (§6.42: "Howitzer fire may be combined with Maxim
-    /// fire, but only if the howitzer fire impacts in the intended hex").
-    /// Kept apart from `units_fired_at_this_phase` so the shell and the
-    /// Maxims' second fire may both land on one hex; a second shell may
-    /// not. Cleared with it.
-    #[serde(default)]
-    pub units_shelled_this_phase: Vec<UnitId>,
     /// Named gunboats whose Maxim guns have fired this fire subphase (§6.42:
     /// they fire once in each subphase, independently of the gunboat's
     /// artillery, which `units_fired_this_phase` tracks). Cleared with it.
@@ -270,7 +262,6 @@ impl GameState {
             units_fired_this_phase: Vec::new(),
             gunboat_maxims_fired_this_phase: Vec::new(),
             units_fired_at_this_phase: Vec::new(),
-            units_shelled_this_phase: Vec::new(),
             mp_spent_this_turn: BTreeMap::new(),
             gunboats_upstream_this_turn: Vec::new(),
             zoc_stopped_this_turn: Vec::new(),
@@ -549,7 +540,6 @@ impl GameState {
             units_fired_this_phase: Vec::new(),
             gunboat_maxims_fired_this_phase: Vec::new(),
             units_fired_at_this_phase: Vec::new(),
-            units_shelled_this_phase: Vec::new(),
             mp_spent_this_turn: BTreeMap::new(),
             gunboats_upstream_this_turn: Vec::new(),
             zoc_stopped_this_turn: Vec::new(),

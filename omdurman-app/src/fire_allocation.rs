@@ -159,14 +159,15 @@ pub fn handle_fire_allocation_click(
         };
         // §6.14: a hex is fired at once per phase, so fire at an already
         // targeted hex joins that attack instead of opening a second one
-        // (which the engine would refuse at resolution).
-        if let Some(existing) = allocation
-            .attacks
-            .iter_mut()
-            .find(|a| a.target_hex == attack.target_hex && a.kind == attack.kind)
-            && let Some(combined) =
-                omdurman_rules::effects::combine_fire_attacks(&gs.0, existing, attack)
-        {
+        // (which the engine would refuse at resolution) -- Maxim second
+        // fire joining a shell makes one howitzer attack (§6.42).
+        let joined = allocation.attacks.iter_mut().find_map(|existing| {
+            let combined = (existing.target_hex == attack.target_hex)
+                .then(|| omdurman_rules::effects::combine_fire_attacks(&gs.0, existing, attack))
+                .flatten()?;
+            Some((existing, combined))
+        });
+        if let Some((existing, combined)) = joined {
             *existing = combined;
             continue;
         }
@@ -481,29 +482,37 @@ pub fn execute_fire_allocations(
         }
         let disruption = rng.disruption_draw();
 
-        let mut d10 = || rng.roll_d10();
-
         if attack.kind == FireKind::Howitzer {
-            let combat_results_table_roll = d10();
-            let impact_roll = d10();
+            // §6.64: every shell rolls its impact and its own Combat Results
+            // Table die; the attack on the intended hex rolls once (§6.42).
+            let shells: Vec<omdurman_rules::ShellRoll> =
+                omdurman_rules::effects::shell_gunboats(&gs.0, attack)
+                    .iter()
+                    .map(|_| omdurman_rules::ShellRoll {
+                        impact: rng.roll_d10(),
+                        roll: rng.roll_d10(),
+                        disruption: rng.disruption_draw(),
+                    })
+                    .collect();
+            let roll = rng.roll_d10();
             info!(
                 target.q = attack.target_hex.q,
                 target.r = attack.target_hex.r,
-                crt_roll = %combat_results_table_roll,
-                impact = %impact_roll,
+                roll = %roll,
+                shells = shells.len(),
                 "howitzer fire (batch)",
             );
             sent += usize::from(submit.submit(
                 &gs.0,
                 GameEvent::Effect(GameEffect::HowitzerFire {
                     attack: attack.clone(),
-                    combat_results_table_roll,
-                    impact_roll,
+                    shells,
+                    roll,
                     disruption,
                 }),
             ));
         } else {
-            let roll = d10();
+            let roll = rng.roll_d10();
             info!(
                 target.q = attack.target_hex.q,
                 target.r = attack.target_hex.r,

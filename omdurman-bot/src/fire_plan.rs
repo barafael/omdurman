@@ -134,27 +134,55 @@ pub fn attack_of(effect: &GameEffect) -> Option<&FireAttack> {
     }
 }
 
-fn with_attack(effect: &GameEffect, attack: FireAttack) -> GameEffect {
-    match effect {
+/// The fire effect of `group` with its attack replaced by `attack` -- the
+/// group's attack merged with `joining`'s. The group's dice roll it; a
+/// howitzer attack keeps each shell's own dice from whichever effect
+/// brought the shell (§6.64), and Maxim second fire joining a shell turns
+/// the group into howitzer fire (§6.42).
+fn with_attack(
+    state: &GameState,
+    group: &GameEffect,
+    joining: &GameEffect,
+    attack: FireAttack,
+) -> GameEffect {
+    let (roll, disruption) = match group {
         GameEffect::FireCombat {
             roll, disruption, ..
-        } => GameEffect::FireCombat {
+        }
+        | GameEffect::HowitzerFire {
+            roll, disruption, ..
+        } => (*roll, *disruption),
+        other => return other.clone(),
+    };
+    if attack.kind != FireKind::Howitzer {
+        return GameEffect::FireCombat {
             attack,
-            roll: *roll,
-            disruption: *disruption,
-        },
-        GameEffect::HowitzerFire {
-            combat_results_table_roll,
-            impact_roll,
+            roll,
             disruption,
-            ..
-        } => GameEffect::HowitzerFire {
-            attack,
-            combat_results_table_roll: *combat_results_table_roll,
-            impact_roll: *impact_roll,
-            disruption: *disruption,
-        },
-        other => other.clone(),
+        };
+    }
+    let mut dice: Vec<(omdurman_rules::UnitId, omdurman_rules::ShellRoll)> = Vec::new();
+    for effect in [group, joining] {
+        if let GameEffect::HowitzerFire {
+            attack: a, shells, ..
+        } = effect
+        {
+            dice.extend(
+                omdurman_rules::effects::shell_gunboats(state, a)
+                    .into_iter()
+                    .zip(shells.iter().copied()),
+            );
+        }
+    }
+    let shells = omdurman_rules::effects::shell_gunboats(state, &attack)
+        .iter()
+        .filter_map(|g| dice.iter().find(|(d, _)| d == g).map(|&(_, s)| s))
+        .collect();
+    GameEffect::HowitzerFire {
+        attack,
+        shells,
+        roll,
+        disruption,
     }
 }
 
@@ -201,12 +229,13 @@ pub fn plan_fire(state: &GameState, candidates: &[GameEffect]) -> Vec<GameEffect
             continue;
         };
         let v = fire_value(state, attack);
-        options.push((
-            source,
-            (attack.target_hex, attack.kind, attack.at_fort),
-            c,
-            v,
-        ));
+        // The second subphase's Maxims and shells at one hex are one
+        // attack (§6.42), so they share a group.
+        let kind = match attack.kind {
+            FireKind::Howitzer => FireKind::MaximSecondFire,
+            other => other,
+        };
+        options.push((source, (attack.target_hex, kind, attack.at_fort), c, v));
     }
     if options.is_empty() {
         return others;
@@ -286,7 +315,7 @@ pub fn plan_fire(state: &GameState, candidates: &[GameEffect]) -> Vec<GameEffect
         let key = options[i].1;
         match gi {
             Some(gi) => {
-                let effect = with_attack(&groups[gi].1, merged);
+                let effect = with_attack(state, &groups[gi].1, options[i].2, merged);
                 groups[gi].2 += gain;
                 groups[gi].1 = effect;
             }

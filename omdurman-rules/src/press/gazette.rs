@@ -691,6 +691,8 @@ mod tests {
     fn shelled(unit: UnitId, at: HexCoord) -> Vec<TurnEventRecord> {
         vec![
             TurnEventRecord::HowitzerImpact {
+                gunboat: unit,
+                aimed: at,
                 at,
                 scattered: false,
                 lost: false,
