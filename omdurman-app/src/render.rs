@@ -317,6 +317,74 @@ pub fn update_acted_markers(
     *last = Some(marked);
 }
 
+// -- The Nile current -----------------------------------------------------------
+
+/// Marker for a Nile current arrow.
+#[derive(Component)]
+pub struct NileFlowArrow;
+
+/// While a gunboat is selected, a faint arrow on every Nile hex shows the
+/// current (§5.24): a step with it is downstream, a step against it
+/// upstream, on the boat's smaller upstream allowance. Built when a boat is
+/// selected, cleared when it is not.
+#[allow(clippy::too_many_arguments)]
+pub fn nile_flow_arrows(
+    mut commands: Commands,
+    arrows: crate::DirectionArrowCtx,
+    picker: Res<crate::picker::PickerState>,
+    placed_units: Query<(Entity, &crate::picker::PlacedUnit)>,
+    game_state: Res<crate::GameStateResource>,
+    existing: Query<Entity, With<NileFlowArrow>>,
+    mut shown: Local<bool>,
+    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
+) {
+    if generation.invalidates(&mut seen_generation) {
+        *shown = false;
+    }
+    let gs = &game_state.0;
+    let boat = crate::picker::selected_unit_id(&picker, &placed_units)
+        .and_then(|(id, _)| gs.find_unit(id))
+        .is_some_and(|u| u.profile.kind.is_boat());
+    if boat == *shown {
+        return;
+    }
+    let old: Vec<Entity> = existing.iter().collect();
+    crate::ui::despawn_all(&mut commands, &old);
+    *shown = boat;
+    if !boat {
+        return;
+    }
+    let hex = &arrows.hex;
+    let origin = hex.layout.adjusted_origin(&hex.overlay.params);
+    let size = hex.overlay.params.hex_size;
+    for (&at, _) in gs.board.terrain.iter() {
+        let Some(flow) = gs.board.flow_at(at) else {
+            continue;
+        };
+        let toward = at.neighbors()[flow as usize];
+        let from = hex_world_pos(at, origin, &hex.overlay.params);
+        let to = hex_world_pos(toward, origin, &hex.overlay.params);
+        let delta = Vec3::new(to.x - from.x, 0.0, to.z - from.z);
+        let len = delta.length();
+        if len < f32::EPSILON {
+            continue;
+        }
+        let dir = delta / len;
+        // A short arrow across the hex's middle, pointing down the current.
+        let draw_len = len * 0.45;
+        let tail = from - dir * (draw_len * 0.5);
+        commands.spawn((
+            NileFlowArrow,
+            Mesh3d(arrows.arrow_assets.mesh.clone()),
+            MeshMaterial3d(arrows.arrow_assets.dim.clone()),
+            Transform::from_xyz(tail.x, 0.6, tail.z)
+                .with_rotation(Quat::from_rotation_arc(Vec3::Z, dir))
+                .with_scale(Vec3::new(size * 0.3, 1.0, draw_len)),
+            Visibility::Visible,
+        ));
+    }
+}
+
 // -- The Mahdi's Tomb ----------------------------------------------------------
 
 /// Marker for the ring on the Mahdi's Tomb hex.
@@ -547,6 +615,8 @@ impl Plugin for RenderPlugin {
                         crate::river_placement::river_placement_band,
                         // §9.14: who holds the Mahdi's Tomb.
                         mahdis_tomb_marker,
+                        // §5.24: the current, while a gunboat is selected.
+                        nile_flow_arrows,
                     )
                         .run_if(crate::on_board),
                 ),

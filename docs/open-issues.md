@@ -163,7 +163,6 @@ seat handling).
 
 - Deployment traps get no warning (e.g. the Hogali pocket in Fall of Khartoum).
 - The chart sheet (`charts.rs`) has no LOS table or Scattergram tab.
-- There are no Nile flow arrows (`flow_at`).
 - Campaign Dervish set-up has no per-class groups, placed/total counters or
   per-class zone tints (§9.111).
 - Historical set-up shows the union of the leaders' zones, not the per-leader
