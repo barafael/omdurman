@@ -201,8 +201,6 @@ seat handling).
 - A teammate's resolved fire still locks this peer's fire tray when the
   firer is a shared-pool unit (one every seat of the side commands, as in a
   game without commands), `fire_allocation.rs`.
-- Resetting teammates' Ready flags on a new game
-  (`controls::reset_peer_ready_on_new_game`) has no test.
 - The phase-sequence indicator (`UiPhaseState::phase_sequence`) has four rungs,
   folding Direct and Maxim/Howitzer fire into one.
 - Polish: selection pulse, howitzer scatter animation, Zariba build animation.
@@ -225,10 +223,6 @@ seat handling).
 - Snapshot-request retry never gives up (every 2 s, then every 15 s once
   the bootstrap budget has passed).
 - Broadcast retention is all-or-nothing.
-- Per-game app state may not be reset between games in one process: the
-  telegram cursor, dispatches and cards (review 3.3; unconfirmed). The
-  picker tray, the scenario-placement latch and teammates' Ready flags are
-  now per game.
 - 23 systems still take `Option<Res<GameStateResource>>`.
 - Duplicated web tab (`seats.rs`): the localStorage probe is compile-checked
   only, never run in a browser. Two tabs that start in the same instant with

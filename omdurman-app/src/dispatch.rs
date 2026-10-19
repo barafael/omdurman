@@ -62,6 +62,12 @@ pub struct Dispatches {
 }
 
 impl Dispatches {
+    /// Drop every slip and log line (a new game begins).
+    pub fn clear(&mut self) {
+        self.slips.clear();
+        self.log.clear();
+    }
+
     /// Queue a dispatch. `header` is the small-caps frame label; `body` is the
     /// factual message (may contain `§N` references).
     pub fn push(&mut self, header: impl Into<String>, body: impl Into<String>) {

@@ -159,12 +159,17 @@ struct CombatCardEntry {
 }
 
 #[derive(Resource, Default)]
-struct CombatCardQueue {
+pub(crate) struct CombatCardQueue {
     entries: Vec<CombatCardEntry>,
     next_serial: u64,
 }
 
 impl CombatCardQueue {
+    /// Drop every card, pinned ones included (a new game begins).
+    pub(crate) fn clear(&mut self) {
+        self.entries.clear();
+    }
+
     /// Queue a card, evicting the oldest unpinned card beyond
     /// [`MAX_ENTRIES`].
     fn push(&mut self, mut entry: CombatCardEntry) {

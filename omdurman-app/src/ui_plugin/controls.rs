@@ -144,18 +144,26 @@ pub(crate) fn game_control_section(
     }
 }
 
-/// Clear every teammate's setup-ready flag (`Ephemeral::SetupReady`) when a
-/// new game begins: the flags live on the peer entities, which outlive the
-/// game, so a teammate's "ready" from the last game's set-up would otherwise
-/// count in the next one -- and the faction's `ConfirmSetupReady` would go
-/// out before that teammate had deployed anything. A game is told apart by
-/// its `StartGame` ([`crate::scenario_setup::start_game_key`]), so a history
-/// install or rebuild of the *same* game keeps the flags (a reconnecting
-/// teammate re-announces theirs anyway).
-pub(crate) fn reset_peer_ready_on_new_game(
+/// Clear the per-game state that outlives a game when a new one begins:
+///
+/// * every teammate's setup-ready flag (`Ephemeral::SetupReady`): the flags
+///   live on the peer entities, so a teammate's "ready" from the last game's
+///   set-up would otherwise count in the next one -- and the faction's
+///   `ConfirmSetupReady` would go out before that teammate had deployed
+///   anything;
+/// * the dispatch slips and the Log menu's lines, and the combat cards
+///   (pinned ones never expire), which belong to the last game.
+///
+/// A game is told apart by its `StartGame`
+/// ([`crate::scenario_setup::start_game_key`]), so a history install or
+/// rebuild of the *same* game keeps all of it (a reconnecting teammate
+/// re-announces its flag anyway).
+pub(crate) fn reset_per_game_ui_on_new_game(
     mut commands: Commands,
     recorder: Res<crate::game_record::GameRecorder>,
     flags: Query<Entity, With<crate::peers::SetupReadyFlag>>,
+    mut dispatches: ResMut<crate::dispatch::Dispatches>,
+    mut cards: ResMut<crate::combat_card::CombatCardQueue>,
     mut last: Local<Option<crate::scenario_setup::StartGameKey>>,
 ) {
     if !recorder.is_changed() {
@@ -174,6 +182,8 @@ pub(crate) fn reset_peer_ready_on_new_game(
             .entity(entity)
             .remove::<crate::peers::SetupReadyFlag>();
     }
+    dispatches.clear();
+    cards.clear();
 }
 
 /// The score block of the command rail: the scenario's own victory measure
@@ -785,6 +795,72 @@ mod tests {
     use omdurman_rules::Phase;
     use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
     use omdurman_types::Scenario;
+
+    /// A new `StartGame` drops the last game's teammate Ready flags,
+    /// dispatches and Log lines; a re-install of the same game keeps them.
+    #[test]
+    fn a_new_game_resets_the_per_game_ui_and_the_same_game_keeps_it() {
+        use bevy::prelude::*;
+        use omdurman_net::{GameRecord, InitialGameState, RecordedEvent};
+
+        let record = |uid: u64| GameRecord {
+            initial_state: InitialGameState { seed: 1 },
+            events: vec![RecordedEvent {
+                utc: chrono::DateTime::UNIX_EPOCH,
+                sender_idx: Some(0),
+                seq: 0,
+                uid: Some(uid),
+                payload: GameEvent::StartGame {
+                    seats: Vec::new(),
+                    scenario: Scenario::Campaign,
+                    optional_rules: Vec::new(),
+                },
+            }],
+        };
+        let mut app = App::new();
+        app.init_resource::<crate::game_record::GameRecorder>()
+            .init_resource::<crate::dispatch::Dispatches>()
+            .init_resource::<crate::combat_card::CombatCardQueue>()
+            .add_systems(Update, super::reset_per_game_ui_on_new_game);
+        let leftovers = |app: &mut App| {
+            let flag = app
+                .world_mut()
+                .spawn(crate::peers::SetupReadyFlag(true))
+                .id();
+            app.world_mut()
+                .resource_mut::<crate::dispatch::Dispatches>()
+                .push("Old", "game");
+            flag
+        };
+        let kept = |app: &mut App, flag| {
+            let dispatches = app.world().resource::<crate::dispatch::Dispatches>();
+            let any = !dispatches.slips.is_empty() || !dispatches.log.is_empty();
+            let flagged = app
+                .world()
+                .get::<crate::peers::SetupReadyFlag>(flag)
+                .is_some();
+            assert_eq!(any, flagged, "slips, log and flag go together");
+            any
+        };
+
+        app.world_mut()
+            .resource_mut::<crate::game_record::GameRecorder>()
+            .record = Some(record(1));
+        app.update();
+        let flag = leftovers(&mut app);
+        // The same game installed again (a reconnect): nothing is reset.
+        app.world_mut()
+            .resource_mut::<crate::game_record::GameRecorder>()
+            .record = Some(record(1));
+        app.update();
+        assert!(kept(&mut app, flag));
+        // A new game: everything from the last one goes.
+        app.world_mut()
+            .resource_mut::<crate::game_record::GameRecorder>()
+            .record = Some(record(2));
+        app.update();
+        assert!(!kept(&mut app, flag));
+    }
 
     #[test]
     fn end_phase_refusal_carries_the_engine_reason() {

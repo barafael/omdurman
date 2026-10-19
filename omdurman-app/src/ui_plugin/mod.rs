@@ -100,7 +100,7 @@ impl Plugin for UiPlugin {
                     update_hex_coord_display,
                     crate::scenario_setup::auto_trigger_scenario_setup
                         .run_if(bevy::prelude::in_state(crate::AppState::InGame)),
-                    controls::reset_peer_ready_on_new_game,
+                    controls::reset_per_game_ui_on_new_game,
                 ),
             )
             .add_systems(
