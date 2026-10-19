@@ -17,10 +17,15 @@ seat handling).
   attack of several gunboats shares one impact roll.
 - **§10.11 / §10.21 secrecy.** Mines and the chain are "secretly recorded".
   The board hides them from the Anglo-Egyptian seat, but the event log
-  carries them (see also "private dice" below).
+  carries them (see also "private dice" below). Worse, the A-E breach card
+  offers "The river chain · range N" whenever a battery can reach the
+  hidden chain (`special_actions.rs`; `can_fire_at_chain` has no
+  "discovered" gate), so it works as an oracle.
 - **§6.41 allocate, then resolve.** "Allocate all fire attacks, then resolve"
   is enforced by the UI's allocation tray only; the engine accepts attacks
-  one at a time.
+  one at a time. The tray leaves gaps: a teammate may still allocate after
+  seeing a resolution; wall-breach and chain shots fire outside the tray;
+  and the AI (`Commander::pick`) re-plans its fire after every result.
 - **§7.7 casualty choice.** Losses fall on units in list order, the rank and
   file before their leaders (`leaders_last`); the owning player does not
   choose them. The same order picks the one unit a breach or a destroyed fort
@@ -39,7 +44,8 @@ seat handling).
   hex". [The hut/building clause wins.]
 - **§6.14 "fired at once".** [The Maxim and gunboat exception is to *firing*
   twice (§6.42); every unit, Maxims and gunboats included, may be fired at
-  only once per fire phase. A howitzer shell on its intended hex and a Maxim
+  only once per fire *subphase* (§6.42: Maxims "may fire at enemy units
+  fired at in Direct Fire Subphase"). A howitzer shell on its intended hex and a Maxim
   second fire may both strike the same hex in the second subphase.]
 - **§6.24 Maxim second fire.** [The +1 accuracy bonus applies to Maxim fire,
   first and second, and to batteries breaching walls or firing at the chain;
@@ -155,13 +161,14 @@ seat handling).
   `no_route_reason` only knows budgets (`picker/clicks.rs`). Say which rule
   holds the boat. The hover tooltip likewise prints "0 left" beside
   "11↑ 17↓ MP left" for such a boat.
-- The advance slip says "may advance" even when the §7.6 Dervish advance is
-  mandatory. There is no advance reminder at End Phase.
+- The dispatch line says "may advance" for every `HexVacatedByCombat`, even
+  after a §7.6 forced advance, and the rail's `advance_hint` calls every
+  advance "optional (§6.82)". There is no advance reminder at End Phase.
 - Deployment traps get no warning (e.g. the Hogali pocket in Fall of Khartoum).
 - Fired pips are never drawn: the acted rings mark movement only
-  (`TODO(acted-universal)` in `render.rs`).
-- The Mahdi's Tomb shows up only as a VP row: there is no board marker or
-  control indicator.
+  (`TODO(acted-universal)` in `render.rs`; the engine's
+  `units_fired_this_phase` / `units_meleed_this_turn` can feed them).
+- The Mahdi's Tomb has a VP-card line naming its holder but no board marker.
 - The chart sheet (`charts.rs`) has no LOS table or Scattergram tab.
 - There are no Nile flow arrows (`flow_at`) and no marker for units stopped in
   an enemy ZOC (`zoc_stopped_this_turn`).
@@ -171,8 +178,9 @@ seat handling).
   A-E player. Redact them until mines and the chain are secret (§10.11/§10.21).
 - Campaign Dervish set-up has no per-class groups, placed/total counters or
   per-class zone tints (§9.111).
-- Historical set-up has no lettered-hex highlight or snap for the leaders and
-  no three-hex halo (the hover tooltip names why a hex is refused).
+- Historical set-up shows the union of the leaders' zones, not the per-leader
+  three-hex halo of the counter in hand (`historical_set_up_area`); the
+  hover tooltip names why a hex is refused.
 - The desertion panel hides exempt units instead of greying them out, and has
   no "no VP for deserters" note (§8.2).
 - The LOS overlay has no ray between two chosen hexes.
@@ -180,8 +188,8 @@ seat handling).
   is no colouring by range band (×3/×2/×1/×½).
 - Melee target rings don't mark wall hexsides as blocked, or gates and breaches
   as open (§7.2).
-- Artillery-only targets are filtered out silently: no tooltip explains "only
-  artillery" or the 3+ (gunboat) and 2+ (fort, wall) thresholds (§6.61–6.63).
+- Artillery-only targets (§6.61–6.63) get a refusal card on hover, but no
+  board marker before it.
 - Howitzer fire: impact rings are drawn and the result card names the impact
   hex, but there is no aimed-to-impact arrow and no warning when the shot lands
   on friendly units (§6.64).
@@ -204,11 +212,9 @@ seat handling).
 - The phase-sequence indicator (`UiPhaseState::phase_sequence`) has four rungs,
   folding Direct and Maxim/Howitzer fire into one.
 - Polish: selection pulse, howitzer scatter animation, Zariba build animation.
-- Offline lobby roster.
 - Player names and colours are re-randomised on every launch
   (`LocalPlayerSettings` is not persisted).
 - Unconfirmed, from the play-test and review notes:
-  - The unit list doesn't group identical counters (Kehena, Degheim).
   - Fire slips pile up.
   - The lobby shows "(claimed by a player)" twice.
   - Player colours can clash.
@@ -217,7 +223,8 @@ seat handling).
 
 ## Net and app plumbing
 
-- `handle_socket` is about 620 lines; split out a `GameSession`.
+- `net_socket.rs` is ~2150 lines (`handle_socket` itself is ~200 after the
+  helper split); an optional `GameSession` struct.
 - `GameMap` (hexmap) and `BoardInfo` (rules) duplicate board topology.
 - Private dice: every roll is visible in the event log.
 - Snapshot-request retry never gives up (every 2 s, then every 15 s once
@@ -279,6 +286,6 @@ seat handling).
   `decline_retreat_before_melee_is_safe`) have passed only their randomized
   `cargo test` twins, and the pending-mine queue edits to the proofs in
   `effects/river.rs` are unverified.
-- 22 Kani harnesses have no `#[rulebook]` annotation and are not tracked in
+- 26 Kani harnesses have no `#[rulebook]` annotation and are not tracked in
   `traceability.toml` (e.g. `distance_is_symmetric`, `game_over_is_absorbing`,
   `sink_chain_is_atomic`, `place_mine_is_atomic`).
