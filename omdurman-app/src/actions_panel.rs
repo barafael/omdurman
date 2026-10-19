@@ -591,7 +591,8 @@ fn collect_hints(
                             n.map(|n| {
                                 format!(
                                     "{n} target hex{}; rings by best range band (§6.22): red \
-                                     \u{d7}3, orange \u{d7}2, yellow \u{d7}1, grey \u{bd}",
+                                     \u{d7}3, orange \u{d7}2, yellow \u{d7}1, grey \u{bd}; a \
+                                     small grey ring: artillery only (§6.61, §6.62)",
                                     if n == 1 { "" } else { "es" }
                                 )
                             }),

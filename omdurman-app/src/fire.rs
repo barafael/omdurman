@@ -538,6 +538,10 @@ pub fn fire_target_overlay_mesh(
         .iter()
         .map(|&target| best_band(&gs.0, &kinds, target))
         .collect();
+    // §6.61/§6.62: a gunboat or a fort alone may be fired at by artillery
+    // only -- the hexes this selection could reach but for that rule get a
+    // small grey inner ring, so they do not read as out of range.
+    let artillery_only = artillery_only_hexes(&gs.0, &kinds);
     let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
     for (&target, band) in targets.iter().zip(bands) {
         // Firers to pick (no kinds) are green; a target is coloured by the
@@ -556,7 +560,29 @@ pub fn fire_target_overlay_mesh(
         };
         rings.ring(FireTargetRing, target, 1.5, 1.0, material);
     }
+    for at in artillery_only {
+        rings.ring(FireTargetRing, at, 1.5, 0.6, &hex.assets.gray);
+    }
     *last = Some((kinds, targets));
+}
+
+/// The enemy hexes `kinds`' weapons could fire at but for §6.61/§6.62: a
+/// gunboat or a fort alone, which only artillery may engage.
+fn artillery_only_hexes(gs: &GameState, kinds: &[(UnitId, FireKind)]) -> Vec<HexCoord> {
+    let mut hexes: Vec<HexCoord> = gs.units.iter().map(|u| u.position).collect();
+    hexes.sort();
+    hexes.dedup();
+    hexes.retain(|&hex| {
+        kinds.iter().any(|&(id, kind)| {
+            matches!(
+                gs.can_fire_at(id, hex, kind),
+                Err(omdurman_rules::effects::RuleError::ArtilleryOnlyVsGunboatOrFort(_))
+            )
+        }) && !kinds
+            .iter()
+            .any(|&(id, kind)| gs.can_fire_at(id, hex, kind).is_ok())
+    });
+    hexes
 }
 
 /// The best range band (§6.22) any of `kinds`' weapons reaches `target`
@@ -1534,5 +1560,38 @@ mod fort_aim_tests {
         let at_fort = omdurman_rules::effects::aim_at_fort(&gs, &attack).expect("artillery");
         let rolls = super::fort_destroying_rolls(&gs, &at_fort);
         assert!((1..=10).contains(&rolls), "{rolls}");
+    }
+}
+
+#[cfg(test)]
+mod artillery_only_tests {
+    use omdurman_rules::{FireKind, Phase, UnitId, UnitPlacement};
+    use omdurman_types::{HexCoord, Player, Scenario};
+
+    /// §6.61: rifles in range of a lone Dervish gunboat may not fire at it;
+    /// its hex is marked artillery-only, a tribal stack beside it is not.
+    #[test]
+    fn a_lone_gunboat_is_marked_artillery_only_for_rifles() {
+        let mut gs = omdurman_rules::effects::GameState::new(Scenario::Campaign);
+        gs.phase = Phase::OffensiveFire(omdurman_rules::FireSubPhase::DirectFire);
+        gs.active_player = Player::AngloEgyptian;
+        let boat = UnitId::KhalifaAbdullah_1_0;
+        for (id, hex) in [
+            (UnitId::BritishArmy_0_0, HexCoord::new(0, 0)),
+            (boat, HexCoord::new(1, 0)),
+            (UnitId::Baggara_0_0, HexCoord::new(0, 1)),
+        ] {
+            gs.units.push(UnitPlacement {
+                id,
+                position: hex,
+                profile: omdurman_rules::unit_profiles::profile_for_unit(id).unwrap(),
+                state: Default::default(),
+            });
+        }
+        let kinds = [(UnitId::BritishArmy_0_0, FireKind::Direct)];
+        assert_eq!(
+            super::artillery_only_hexes(&gs, &kinds),
+            vec![HexCoord::new(1, 0)]
+        );
     }
 }
