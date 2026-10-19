@@ -629,7 +629,13 @@ pub(crate) struct DeploymentZoneRing;
 /// What the deployment rings were drawn for: the side, the deployed count
 /// (when the zone depends on it), the counter in hand (boat or not), and
 /// whether a boat is still to place.
-type ZoneKey = (omdurman_types::Player, usize, Option<bool>, bool);
+type ZoneKey = (
+    omdurman_types::Player,
+    usize,
+    Option<bool>,
+    bool,
+    Option<omdurman_rules::UnitId>,
+);
 
 /// During [`omdurman_rules::Phase::Setup`], outline the hexes where the local
 /// player may deploy (§9.2/§9.3), so setup is legible. Highlights the local
@@ -685,14 +691,15 @@ pub fn deployment_zone_overlay_mesh(
         && who == omdurman_types::Player::Dervish;
     // With a counter in hand, only the ground it may stand on: Nile hexes
     // for a gunboat, dry land for everyone else (§5.22).
-    let hand_is_boat = match &*picker_state {
+    let hand: Option<(omdurman_rules::UnitId, omdurman_rules::UnitProfile)> = match &*picker_state {
         PickerState::Placing { unit_idx, .. } => tray.available.get(*unit_idx).and_then(|u| {
-            omdurman_rules::unit_id_for_section_pos(u.section_name, u.col as u8, u.row as u8)
-                .and_then(omdurman_rules::unit_profiles::profile_for_unit)
-                .map(|p| p.kind.is_boat())
+            let id =
+                omdurman_rules::unit_id_for_section_pos(u.section_name, u.col as u8, u.row as u8)?;
+            Some((id, omdurman_rules::unit_profiles::profile_for_unit(id)?))
         }),
         _ => None,
     };
+    let hand_is_boat = hand.map(|(_, p)| p.kind.is_boat());
     // With nothing in hand, the Nile is outlined only while a boat of ours
     // is still to place: the FoK Dervish have none, and every Nile hex on
     // their edges was ringed for nothing -- their land units were refused
@@ -712,6 +719,7 @@ pub fn deployment_zone_overlay_mesh(
         },
         hand_is_boat,
         boats_to_place,
+        hand.map(|(id, _)| id),
     );
     if *last_key == Some(key) {
         return; // unchanged -- leave the rings in place
@@ -728,13 +736,34 @@ pub fn deployment_zone_overlay_mesh(
     // land unit (§5.22 makes the FoK zones boat/land-exclusive), so the player
     // sees the full set: Nile hexes for the gunboats, and the garrison /
     // landmark / wall-adjacent hexes for the land units.
+    // The counter in hand: exactly the hexes the engine would deploy it on
+    // -- its own area in the Campaign (§9.111), its own leader's three-hex
+    // halo out of sight in the Historical scenario (§9.212), the stacking
+    // law everywhere -- judged as if it were not yet on the board.
+    let without_hand = hand.map(|(id, _)| {
+        let mut probe = gs.0.clone();
+        probe.units.retain(|u| u.id != id);
+        probe
+    });
     for coord in gs.0.board.terrain.keys() {
-        let valid = match hand_is_boat {
-            Some(is_boat) => {
+        let valid = match (hand_is_boat, hand, without_hand.as_ref()) {
+            (Some(is_boat), Some((id, profile)), Some(probe)) => {
+                gs.0.in_deployment_zone(who, *coord, is_boat)
+                    && gs.0.on_deployable_terrain(*coord, is_boat)
+                    && probe
+                        .can_deploy_unit(&omdurman_rules::UnitPlacement {
+                            id,
+                            position: *coord,
+                            profile,
+                            state: Default::default(),
+                        })
+                        .is_ok()
+            }
+            (Some(is_boat), _, _) => {
                 gs.0.in_deployment_zone(who, *coord, is_boat)
                     && gs.0.on_deployable_terrain(*coord, is_boat)
             }
-            None => {
+            (None, _, _) => {
                 (boats_to_place && gs.0.in_deployment_zone(who, *coord, true))
                     || gs.0.in_deployment_zone(who, *coord, false)
             }

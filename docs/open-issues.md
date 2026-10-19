@@ -162,11 +162,6 @@ seat handling).
 ## UI
 
 - Deployment traps get no warning (e.g. the Hogali pocket in Fall of Khartoum).
-- Campaign Dervish set-up has no per-class groups, placed/total counters or
-  per-class zone tints (§9.111).
-- Historical set-up shows the union of the leaders' zones, not the per-leader
-  three-hex halo of the counter in hand (`historical_set_up_area`); the
-  hover tooltip names why a hex is refused.
 - Melee: every melee-capable unit of the selected hex attacks (no holding
   units back), and the UI declares from one hex only, though the engine
   accepts attackers from several adjacent hexes (§7.6).
