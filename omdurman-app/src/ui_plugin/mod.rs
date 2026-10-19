@@ -61,6 +61,15 @@ impl Plugin for UiPlugin {
         use crate::{event_viewer, lobby};
 
         app.insert_resource(settings::LocalPlayerSettings::default())
+            // The stored name and colour, once this instance holds its slot.
+            .add_systems(Startup, settings::load_player_settings)
+            .add_systems(
+                Update,
+                (
+                    settings::persist_player_settings,
+                    settings::avoid_color_clash,
+                ),
+            )
             .insert_resource(event_viewer::EventViewerState::default())
             .insert_resource(FontsInstalled::default())
             .insert_resource(EguiPointerOverUi::default())

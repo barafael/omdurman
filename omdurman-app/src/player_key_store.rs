@@ -28,6 +28,11 @@ const MAX_SLOTS: u32 = 16;
 #[cfg_attr(test, allow(dead_code))] // Tests use `claim_slot` on a temp dir.
 static HELD_SLOT: OnceLock<File> = OnceLock::new();
 
+/// The number of the slot this instance holds, once claimed: its player
+/// settings live next to its key ([`settings_path`]).
+#[cfg_attr(test, allow(dead_code))]
+static HELD_SLOT_INDEX: OnceLock<u32> = OnceLock::new();
+
 /// The persisted key of the first free slot, or a fresh key if no config
 /// directory is usable or every slot is taken.
 #[cfg_attr(test, allow(dead_code))] // Tests use `claim_slot` on a temp dir.
@@ -37,13 +42,23 @@ pub(crate) fn load_or_create() -> PlayerKey {
         .and_then(|s| s.trim().parse::<u32>().ok());
     let claimed = config_dir().and_then(|dir| claim_slot(&dir, pinned));
     match claimed {
-        Some((key, file)) => {
+        Some((key, file, slot)) => {
             // First call wins; the resource is only built once at startup.
             let _ = HELD_SLOT.set(file);
+            let _ = HELD_SLOT_INDEX.set(slot);
             key
         }
         None => PlayerKey::random(),
     }
+}
+
+/// Where this instance's player settings (name, colour) are kept: beside
+/// its key, per slot, so two windows running side by side keep two names.
+/// `None` until a slot is held (or when none could be).
+#[cfg_attr(test, allow(dead_code))]
+pub(crate) fn settings_path() -> Option<PathBuf> {
+    let slot = HELD_SLOT_INDEX.get()?;
+    Some(config_dir()?.join(format!("player_settings_{slot}.ron")))
 }
 
 /// The per-user config directory for the game: `$XDG_CONFIG_HOME` or
@@ -66,8 +81,8 @@ fn config_dir() -> Option<PathBuf> {
 
 /// Lock the first free slot in `dir` (or only `pinned`) and return its key —
 /// read from the file, or freshly generated and written when the file is new
-/// or unreadable — together with the locked file.
-fn claim_slot(dir: &Path, pinned: Option<u32>) -> Option<(PlayerKey, File)> {
+/// or unreadable — together with the locked file and the slot's number.
+fn claim_slot(dir: &Path, pinned: Option<u32>) -> Option<(PlayerKey, File, u32)> {
     std::fs::create_dir_all(dir).ok()?;
     let slots = match pinned {
         Some(slot) => slot..slot + 1,
@@ -107,7 +122,7 @@ fn claim_slot(dir: &Path, pinned: Option<u32>) -> Option<(PlayerKey, File)> {
                 key
             }
         };
-        return Some((key, file));
+        return Some((key, file, slot));
     }
     None
 }
@@ -119,25 +134,25 @@ mod tests {
     #[test]
     fn relaunch_reuses_the_key_and_concurrent_instances_get_distinct_ones() {
         let dir = tempfile::tempdir().unwrap();
-        let (first, first_lock) = claim_slot(dir.path(), None).expect("slot 0");
+        let (first, first_lock, _) = claim_slot(dir.path(), None).expect("slot 0");
         // A second instance running at the same time must not share it.
-        let (second, _second_lock) = claim_slot(dir.path(), None).expect("slot 1");
+        let (second, _second_lock, _) = claim_slot(dir.path(), None).expect("slot 1");
         assert_ne!(first, second);
         // The first instance exits (lock released); a relaunch gets its key back.
         drop(first_lock);
-        let (relaunched, _lock) = claim_slot(dir.path(), None).expect("slot 0 again");
+        let (relaunched, _lock, _) = claim_slot(dir.path(), None).expect("slot 0 again");
         assert_eq!(relaunched, first);
     }
 
     #[test]
     fn pinned_slot_is_exclusive() {
         let dir = tempfile::tempdir().unwrap();
-        let (key, _lock) = claim_slot(dir.path(), Some(3)).expect("slot 3");
+        let (key, _lock, _) = claim_slot(dir.path(), Some(3)).expect("slot 3");
         assert!(
             claim_slot(dir.path(), Some(3)).is_none(),
             "a pinned slot in use is not shared"
         );
-        let (other, _) = claim_slot(dir.path(), None).expect("free slot");
+        let (other, _, _) = claim_slot(dir.path(), None).expect("free slot");
         assert_ne!(key, other);
     }
 
@@ -145,9 +160,9 @@ mod tests {
     fn corrupt_slot_file_is_replaced_with_a_fresh_key() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("player_key_0"), "not hex").unwrap();
-        let (key, lock) = claim_slot(dir.path(), None).expect("slot 0");
+        let (key, lock, _) = claim_slot(dir.path(), None).expect("slot 0");
         drop(lock);
-        let (again, _) = claim_slot(dir.path(), None).expect("slot 0");
+        let (again, _, _) = claim_slot(dir.path(), None).expect("slot 0");
         assert_eq!(key, again, "the replacement key was persisted");
     }
 }
