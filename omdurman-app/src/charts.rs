@@ -16,15 +16,21 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass, EguiUserTextures, egui};
 pub enum ChartTab {
     Crt,
     Terrain,
+    /// The Line of Sight Table (§6.3), from the rulebook's back cover.
+    Los,
+    /// The Howitzer Fire Scattergram (§6.64), drawn from the engine's.
+    Scatter,
     Timing,
     Arrivals,
     Rulebook,
 }
 
 impl ChartTab {
-    const ALL: [ChartTab; 5] = [
+    const ALL: [ChartTab; 7] = [
         ChartTab::Crt,
         ChartTab::Terrain,
+        ChartTab::Los,
+        ChartTab::Scatter,
         ChartTab::Timing,
         ChartTab::Arrivals,
         ChartTab::Rulebook,
@@ -34,20 +40,24 @@ impl ChartTab {
         match self {
             ChartTab::Crt => "CRT",
             ChartTab::Terrain => "Terrain",
+            ChartTab::Los => "LOS",
+            ChartTab::Scatter => "Scattergram",
             ChartTab::Timing => "Timing",
             ChartTab::Arrivals => "Arrivals",
             ChartTab::Rulebook => "Rulebook",
         }
     }
 
-    /// The scan asset for a texture tab, or `None` for the text rulebook.
+    /// The scan asset for a texture tab, or `None` for the text rulebook
+    /// and the drawn Scattergram.
     fn asset_path(self) -> Option<&'static str> {
         match self {
             ChartTab::Crt => Some("charts/combat_results_table.webp"),
             ChartTab::Terrain => Some("charts/terrain_effects_chart.webp"),
+            ChartTab::Los => Some("charts/los_table.webp"),
             ChartTab::Timing => Some("charts/campaign_timing.webp"),
             ChartTab::Arrivals => Some("charts/order_of_appearance.webp"),
-            ChartTab::Rulebook => None,
+            ChartTab::Scatter | ChartTab::Rulebook => None,
         }
     }
 
@@ -62,6 +72,8 @@ impl ChartTab {
             (_, None) => true,
             (ChartTab::Timing, Some(s)) => s != Scenario::FallOfKhartoum,
             (ChartTab::Arrivals, Some(s)) => s == Scenario::Campaign,
+            // FALL OF KHARTOUM has no howitzers (§9.321: no named gunboats).
+            (ChartTab::Scatter, Some(s)) => s != Scenario::FallOfKhartoum,
             _ => true,
         }
     }
@@ -100,7 +112,7 @@ pub struct ChartSheet {
     active: ChartTab,
     /// Scan textures keyed by tab (rulebook has no entry).
     textures: Vec<(ChartTab, ChartTexture)>,
-    views: [(ChartTab, View); 5],
+    views: [(ChartTab, View); 7],
 }
 
 impl ChartSheet {
@@ -216,10 +228,13 @@ fn load_chart_textures(mut commands: Commands, asset_server: Res<AssetServer>) {
         })
         .collect();
     // Dev: start opened on a given tab for headless screenshots
-    // (OMDURMAN_CHARTS=crt|terrain|timing|arrivals|rulebook). Inert otherwise.
+    // (OMDURMAN_CHARTS=crt|terrain|los|scatter|timing|arrivals|rulebook).
+    // Inert otherwise.
     let (open, active) = match std::env::var("OMDURMAN_CHARTS").ok().as_deref() {
         Some("crt") => (true, ChartTab::Crt),
         Some("terrain") => (true, ChartTab::Terrain),
+        Some("los") => (true, ChartTab::Los),
+        Some("scatter") => (true, ChartTab::Scatter),
         Some("timing") => (true, ChartTab::Timing),
         Some("arrivals") => (true, ChartTab::Arrivals),
         Some("rulebook") => (true, ChartTab::Rulebook),
@@ -422,6 +437,87 @@ fn draw_peek_tab(ui: &mut egui::Ui, sheet: &mut ChartSheet) {
     }
 }
 
+/// The Howitzer Fire Scattergram (§6.64), drawn from the engine's own: the
+/// target hex hit on 7-10, each other roll on the neighbour the shell lands
+/// in. North is up, as on the board -- the printed diagram is upside down
+/// on the mapsheet (see `howitzer_scatter`).
+fn draw_scattergram(ui: &mut egui::Ui) {
+    use omdurman_rules::howitzer_scatter::{howitzer_scatter, scatter_impact_hex};
+    crate::rulebook::refs_label(
+        ui,
+        "Howitzer Fire Scattergram (§6.64): roll the impact die. 7-10 hits the target hex; \
+         1-6 lands the shell on the neighbour shown, north up as on the board. Its results \
+         take effect whoever stands there.",
+        crate::ui::palette::PANEL_TEXT,
+        13.0,
+    );
+    ui.add_space(8.0);
+    let centre = omdurman_types::HexCoord::new(0, 0);
+    // Rolls per landing hex.
+    let mut cells: Vec<(omdurman_types::HexCoord, Vec<u16>)> = Vec::new();
+    for value in 1..=10u16 {
+        let Ok(roll) = omdurman_rules::DieRoll::try_from(value) else {
+            continue;
+        };
+        let at = scatter_impact_hex(centre, howitzer_scatter(roll));
+        match cells.iter_mut().find(|(h, _)| *h == at) {
+            Some((_, rolls)) => rolls.push(value),
+            None => cells.push((at, vec![value])),
+        }
+    }
+    let size = 46.0;
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(size * 6.0, size * 5.0), egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+    let mid = rect.center();
+    let sqrt3 = 3f32.sqrt();
+    for (hex, rolls) in &cells {
+        // The board's axial layout: east is (+1, 0), south-east (+1, +1).
+        let (q, r) = (hex.q as f32, hex.r as f32);
+        let c = mid + egui::vec2(sqrt3 * size * (q - r / 2.0), 1.5 * size * r);
+        let corners: Vec<egui::Pos2> = (0..6)
+            .map(|k| {
+                let a = std::f32::consts::PI / 180.0 * (60.0 * k as f32 - 30.0);
+                c + egui::vec2(size * 0.97 * a.cos(), size * 0.97 * a.sin())
+            })
+            .collect();
+        let on_target = *hex == centre;
+        let fill = if on_target {
+            egui::Color32::from_rgb(240, 196, 170)
+        } else {
+            egui::Color32::from_gray(235)
+        };
+        painter.add(egui::Shape::convex_polygon(
+            corners,
+            fill,
+            egui::Stroke::new(1.5, egui::Color32::from_gray(60)),
+        ));
+        let label = match (rolls.first(), rolls.last()) {
+            (Some(a), Some(b)) if a != b => format!("{a}\u{2013}{b}"),
+            (Some(a), _) => a.to_string(),
+            _ => String::new(),
+        };
+        painter.text(
+            c,
+            egui::Align2::CENTER_CENTER,
+            if on_target {
+                format!("{label}\ntarget")
+            } else {
+                label
+            },
+            egui::FontId::proportional(18.0),
+            egui::Color32::from_gray(20),
+        );
+    }
+    painter.text(
+        rect.right_top() + egui::vec2(-8.0, 8.0),
+        egui::Align2::RIGHT_TOP,
+        "N \u{2191}",
+        egui::FontId::proportional(14.0),
+        crate::ui::palette::PANEL_TEXT,
+    );
+}
+
 /// The open state: index tabs across the top, then the active tab's content.
 fn draw_open_sheet(
     ui: &mut egui::Ui,
@@ -448,6 +544,10 @@ fn draw_open_sheet(
     ui.separator();
 
     let active = sheet.active;
+    if active == ChartTab::Scatter {
+        draw_scattergram(ui);
+        return;
+    }
     if active == ChartTab::Rulebook {
         // A clicked §-reference re-targets the rulebook to that section.
         if let Some(number) = crate::rulebook::draw_rulebook(ui, rulebook, dt) {
@@ -519,13 +619,13 @@ mod tests {
         };
         assert_eq!(
             tabs(Some(Scenario::FallOfKhartoum)),
-            ["CRT", "Terrain", "Rulebook"]
+            ["CRT", "Terrain", "LOS", "Rulebook"]
         );
         assert_eq!(
             tabs(Some(Scenario::Historical)),
-            ["CRT", "Terrain", "Timing", "Rulebook"]
+            ["CRT", "Terrain", "LOS", "Scattergram", "Timing", "Rulebook"]
         );
-        assert_eq!(tabs(Some(Scenario::Campaign)).len(), 5);
-        assert_eq!(tabs(None).len(), 5);
+        assert_eq!(tabs(Some(Scenario::Campaign)).len(), 7);
+        assert_eq!(tabs(None).len(), 7);
     }
 }

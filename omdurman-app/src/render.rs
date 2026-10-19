@@ -338,7 +338,7 @@ pub fn nile_flow_arrows(
     mut shown: Local<bool>,
     (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
-    if generation.invalidates(&mut seen_generation) {
+    if generation.invalidates(&mut seen_generation) || arrows.hex.geometry_changed() {
         *shown = false;
     }
     let gs = &game_state.0;
@@ -404,7 +404,8 @@ pub fn mahdis_tomb_marker(
     mut last: Local<Option<Option<(HexCoord, omdurman_types::Player)>>>,
     (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
-    if generation.invalidates(&mut seen_generation) {
+    // A board loaded since: the ring was placed on the old calibration.
+    if generation.invalidates(&mut seen_generation) || hex.geometry_changed() {
         *last = None;
     }
     if last.is_some() && !game_state.is_changed() {
@@ -429,7 +430,7 @@ pub fn mahdis_tomb_marker(
             omdurman_types::Player::AngloEgyptian => &hex.assets.blue,
             omdurman_types::Player::Dervish => &hex.assets.orange,
         };
-        rings.ring(MahdisTombMarker, tomb, 0.9, 1.1, material);
+        rings.ring(MahdisTombMarker, tomb, 1.45, 1.05, material);
     }
     *last = Some(shown);
 }
@@ -552,6 +553,7 @@ fn arrow_mesh() -> Mesh {
 
 /// Shared arrow mesh + dim/highlight materials for movement-path rendering.
 #[derive(Resource)]
+#[cfg_attr(test, derive(Default))]
 pub struct MovementArrowAssets {
     pub mesh: Handle<Mesh>,
     /// Faint fill for paths not currently hovered.
@@ -679,5 +681,100 @@ mod tests {
             first,
             "no change while the pointer rests"
         );
+    }
+}
+
+#[cfg(test)]
+mod tomb_marker_tests {
+    use super::*;
+
+    /// §9.14: the Campaign's Tomb hex is ringed for its holder.
+    #[test]
+    fn the_tomb_is_ringed_in_the_campaign() {
+        let mut app = App::new();
+        let mut gs = omdurman_rules::effects::GameState::new(omdurman_types::Scenario::Campaign);
+        gs.board = omdurman_rules::board_data::board_info(omdurman_types::MapKind::Campaign);
+        app.insert_resource(HexRingAssets::default())
+            .insert_resource(omdurman_board_ui::board_store::default_layout())
+            .insert_resource(HexOverlay::default())
+            .insert_resource(crate::GameStateResource(gs))
+            .init_resource::<crate::picker::OverlayGeneration>()
+            .add_systems(Update, mahdis_tomb_marker);
+        app.update();
+        let rings = app
+            .world_mut()
+            .query::<&MahdisTombMarker>()
+            .iter(app.world())
+            .count();
+        assert_eq!(rings, 1);
+    }
+}
+
+#[cfg(test)]
+mod flow_arrow_tests {
+    use super::*;
+
+    /// §5.24: selecting a gunboat shows the current on every Nile hex the
+    /// board annotates; deselecting clears it.
+    #[test]
+    fn a_selected_gunboat_shows_the_current() {
+        let mut app = App::new();
+        let mut gs = omdurman_rules::effects::GameState::new(omdurman_types::Scenario::Campaign);
+        gs.board = omdurman_rules::board_data::board_info(omdurman_types::MapKind::Campaign);
+        let boat = omdurman_rules::UnitId::BritishBoats_3_0;
+        gs.units.push(omdurman_rules::UnitPlacement {
+            id: boat,
+            position: HexCoord::new(34, 11),
+            profile: omdurman_rules::unit_profiles::profile_for_unit(boat).unwrap(),
+            state: Default::default(),
+        });
+        let annotated = gs
+            .board
+            .terrain
+            .keys()
+            .filter(|h| gs.board.flow_at(**h).is_some())
+            .count();
+        app.insert_resource(HexRingAssets::default())
+            .insert_resource(MovementArrowAssets::default())
+            .insert_resource(omdurman_board_ui::board_store::default_layout())
+            .insert_resource(HexOverlay::default())
+            .insert_resource(crate::GameStateResource(gs))
+            .insert_resource(crate::picker::PickerState::Idle)
+            .init_resource::<crate::picker::OverlayGeneration>()
+            .add_systems(Update, nile_flow_arrows);
+        let source = app
+            .world_mut()
+            .spawn(crate::picker::PlacedUnit {
+                coord: HexCoord::new(34, 11),
+                section_name: omdurman_types::SectionName::BritishBoats,
+                col: 3,
+                row: 0,
+                is_boat: true,
+                unit_id: Some(boat),
+                disrupted: false,
+            })
+            .id();
+        let count = |app: &mut App| {
+            app.world_mut()
+                .query::<&NileFlowArrow>()
+                .iter(app.world())
+                .count()
+        };
+        app.update();
+        assert_eq!(count(&mut app), 0, "nothing selected");
+        *app.world_mut().resource_mut::<crate::picker::PickerState>() =
+            crate::picker::PickerState::Selected {
+                source,
+                start_coord: HexCoord::new(34, 11),
+                remaining_mp: 0,
+                forced_stop: false,
+            };
+        app.update();
+        assert!(annotated > 0);
+        assert_eq!(count(&mut app), annotated);
+        *app.world_mut().resource_mut::<crate::picker::PickerState>() =
+            crate::picker::PickerState::Idle;
+        app.update();
+        assert_eq!(count(&mut app), 0);
     }
 }
