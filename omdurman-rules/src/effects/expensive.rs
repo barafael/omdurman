@@ -470,7 +470,12 @@ fn with_chain(state: &mut GameState) {
         if any() {
             hexes.push(any_hex());
         }
-        state.chain = Some(ChainPlacement { hexes, sunk: any() });
+        let struck = if any() { hexes.clone() } else { Vec::new() };
+        state.chain = Some(ChainPlacement {
+            hexes,
+            sunk: any(),
+            struck,
+        });
     }
 }
 

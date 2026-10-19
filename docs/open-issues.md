@@ -16,11 +16,11 @@ seat handling).
   independent attacks (a documented AMBIGUITY note), and a combined howitzer
   attack of several gunboats shares one impact roll.
 - **§10.11 / §10.21 secrecy.** Mines and the chain are "secretly recorded".
-  The board hides them from the Anglo-Egyptian seat, but the event log
-  carries them (see also "private dice" below). Worse, the A-E breach card
-  offers "The river chain · range N" whenever a battery can reach the
-  hidden chain (`special_actions.rs`; `can_fire_at_chain` has no
-  "discovered" gate), so it works as an oracle.
+  The board and the event viewer hide them from the Anglo-Egyptian seat
+  until a gunboat strikes them, and artillery may fire only at a chained hex
+  a gunboat ran onto; but the event log still carries them in clear (an
+  honour-system scratchpad; commit-reveal is post-1.0). See also "private
+  dice" below.
 - **§6.41 allocate, then resolve.** "Allocate all fire attacks, then resolve"
   is enforced by the UI's allocation tray only; the engine accepts attacks
   one at a time. The tray leaves gaps: a teammate may still allocate after
@@ -174,8 +174,6 @@ seat handling).
   an enemy ZOC (`zoc_stopped_this_turn`).
 - River mine and chain placement (`river_placement.rs`) shows no legal band;
   the engine refuses hexes outside it.
-- The event viewer (V key) shows the Dervish mine and chain placements to the
-  A-E player. Redact them until mines and the chain are secret (§10.11/§10.21).
 - Campaign Dervish set-up has no per-class groups, placed/total counters or
   per-class zone tints (§9.111).
 - Historical set-up shows the union of the leaders' zones, not the per-leader

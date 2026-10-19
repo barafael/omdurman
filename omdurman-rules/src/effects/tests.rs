@@ -5918,6 +5918,7 @@ mod tests {
         state.chain = Some(crate::ChainPlacement {
             hexes: vec![HexCoord::new(9, 0)],
             sunk: false,
+            struck: Vec::new(),
         });
         assert!(state.chain_covers(HexCoord::new(9, 0)));
         assert!(!state.chain_covers(HexCoord::new(8, 0)));
@@ -6595,6 +6596,7 @@ mod tests {
         chained.chain = Some(crate::ChainPlacement {
             hexes: vec![to],
             sunk: false,
+            struck: Vec::new(),
         });
         chained.active_player = Player::Dervish;
         let dervish_gb = make_dervish_gunboat(&mut chained, from);
@@ -6627,6 +6629,7 @@ mod tests {
         state.chain = Some(crate::ChainPlacement {
             hexes: vec![chained],
             sunk: false,
+            struck: Vec::new(),
         });
         let gb = make_dervish_gunboat(&mut state, HexCoord::new(1, 0));
         let path = vec![chained];
@@ -6667,6 +6670,7 @@ mod tests {
         state.chain = Some(crate::ChainPlacement {
             hexes: vec![chained],
             sunk: false,
+            struck: Vec::new(),
         });
         let gb = make_profiled_unit(&mut state, HexCoord::new(1, 0), ae_gunboat_profile());
         let hexes =
@@ -6686,6 +6690,8 @@ mod tests {
         sail(&mut state, &[2, 3, 4, 5]).unwrap();
         assert_eq!(state.find_unit(gb).unwrap().position, chained);
         assert_eq!(state.mp_spent(gb), 2);
+        // Now the British know where the chain lies -- that hex of it.
+        assert_eq!(state.chain.as_ref().unwrap().struck, vec![chained]);
         assert_eq!(
             state.gunboats_at_chain.get(&gb),
             Some(&HexCoord::new(2, 0)),
@@ -6757,6 +6763,7 @@ mod tests {
         dry.chain = Some(crate::ChainPlacement {
             hexes: vec![HexCoord::new(11, 10)],
             sunk: false,
+            struck: Vec::new(),
         });
         let foot = make_ae_infantry(&mut dry, HexCoord::new(10, 10));
         let march = vec![HexCoord::new(11, 10), HexCoord::new(12, 10)];
@@ -12404,6 +12411,7 @@ mod tests {
         let chain = ChainPlacement {
             hexes: vec![HexCoord::new(4, 0)],
             sunk: false,
+            struck: Vec::new(),
         };
         state.chain = Some(chain.clone());
         chain
@@ -12420,6 +12428,17 @@ mod tests {
         let batteries: Vec<UnitId> = (0..4)
             .map(|_| make_ae_artillery(&mut state, HexCoord::new(4, 2)))
             .collect();
+        // §10.21: the chain is secret until a gunboat runs onto it (§10.22).
+        assert!(matches!(
+            state.can_fire_at_chain(batteries[0]),
+            Err(RuleError::NoKnownChain)
+        ));
+        state
+            .chain
+            .as_mut()
+            .unwrap()
+            .struck
+            .push(HexCoord::new(4, 0));
         assert!(state.can_fire_at_chain(batteries[0]).is_ok());
         // 4 x 4 factors doubled at range 2 = 32 -> row 31-35; a roll of 1
         // (+1) is a 1: no.
@@ -12444,7 +12463,7 @@ mod tests {
         // Every battery has fired.
         assert!(matches!(
             state.can_fire_at_chain(batteries[0]),
-            Err(RuleError::AlreadyFired(_)) | Err(RuleError::NoChainPlaced)
+            Err(RuleError::AlreadyFired(_)) | Err(RuleError::NoKnownChain)
         ));
     }
 

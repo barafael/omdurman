@@ -31,6 +31,7 @@ pub fn event_viewer_ui(
     recorder: Option<Res<crate::game_record::GameRecorder>>,
     net: Res<NetState>,
     socket: Option<ResMut<MatchboxSocket>>,
+    peers: crate::peers::Peers,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if !state.visible {
@@ -41,6 +42,8 @@ pub fn event_viewer_ui(
     let Some(ref record) = rec.record else { return };
 
     let prev_selected = state.selected;
+    // The river obstacles are secret from the British (§10.11/§10.21).
+    let sees_secrets = peers.may_act(omdurman_types::Player::Dervish);
 
     let bg = crate::ui::palette::theme::EXTREME_BG;
     let dim = crate::ui::palette::TEXT_DIM;
@@ -149,6 +152,13 @@ pub fn event_viewer_ui(
                                 );
                                 ui.add_space(8.0);
 
+                                if !sees_secrets && is_secret(&event.payload) {
+                                    ui.colored_label(
+                                        dim,
+                                        "Secretly recorded by the Dervish player (§10.11, §10.21).",
+                                    );
+                                    return;
+                                }
                                 // cache the RON serialization (expensive for LoadAnnotations)
                                 if state.cached_idx != Some(idx) {
                                     state.cached_idx = Some(idx);
@@ -300,6 +310,18 @@ fn highlight_ron(source: &str) -> LayoutJob {
     }
 
     job
+}
+
+/// A Dervish river mine or chain placement: secretly recorded (§10.11,
+/// §10.21), so its detail is hidden from every seat but the Dervish one.
+fn is_secret(payload: &omdurman_net::GameEvent) -> bool {
+    use omdurman_rules::effects::GameEffect;
+    matches!(
+        payload,
+        omdurman_net::GameEvent::Effect(
+            GameEffect::PlaceMine { .. } | GameEffect::PlaceChain { .. }
+        )
+    )
 }
 
 fn payload_label(payload: &omdurman_net::GameEvent) -> &'static str {

@@ -95,4 +95,9 @@ pub struct StruckMine {
 pub struct ChainPlacement {
     pub hexes: Vec<HexCoord>,
     pub sunk: bool,
+    /// The chained hexes a British gunboat has run onto (§10.22), in the
+    /// order struck: the only part of the secretly recorded chain (§10.21)
+    /// the Anglo-Egyptian player knows, so the only hexes his artillery may
+    /// fire at (§10.23 b).
+    pub struck: Vec<HexCoord>,
 }

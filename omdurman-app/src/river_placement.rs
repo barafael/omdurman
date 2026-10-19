@@ -97,9 +97,10 @@ pub(crate) fn roll_for_struck_mine(
 }
 
 /// Board markers for placed river mines (§10.11) and the river chain
-/// (§10.21). §10.11 says the mines are *secretly recorded*, so the overlay
-/// is shown only to the Dervish seat (and unbound seats); the chain is a
-/// Dervish obstruction, shown to the same audience.
+/// (§10.21). Both are *secretly recorded*, so the Dervish seat (and unbound
+/// seats) sees them whole; every other seat sees only what the British have
+/// found -- the mines their gunboats struck (§10.12) and the chained hexes
+/// they ran onto (§10.22).
 pub(crate) fn mine_chain_overlay_mesh(
     mut commands: Commands,
     hex: crate::HexRender,
@@ -115,46 +116,53 @@ pub(crate) fn mine_chain_overlay_mesh(
         *last = None;
     }
     let gs = game_state;
-    let shown = peers.may_act(omdurman_types::Player::Dervish);
+    let whole = peers.may_act(omdurman_types::Player::Dervish);
     let key = MineChainKey {
-        mines: if shown {
-            gs.0.mines.iter().map(|m| m.hex).collect()
-        } else {
-            Vec::new()
-        },
-        chain: if shown {
-            gs.0.chain
-                .as_ref()
-                .map(|c| c.hexes.clone())
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        },
+        mines: gs
+            .0
+            .mines
+            .iter()
+            .filter(|m| whole || m.triggered)
+            .map(|m| m.hex)
+            .collect(),
+        chain: gs
+            .0
+            .chain
+            .as_ref()
+            .map(|c| {
+                if whole {
+                    c.hexes.clone()
+                } else {
+                    c.struck.clone()
+                }
+            })
+            .unwrap_or_default(),
+        whole,
     };
     if last.as_ref() == Some(&key) {
         return;
     }
-    *last = Some(key);
     let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
-    if !shown {
-        return;
-    }
-    if gs.0.mines.is_empty() && gs.0.chain.is_none() {
-        return;
-    }
 
     // Mines: compact red rings on their Nile hexes.
-    for mine in &gs.0.mines {
-        rings.ring(MineChainMarker, mine.hex, 0.7, 0.35, &hex.assets.red);
+    for &mine in &key.mines {
+        rings.ring(MineChainMarker, mine, 0.7, 0.35, &hex.assets.red);
     }
-
-    // Chain: grey bars spanning consecutive chain-hex centres.
-    let Some(chain) = &gs.0.chain else { return };
+    // Chain: a grey ring on each known chained hex, and -- for the seat that
+    // knows the whole line -- grey bars spanning consecutive hexes.
+    for &chained in &key.chain {
+        rings.ring(MineChainMarker, chained, 0.7, 0.35, &hex.assets.gray);
+    }
+    let chain = if key.whole {
+        key.chain.clone()
+    } else {
+        Vec::new()
+    };
+    *last = Some(key);
     let origin = rings.origin();
     let size = rings.size();
     let params = rings.params();
     let bars: Vec<_> = chain
-        .hexes
         .windows(2)
         .map(|pair| {
             let a = omdurman_hexmap::hex_world_pos(pair[0], origin, params);
@@ -182,12 +190,13 @@ pub(crate) fn mine_chain_overlay_mesh(
     }
 }
 
-/// What [`mine_chain_overlay_mesh`] last drew: the mine hexes and the chain
-/// line shown to this seat (empty when hidden from it).
+/// What [`mine_chain_overlay_mesh`] last drew: the mine and chain hexes
+/// known to this seat, and whether it knows the whole chain line.
 #[derive(PartialEq, Eq, Debug)]
 pub(crate) struct MineChainKey {
     mines: Vec<omdurman_types::HexCoord>,
     chain: Vec<omdurman_types::HexCoord>,
+    whole: bool,
 }
 
 /// Marker component for mine/chain board markers.

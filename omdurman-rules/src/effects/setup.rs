@@ -383,6 +383,7 @@ pub fn apply_place_chain(state: &mut GameState, hexes: &[HexCoord]) -> Result<()
     state.chain = Some(ChainPlacement {
         hexes: hexes.to_vec(),
         sunk: false,
+        struck: Vec::new(),
     });
     Ok(())
 }

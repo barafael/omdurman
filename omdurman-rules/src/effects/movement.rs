@@ -130,6 +130,11 @@ pub(crate) fn carry_passengers(state: &mut GameState, gunboat: UnitId, to: HexCo
 /// there for the turn and may later only go back the way it came (§10.23).
 pub(crate) fn stop_at_chain(state: &mut GameState, gunboat: UnitId, from: HexCoord, hex: HexCoord) {
     state.gunboats_at_chain.insert(gunboat, from);
+    if let Some(chain) = state.chain.as_mut()
+        && !chain.struck.contains(&hex)
+    {
+        chain.struck.push(hex);
+    }
     if !state.gunboats_stopped_this_turn.contains(&gunboat) {
         state.gunboats_stopped_this_turn.push(gunboat);
     }

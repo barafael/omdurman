@@ -523,8 +523,9 @@ impl GameState {
     /// (§10.23 b: "firing at the chain with artillery"): British artillery
     /// of the player whose fire phase it is, in the Direct Fire subphase,
     /// undisrupted and not yet fired, in range and in sight of a hex of the
-    /// unsunk chain -- the nearest such hex. Returns the firer's factor, its
-    /// range and that hex.
+    /// unsunk chain a British gunboat has run onto (§10.22; the rest of the
+    /// chain is secret, §10.21) -- the nearest such hex. Returns the firer's
+    /// factor, its range and that hex.
     pub fn can_fire_at_chain(
         &self,
         firer: UnitId,
@@ -537,14 +538,14 @@ impl GameState {
         }
         let fire_factor = self.battery_ready_to_fire(firer, unit)?;
         let Some(chain) = self.chain.as_ref().filter(|c| !c.sunk) else {
-            return Err(RuleError::NoChainPlaced);
+            return Err(RuleError::NoKnownChain);
         };
         let table_player = range_table_player_for(self.scenario, unit);
         let firer_los =
             crate::los_table::los_level_for_unit(unit.profile.kind, unit.position, &self.board);
-        let mut hexes = chain.hexes.clone();
+        let mut hexes = chain.struck.clone();
         hexes.sort_by_key(|h| unit.position.distance(*h));
-        let mut refusal = RuleError::NoChainPlaced;
+        let mut refusal = RuleError::NoKnownChain;
         for hex in hexes {
             let range = HexDistance(unit.position.distance(hex).max(1) as u16);
             if self.day_night == DayNight::Night

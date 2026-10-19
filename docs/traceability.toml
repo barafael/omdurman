@@ -2835,7 +2835,7 @@ title = "Secretly record chain hexes"
 status = "implemented"
 clause = "Prior to the commencement of play the Dervish player secretly records a line of river hexes (not exceeding four hexes long) across which the chain is strung."
 witness = "omdurman-rules::src::effects::tests::mine_and_chain_limits_enforced_in_setup"
-approximation = "\"Across\" is checked as: the line's two end hexes touch different land (the two banks, or a bank and an island) -- a chain to an island leaves the other channel open. The chain is hidden on the Anglo-Egyptian seat's board but carried in the recorded event log. The chain is strung under open water: not under a gunboat, and no gunboat sets up on it, so a boat lying on the chain always steamed in from one side."
+approximation = "\"Across\" is checked as: the line's two end hexes touch different land (the two banks, or a bank and an island) -- a chain to an island leaves the other channel open. The chain is hidden on the Anglo-Egyptian seat's board, and from its event viewer, until a British gunboat runs onto a chained hex (§10.22), which reveals that hex; the recorded event log still carries it in clear. The chain is strung under open water: not under a gunboat, and no gunboat sets up on it, so a boat lying on the chain always steamed in from one side."
 note = "Digital replacement for the paper scratchpad: the chain is recorded in `GameState.chain` and rendered only to the Dervish seat. Enforced: Campaign only, optional-rule gated, setup-only, one to four Nile hexes in a line of adjacent hexes, south of the Khor Shambat's mouth row."
 tests = [
     "omdurman-rules::src::effects::tests::no_gunboat_sets_up_astride_the_chain",
@@ -2882,7 +2882,7 @@ status = "implemented"
 clause = "No gunboats (British or Dervish) may cross the chain until it has been sunk by the British player."
 witness = "omdurman-rules::src::effects::tests::chain_stops_gunboat_until_sunk"
 approximation = "\"One complete turn\" on the bank is read as: the infantry or cavalry unit stands beside a chained hex when the Anglo-Egyptian player turn begins and still at its end, having spent no movement points -- a unit that arrives during the turn (by a move, an advance after combat or a retreat) has not spent the turn there."
-note = "Implemented: (a) at the end of the Anglo-Egyptian player turn, an undisrupted Anglo-Egyptian infantry or cavalry unit on land next to a chained hex that has not moved all turn sinks the chain; (b) SinkChain: British artillery in the Direct Fire subphase, each in range and sight of a chained hex (can_fire_at_chain), a Combat Results Table result of 3 or more (with the §6.24 +1) sinks it."
+note = "Implemented: (a) at the end of the Anglo-Egyptian player turn, an undisrupted Anglo-Egyptian infantry or cavalry unit on land next to a chained hex that has not moved all turn sinks the chain; (b) SinkChain: British artillery in the Direct Fire subphase, each in range and sight of a chained hex a British gunboat has run onto -- the only chained hexes the British know (can_fire_at_chain), a Combat Results Table result of 3 or more (with the §6.24 +1) sinks it."
 tests = [
     "omdurman-rules::src::effects::tests::a_unit_arriving_beside_the_chain_mid_turn_does_not_sink_it",
     "omdurman-rules::src::effects::tests::a_british_gunboat_runs_onto_the_chain_and_may_only_go_back",

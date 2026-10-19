@@ -366,8 +366,8 @@ pub enum RuleError {
     #[error("no untriggered river mine in hex {0} (§10.13)")]
     NoUntriggeredMine(HexCoord),
 
-    #[error("no river chain has been placed")]
-    NoChainPlaced,
+    #[error("no known river chain: a gunboat must run onto it first (§10.22)")]
+    NoKnownChain,
 
     #[error("fire attack has no firers")]
     NoFirers,
