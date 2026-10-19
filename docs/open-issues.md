@@ -187,9 +187,13 @@ seat handling).
 
 ## Board data
 
-- The road network inside Omdurman has not been audited against the printed
-  map (e.g. near (31,42)); the 2026-10 audit covered terrain types and crest
-  hexsides only.
+- The Omdurman road links were checked against the printed map (each link
+  drawn on the map scan): all follow the printed roads except two spurs to
+  confirm with the print -- a link into the Arsenal hex from the road west
+  of the Palace Grounds, and one into the Treasury hex from the diagonal
+  road beside it. No printed road enters either building on the scan; if
+  there is none, drop the two links from `campaign.ron` (they make entering
+  those hexes cost 1 MP). The Roads toolbar toggle shows the links.
 
 ## Verification
 
