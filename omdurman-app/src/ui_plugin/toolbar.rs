@@ -14,9 +14,10 @@ pub(crate) fn mode_toolbar_ui(
     mut layout: ResMut<crate::ScreenLayout>,
     progress: (Res<crate::TurnState>, Res<crate::game_record::GameRecorder>),
     peers: Peers,
-    (mut zoc, mut los, room): (
+    (mut zoc, mut los, mut roads, room): (
         ResMut<crate::zoc::ZocOverlay>,
         ResMut<crate::los::LosOverlay>,
+        ResMut<crate::render::RoadOverlay>,
         Res<RoomId>,
     ),
     (telegrams, dispatches, mut motion): (
@@ -169,6 +170,15 @@ pub(crate) fn mode_toolbar_ui(
                                     ) {
                                         zoc.visible = !zoc.visible;
                                         crate::ui_trace::button("overlay: ZOC");
+                                    }
+                                    if overlay_toggle(
+                                        ui,
+                                        "Roads",
+                                        roads.visible,
+                                        "Road links: a step along a road costs 1 MP whatever the terrain (§5.11)",
+                                    ) {
+                                        roads.visible = !roads.visible;
+                                        crate::ui_trace::button("overlay: Roads");
                                     }
                                 },
                             );

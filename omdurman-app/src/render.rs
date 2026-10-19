@@ -385,6 +385,65 @@ pub fn nile_flow_arrows(
     }
 }
 
+// -- Roads ---------------------------------------------------------------------
+
+/// Runtime toggle for the road overlay, beside ZOC and LOS in the toolbar.
+#[derive(Resource, Default)]
+pub struct RoadOverlay {
+    pub visible: bool,
+}
+
+/// Marker for one road link bar.
+#[derive(Component)]
+pub struct RoadBar;
+
+/// With the Roads toggle on, a bar joins the centres of every two hexes
+/// the board links by road (§5.11: a road step costs 1 MP whatever the
+/// terrain) -- the board data drawn over the printed map, so the two can be
+/// read together. Rebuilt when toggled or on a board load.
+pub fn road_overlay(
+    mut commands: Commands,
+    hex: crate::HexRender,
+    toggle: Res<RoadOverlay>,
+    game_state: Res<crate::GameStateResource>,
+    existing: Query<Entity, With<RoadBar>>,
+    mut shown: Local<Option<usize>>,
+    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
+) {
+    if generation.invalidates(&mut seen_generation) || hex.geometry_changed() {
+        *shown = None;
+    }
+    let roads = &game_state.0.board.roads;
+    let want = toggle.visible.then_some(roads.len());
+    if *shown == want && !toggle.is_changed() {
+        return;
+    }
+    let mut bars = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    *shown = want;
+    if want.is_none() {
+        return;
+    }
+    let origin = bars.origin();
+    let size = bars.size();
+    for road in roads {
+        let a = hex_world_pos(road.a, origin, &hex.overlay.params);
+        let b = hex_world_pos(road.b, origin, &hex.overlay.params);
+        let mid = (a + b) * 0.5;
+        let len = a.distance(b).max(0.001);
+        let dir = (b - a) / len;
+        let angle = (-dir.z).atan2(dir.x);
+        bars.commands().spawn((
+            RoadBar,
+            Mesh3d(hex.assets.unit_square.clone()),
+            MeshMaterial3d(hex.assets.blue.clone()),
+            Transform::from_translation(Vec3::new(mid.x, 1.3, mid.z))
+                .with_rotation(Quat::from_rotation_y(angle) * Quat::from_rotation_x(-PI / 2.0))
+                .with_scale(Vec3::new(len, size * 0.07, 1.0)),
+            Visibility::Visible,
+        ));
+    }
+}
+
 // -- The Mahdi's Tomb ----------------------------------------------------------
 
 /// Marker for the ring on the Mahdi's Tomb hex.
@@ -619,6 +678,8 @@ impl Plugin for RenderPlugin {
                         mahdis_tomb_marker,
                         // §5.24: the current, while a gunboat is selected.
                         nile_flow_arrows,
+                        // §5.11: the road links, on the toolbar toggle.
+                        road_overlay,
                     )
                         .run_if(crate::on_board),
                 ),
