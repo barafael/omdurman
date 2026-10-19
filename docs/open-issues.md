@@ -162,7 +162,6 @@ seat handling).
 ## UI
 
 - Deployment traps get no warning (e.g. the Hogali pocket in Fall of Khartoum).
-- The Mahdi's Tomb has a VP-card line naming its holder but no board marker.
 - The chart sheet (`charts.rs`) has no LOS table or Scattergram tab.
 - There are no Nile flow arrows (`flow_at`).
 - Campaign Dervish set-up has no per-class groups, placed/total counters or

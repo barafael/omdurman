@@ -317,6 +317,55 @@ pub fn update_acted_markers(
     *last = Some(marked);
 }
 
+// -- The Mahdi's Tomb ----------------------------------------------------------
+
+/// Marker for the ring on the Mahdi's Tomb hex.
+#[derive(Component)]
+pub struct MahdisTombMarker;
+
+/// Ring the Mahdi's Tomb (§9.14: 25 victory points to whoever controls it
+/// at the conclusion of play) in the colour of its holder: blue once the
+/// Anglo-Egyptians have taken it, orange while the Dervish hold it. The
+/// Campaign only -- the Tomb is on no other map. Rebuilt only when the
+/// holder changes (or the overlays were cleared).
+pub fn mahdis_tomb_marker(
+    mut commands: Commands,
+    hex: crate::HexRender,
+    game_state: Res<crate::GameStateResource>,
+    existing: Query<Entity, With<MahdisTombMarker>>,
+    mut last: Local<Option<Option<(HexCoord, omdurman_types::Player)>>>,
+    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
+) {
+    if generation.invalidates(&mut seen_generation) {
+        *last = None;
+    }
+    if last.is_some() && !game_state.is_changed() {
+        return;
+    }
+    let gs = &game_state.0;
+    let shown = (gs.scenario == omdurman_types::Scenario::Campaign)
+        .then(|| {
+            let tomb = gs
+                .board
+                .hex_of_location(omdurman_types::Location::MahdisTomb)?;
+            let holder = omdurman_rules::effects::mahdis_tomb_controller(gs)?;
+            Some((tomb, holder))
+        })
+        .flatten();
+    if last.as_ref() == Some(&shown) {
+        return;
+    }
+    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    if let Some((tomb, holder)) = shown {
+        let material = match holder {
+            omdurman_types::Player::AngloEgyptian => &hex.assets.blue,
+            omdurman_types::Player::Dervish => &hex.assets.orange,
+        };
+        rings.ring(MahdisTombMarker, tomb, 0.9, 1.1, material);
+    }
+    *last = Some(shown);
+}
+
 // -- Helpers -------------------------------------------------------------------
 
 // -- Hex ring mesh --------------------------------------------------------
@@ -496,6 +545,8 @@ impl Plugin for RenderPlugin {
                         crate::river_placement::mine_chain_overlay_mesh,
                         // §10.11/§10.21: where the mine or chain may go.
                         crate::river_placement::river_placement_band,
+                        // §9.14: who holds the Mahdi's Tomb.
+                        mahdis_tomb_marker,
                     )
                         .run_if(crate::on_board),
                 ),
