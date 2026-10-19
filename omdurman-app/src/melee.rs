@@ -127,6 +127,13 @@ pub fn melee_target_overlay_mesh(
         let (attacker, _) = selected_melee_group(&state, &placed_units, &gs.0)?;
         Some((attacker, valid_target_hexes(attacker, &gs.0)))
     });
+    // §7.2: the hexsides that decide a melee next door -- a wall that bars
+    // it, a gate or breach it may go through.
+    let sides: Vec<(omdurman_types::HexsideRef, bool)> = drawn
+        .as_ref()
+        .zip(game_state.as_deref())
+        .map(|((attacker, targets), gs)| melee_hexsides(&gs.0, *attacker, targets))
+        .unwrap_or_default();
     let Some(drawn) = drawn else {
         // Nothing to highlight: clear any rings left over from a selection
         // that can no longer melee (once, not every frame).
@@ -145,7 +152,63 @@ pub fn melee_target_overlay_mesh(
     for &target in &drawn.1 {
         rings.ring(MeleeTargetRing, target, 1.5, 1.0, &hex.assets.orange);
     }
+    let origin = rings.origin();
+    for (edge, open) in sides {
+        let transform =
+            crate::hexside_layer::hexside_bar_transform(&edge, origin, &hex.overlay, 0.14, 1.6);
+        rings.commands().spawn((
+            MeleeTargetRing,
+            Mesh3d(hex.assets.unit_square.clone()),
+            MeshMaterial3d(if open {
+                hex.assets.green.clone()
+            } else {
+                hex.assets.red.clone()
+            }),
+            transform,
+            Visibility::Visible,
+        ));
+    }
     *last = Some(drawn);
+}
+
+/// The hexsides between `attacker` and an enemy-held neighbour that decide
+/// a melee there (§7.2: "Units may not melee attack across a wall hexside,
+/// but may melee attack through a gate or breach hexside"): `false` for a
+/// wall that bars it, `true` for a gate or breach a valid melee crosses.
+pub(crate) fn melee_hexsides(
+    gs: &omdurman_rules::effects::GameState,
+    attacker: UnitId,
+    targets: &[HexCoord],
+) -> Vec<(omdurman_types::HexsideRef, bool)> {
+    use omdurman_types::HexsideKind;
+    let Some(unit) = gs.find_unit(attacker) else {
+        return Vec::new();
+    };
+    let from = unit.position;
+    let owner = unit.profile.identity.owner();
+    from.neighbors()
+        .into_iter()
+        .filter(|&n| {
+            gs.units_in_hex(n)
+                .iter()
+                .any(|u| u.profile.identity.owner() != owner)
+        })
+        .filter_map(|n| {
+            let edge = omdurman_types::HexsideRef::new(from, n);
+            if matches!(
+                gs.can_melee(attacker, n),
+                Err(omdurman_rules::effects::RuleError::MeleeBlockedByHexside(
+                    ..
+                ))
+            ) {
+                return Some((edge, false));
+            }
+            let opening = gs.hexside_effective_is(from, n, |k| {
+                matches!(k, HexsideKind::Gate | HexsideKind::Breach)
+            }) || gs.wall_is_breached(from, n);
+            (targets.contains(&n) && opening).then_some((edge, true))
+        })
+        .collect()
 }
 
 /// On left-click of a valid adjacent enemy hex while a melee-capable unit is
@@ -1037,5 +1100,51 @@ mod tests {
         gs.vacated_by_combat.insert(to, ids.clone());
 
         assert_eq!(advancing_units(&gs, &ids, to), ids[..4].to_vec());
+    }
+}
+
+#[cfg(test)]
+mod hexside_mark_tests {
+    use omdurman_rules::{Phase, UnitId, UnitPlacement};
+    use omdurman_types::{HexCoord, HexsideKind, HexsideRef, Player, Scenario};
+
+    /// §7.2: a wall between the attacker and an enemy hex is marked as
+    /// barring the melee; a gate as the way through.
+    #[test]
+    fn walls_bar_and_gates_open_a_melee() {
+        let state_with = |kind: HexsideKind| {
+            let mut gs = omdurman_rules::effects::GameState::new(Scenario::Campaign);
+            gs.phase = Phase::Melee;
+            gs.active_player = Player::AngloEgyptian;
+            for (id, hex) in [
+                (UnitId::BritishArmy_0_0, HexCoord::new(0, 0)),
+                (UnitId::Baggara_0_0, HexCoord::new(1, 0)),
+            ] {
+                gs.units.push(UnitPlacement {
+                    id,
+                    position: hex,
+                    profile: omdurman_rules::unit_profiles::profile_for_unit(id).unwrap(),
+                    state: Default::default(),
+                });
+            }
+            std::sync::Arc::make_mut(&mut gs.board).hexsides.insert(
+                HexsideRef::new(HexCoord::new(0, 0), HexCoord::new(1, 0)),
+                kind,
+            );
+            gs
+        };
+        let edge = HexsideRef::new(HexCoord::new(0, 0), HexCoord::new(1, 0));
+        let gs = state_with(HexsideKind::Wall);
+        let targets = super::valid_target_hexes(UnitId::BritishArmy_0_0, &gs);
+        assert_eq!(
+            super::melee_hexsides(&gs, UnitId::BritishArmy_0_0, &targets),
+            vec![(edge, false)]
+        );
+        let gs = state_with(HexsideKind::Gate);
+        let targets = super::valid_target_hexes(UnitId::BritishArmy_0_0, &gs);
+        assert_eq!(
+            super::melee_hexsides(&gs, UnitId::BritishArmy_0_0, &targets),
+            vec![(edge, true)]
+        );
     }
 }

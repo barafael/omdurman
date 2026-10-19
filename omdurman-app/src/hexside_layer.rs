@@ -54,6 +54,32 @@ fn hexside_segment(
     )
 }
 
+/// The transform of a flat bar `width_frac` of a hex wide lying along the
+/// hexside `edge` at height `y` (on a unit square mesh): for overlays that
+/// mark a hexside, such as the melee rings' blocked walls and open gates.
+pub(crate) fn hexside_bar_transform(
+    edge: &HexsideRef,
+    origin: bevy::math::Vec2,
+    overlay: &HexOverlay,
+    width_frac: f32,
+    y: f32,
+) -> Transform {
+    let (p0, p1) = hexside_segment(edge, origin, overlay);
+    let mut transform = Transform::default();
+    let mut material = StandardMaterial::default();
+    let width = overlay.params.hex_size * width_frac;
+    place_hexside_quad(
+        &mut transform,
+        &mut material,
+        p0,
+        p1,
+        width,
+        y,
+        Color::WHITE,
+    );
+    transform
+}
+
 /// A breach's pale band and red core, as multiples of a hexside bar's width.
 const BREACH_HALO: f32 = 2.6;
 const BREACH_CORE: f32 = 1.3;

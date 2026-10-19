@@ -171,8 +171,6 @@ seat handling).
   three-hex halo of the counter in hand (`historical_set_up_area`); the
   hover tooltip names why a hex is refused.
 - The LOS overlay has no ray between two chosen hexes.
-- Melee target rings don't mark wall hexsides as blocked, or gates and breaches
-  as open (§7.2).
 - Artillery-only targets (§6.61–6.63) get a refusal card on hover, but no
   board marker before it.
 - Howitzer fire: impact rings are drawn and the result card names the impact
