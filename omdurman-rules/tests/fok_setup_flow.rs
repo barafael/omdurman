@@ -14,8 +14,6 @@
 //! Movement turn (§4).
 
 use omdurman_rules::UnitId;
-use omdurman_rules::board::BoardInfo;
-use omdurman_rules::board_data::fall_of_khartoum_map_data;
 use omdurman_rules::effects::{FokCapGroup, GameEffect, GameState, apply_effect, fok_cap_group};
 use omdurman_rules::unit_profiles::{profile_for_unit, section_owner};
 use omdurman_types::{Player, Scenario};
@@ -82,7 +80,7 @@ fn fixed_ids(scenario: Scenario) -> Vec<UnitId> {
 #[test]
 fn fok_setup_completes_with_sprite_backed_counters() {
     let scenario = Scenario::FallOfKhartoum;
-    let board = BoardInfo::from_map_data(fall_of_khartoum_map_data());
+    let board = omdurman_rules::board_data::board_for_scenario(Scenario::FallOfKhartoum);
     let mut state = GameState::with_board(scenario, board);
 
     // Deploy a counter on a legal hex (deployment zone + §5.51/§5.52 stacking).

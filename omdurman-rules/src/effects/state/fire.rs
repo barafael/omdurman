@@ -65,7 +65,7 @@ impl GameState {
             if self.is_zariba_entrenched(hex) {
                 return None;
             }
-            Some(los_level_for_unit(blockers[i].1, hex, &self.board))
+            Some(los_level_for_unit(blockers[i].1, hex, self.board))
         }
     }
 
@@ -78,7 +78,7 @@ impl GameState {
         self.units
             .iter()
             .find(|u| u.position == target_hex && u.state.loaded_on.is_none())
-            .map(|u| los_level_for_unit(u.profile.kind, target_hex, &self.board))
+            .map(|u| los_level_for_unit(u.profile.kind, target_hex, self.board))
             .unwrap_or_else(|| {
                 self.board
                     .terrain_at(target_hex)
@@ -99,9 +99,9 @@ impl GameState {
         target_hex: HexCoord,
         kind: FireKind,
     ) -> Vec<Vec<HexCoord>> {
-        let firer_level = los_level_for_unit(firer.profile.kind, firer.position, &self.board);
+        let firer_level = los_level_for_unit(firer.profile.kind, firer.position, self.board);
         let rays = crate::los_table::los_clear_rays(
-            &self.board,
+            self.board,
             firer.position,
             target_hex,
             kind,
@@ -334,9 +334,9 @@ impl GameState {
         // units → Rough (the target's: the first unit standing there). The
         // "Units" blocker excludes gunboats and forts (note a).
         let firer_los_level =
-            crate::los_table::los_level_for_unit(unit.profile.kind, unit.position, &self.board);
+            crate::los_table::los_level_for_unit(unit.profile.kind, unit.position, self.board);
         if !crate::los_table::has_los(
-            &self.board,
+            self.board,
             unit.position,
             target_hex,
             kind,
@@ -410,7 +410,7 @@ impl GameState {
             (a, b) == (target.a, target.b) || (a, b) == (target.b, target.a)
         };
         let firer_los =
-            crate::los_table::los_level_for_unit(unit.profile.kind, unit.position, &self.board);
+            crate::los_table::los_level_for_unit(unit.profile.kind, unit.position, self.board);
         let mut sides = [target.a, target.b];
         sides.sort_by_key(|h| unit.position.distance(*h));
         // Cheap bound first: a wall whose nearer hex is out of range stays
@@ -445,7 +445,7 @@ impl GameState {
                 .map(crate::los_table::los_level)
                 .unwrap_or(crate::los_table::LosLevel::Ground);
             crate::los_table::has_los(
-                &self.board,
+                self.board,
                 unit.position,
                 hex,
                 FireKind::Direct,
@@ -542,7 +542,7 @@ impl GameState {
         };
         let table_player = range_table_player_for(self.scenario, unit);
         let firer_los =
-            crate::los_table::los_level_for_unit(unit.profile.kind, unit.position, &self.board);
+            crate::los_table::los_level_for_unit(unit.profile.kind, unit.position, self.board);
         let mut hexes = chain.struck.clone();
         hexes.sort_by_key(|h| unit.position.distance(*h));
         let mut refusal = RuleError::NoKnownChain;
@@ -565,7 +565,7 @@ impl GameState {
                 continue;
             }
             let seen = crate::los_table::has_los(
-                &self.board,
+                self.board,
                 unit.position,
                 hex,
                 FireKind::Direct,

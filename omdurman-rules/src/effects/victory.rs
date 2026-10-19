@@ -95,7 +95,7 @@ pub fn score_elimination(state: &mut GameState, unit_id: UnitId, cause: ElimCaus
     if let Some(unit) = state.find_unit(unit_id) {
         let identity = unit.profile.identity;
         let position = unit.position;
-        let vp_source = vp_source_for(&identity, position, &state.board);
+        let vp_source = vp_source_for(&identity, position, state.board);
         if vp_source == Some(VpSource::IsaZachneihEliminated) {
             state.isa_zachneih_eliminated = true;
         }

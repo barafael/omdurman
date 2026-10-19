@@ -535,7 +535,6 @@ mod tests {
         use omdurman_rules::{
             GunboatId, GunboatMovement, MovementAllowance, UnitIdentity, UnitMovement, WeaponClass,
         };
-        use std::sync::Arc;
 
         let mut state = GameState::new(Scenario::Campaign);
         let mut board = BoardInfo::default();
@@ -547,7 +546,7 @@ mod tests {
                 },
             );
         }
-        state.board = Arc::new(board);
+        state.board = board.leak();
         state.phase = omdurman_rules::Phase::Movement;
         state.active_player = omdurman_types::Player::Dervish;
         let id = state.alloc_unit_id();

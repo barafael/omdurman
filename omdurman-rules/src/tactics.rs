@@ -16,8 +16,7 @@
 
 use omdurman_types::{BrigadeId, DayNight, DervishTribe, HexCoord, Player, Scenario, UnitKind};
 
-use crate::board::BoardInfo;
-use crate::board_data::{campaign_map_data, fall_of_khartoum_map_data};
+use crate::board_data::board_for_scenario;
 use crate::combat_results_table::FireFactorRow;
 use crate::effects::{GameEffect, GameState, RuleError, apply_effect};
 use crate::unit_profiles::profile_for_unit;
@@ -209,19 +208,10 @@ pub fn all_scripts() -> Vec<TacticsScript> {
 // State construction helpers
 // ---------------------------------------------------------------------------
 
-/// The Campaign board as a `BoardInfo`.
-fn campaign_board() -> BoardInfo {
-    BoardInfo::from_map_data(campaign_map_data())
-}
-
-/// The Fall-of-Khartoum board as a `BoardInfo`.
-fn fall_of_khartoum_board() -> BoardInfo {
-    BoardInfo::from_map_data(fall_of_khartoum_map_data())
-}
-
 /// A Campaign `GameState` in the given phase, with `active_player` set.
 fn campaign_state(phase: Phase, active: Player, day_night: DayNight) -> GameState {
-    let mut state = GameState::with_board(Scenario::Campaign, campaign_board());
+    let mut state =
+        GameState::with_board(Scenario::Campaign, board_for_scenario(Scenario::Campaign));
     state.phase = phase;
     state.active_player = active;
     state.day_night = day_night;
@@ -230,7 +220,10 @@ fn campaign_state(phase: Phase, active: Player, day_night: DayNight) -> GameStat
 
 /// A Fall-of-Khartoum `GameState` in the given phase, with `active_player` set.
 fn fall_of_khartoum_state(phase: Phase, active: Player, day_night: DayNight) -> GameState {
-    let mut state = GameState::with_board(Scenario::FallOfKhartoum, fall_of_khartoum_board());
+    let mut state = GameState::with_board(
+        Scenario::FallOfKhartoum,
+        board_for_scenario(Scenario::FallOfKhartoum),
+    );
     state.phase = phase;
     state.active_player = active;
     state.day_night = day_night;

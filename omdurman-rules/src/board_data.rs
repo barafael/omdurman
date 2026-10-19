@@ -9,9 +9,9 @@
 //! this workspace are never published, so the cross-crate reach is confined to
 //! the repository.
 
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
-use omdurman_types::{MapData, MapKind};
+use omdurman_types::{MapData, MapKind, Scenario};
 
 use crate::board::BoardInfo;
 
@@ -41,16 +41,34 @@ pub fn fall_of_khartoum_map_data() -> &'static MapData {
 }
 
 /// A board's rules topology ([`BoardInfo`]), built once per board and shared:
-/// every `StartGame` (live, replayed or installed) attaches the same `Arc`.
-pub fn board_info(kind: MapKind) -> Arc<BoardInfo> {
-    static CAMPAIGN_INFO: OnceLock<Arc<BoardInfo>> = OnceLock::new();
-    static FOK_INFO: OnceLock<Arc<BoardInfo>> = OnceLock::new();
+/// every `StartGame` (live, replayed or installed) attaches the same board.
+pub fn board_info(kind: MapKind) -> &'static BoardInfo {
+    static CAMPAIGN_INFO: OnceLock<BoardInfo> = OnceLock::new();
+    static FOK_INFO: OnceLock<BoardInfo> = OnceLock::new();
     let (cell, map): (_, fn() -> &'static MapData) = match kind {
         MapKind::Campaign => (&CAMPAIGN_INFO, campaign_map_data),
         MapKind::FallOfKhartoum => (&FOK_INFO, fall_of_khartoum_map_data),
     };
-    Arc::clone(cell.get_or_init(|| Arc::new(BoardInfo::from_map_data(map()))))
+    cell.get_or_init(|| BoardInfo::from_map_data(map()))
 }
+/// Which board a scenario plays on. Both the Campaign game (§9.1) and the
+/// Historical scenario (§9.2) are the Battle of Omdurman fought on the main
+/// Omdurman mapsheet -- they differ only in set-up, length, and victory, not
+/// terrain -- so both use the campaign map (the lettered set-up hexes A/D/Y/K/S/O
+/// of §9.212 live on it). Only the Fall-of-Khartoum bonus game (§9.3) uses the
+/// separate tactical mini-map.
+pub fn map_kind_for_scenario(scenario: Scenario) -> MapKind {
+    match scenario {
+        Scenario::Campaign | Scenario::Historical => MapKind::Campaign,
+        Scenario::FallOfKhartoum => MapKind::FallOfKhartoum,
+    }
+}
+
+/// The board a scenario plays on ([`map_kind_for_scenario`]).
+pub fn board_for_scenario(scenario: Scenario) -> &'static BoardInfo {
+    board_info(map_kind_for_scenario(scenario))
+}
+
 #[cfg(test)]
 mod wall_ring_tests {
     use super::*;

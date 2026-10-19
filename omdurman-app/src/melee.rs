@@ -1281,10 +1281,12 @@ mod hexside_mark_tests {
                     state: Default::default(),
                 });
             }
-            std::sync::Arc::make_mut(&mut gs.board).hexsides.insert(
+            let mut board = gs.board.clone();
+            board.hexsides.insert(
                 HexsideRef::new(HexCoord::new(0, 0), HexCoord::new(1, 0)),
                 kind,
             );
+            gs.board = board.leak();
             gs
         };
         let edge = HexsideRef::new(HexCoord::new(0, 0), HexCoord::new(1, 0));

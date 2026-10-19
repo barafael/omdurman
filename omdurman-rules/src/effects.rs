@@ -15,8 +15,6 @@ use serde::{Deserialize, Serialize};
 // itself from the OS RNG via a `syscall` the model checker cannot execute, which
 // made every `apply_effect` proof undecidable (see the `verification` module).
 use std::collections::{BTreeMap, BTreeSet};
-// Copy-on-write sharing of the static board facts (see `GameState::board`).
-use std::sync::Arc;
 use tracing::debug;
 
 use crate::combat_results_table::{FireFactorRow, combat_results_table};

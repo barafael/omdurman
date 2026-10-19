@@ -602,14 +602,13 @@ pub fn telegraphese(text: &str) -> String {
 mod tests {
     use super::*;
     use crate::GameTurnIndex;
-    use crate::board::BoardInfo;
     use crate::turn_track::GameTime;
     use omdurman_types::DayNight;
 
     fn campaign() -> GameState {
         GameState::with_board(
             Scenario::Campaign,
-            BoardInfo::from_map_data(crate::board_data::campaign_map_data()),
+            crate::board_data::board_for_scenario(Scenario::Campaign),
         )
     }
 

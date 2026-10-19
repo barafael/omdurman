@@ -1716,13 +1716,11 @@ mod melee_reaction_tests {
 #[cfg(test)]
 mod campaign_schedule_tests {
     use super::*;
-    use omdurman_rules::board::BoardInfo;
-    use omdurman_rules::board_data::campaign_map_data;
 
     fn campaign_movement(player: Player) -> GameState {
         let mut state = GameState::with_board(
             Scenario::Campaign,
-            BoardInfo::from_map_data(campaign_map_data()),
+            omdurman_rules::board_data::board_for_scenario(Scenario::Campaign),
         );
         state.phase = Phase::Movement;
         state.active_player = player;

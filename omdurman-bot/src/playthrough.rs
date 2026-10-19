@@ -10,8 +10,6 @@
 
 use omdurman_net::GameEvent;
 use omdurman_rules::Phase;
-use omdurman_rules::board::BoardInfo;
-use omdurman_rules::board_data::{campaign_map_data, fall_of_khartoum_map_data};
 use omdurman_rules::effects::{GameEffect, GameState, apply_effect};
 use omdurman_types::{Player, Scenario};
 
@@ -320,14 +318,7 @@ fn log_event_and_observations(
     }
 }
 
-/// Resolve the compiled board data for a scenario.
-pub fn board_for_scenario(scenario: Scenario) -> BoardInfo {
-    let map_data = match scenario {
-        Scenario::Campaign | Scenario::Historical => campaign_map_data(),
-        Scenario::FallOfKhartoum => fall_of_khartoum_map_data(),
-    };
-    BoardInfo::from_map_data(map_data)
-}
+pub use omdurman_rules::board_data::board_for_scenario;
 
 /// Hard ceiling on [`playthrough`] driver iterations. A full game is a few
 /// thousand actions; this is a safety valve for unresolvable stalls, not a

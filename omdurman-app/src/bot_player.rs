@@ -554,15 +554,11 @@ mod tests {
     /// Khalifa game, minus rendering and pacing.
     #[test]
     fn app_decision_path_plays_out_kitchener_vs_khalifa() {
-        use omdurman_rules::board::BoardInfo;
         use omdurman_rules::effects::GameState;
         use omdurman_types::Scenario;
 
         for seed in [7u64, 2026] {
-            let board: BoardInfo = {
-                let map = omdurman_rules::board_data::fall_of_khartoum_map_data();
-                BoardInfo::from_map_data(map)
-            };
+            let board = omdurman_rules::board_data::board_for_scenario(Scenario::FallOfKhartoum);
             let mut state = GameState::with_board(Scenario::FallOfKhartoum, board);
             let mut rng = BotRng::from_seed(seed);
             let ai = [Player::AngloEgyptian, Player::Dervish];

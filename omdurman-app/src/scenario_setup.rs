@@ -20,20 +20,9 @@ use bevy::prelude::*;
 use omdurman_hexmap::GameMap;
 use omdurman_net::GameEvent;
 use omdurman_rules::scenario_setup::{FixedPlacement, SetupAnchor};
-use omdurman_types::{HexCoord, MapKind, Scenario, SetupLetter};
+use omdurman_types::{HexCoord, Scenario, SetupLetter};
 
-/// Which board a scenario plays on. Both the Campaign game (§9.1) and the
-/// Historical scenario (§9.2) are the Battle of Omdurman fought on the main
-/// Omdurman mapsheet -- they differ only in set-up, length, and victory, not
-/// terrain -- so both use the campaign map (the lettered set-up hexes A/D/Y/K/S/O
-/// of §9.212 live on it). Only the Fall-of-Khartoum bonus game (§9.3) uses the
-/// separate tactical mini-map.
-pub fn map_kind_for_scenario(scenario: Scenario) -> MapKind {
-    match scenario {
-        Scenario::Campaign | Scenario::Historical => MapKind::Campaign,
-        Scenario::FallOfKhartoum => MapKind::FallOfKhartoum,
-    }
-}
+pub use omdurman_rules::board_data::map_kind_for_scenario;
 
 /// What unambiguously fixes a counter's set-up hex on the board lives in the
 /// rules engine ([`SetupAnchor`]): a lettered set-up hex (Historical scenario,

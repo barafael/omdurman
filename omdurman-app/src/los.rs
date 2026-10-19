@@ -135,7 +135,7 @@ pub(crate) fn los_segments(
     to: HexCoord,
 ) -> Vec<((HexCoord, HexCoord), bool)> {
     let steps = los_path_analysis(
-        &gs.board,
+        gs.board,
         from,
         to,
         FireKind::Direct,
@@ -401,7 +401,7 @@ fn los_from(gs: &omdurman_rules::effects::GameState, from: HexCoord) -> LosParti
                 continue;
             }
             let steps = los_path_analysis(
-                &gs.board,
+                gs.board,
                 from,
                 to,
                 FireKind::Direct,

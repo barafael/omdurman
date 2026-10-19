@@ -501,7 +501,7 @@ impl GameState {
     /// test (gunboats excluded, see [`Self::historical_set_up_area`]). Each
     /// occupied hex is one viewpoint, however many units stack there.
     fn army_ashore_sighting(&self, hex: HexCoord, kind: UnitKind) -> Option<HexCoord> {
-        let level = crate::los_table::los_level_for_unit(kind, hex, &self.board);
+        let level = crate::los_table::los_level_for_unit(kind, hex, self.board);
         let mut viewpoints: Vec<HexCoord> = Vec::new();
         self.units
             .iter()
@@ -517,11 +517,11 @@ impl GameState {
             })
             .find(|u| {
                 crate::los_table::has_los(
-                    &self.board,
+                    self.board,
                     u.position,
                     hex,
                     crate::FireKind::Direct,
-                    crate::los_table::los_level_for_unit(u.profile.kind, u.position, &self.board),
+                    crate::los_table::los_level_for_unit(u.profile.kind, u.position, self.board),
                     level,
                     self.los_unit_blocker(),
                     |a, b| self.wall_is_breached(a, b),

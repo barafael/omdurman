@@ -6,7 +6,6 @@
 //! so this checks both that the areas bind and that they can be satisfied.
 
 use omdurman_rules::UnitId;
-use omdurman_rules::board::BoardInfo;
 use omdurman_rules::board_data::campaign_map_data;
 use omdurman_rules::effects::{GameEffect, GameState, RuleError, apply_effect};
 use omdurman_rules::unit_profiles::profile_for_unit;
@@ -50,7 +49,7 @@ fn deploy_first(
 #[test]
 fn historical_setup_completes_on_the_campaign_board() {
     let map = campaign_map_data();
-    let board = BoardInfo::from_map_data(map);
+    let board = omdurman_rules::board_data::board_for_scenario(Scenario::Historical);
 
     // §9.212: the lettered hexes as printed on the mapsheet, once each.
     let mut letters: Vec<(SetupLetter, HexCoord)> = map

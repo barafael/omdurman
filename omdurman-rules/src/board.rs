@@ -100,7 +100,34 @@ pub struct BoardInfo {
     pub palace_steps: Map<HexCoord, u32>,
 }
 
+/// The board of a state with no map loaded ([`BoardInfo::empty`]).
+static EMPTY: BoardInfo = BoardInfo {
+    hexsides: Map::with_hasher(DeterministicHasher::new()),
+    terrain: Map::with_hasher(DeterministicHasher::new()),
+    locations: Map::with_hasher(DeterministicHasher::new()),
+    roads: Set::with_hasher(DeterministicHasher::new()),
+    entrances: Map::with_hasher(DeterministicHasher::new()),
+    walled_city: Set::with_hasher(DeterministicHasher::new()),
+    zariba: Set::with_hasher(DeterministicHasher::new()),
+    south_of_khor_shambat: Set::with_hasher(DeterministicHasher::new()),
+    nile_by_row: Map::with_hasher(DeterministicHasher::new()),
+    palace_steps: Map::with_hasher(DeterministicHasher::new()),
+};
+
 impl BoardInfo {
+    /// No map loaded: every lookup gives the rule-neutral answer.
+    pub fn empty() -> &'static Self {
+        &EMPTY
+    }
+
+    /// Fix a board built at run time (a test's or a tool's own) for the rest
+    /// of the process, as [`GameState::board`](crate::effects::GameState::board)
+    /// holds it. The game's own boards come from
+    /// [`crate::board_data::board_info`], built once each.
+    pub fn leak(self) -> &'static Self {
+        Box::leak(Box::new(self))
+    }
+
     /// Build the engine's view of a board from its saved [`MapData`]. Pulls
     /// terrain and Nile-current per tile, the per-edge hexside features, and any
     /// named landmarks, discarding the rendering/calibration data the engine

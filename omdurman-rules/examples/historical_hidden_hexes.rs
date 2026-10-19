@@ -10,8 +10,6 @@
 //! (the app's `OMDURMAN_HEX_PROBE` state dump). Output: one
 //! `HIDDEN <leader> q,r q,r ...` line per leader.
 
-use omdurman_rules::board::BoardInfo;
-use omdurman_rules::board_data::campaign_map_data;
 use omdurman_rules::effects::GameState;
 use omdurman_rules::unit_profiles::profile_for_unit;
 use omdurman_rules::{UnitId, UnitIdentity, UnitPlacement};
@@ -22,7 +20,7 @@ fn main() {
         eprintln!("usage: historical_hidden_hexes <state file>");
         std::process::exit(2);
     };
-    let board = BoardInfo::from_map_data(campaign_map_data());
+    let board = omdurman_rules::board_data::board_for_scenario(Scenario::Campaign);
     let mut state = GameState::with_board(Scenario::Historical, board);
     let text = std::fs::read_to_string(&path).expect("readable state file");
     for line in text.lines() {

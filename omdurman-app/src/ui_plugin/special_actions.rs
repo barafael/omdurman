@@ -925,9 +925,9 @@ mod breach_offer_tests {
         gs.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
         gs.active_player = Player::AngloEgyptian;
         let wall = HexsideRef::new(HexCoord::new(2, 0), HexCoord::new(3, 0));
-        std::sync::Arc::make_mut(&mut gs.board)
-            .hexsides
-            .insert(wall, HexsideKind::Wall);
+        let mut board = gs.board.clone();
+        board.hexsides.insert(wall, HexsideKind::Wall);
+        gs.board = board.leak();
         let ids: Vec<UnitId> = UnitId::ALL
             .iter()
             .copied()

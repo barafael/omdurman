@@ -997,7 +997,6 @@ mod artifact_fixture_tests {
     use omdurman_rules::effects::{GameState, apply_effect};
     use omdurman_types::Scenario;
 
-    use crate::LoadedAnnotations;
     use crate::game_record::{self, GameRecorder};
     use crate::newspaper::NewspaperReport;
     use crate::state::GameStateResource;
@@ -1060,12 +1059,7 @@ mod artifact_fixture_tests {
                 _ => None,
             })
             .unwrap_or(Scenario::Campaign);
-        let loaded = LoadedAnnotations::from_board_ron();
-        let map_data = match scenario {
-            Scenario::Campaign | Scenario::Historical => &loaded.campaign,
-            Scenario::FallOfKhartoum => &loaded.fall_of_khartoum,
-        };
-        let board = omdurman_rules::board::BoardInfo::from_map_data(map_data);
+        let board = omdurman_rules::board_data::board_for_scenario(scenario);
         let mut state = GameState::with_board(scenario, board);
         for event in &record.events {
             if let GameEvent::Effect(effect) = &event.payload {

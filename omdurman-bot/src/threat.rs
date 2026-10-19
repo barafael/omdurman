@@ -117,7 +117,7 @@ fn compute(state: &GameState, hex: HexCoord, shooter: Player, guns_only: bool) -
             movement: 0,
         },
         hex,
-        &state.board,
+        state.board,
     );
     let mut total = 0.0;
     for u in &state.units {
@@ -142,9 +142,9 @@ fn compute(state: &GameState, hex: HexCoord, shooter: Player, guns_only: bool) -
         if mult == 0.0 {
             continue;
         }
-        let firer_level = los_level_for_unit(u.profile.kind, u.position, &state.board);
+        let firer_level = los_level_for_unit(u.profile.kind, u.position, state.board);
         if !has_los(
-            &state.board,
+            state.board,
             u.position,
             hex,
             FireKind::Direct,
@@ -192,7 +192,7 @@ pub fn best_shot_from(
     let owner = unit.profile.identity.owner();
     let target_side = owner.opponent();
     let k = (key(state, target_side), terrain_key(state));
-    let level_kind = los_level_for_unit(unit.profile.kind, at, &state.board) as u8;
+    let level_kind = los_level_for_unit(unit.profile.kind, at, state.board) as u8;
     let entry = (at, unit.profile.weapon as u8, fire.value(), level_kind);
     if let Some(v) = SHOTS.with(|c| {
         c.borrow()
@@ -203,7 +203,7 @@ pub fn best_shot_from(
         return v;
     }
     let night = state.day_night == DayNight::Night;
-    let firer_level = los_level_for_unit(unit.profile.kind, at, &state.board);
+    let firer_level = los_level_for_unit(unit.profile.kind, at, state.board);
     // A named gunboat's Maxims are a second weapon (§2.32), firing twice
     // (§6.42).
     let maxims = match unit.profile.identity {
@@ -243,9 +243,9 @@ pub fn best_shot_from(
         if shot <= best {
             continue;
         }
-        let target_level = los_level_for_unit(t.profile.kind, t.position, &state.board);
+        let target_level = los_level_for_unit(t.profile.kind, t.position, state.board);
         if !has_los(
-            &state.board,
+            state.board,
             at,
             t.position,
             FireKind::Direct,

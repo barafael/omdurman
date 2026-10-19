@@ -1102,7 +1102,7 @@ pub fn fire_combat_preview_ui(
                     omdurman_rules::los_table::los_level_for_unit(
                         u.profile.kind,
                         firer_hex,
-                        &gs.0.board,
+                        gs.0.board,
                     )
                 })
                 .unwrap_or(omdurman_rules::los_table::LosLevel::Ground);
@@ -1111,7 +1111,7 @@ pub fn fire_combat_preview_ui(
                     omdurman_rules::los_table::los_level_for_unit(
                         u.profile.kind,
                         target,
-                        &gs.0.board,
+                        gs.0.board,
                     )
                 })
                 .unwrap_or(omdurman_rules::los_table::LosLevel::Ground);
@@ -1120,7 +1120,7 @@ pub fn fire_combat_preview_ui(
             let unit_level_at = gs.0.los_unit_blocker();
             if kind != FireKind::Howitzer {
                 let analysis = omdurman_rules::los_table::los_path_analysis(
-                    &gs.0.board,
+                    gs.0.board,
                     firer_hex,
                     target,
                     kind,

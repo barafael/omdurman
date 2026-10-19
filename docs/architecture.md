@@ -62,11 +62,11 @@ git history if a large re-authoring is ever needed).
    "apply-on-echo." The submission `uid` makes retransmission idempotent. `GameRecord` is the
    canonical event log; late joiners request it and replay to converge.
 
-4. **Map-aware, not map-dependent engine.** `GameState.board: Arc<BoardInfo>` (`board.rs`,
-   copy-on-write shared across clone-and-try validation) carries terrain (incl. Nile current),
+4. **Map-aware, not map-dependent engine.** `GameState.board: &'static BoardInfo` (`board.rs`;
+   each board is built once, so clone-and-try validation copies a pointer) carries terrain (incl. Nile current),
    hexsides, roads, landmarks, entrance areas and the walled city. With a board, map-dependent
    rules (terrain cost, ZOC hexside blockers, gunboat up/downstream, Mahdi's Tomb scoring) are
-   enforced; with an empty `BoardInfo::default()` the engine still runs (tests/demos) and those
+   enforced; with an empty board (`BoardInfo::empty()`) the engine still runs (tests/demos) and those
    rules go rule-neutral.
 
 ---

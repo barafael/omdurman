@@ -11,7 +11,6 @@ use omdurman_bot::agent::Agents;
 use omdurman_bot::invariants::{check_all_with_tribal, game_over_monotonic};
 use omdurman_bot::{PlayConfig, board_for_scenario, playthrough};
 use omdurman_net::GameEvent;
-use omdurman_rules::board::BoardInfo;
 use omdurman_rules::effects::{GameState, apply_effect};
 use omdurman_types::Scenario;
 use proptest::prelude::*;
@@ -47,7 +46,7 @@ proptest! {
         for (i, ev) in result.events.iter().enumerate() {
             match ev {
                 GameEvent::StartGame { scenario, .. } => {
-                    let board: BoardInfo = board_for_scenario(*scenario);
+                    let board = board_for_scenario(*scenario);
                     state = Some(GameState::with_board(*scenario, board));
                 }
                 GameEvent::Effect(eff) => {

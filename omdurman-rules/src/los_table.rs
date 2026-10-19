@@ -1709,13 +1709,13 @@ mod tests {
     #[rulebook("§6.3")]
     #[test]
     fn campaign_fire_into_omdurman_through_the_wall_is_blocked() {
-        let board = crate::board::BoardInfo::from_map_data(crate::board_data::campaign_map_data());
+        let board = crate::board_data::board_for_scenario(omdurman_types::Scenario::Campaign);
         let (outside, inside) = (HexCoord::new(30, 37), HexCoord::new(31, 41));
         let (a, b) = (HexCoord::new(30, 38), HexCoord::new(31, 39));
         assert_eq!(board.hexside_between(a, b), Some(HexsideKind::Wall));
         let g = LosLevel::Ground;
         let steps = los_path_analysis(
-            &board,
+            board,
             outside,
             inside,
             FireKind::Direct,
@@ -1735,7 +1735,7 @@ mod tests {
             "{steps:?}"
         );
         let sees = |x, y| {
-            has_los(&board, x, y, FireKind::Direct, g, g, no_units(), |_, _| {
+            has_los(board, x, y, FireKind::Direct, g, g, no_units(), |_, _| {
                 false
             })
         };
@@ -1743,7 +1743,7 @@ mod tests {
         assert!(!sees(inside, outside));
         // Breach the wall hexside (§6.63) and the shot is clear.
         assert!(has_los(
-            &board,
+            board,
             outside,
             inside,
             FireKind::Direct,
@@ -2069,7 +2069,7 @@ mod tests {
     #[rulebook("§6.3")]
     #[test]
     fn los_ray_is_the_straight_line_on_the_campaign_board() {
-        let board = crate::board::BoardInfo::from_map_data(crate::board_data::campaign_map_data());
+        let board = crate::board_data::board_for_scenario(omdurman_types::Scenario::Campaign);
         assert!(matches!(
             board.terrain_at(HexCoord::new(35, 19)),
             Some(Terrain::Rough)
@@ -2077,7 +2077,7 @@ mod tests {
         let (zariba, plain) = (HexCoord::new(36, 17), HexCoord::new(33, 23));
         let sees = |a, b| {
             has_los(
-                &board,
+                board,
                 a,
                 b,
                 crate::FireKind::Direct,

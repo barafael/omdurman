@@ -2,8 +2,6 @@
 //! real Omdurman board: where the Dervish initial force stands, where the
 //! reinforcements come in, and what may arrive when.
 
-use omdurman_rules::board::BoardInfo;
-use omdurman_rules::board_data::campaign_map_data;
 use omdurman_rules::effects::{GameEffect, GameState, RuleError, apply_effect};
 use omdurman_rules::unit_profiles::profile_for_unit;
 use omdurman_rules::{GameTurnIndex, Phase, UnitId, UnitPlacement};
@@ -11,7 +9,7 @@ use omdurman_types::{HexCoord, Location, NamedArea, Player, Scenario};
 use traceability_macro::rulebook;
 
 fn campaign() -> GameState {
-    let board = BoardInfo::from_map_data(campaign_map_data());
+    let board = omdurman_rules::board_data::board_for_scenario(Scenario::Campaign);
     GameState::with_board(Scenario::Campaign, board)
 }
 
