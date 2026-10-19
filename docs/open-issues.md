@@ -161,13 +161,6 @@ seat handling).
 
 ## UI
 
-- A gunboat that may not move for a rules reason other than its allowance
-  (the §5.21 loading turn, a chain or mine stop) gets a route slip that
-  blames the §5.24 upstream allowance ("this move has 0 MP left"): the
-  engine's `remaining_movement` folds every precondition into 0 and
-  `no_route_reason` only knows budgets (`picker/clicks.rs`). Say which rule
-  holds the boat. The hover tooltip likewise prints "0 left" beside
-  "11↑ 17↓ MP left" for such a boat.
 - The dispatch line says "may advance" for every `HexVacatedByCombat`, even
   after a §7.6 forced advance, and the rail's `advance_hint` calls every
   advance "optional (§6.82)". There is no advance reminder at End Phase.

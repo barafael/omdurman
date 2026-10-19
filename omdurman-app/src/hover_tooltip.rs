@@ -349,6 +349,10 @@ fn route_hint(
     if from == hex || from.neighbors().contains(&hex) {
         return None; // the step itself: `movement_hint`
     }
+    // A unit that may not move this turn: `movement_hint` says why.
+    if gs.movement_blocker(unit_id).is_some() {
+        return None;
+    }
     let key: RouteKey = (
         unit_id,
         hex,
@@ -493,6 +497,11 @@ fn movement_hint(
                 Err(reason) => format!("Cannot set up here: {reason}."),
             })
         }
+        // A unit that may not move this turn says why (§5, §10.12, §10.22)
+        // instead of quoting its movement points.
+        Phase::Movement if gs.movement_blocker(unit_id).is_some() => gs
+            .movement_blocker(unit_id)
+            .map(|why| format!("Cannot move this turn: {why}.")),
         Phase::Movement => {
             // Determine the effective origin for adjacency: if a path is
             // being built, the unit's next move starts from the path's end,

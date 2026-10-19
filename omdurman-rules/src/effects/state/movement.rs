@@ -218,6 +218,16 @@ impl GameState {
         }
     }
 
+    /// Why `unit_id` may not move at all right now, whatever its movement
+    /// points: out of phase or turn (§5.1), disrupted, stopped in an enemy
+    /// ZOC (§5.26/§5.43), aboard a gunboat or loading one (§5.21), busy with
+    /// engineering (§5.3, §6.53), GORDON (§9.346), a gunboat's lost engines
+    /// or a mine or chain stop (§10.12, §10.22). `None` when it may move, or
+    /// is not on the board.
+    pub fn movement_blocker(&self, unit_id: UnitId) -> Option<RuleError> {
+        self.movement_preconditions(self.find_unit(unit_id)?).err()
+    }
+
     /// The movement points `unit_id` has left this turn (§5.12/§5.13): its
     /// [current allowance](Self::current_allowance) less what it has spent.
     /// Zero for a unit that may not move now at all -- disrupted, stopped

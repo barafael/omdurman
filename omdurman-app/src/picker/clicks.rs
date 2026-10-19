@@ -1085,6 +1085,18 @@ fn unroutable_reason(
     budget: i16,
     cheapest: Option<i16>,
 ) -> String {
+    // A unit that may not move at all this turn (a mine or chain stop, a
+    // loading gunboat, a ZOC stop...) has no route anywhere: say which rule
+    // holds it, not that its movement points ran out.
+    let blocked = gs.and_then(|gs| {
+        movers
+            .iter()
+            .find_map(|&id| gs.movement_blocker(id).map(|why| (id, why)))
+    });
+    if let Some((id, why)) = blocked {
+        let name = crate::combat_ui::unit_name(id, gs);
+        return format!("{name} cannot move this turn: {why}.");
+    }
     // The goal is no ground this unit can stand on: gunboats keep to the
     // Nile, land units off it (§5.22).
     let wrong_ground = gs.and_then(|gs| {
@@ -2137,6 +2149,36 @@ mod tests {
         ));
     }
 
+    /// A gunboat stopped by a mine (§10.12) may not move on this turn: the
+    /// slip names that, not the §5.24 upstream allowance.
+    #[test]
+    fn a_unit_that_may_not_move_is_told_why() {
+        use omdurman_rules::{UnitId, UnitPlacement, unit_profiles::profile_for_unit};
+        let mut gs = omdurman_rules::effects::GameState::new(Scenario::Campaign);
+        gs.phase = omdurman_rules::Phase::Movement;
+        gs.active_player = omdurman_types::Player::AngloEgyptian;
+        let boat = UnitId::ALL
+            .iter()
+            .copied()
+            .find(|id| {
+                profile_for_unit(*id).is_some_and(|p| {
+                    p.kind.is_boat() && p.identity.owner() == omdurman_types::Player::AngloEgyptian
+                })
+            })
+            .expect("a British gunboat");
+        gs.units.push(UnitPlacement {
+            id: boat,
+            position: HexCoord::new(34, 12),
+            profile: profile_for_unit(boat).unwrap(),
+            state: Default::default(),
+        });
+        gs.gunboats_stopped_this_turn.push(boat);
+        let reason = unroutable_reason(Some(&gs), &[boat], HexCoord::new(34, 9), 12, Some(3));
+        assert!(reason.contains("cannot move this turn"), "{reason}");
+        assert!(reason.contains("§10.12"), "{reason}");
+        assert!(!reason.contains("§5.24"), "{reason}");
+    }
+
     /// Play-test repro: Ali Wad Helu ordered onto a Jaalin stack was refused
     /// as "No route ... terrain costs, zones of control"; the real reason is
     /// §5.53 stacking at the goal.
@@ -2144,6 +2186,8 @@ mod tests {
     fn an_illegal_goal_stack_is_reported_as_stacking_not_routing() {
         use omdurman_rules::{UnitId, UnitPlacement, unit_profiles::profile_for_unit};
         let mut gs = omdurman_rules::effects::GameState::new(Scenario::Campaign);
+        gs.phase = omdurman_rules::Phase::Movement;
+        gs.active_player = omdurman_types::Player::Dervish;
         let goal = HexCoord::new(16, 30);
         for (id, position) in [
             (UnitId::AliWadHelu_0_0, HexCoord::new(15, 28)),
