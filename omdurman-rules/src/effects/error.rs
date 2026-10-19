@@ -449,6 +449,36 @@ pub enum RuleError {
     #[error("a howitzer attack needs a named gunboat's shell (§6.42, §6.64)")]
     HowitzerAttackWithoutShell,
 
+    /// An empty fire allocation (§6.41).
+    #[error("no fire orders to allocate (§6.41)")]
+    NoFireOrders,
+
+    /// Fire allocated, or resolved without allocation, after the subphase's
+    /// fire began resolving (§6.41: "first allocate all of his fire
+    /// attacks ... After all fire has been allocated, the firing player then
+    /// resolves").
+    #[error(
+        "this subphase's fire is already being resolved: nothing more may be allocated (§6.41)"
+    )]
+    FireAllocationClosed,
+
+    /// A weapon allocated to two orders (§6.13, §6.14).
+    #[error("unit {0} is allocated to fire twice (§6.13, §6.14)")]
+    FireAllocatedTwice(UnitId),
+
+    /// Two orders striking the same target (§6.14: fired at once).
+    #[error("{0} is allocated as a target twice (§6.14)")]
+    TargetAllocatedTwice(HexCoord),
+
+    /// Two orders firing at the river chain (§10.23 b).
+    #[error("the river chain is allocated as a target twice (§10.23)")]
+    ChainAllocatedTwice,
+
+    /// The phase may not end while allocated fire can still be resolved
+    /// (§6.41).
+    #[error("allocated fire must be resolved before the phase ends (§6.41)")]
+    UnresolvedFire,
+
     /// A howitzer attack whose shells and dice do not pair up (§6.64: every
     /// shell rolls its own impact and Combat Results Table dice).
     #[error("{shells} howitzer shell(s) but {rolls} set(s) of shell dice (§6.64)")]

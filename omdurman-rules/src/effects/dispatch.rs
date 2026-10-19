@@ -76,6 +76,7 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
             roll,
         } => apply_artillery_breach_wall(state, firers, *target, *roll),
         GameEffect::DeclineRetreatBeforeMelee => apply_decline_retreat_before_melee(state),
+        GameEffect::AllocateFire { orders } => apply_allocate_fire(state, orders),
     };
     // Post-condition: per-phase trackers never reference eliminated units.
     if result.is_ok() {
@@ -154,6 +155,11 @@ fn check_effect_coords(effect: &GameEffect) -> Result<(), RuleError> {
         GameEffect::FireCombat { attack, .. } | GameEffect::HowitzerFire { attack, .. } => {
             check_coord(attack.target_hex)
         }
+        GameEffect::AllocateFire { orders } => orders.iter().try_for_each(|order| match order {
+            FireOrder::Attack(attack) => check_coord(attack.target_hex),
+            FireOrder::BreachWall { target, .. } => check_hexside(target),
+            FireOrder::SinkChain { .. } => Ok(()),
+        }),
         GameEffect::DeclareMelee { attack, .. } => {
             check_coord(attack.attacker_hex)?;
             check_coord(attack.defender_hex)
@@ -232,6 +238,12 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
     if matches!(state.phase, Phase::Melee) && state.pending_melee.is_some() {
         return Err(RuleError::MeleePendingResolution);
     }
+    // §6.41: "After all fire has been allocated, the firing player then
+    // resolves his attacks" -- all of them: allocated fire that can still be
+    // resolved holds the phase.
+    if state.unresolved_fire().is_some() {
+        return Err(RuleError::UnresolvedFire);
+    }
     // §9.113: "All three leaders must be in play by the end of turn four!"
     // -- the Anglo-Egyptian turn-4 Movement phase is their last chance. The
     // rule binds only a leader who *can* come in: one whose every entrance
@@ -275,6 +287,8 @@ pub fn advance_phase(state: &mut GameState) -> Result<(), RuleError> {
     if !is_642_bridge {
         state.vacated_by_combat.clear();
     }
+    // An allocation belongs to its fire subphase (§6.41).
+    state.fire_allocation.clear();
     match state.phase {
         Phase::Setup => {
             state.phase = Phase::Movement;

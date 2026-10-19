@@ -81,8 +81,10 @@ pub fn apply_howitzer_fire(
             rolls: shells.len(),
         });
     }
+    let claim = claim_fire_order(state, &FireOrder::Attack(attack.clone()))?;
 
     // ---- validation complete; from here on the state is mutated ----
+    commit_fire_order(state, claim);
     // §6.64: each shell rolls twice -- the impact roll places it, on the
     // target hex on 7-10, otherwise scattered, and "the results must take
     // effect, even if the fire scatters into a friendly-occupied hex."
@@ -300,6 +302,8 @@ pub fn resolve_fire_attack(
     disruption: DisruptionDraw,
 ) -> Result<(), RuleError> {
     validate_fire_resolution(state, attack)?;
+    let claim = claim_fire_order(state, &FireOrder::Attack(attack.clone()))?;
+    commit_fire_order(state, claim);
     let target_units = fire_target_units(state, attack, target_hex);
     commit_fire_attack(
         state,
@@ -358,7 +362,10 @@ pub fn aim_at_fort(state: &GameState, attack: &FireAttack) -> Option<FireAttack>
 /// `Err`, or a peer that rejects an effect diverges from one that accepts it
 /// (events are applied only on the host-sequenced echo and a rejected effect
 /// is never retried).
-fn validate_fire_resolution(state: &GameState, attack: &FireAttack) -> Result<(), RuleError> {
+pub(crate) fn validate_fire_resolution(
+    state: &GameState,
+    attack: &FireAttack,
+) -> Result<(), RuleError> {
     validate_fire_attack(state, attack)?;
     // §6.54/§6.62: an attack aims at a fort only where there is one; an
     // empty fort is only ever fired at itself.
@@ -1339,25 +1346,13 @@ pub(crate) fn apply_combat_results_table_result(
     }
 }
 
-/// §6.63 3rd bullet: artillery fire aimed at breaching a wall hexside. Only
-/// artillery-class firers may participate; the CRT is rolled with the
-/// firers' combined fire factor (each firer's contribution halved per its
-/// range band to the *nearer* endpoint of the wall hexside, floored at 1 per
-/// unit, §6.16). A result of `Eliminate(2)` or higher breaches the wall --
-/// flipping the `Wall` hexside to `Breach` (so it no longer blocks LOS,
-/// movement, melee, or ZOC) and eliminating one enemy unit adjacent to the
-/// breached hexside. Any other CRT result is a miss.
-///
-/// This mirrors the Royal-Engineers demolition path (`apply_resolve_demolition`)
-/// for the wall case but trades the Engineers' guaranteed success for the
-/// artillery's CRT roll -- the rulebook specifies the same "2+ required"
-/// threshold for both trigger styles.
-pub fn apply_artillery_breach_wall(
-    state: &mut GameState,
+/// Every check of a §6.63 artillery shot at a wall hexside, read-only:
+/// the firing player and the firers' combined, range-banded factor.
+pub(crate) fn validate_breach_wall(
+    state: &GameState,
     firers: &[UnitId],
     target: HexsideRef,
-    roll: DieRoll,
-) -> Result<(), RuleError> {
+) -> Result<(Player, u16), RuleError> {
     if firers.is_empty() {
         return Err(RuleError::NoFirers);
     }
@@ -1398,6 +1393,39 @@ pub fn apply_artillery_breach_wall(
         effective_total = effective_total.saturating_add(band.apply(fire_factor.value()));
     }
 
+    Ok((firing_player, effective_total))
+}
+
+/// §6.63 3rd bullet: artillery fire aimed at breaching a wall hexside. Only
+/// artillery-class firers may participate; the CRT is rolled with the
+/// firers' combined fire factor (each firer's contribution halved per its
+/// range band to the *nearer* endpoint of the wall hexside, floored at 1 per
+/// unit, §6.16). A result of `Eliminate(2)` or higher breaches the wall --
+/// flipping the `Wall` hexside to `Breach` (so it no longer blocks LOS,
+/// movement, melee, or ZOC) and eliminating one enemy unit adjacent to the
+/// breached hexside. Any other CRT result is a miss.
+///
+/// This mirrors the Royal-Engineers demolition path (`apply_resolve_demolition`)
+/// for the wall case but trades the Engineers' guaranteed success for the
+/// artillery's CRT roll -- the rulebook specifies the same "2+ required"
+/// threshold for both trigger styles.
+pub fn apply_artillery_breach_wall(
+    state: &mut GameState,
+    firers: &[UnitId],
+    target: HexsideRef,
+    roll: DieRoll,
+) -> Result<(), RuleError> {
+    let (firing_player, effective_total) = validate_breach_wall(state, firers, target)?;
+    let claim = claim_fire_order(
+        state,
+        &FireOrder::BreachWall {
+            firers: firers.to_vec(),
+            target,
+        },
+    )?;
+
+    // ---- validation complete; from here on the state is mutated ----
+    commit_fire_order(state, claim);
     // All firers pass -- mark them as having fired this phase.
     for &id in firers {
         state.units_fired_this_phase.push(id);

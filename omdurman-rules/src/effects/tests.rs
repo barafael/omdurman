@@ -7985,6 +7985,15 @@ mod tests {
 
     // ----- Part F: Named vs Old gunboat capabilities (§6.64, §2.32) ----
 
+    /// Allocate `attacks` for the current fire subphase (§6.41).
+    fn allocate(state: &mut GameState, attacks: &[&FireAttack]) {
+        let orders = attacks
+            .iter()
+            .map(|&a| FireOrder::Attack(a.clone()))
+            .collect();
+        apply_effect(state, &GameEffect::AllocateFire { orders }).unwrap();
+    }
+
     fn make_named_gunboat(state: &mut GameState, hex: HexCoord) -> UnitId {
         make_unit(
             state,
@@ -8034,14 +8043,16 @@ mod tests {
             )
         };
 
-        // Direct Fire subphase: the artillery at one hex, the Maxims at another.
+        // Direct Fire subphase: the artillery at one hex, the Maxims at
+        // another, both allocated before either resolves (§6.41).
         let artillery = build_fire_attack_from(&state, at, &[gb], near, FireKind::Direct).unwrap();
-        fire(&mut state, artillery).unwrap();
         let maxims = build_gunboat_maxim_attack(&state, gb, other, FireKind::Direct).unwrap();
         let shares = firer_contributions(&state, &maxims);
         assert_eq!(shares.len(), 1);
         assert_eq!(shares[0].weapon, WeaponClass::Maxims);
         assert_eq!(shares[0].factor, 6, "Maxims 6, normal at range 2");
+        allocate(&mut state, &[&artillery, &maxims]);
+        fire(&mut state, artillery).unwrap();
         fire(&mut state, maxims).unwrap();
         // Once per subphase.
         assert!(matches!(
@@ -8057,12 +8068,13 @@ mod tests {
         );
         let second =
             build_gunboat_maxim_attack(&state, gb, near, FireKind::MaximSecondFire).unwrap();
-        fire(&mut state, second).unwrap();
         let howitzer = build_fire_attack_from(&state, at, &[gb], far, FireKind::Howitzer).unwrap();
         // Its artillery fires the Howitzer line: 5 halved at range 5.
         let shares = firer_contributions(&state, &howitzer);
         assert_eq!(shares[0].weapon, WeaponClass::Howitzer);
         assert_eq!(shares[0].factor, 2);
+        allocate(&mut state, &[&second, &howitzer]);
+        fire(&mut state, second).unwrap();
         apply_effect(
             &mut state,
             &GameEffect::HowitzerFire {
@@ -8081,6 +8093,105 @@ mod tests {
             state.can_fire_gunboat_maxims_at(gb, other, FireKind::MaximSecondFire),
             Err(RuleError::AlreadyFired(_))
         ));
+    }
+
+    /// §6.41: "The firing player must first allocate all of his fire
+    /// attacks ... After all fire has been allocated, the firing player then
+    /// resolves his attacks in any order he wishes." Allocated orders resolve
+    /// in any order; once one has, nothing more is allocated or fired; each
+    /// weapon and each target appears once; and the phase waits for every
+    /// order that can still be resolved.
+    #[rulebook("§6.41")]
+    #[test]
+    fn fire_is_allocated_then_resolved_in_any_order() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::AngloEgyptian;
+        let near = make_ae_infantry(&mut state, HexCoord::new(0, 0));
+        let far = make_ae_infantry(&mut state, HexCoord::new(0, 2));
+        let spare = make_ae_infantry(&mut state, HexCoord::new(2, 2));
+        let a = HexCoord::new(1, 0);
+        let b = HexCoord::new(1, 2);
+        make_dervish_tribal(&mut state, a);
+        make_dervish_tribal(&mut state, b);
+        let attack = |state: &GameState, firer: UnitId, target| {
+            let from = state.find_unit(firer).unwrap().position;
+            build_fire_attack_from(state, from, &[firer], target, FireKind::Direct).unwrap()
+        };
+        let at_a = attack(&state, near, a);
+        let at_b = attack(&state, far, b);
+        let fire = |state: &mut GameState, attack: &FireAttack| {
+            apply_effect(
+                state,
+                &GameEffect::FireCombat {
+                    attack: attack.clone(),
+                    roll: DieRoll::One,
+                    disruption: DisruptionDraw::default(),
+                },
+            )
+        };
+        let allocate_orders = |state: &mut GameState, attacks: &[&FireAttack]| {
+            let orders = attacks
+                .iter()
+                .map(|&a| FireOrder::Attack(a.clone()))
+                .collect();
+            apply_effect(state, &GameEffect::AllocateFire { orders })
+        };
+
+        // §6.13/§6.14: every weapon and every target once per allocation.
+        let twice = attack(&state, near, b);
+        assert!(matches!(
+            allocate_orders(&mut state.clone(), &[&at_a, &twice]),
+            Err(RuleError::FireAllocatedTwice(_))
+        ));
+        let again = attack(&state, spare, b);
+        assert!(matches!(
+            allocate_orders(&mut state.clone(), &[&at_b, &again]),
+            Err(RuleError::TargetAllocatedTwice(_))
+        ));
+        assert!(matches!(
+            allocate_orders(&mut state.clone(), &[]),
+            Err(RuleError::NoFireOrders)
+        ));
+
+        // Allocated -- by two teammates, say -- then resolved, the later
+        // order first.
+        allocate_orders(&mut state, &[&at_a]).unwrap();
+        allocate_orders(&mut state, &[&at_b]).unwrap();
+        fire(&mut state, &at_b).unwrap();
+        // Resolution has begun: no more allocating, no unallocated fire.
+        let late = attack(&state, spare, a);
+        assert!(matches!(
+            allocate_orders(&mut state.clone(), &[&late]),
+            Err(RuleError::FireAllocationClosed)
+        ));
+        assert!(matches!(
+            fire(&mut state.clone(), &late),
+            Err(RuleError::FireAllocationClosed)
+        ));
+        // The phase waits for the allocated fire.
+        assert!(matches!(
+            apply_effect(&mut state.clone(), &GameEffect::AdvancePhase),
+            Err(RuleError::UnresolvedFire)
+        ));
+        fire(&mut state, &at_a).unwrap();
+        assert!(state.unresolved_fire().is_none());
+        apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap();
+        assert!(state.fire_allocation.is_empty(), "a new subphase");
+
+        // An allocated order the fire has made impossible does not hold
+        // the phase: its target is gone.
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::AngloEgyptian;
+        let firer = make_ae_infantry(&mut state, HexCoord::new(0, 0));
+        let target = make_dervish_tribal(&mut state, a);
+        let doomed = attack(&state, firer, a);
+        allocate_orders(&mut state, &[&doomed]).unwrap();
+        assert!(state.unresolved_fire().is_some());
+        state.units.retain(|u| u.id != target);
+        assert!(state.unresolved_fire().is_none());
+        apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap();
     }
 
     /// §6.42: "Howitzer fire may be combined with Maxim fire, but only if
@@ -8717,7 +8828,10 @@ mod tests {
         };
         // The hex's previous occupant was fired at; a new occupant arriving
         // later in the same phase may be fired at (the rule is per-unit).
-        // The genuine violation: fire at target2 twice.
+        // The genuine violation: fire at target2 twice. (Each shot here is
+        // its own allocation: this test is about the §6.14 ledger, not
+        // §6.41.)
+        state.fire_allocation.clear();
         apply_effect(
             &mut state,
             &GameEffect::FireCombat {
@@ -10294,6 +10408,8 @@ mod tests {
             "rejected fire attack must not consume the firer's once-per-phase allowance"
         );
         let other = make_dervish_tribal(&mut state, HexCoord::new(4, 6));
+        // (Its own allocation: this test is about the §6.14 ledger.)
+        state.fire_allocation.clear();
         apply_effect(
             &mut state,
             &GameEffect::FireCombat {
@@ -12673,17 +12789,30 @@ mod tests {
             .struck
             .push(HexCoord::new(4, 0));
         assert!(state.can_fire_at_chain(batteries[0]).is_ok());
-        // 4 x 4 factors doubled at range 2 = 32 -> row 31-35; a roll of 1
-        // (+1) is a 1: no.
+        // 2 x 4 factors doubled at range 2 = 16 -> row 16-20; a roll of 1
+        // (+1) is a 2: no.
+        let mut missed = state.clone();
         apply_effect(
-            &mut state,
+            &mut missed,
             &GameEffect::SinkChain {
                 firers: batteries[..2].to_vec(),
                 roll: DieRoll::One,
             },
         )
         .unwrap();
-        assert!(!state.chain.as_ref().unwrap().sunk);
+        assert!(!missed.chain.as_ref().unwrap().sunk);
+        // §6.14: the chain is fired at once in a subphase -- the other
+        // batteries had to join that attack.
+        assert!(
+            apply_effect(
+                &mut missed,
+                &GameEffect::SinkChain {
+                    firers: batteries[2..].to_vec(),
+                    roll: DieRoll::Ten,
+                },
+            )
+            .is_err()
+        );
         apply_effect(
             &mut state,
             &GameEffect::SinkChain {

@@ -174,15 +174,9 @@ pub fn apply_river_mine(
     Ok(())
 }
 
-/// Artillery fire at the river chain (rulebook §10.23 b): every firer
-/// passes [`GameState::can_fire_at_chain`]; their factors, each banded at
-/// its own range, are summed onto one Combat Results Table row, and a
-/// result of 3 or more sinks the chain.
-pub fn apply_sink_chain(
-    state: &mut GameState,
-    firers: &[UnitId],
-    roll: DieRoll,
-) -> Result<(), RuleError> {
+/// Every check of a §10.23 b artillery shot at the river chain, read-only:
+/// the firers' combined, range-banded factor.
+pub(crate) fn validate_sink_chain(state: &GameState, firers: &[UnitId]) -> Result<u16, RuleError> {
     if firers.is_empty() {
         return Err(RuleError::NoFirers);
     }
@@ -199,7 +193,27 @@ pub fn apply_sink_chain(
         );
         total = total.saturating_add(band.apply(factor.value()));
     }
+    Ok(total)
+}
+
+/// Artillery fire at the river chain (rulebook §10.23 b): every firer
+/// passes [`GameState::can_fire_at_chain`]; their factors, each banded at
+/// its own range, are summed onto one Combat Results Table row, and a
+/// result of 3 or more sinks the chain.
+pub fn apply_sink_chain(
+    state: &mut GameState,
+    firers: &[UnitId],
+    roll: DieRoll,
+) -> Result<(), RuleError> {
+    let total = validate_sink_chain(state, firers)?;
+    let claim = claim_fire_order(
+        state,
+        &FireOrder::SinkChain {
+            firers: firers.to_vec(),
+        },
+    )?;
     // ---- validation complete; from here on the state is mutated ----
+    commit_fire_order(state, claim);
     // §6.24: an Anglo-Egyptian direct fire attack.
     let modified = roll.apply_modifier(1);
     let result = combat_results_table(FireFactorRow::from_total(total), modified);

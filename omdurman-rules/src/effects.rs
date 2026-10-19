@@ -46,6 +46,7 @@ use crate::{ChainPlacement, MinePlacement, OptionalRule};
 // (`omdurman_rules::effects::{GameState, GameEffect, RuleError, ...}`) is
 // unchanged.
 
+mod allocation;
 mod dispatch;
 mod effect;
 mod error;
@@ -58,6 +59,7 @@ mod setup;
 mod state;
 mod victory;
 
+pub use allocation::*;
 pub use dispatch::*;
 pub use effect::*;
 pub use error::*;

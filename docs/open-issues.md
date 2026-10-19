@@ -17,11 +17,6 @@ seat handling).
   a gunboat ran onto; but the event log still carries them in clear (an
   honour-system scratchpad; commit-reveal is post-1.0). See also "private
   dice" below.
-- **§6.41 allocate, then resolve.** "Allocate all fire attacks, then resolve"
-  is enforced by the UI's allocation tray only; the engine accepts attacks
-  one at a time. The tray leaves gaps: a teammate may still allocate after
-  seeing a resolution; wall-breach and chain shots fire outside the tray;
-  and the AI (`Commander::pick`) re-plans its fire after every result.
 - **§7.7 casualty choice.** Losses fall on units in list order, the rank and
   file before their leaders (`leaders_last`); the owning player does not
   choose them. The same order picks the one unit a breach or a destroyed fort
@@ -43,6 +38,11 @@ seat handling).
   only once per fire *subphase* (§6.42: Maxims "may fire at enemy units
   fired at in Direct Fire Subphase"). Shells and Maxims at one hex are one combined
   attack (§6.42).]
+- **§6.41 allocation per side.** [The allocation belongs to the firing
+  side: teammates' orders join one allocation, and the first resolution by
+  any of them closes it for all. Fire resolved without an allocation is an
+  allocation of that one shot. The chain, like a hex, is fired at once per
+  subphase.]
 - **§6.42 combined howitzer and Maxim fire.** "Howitzer fire may be
   combined with Maxim fire, but only if the howitzer fire impacts in the
   intended hex." [One attack carries the shells and the Maxims; every shell
@@ -208,9 +208,6 @@ seat handling).
   accepts attackers from several adjacent hexes (§7.6).
 - The fire tray lets artillery at a garrisoned fort choose the fort or the
   garrison, but the preview card on hover shows the garrison shot only.
-- A teammate's resolved fire still locks this peer's fire tray when the
-  firer is a shared-pool unit (one every seat of the side commands, as in a
-  game without commands), `fire_allocation.rs`.
 - The phase-sequence indicator (`UiPhaseState::phase_sequence`) has four rungs,
   folding Direct and Maxim/Howitzer fire into one.
 - Polish: selection pulse, howitzer scatter animation, Zariba build animation.
@@ -255,8 +252,6 @@ seat handling).
   - §2.32: nothing checks that Maxims fire on the Maxims line and artillery
     and old gunboats on the Artillery line.
   - §6.11: nothing checks that each counter carries its printed fire factor.
-  - §6.41: nothing asserts allocate-everything-then-resolve (the engine does
-    not enforce it; see the approximation).
   - §9.33: nothing pins the early end when GORDON falls.
   - §9.344: nothing checks that the North Fort fort may fire its guns.
   - §9.345: nothing checks that six upstream movement points are debited.

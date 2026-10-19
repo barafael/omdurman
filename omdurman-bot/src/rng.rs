@@ -14,6 +14,12 @@ impl BotRng {
         Self(GameRng::from_seed(seed))
     }
 
+    /// The engine's dice stream underneath, for engine helpers that roll
+    /// (e.g. [`omdurman_rules::effects::FireOrder::resolution`]).
+    pub fn game_rng(&mut self) -> &mut GameRng {
+        &mut self.0
+    }
+
     pub fn roll_d10(&mut self) -> omdurman_rules::DieRoll {
         self.0.roll_d10()
     }

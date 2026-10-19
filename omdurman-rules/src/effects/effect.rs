@@ -102,6 +102,20 @@ pub enum GameEffect {
         disruption: DisruptionDraw,
     },
 
+    /// Allocate fire orders for the current fire subphase (rulebook §6.41,
+    /// §6.42: "first allocate all of his fire attacks ... After all fire has
+    /// been allocated, the firing player then resolves his attacks in any
+    /// order he wishes").
+    ///
+    /// **Preconditions:** a fire subphase whose fire has not begun
+    /// resolving; every order resolvable now; across the whole allocation
+    /// (earlier orders included) every weapon fires once and every target is
+    /// fired at once (§6.13, §6.14).
+    /// **Postconditions:** the orders join `fire_allocation`, unresolved;
+    /// each resolution effect claims its order, and the phase may not end
+    /// while an allocated order can still be resolved.
+    AllocateFire { orders: Vec<FireOrder> },
+
     // -- Melee combat ------------------------------------------------------
     /// Declare a melee between adjacent hexes (rulebook §7), opening the
     /// defender's reaction window (§7.5): the attack and its pre-rolled dice

@@ -7,7 +7,7 @@ use crate::{GameRng, GameStateResource};
 use bevy::prelude::*;
 use bevy_egui::egui;
 use omdurman_net::GameEvent;
-use omdurman_rules::effects::GameEffect;
+use omdurman_rules::effects::{FireOrder, GameEffect};
 use omdurman_rules::{FireAttack, FireKind, Phase};
 use omdurman_types::HexCoord;
 
@@ -17,6 +17,10 @@ use omdurman_types::HexCoord;
 pub struct FireAllocationState {
     /// Allocated attacks built when the player clicks valid targets.
     pub attacks: Vec<FireAttack>,
+    /// Artillery shots at a wall (§6.63) or the river chain (§10.23 b)
+    /// staged from the Artillery Breach card: fire like any other, so they
+    /// are allocated and resolved with the attacks (§6.41).
+    pub specials: Vec<FireOrder>,
     /// True once "Fire" has been triggered — locks further changes
     /// until the fire phase changes and the state resets.
     pub committed: bool,
@@ -26,6 +30,36 @@ pub struct FireAllocationState {
     /// allocation; the player can toggle it with the actions panel's
     /// "Review allocations" button (Esc / right-click closes it).
     pub panel_open: bool,
+}
+
+impl FireAllocationState {
+    /// How many orders are staged.
+    pub fn staged(&self) -> usize {
+        self.attacks.len() + self.specials.len()
+    }
+
+    /// Every staged order, the attacks first.
+    pub fn orders(&self) -> Vec<FireOrder> {
+        self.attacks
+            .iter()
+            .cloned()
+            .map(FireOrder::Attack)
+            .chain(self.specials.iter().cloned())
+            .collect()
+    }
+
+    /// Whether `unit` is already staged to fire (§6.13: once a sub-phase).
+    pub fn stages_unit(&self, unit: omdurman_rules::UnitId) -> bool {
+        self.orders()
+            .iter()
+            .any(|o| o.shots().iter().any(|s| s.unit == unit))
+    }
+
+    /// Drop everything staged.
+    fn clear_staged(&mut self) {
+        self.attacks.clear();
+        self.specials.clear();
+    }
 }
 
 /// Marker for one persistent red arrow drawn from an allocated attack's firer
@@ -125,12 +159,22 @@ pub fn handle_fire_allocation_click(
         // (§6.15: a stack may be divided, so the player may stage one
         // battalion and then decide the others join it).
         let rest;
-        let attack = if crate::fire::uses_allocated_weapon(attack, &allocation.attacks) {
+        let in_special = |unit: &omdurman_rules::UnitId| {
+            allocation
+                .specials
+                .iter()
+                .any(|o| o.shots().iter().any(|s| s.unit == *unit))
+        };
+        let attack = if crate::fire::uses_allocated_weapon(attack, &allocation.attacks)
+            || attack.all_firing_units().iter().any(in_special)
+        {
             let free: Vec<omdurman_rules::UnitId> = attack
                 .firers
                 .iter()
                 .copied()
-                .filter(|f| !allocation.attacks.iter().any(|a| a.firers.contains(f)))
+                .filter(|f| {
+                    !allocation.attacks.iter().any(|a| a.firers.contains(f)) && !in_special(f)
+                })
                 .collect();
             let rebuilt = free
                 .first()
@@ -229,11 +273,16 @@ pub(crate) fn draw_staged_attacks(
     allocation: &mut FireAllocationState,
 ) {
     let mut remove_self: Option<usize> = None;
+    let mut remove_special: Option<usize> = None;
     let mut toggle_aim: Option<usize> = None;
     ui.scope(|ui| {
         ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
         for (i, attack) in allocation.attacks.iter().enumerate() {
             draw_allocation_row(ui, gs, attack, &mut remove_self, &mut toggle_aim, i);
+            ui.add_space(4.0);
+        }
+        for (i, order) in allocation.specials.iter().enumerate() {
+            draw_special_row(ui, gs, order, &mut remove_special, i);
             ui.add_space(4.0);
         }
         // §6.41: the sub-phase's fire resolves together -- a player who
@@ -245,12 +294,8 @@ pub(crate) fn draw_staged_attacks(
             .add(
                 egui::Button::new(format!(
                     "Resolve {} attack{} (Enter)",
-                    allocation.attacks.len(),
-                    if allocation.attacks.len() == 1 {
-                        ""
-                    } else {
-                        "s"
-                    }
+                    allocation.staged(),
+                    if allocation.staged() == 1 { "" } else { "s" }
                 ))
                 .fill(crate::ui::palette::BTN_GO)
                 .min_size(egui::Vec2::new(120.0, 28.0)),
@@ -269,6 +314,9 @@ pub(crate) fn draw_staged_attacks(
         }
     });
 
+    if let Some(idx) = remove_special {
+        allocation.specials.remove(idx);
+    }
     if let Some(idx) = remove_self {
         allocation.attacks.remove(idx);
     } else if let Some(idx) = toggle_aim
@@ -282,6 +330,51 @@ pub(crate) fn draw_staged_attacks(
             *attack = aimed;
         }
     }
+}
+
+/// One staged artillery shot at a wall (§6.63) or the river chain (§10.23
+/// b): its batteries and its target.
+fn draw_special_row(
+    ui: &mut egui::Ui,
+    gs: &omdurman_rules::effects::GameState,
+    order: &FireOrder,
+    remove_self: &mut Option<usize>,
+    index: usize,
+) {
+    let (firers, target) = match order {
+        FireOrder::BreachWall { firers, target } => (
+            firers,
+            format!("the wall between {} and {} (§6.63)", target.a, target.b),
+        ),
+        FireOrder::SinkChain { firers } => (firers, "the river chain (§10.23)".to_string()),
+        FireOrder::Attack(_) => return,
+    };
+    let names = crate::combat_ui::tally_names(
+        firers
+            .iter()
+            .map(|&id| crate::combat_ui::unit_name(id, Some(gs)))
+            .collect(),
+    );
+    ui.group(|ui| {
+        ui.horizontal(|ui| {
+            if ui
+                .add(
+                    egui::Button::new("×")
+                        .fill(crate::ui::palette::BTN_DANGER)
+                        .min_size(egui::Vec2::splat(18.0)),
+                )
+                .clicked()
+            {
+                *remove_self = Some(index);
+            }
+            crate::rulebook::refs_rich(
+                ui,
+                &format!("{} \u{2192} {target}", names.join(" + ")),
+                13.0,
+                |t| t.color(crate::ui::palette::PANEL_TEXT),
+            );
+        });
+    });
 }
 
 /// One allocation row: firers (with factors) → target, kind, range band, the
@@ -443,7 +536,7 @@ pub fn resolve_fire_on_enter(
         return;
     }
     let Some(gs) = game_state else { return };
-    if allocation.attacks.is_empty()
+    if allocation.staged() == 0
         || allocation.committed
         || !gs.0.phase.is_fire()
         || !peers.may_act(gs.0.phase_player())
@@ -464,77 +557,49 @@ pub fn execute_fire_allocations(
     }
     let Some(rng) = rng.as_mut() else { return };
     let Some(gs) = gs else { return };
-
-    allocation.committed = true;
-
-    let attacks = std::mem::take(&mut allocation.attacks);
-    let mut sent = 0usize;
-
-    for attack in &attacks {
-        // Firers that vanished since allocation (eliminated mid-phase) are
-        // skipped; the engine re-validates every attack on the echo anyway.
-        if attack
-            .all_firing_units()
-            .first()
-            .is_none_or(|id| gs.0.find_unit(*id).is_none())
-        {
-            continue;
-        }
-        let disruption = rng.disruption_draw();
-
-        if attack.kind == FireKind::Howitzer {
-            // §6.64: every shell rolls its impact and its own Combat Results
-            // Table die; the attack on the intended hex rolls once (§6.42).
-            let shells: Vec<omdurman_rules::ShellRoll> =
-                omdurman_rules::effects::shell_gunboats(&gs.0, attack)
-                    .iter()
-                    .map(|_| omdurman_rules::ShellRoll {
-                        impact: rng.roll_d10(),
-                        roll: rng.roll_d10(),
-                        disruption: rng.disruption_draw(),
-                    })
-                    .collect();
-            let roll = rng.roll_d10();
-            info!(
-                target.q = attack.target_hex.q,
-                target.r = attack.target_hex.r,
-                roll = %roll,
-                shells = shells.len(),
-                "howitzer fire (batch)",
-            );
-            sent += usize::from(submit.submit(
-                &gs.0,
-                GameEvent::Effect(GameEffect::HowitzerFire {
-                    attack: attack.clone(),
-                    shells,
-                    roll,
-                    disruption,
-                }),
-            ));
-        } else {
-            let roll = rng.roll_d10();
-            info!(
-                target.q = attack.target_hex.q,
-                target.r = attack.target_hex.r,
-                roll = %roll,
-                "fire (batch)",
-            );
-            sent += usize::from(submit.submit(
-                &gs.0,
-                GameEvent::Effect(GameEffect::FireCombat {
-                    attack: attack.clone(),
-                    roll,
-                    disruption,
-                }),
-            ));
-        }
-    }
-
-    // The results arrive as Combat Resolution Cards; a refused attack has
-    // already posted its reason.
-    let _ = sent;
-
     allocation.execute_requested = false;
+
+    // An order the board has made impossible since it was staged (its
+    // firers or target gone) would refuse the whole allocation: drop it.
+    let staged: Vec<FireOrder> = allocation
+        .orders()
+        .into_iter()
+        .filter(|order| gs.0.validate_fire_order(order).is_ok())
+        .collect();
+    // §6.41: "first allocate all of his fire attacks ... then resolves his
+    // attacks": the whole sub-phase's fire goes out as one allocation, then
+    // every order is rolled and resolved -- with any order the side
+    // allocated earlier and has not resolved (a teammate's, or this peer's
+    // own before a reconnect).
+    if !staged.is_empty()
+        && !submit.submit(
+            &gs.0,
+            GameEvent::Effect(GameEffect::AllocateFire {
+                orders: staged.clone(),
+            }),
+        )
+    {
+        // Refused (the refusal is on a slip): keep the tray as it was.
+        return;
+    }
+    let earlier =
+        gs.0.fire_allocation
+            .iter()
+            .filter(|a| !a.resolved && gs.0.validate_fire_order(&a.order).is_ok())
+            .map(|a| a.order.clone());
+    let orders: Vec<FireOrder> = earlier.chain(staged).collect();
+    if orders.is_empty() {
+        return;
+    }
+    allocation.committed = true;
+    allocation.clear_staged();
+    info!(orders = orders.len(), "fire allocated and resolved (§6.41)");
+    for order in &orders {
+        // The results arrive as Combat Resolution Cards; a refused order
+        // has posted its reason.
+        let resolution = order.resolution(&gs.0, rng);
+        submit.submit(&gs.0, GameEvent::Effect(resolution));
+    }
 }
 
 /// What [`fire_allocation_arrows`] draws: one (firer hex, target hex) per
@@ -606,76 +671,17 @@ pub fn fire_allocation_arrows(
     *last = Some(key);
 }
 
-/// Whether this peer's fire in the current fire sub-phase has already been
-/// resolved, read off the replayed record and engine state -- not this
-/// peer's memory. A peer that rejoins mid sub-phase (a crash, a restart, a
-/// reload) loses its local [`FireAllocationState`]; without this it could
-/// allocate fresh attacks after seeing how the first ones went, which §6.41
-/// forbids ("After all fire has been allocated, the firing player then
-/// resolves his attacks").
-///
-/// Only *resolved allocations* count: a `FireCombat` / `HowitzerFire` of the
-/// firing side in this sub-phase (the record back to the last phase end)
-/// one of whose firers is `mine` -- the units this peer commands -- and is
-/// still marked as having fired. A wall-breach (§6.63) or chain (§10.23)
-/// shot marks its battery as fired too, but it is no resolution of the
-/// allocated fire; and a teammate's resolve of their own command's fire is
-/// theirs, not this peer's. Defensive fire's markers survive into the
-/// offensive direct fire sub-phase, so only the firing side's count.
-pub(crate) fn fire_resolved_this_subphase(
-    gs: &omdurman_rules::effects::GameState,
-    record: &omdurman_net::GameRecord,
-    mine: impl Fn(&omdurman_rules::UnitIdentity) -> bool,
-) -> bool {
-    if !gs.phase.is_fire() {
-        return false;
-    }
-    let firing = gs.phase_player();
-    let fired = |shot: &omdurman_rules::Shot| match shot.mount {
-        omdurman_rules::FireMount::Main => gs.units_fired_this_phase.contains(&shot.unit),
-        omdurman_rules::FireMount::GunboatMaxims => {
-            gs.gunboat_maxims_fired_this_phase.contains(&shot.unit)
-        }
-    };
-    for event in record.events.iter().rev() {
-        let attack = match &event.payload {
-            GameEvent::StartGame { .. }
-            | GameEvent::Effect(GameEffect::AdvancePhase | GameEffect::AdvancePhaseFrom { .. }) => {
-                break;
-            }
-            GameEvent::Effect(
-                GameEffect::FireCombat { attack, .. } | GameEffect::HowitzerFire { attack, .. },
-            ) => attack,
-            _ => continue,
-        };
-        if attack.phase != gs.phase || attack.firing_player != firing {
-            continue;
-        }
-        let resolved_mine = attack.shots().iter().any(|shot| {
-            fired(shot)
-                && omdurman_rules::unit_profiles::profile_for_unit(shot.unit)
-                    .is_some_and(|p| p.identity.owner() == firing && mine(&p.identity))
-        });
-        if resolved_mine {
-            return true;
-        }
-    }
-    false
-}
-
 /// Reset the allocation state whenever the engine phase changes, so an
 /// unexecuted allocation from one fire sub-phase never leaks into the next
 /// (§6.41 allocations are per fire sub-phase). Uses a `Local` snapshot of the
 /// phase so the reset also fires correctly on replay / snapshot convergence,
 /// where no local click precedes the phase advance. Releases the
 /// `committed` lock set by [`execute_fire_allocations`] -- and sets it again
-/// whenever the record shows this peer's fire of the sub-phase already
-/// resolved ([`fire_resolved_this_subphase`]), so a rejoined peer cannot
-/// fire twice.
+/// whenever the engine says the side's fire of the sub-phase has begun
+/// resolving ([`omdurman_rules::effects::GameState::fire_resolution_begun`]),
+/// so neither a teammate nor a rejoined peer can allocate more.
 pub fn reset_fire_allocation_on_phase_change(
     game_state: Option<Res<GameStateResource>>,
-    recorder: Option<Res<crate::game_record::GameRecorder>>,
-    peers: Peers,
     mut allocation: ResMut<FireAllocationState>,
     mut last_phase: Local<Option<Phase>>,
 ) {
@@ -683,7 +689,7 @@ pub fn reset_fire_allocation_on_phase_change(
     let phase = gs.0.phase;
     if *last_phase != Some(phase) {
         if last_phase.is_some() {
-            allocation.attacks.clear();
+            allocation.clear_staged();
             allocation.committed = false;
             allocation.execute_requested = false;
         }
@@ -691,10 +697,10 @@ pub fn reset_fire_allocation_on_phase_change(
     }
     if gs.is_changed()
         && !allocation.committed
-        && let Some(record) = recorder.as_ref().and_then(|r| r.record.as_ref())
-        && fire_resolved_this_subphase(&gs.0, record, |identity| peers.scope_allows(identity))
+        && gs.0.phase.is_fire()
+        && gs.0.fire_resolution_begun()
     {
-        allocation.attacks.clear();
+        allocation.clear_staged();
         allocation.committed = true;
         allocation.execute_requested = false;
     }
@@ -834,40 +840,9 @@ mod arrow_key_tests {
         assert!(allocation_arrow_key(&allocation, Some(&gs)).is_empty());
     }
 
-    fn record_of(events: Vec<GameEvent>) -> omdurman_net::GameRecord {
-        omdurman_net::GameRecord {
-            initial_state: omdurman_net::InitialGameState { seed: 1 },
-            events: events
-                .into_iter()
-                .enumerate()
-                .map(|(seq, payload)| omdurman_net::RecordedEvent {
-                    utc: chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
-                    sender_idx: None,
-                    seq: seq as u32,
-                    uid: None,
-                    payload,
-                })
-                .collect(),
-        }
-    }
-
-    fn fire_event(phase: Phase) -> GameEvent {
-        GameEvent::Effect(GameEffect::FireCombat {
-            attack: attack(phase),
-            roll: omdurman_rules::DieRoll::try_from(5u16).unwrap(),
-            disruption: Default::default(),
-        })
-    }
-
-    fn lock_app(gs: GameStateResource, record: omdurman_net::GameRecord) -> App {
-        let mut recorder = crate::game_record::GameRecorder::default();
-        recorder.record = Some(record);
+    fn lock_app(gs: GameStateResource) -> App {
         let mut app = App::new();
         app.insert_resource(gs)
-            .insert_resource(recorder)
-            .insert_resource(crate::seats::Seats::default())
-            .insert_resource(crate::seats::SeatPresence::default())
-            .insert_resource(crate::seats::LocalPlayerKey(omdurman_net::PlayerKey(1)))
             .insert_resource(FireAllocationState {
                 attacks: vec![attack(Phase::OffensiveFire(FireSubPhase::DirectFire))],
                 ..Default::default()
@@ -876,81 +851,42 @@ mod arrow_key_tests {
         app
     }
 
-    /// A peer that rejoins after its side resolved fire in this sub-phase
-    /// comes back with a fresh (unlocked) allocation state: the replayed
-    /// record locks it again, so it cannot allocate a second round of fire
-    /// after seeing how the first went (§6.41). The other side's
-    /// defensive-fire markers, which survive into offensive fire, do not.
+    /// §6.41: once the side's fire of a sub-phase has begun resolving -- this
+    /// peer's before a rejoin, or a teammate's -- the tray locks and drops
+    /// what it staged: nothing more may be allocated. An allocation not yet
+    /// resolving leaves it open; the next sub-phase reopens it.
     #[test]
-    fn a_rejoined_peer_finds_its_resolved_fire_locked() {
+    fn the_tray_locks_once_the_sides_fire_resolves() {
         let phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
         let mut gs = fire_state(phase);
         gs.0.active_player = Player::AngloEgyptian;
-        gs.0.units_fired_this_phase.push(UnitId::Baggara_0_0);
-        let record = record_of(vec![
-            GameEvent::Effect(GameEffect::AdvancePhase),
-            fire_event(phase),
-        ]);
-        assert!(!fire_resolved_this_subphase(&gs.0, &record, |_| true));
-
-        let mut app = lock_app(gs, record);
+        gs.0.fire_allocation
+            .push(omdurman_rules::effects::AllocatedFire {
+                order: FireOrder::Attack(attack(phase)),
+                resolved: false,
+            });
+        let mut app = lock_app(gs);
         app.update();
         assert!(!app.world().resource::<FireAllocationState>().committed);
 
         app.world_mut()
             .resource_mut::<GameStateResource>()
             .0
-            .units_fired_this_phase
-            .push(UnitId::BritishArmy_0_0);
+            .fire_allocation[0]
+            .resolved = true;
         app.update();
         let allocation = app.world().resource::<FireAllocationState>();
         assert!(allocation.committed);
-        assert!(allocation.attacks.is_empty());
+        assert_eq!(allocation.staged(), 0);
 
-        // The next sub-phase opens fire again.
-        app.world_mut().resource_mut::<GameStateResource>().0.phase = Phase::Melee;
+        // The next sub-phase opens fire again (the phase advance clears the
+        // allocation).
+        {
+            let mut gs = app.world_mut().resource_mut::<GameStateResource>();
+            gs.0.phase = Phase::OffensiveFire(FireSubPhase::MaximSecondAndHowitzer);
+            gs.0.fire_allocation.clear();
+        }
         app.update();
         assert!(!app.world().resource::<FireAllocationState>().committed);
-    }
-
-    /// A wall-breach (§6.63) or chain (§10.23) shot marks its battery as
-    /// fired, but it is no resolution of the allocated fire: the tray keeps
-    /// its staged attacks and stays open. Nor does a resolve of fire this
-    /// peer does not command (a teammate's own command), nor one of an
-    /// earlier sub-phase (the record back to the last phase end only).
-    #[test]
-    fn breach_chain_and_teammate_fire_leave_the_tray_open() {
-        let phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
-        let mut gs = fire_state(phase);
-        gs.0.active_player = Player::AngloEgyptian;
-        gs.0.units_fired_this_phase.push(UnitId::BritishArmy_0_0);
-        let breach = GameEvent::Effect(GameEffect::ArtilleryBreachWall {
-            firers: vec![UnitId::BritishArmy_0_0],
-            target: omdurman_types::HexsideRef::new(HexCoord::new(1, 0), HexCoord::new(2, 0)),
-            roll: omdurman_rules::DieRoll::try_from(5u16).unwrap(),
-        });
-        let chain = GameEvent::Effect(GameEffect::SinkChain {
-            firers: vec![UnitId::BritishArmy_0_0],
-            roll: omdurman_rules::DieRoll::try_from(5u16).unwrap(),
-        });
-        for record in [
-            record_of(vec![breach]),
-            record_of(vec![chain]),
-            record_of(vec![
-                fire_event(phase),
-                GameEvent::Effect(GameEffect::AdvancePhase),
-            ]),
-        ] {
-            assert!(!fire_resolved_this_subphase(&gs.0, &record, |_| true));
-            let mut app = lock_app(GameStateResource(gs.0.clone()), record);
-            app.update();
-            let allocation = app.world().resource::<FireAllocationState>();
-            assert!(!allocation.committed);
-            assert_eq!(allocation.attacks.len(), 1);
-        }
-        // A teammate's resolve: the firer is not this peer's to command.
-        let record = record_of(vec![fire_event(phase)]);
-        assert!(fire_resolved_this_subphase(&gs.0, &record, |_| true));
-        assert!(!fire_resolved_this_subphase(&gs.0, &record, |_| false));
     }
 }

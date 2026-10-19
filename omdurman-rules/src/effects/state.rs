@@ -44,6 +44,10 @@ pub struct GameState {
     /// `units_fired_this_phase` at each phase change and turn end.
     #[serde(default)]
     pub units_fired_at_this_phase: Vec<UnitId>,
+    /// The fire orders allocated in the current fire subphase (§6.41,
+    /// §6.42), each marked once resolved. Cleared at every phase change.
+    #[serde(default)]
+    pub fire_allocation: Vec<AllocatedFire>,
     /// Named gunboats whose Maxim guns have fired this fire subphase (§6.42:
     /// they fire once in each subphase, independently of the gunboat's
     /// artillery, which `units_fired_this_phase` tracks). Cleared with it.
@@ -262,6 +266,7 @@ impl GameState {
             units_fired_this_phase: Vec::new(),
             gunboat_maxims_fired_this_phase: Vec::new(),
             units_fired_at_this_phase: Vec::new(),
+            fire_allocation: Vec::new(),
             mp_spent_this_turn: BTreeMap::new(),
             gunboats_upstream_this_turn: Vec::new(),
             zoc_stopped_this_turn: Vec::new(),
@@ -540,6 +545,7 @@ impl GameState {
             units_fired_this_phase: Vec::new(),
             gunboat_maxims_fired_this_phase: Vec::new(),
             units_fired_at_this_phase: Vec::new(),
+            fire_allocation: Vec::new(),
             mp_spent_this_turn: BTreeMap::new(),
             gunboats_upstream_this_turn: Vec::new(),
             zoc_stopped_this_turn: Vec::new(),

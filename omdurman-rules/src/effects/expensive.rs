@@ -256,6 +256,18 @@ fn any_fire_attack() -> FireAttack {
     }
 }
 
+/// A fire order of any kind (§6.41).
+fn any_fire_order() -> FireOrder {
+    match any_below(3) {
+        0 => FireOrder::Attack(any_fire_attack()),
+        1 => FireOrder::BreachWall {
+            firers: any_ids(2),
+            target: any_hexside(),
+        },
+        _ => FireOrder::SinkChain { firers: any_ids(2) },
+    }
+}
+
 fn any_melee_attack() -> MeleeAttack {
     MeleeAttack {
         attacker_player: any_player(),
@@ -520,7 +532,11 @@ fn with_demolition(state: &mut GameState) {
 /// Every rule-relevant field of `a` and `b` agrees; the append-only logs
 /// agree in length (a rejected effect must not append to them either).
 fn same_rule_state(a: &GameState, b: &GameState) -> bool {
-    let chain = |s: &GameState| s.chain.as_ref().map(|c| (c.hexes.clone(), c.sunk));
+    let chain = |s: &GameState| {
+        s.chain
+            .as_ref()
+            .map(|c| (c.hexes.clone(), c.sunk, c.struck.clone()))
+    };
     let melee = |s: &GameState| {
         s.pending_melee
             .as_ref()
@@ -536,6 +552,7 @@ fn same_rule_state(a: &GameState, b: &GameState) -> bool {
         && a.next_alloc_index == b.next_alloc_index
         && a.units_fired_this_phase == b.units_fired_this_phase
         && a.units_fired_at_this_phase == b.units_fired_at_this_phase
+        && a.fire_allocation == b.fire_allocation
         && a.mp_spent_this_turn == b.mp_spent_this_turn
         && a.gunboats_upstream_this_turn == b.gunboats_upstream_this_turn
         && a.zoc_stopped_this_turn == b.zoc_stopped_this_turn
@@ -832,6 +849,32 @@ fn howitzer_fire_is_safe() {
         disruption: any_disruption(),
     };
     check(state, effect);
+}
+
+#[cfg_attr(kani, kani::proof)]
+#[cfg_attr(kani, kani::unwind(8))]
+#[cfg_attr(
+    kani,
+    kani::stub(
+        crate::unit_profiles::profile_for_unit,
+        crate::proof_palette::palette_profile
+    )
+)]
+#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
+fn allocate_fire_is_safe() {
+    let mut state = any_state();
+    nudge(&mut state, |s| {
+        to_move(s, Phase::OffensiveFire(FireSubPhase::DirectFire))
+    });
+    let order = biased(any_fire_order(), || {
+        plausible_fire(&state, FireKind::Direct).map(FireOrder::Attack)
+    });
+    check(
+        state,
+        GameEffect::AllocateFire {
+            orders: vec![order],
+        },
+    );
 }
 
 #[cfg_attr(kani, kani::proof)]
@@ -1492,7 +1535,7 @@ fn two_moves_keep_the_invariants() {
 // decoder that panics on a malformed packet is a remote crash.
 
 /// Number of effect kinds (`GameEffect` variants).
-const EFFECT_KINDS: usize = 24;
+const EFFECT_KINDS: usize = 25;
 
 /// An arbitrary effect of kind `kind` (variant order), built from the same
 /// payload generators as the safety harnesses.
@@ -1613,7 +1656,16 @@ fn any_effect(kind: usize) -> GameEffect {
             phase: any_phase(),
         },
         22 => GameEffect::RollDesertion { roll: any_roll() },
-        _ => GameEffect::DeclineRetreatBeforeMelee,
+        23 => GameEffect::DeclineRetreatBeforeMelee,
+        _ => GameEffect::AllocateFire {
+            orders: {
+                let mut orders = vec![any_fire_order()];
+                if any() {
+                    orders.push(any_fire_order());
+                }
+                orders
+            },
+        },
     }
 }
 
@@ -1658,6 +1710,7 @@ wire_round_trip! {
     wire_round_trip_place_chain = 18;
     wire_round_trip_confirm_setup_ready = 19;
     wire_round_trip_artillery_breach_wall = 20;
+    wire_round_trip_allocate_fire = 24;
 }
 
 /// Decoding any 16 bytes as an effect returns an effect or an error, never
@@ -1700,6 +1753,7 @@ fn kind_of(effect: &GameEffect) -> usize {
         GameEffect::AdvancePhaseFrom { .. } => 21,
         GameEffect::RollDesertion { .. } => 22,
         GameEffect::DeclineRetreatBeforeMelee => 23,
+        GameEffect::AllocateFire { .. } => 24,
     }
 }
 
@@ -1849,6 +1903,7 @@ mod sampled {
         ("move_unit_is_safe", move_unit_is_safe),
         ("fire_combat_is_safe", fire_combat_is_safe),
         ("howitzer_fire_is_safe", howitzer_fire_is_safe),
+        ("allocate_fire_is_safe", allocate_fire_is_safe),
         ("declare_melee_is_safe", declare_melee_is_safe),
         ("resolve_melee_is_safe", resolve_melee_is_safe),
         ("retreat_before_melee_is_safe", retreat_before_melee_is_safe),

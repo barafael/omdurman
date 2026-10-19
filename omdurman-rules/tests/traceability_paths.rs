@@ -162,6 +162,7 @@ mod rules_effects_paths {
         let _ = omdurman_rules::effects::apply_demolition;
         let _ = omdurman_rules::effects::apply_friendlies_transport;
         let _ = omdurman_rules::effects::apply_howitzer_fire;
+        let _ = omdurman_rules::effects::apply_allocate_fire;
         let _ = omdurman_rules::effects::shot_kind;
         let _ = omdurman_rules::effects::apply_resolve_melee;
         let _ = omdurman_rules::effects::apply_place_reinforcements;
@@ -196,6 +197,7 @@ mod rules_effects_paths {
         let _ = GameState::historical_set_up_area;
         let _ = GameState::can_fire_at;
         let _ = GameState::can_fire_gunboat_maxims_at;
+        let _ = GameState::unresolved_fire;
         let _ = GameState::los_unit_blocker;
         let _ = GameState::fire_rays;
         let _ = GameState::can_melee;

@@ -84,7 +84,18 @@ impl Commander {
             state.phase,
             Phase::OffensiveFire(_) | Phase::DefensiveFire(_)
         ) {
-            planned = crate::fire_plan::plan_fire(state, candidates);
+            let fire = crate::fire_plan::plan_fire(state, candidates);
+            // §6.41: the whole fire plan is allocated, then resolved.
+            if player == state.phase_player() {
+                let ranked = rank(state, player, &fire);
+                if let Some(step) = crate::fire_plan::next_fire_step(state, &ranked, rng) {
+                    return step;
+                }
+            }
+            planned = fire
+                .into_iter()
+                .filter(|e| crate::fire_plan::order_of(e).is_none())
+                .collect::<Vec<_>>();
             if planned.is_empty() {
                 return GameEffect::AdvancePhase;
             }
@@ -163,15 +174,14 @@ pub fn pick_setup(
 /// an in-game commander must never submit an effect that would be rejected.
 /// Returns `GameEffect::AdvancePhase` when nothing legal remains.
 ///
-/// The ranking is deterministic (score, then enumeration order) and draws
-/// nothing from `_rng`; the parameter is kept so callers need not change if
-/// rng tie-breaking is added later. `memory` is the driver's
+/// The ranking is deterministic (score, then enumeration order); `rng`
+/// rolls only the dice of an allocated fire order's resolution (§6.41). `memory` is the driver's
 /// [`crate::move_memory::MoveMemory`], fed with the pick.
 pub fn pick_validated(
     state: &GameState,
     player: Player,
     candidates: &[GameEffect],
-    _rng: &mut BotRng,
+    rng: &mut BotRng,
     memory: &mut crate::move_memory::MoveMemory,
 ) -> GameEffect {
     // Only `player`'s own decisions: never the other side's §7.5 retreat
@@ -182,12 +192,24 @@ pub fn pick_validated(
     // (§6.14) before ranking -- see `crate::fire_plan`. Movement: a unit
     // steps only onto a hex worth more to it ("position values" below), and
     // never back onto ground it covered this phase (`crate::move_memory`).
-    let planned;
+    let planned: Vec<GameEffect>;
     let candidates = if matches!(
         state.phase,
         Phase::OffensiveFire(_) | Phase::DefensiveFire(_)
     ) {
-        planned = crate::fire_plan::plan_fire(state, candidates);
+        let fire = crate::fire_plan::plan_fire(state, candidates);
+        // §6.41: the whole fire plan is allocated, then resolved; what is
+        // left to choose from is everything but fire.
+        if player == state.phase_player() {
+            let ranked = rank(state, player, &fire);
+            if let Some(step) = crate::fire_plan::next_fire_step(state, &ranked, rng) {
+                return step;
+            }
+        }
+        planned = fire
+            .into_iter()
+            .filter(|e| crate::fire_plan::order_of(e).is_none())
+            .collect();
         &planned[..]
     } else {
         candidates

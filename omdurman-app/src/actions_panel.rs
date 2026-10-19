@@ -77,7 +77,7 @@ pub fn draw_actions_section(
     clicked_section: &mut Option<String>,
     movement_path: &MovementPath,
     fire_targets: &mut crate::fire::FireTargetCache,
-    fire_allocation: Option<&mut crate::fire_allocation::FireAllocationState>,
+    mut fire_allocation: Option<&mut crate::fire_allocation::FireAllocationState>,
     local_may_act: bool,
     (tray_open, spectator): (bool, bool),
     commands_out: &mut Vec<PickerCommand>,
@@ -114,8 +114,33 @@ pub fn draw_actions_section(
     let staged = fire_allocation
         .as_ref()
         .filter(|a| !a.committed)
-        .map_or(0, |a| a.attacks.len());
-    if let Some(allocation) = fire_allocation.filter(|a| !a.committed && !a.attacks.is_empty()) {
+        .map_or(0, |a| a.staged());
+    // §6.41: fire the side allocated and has not resolved -- its own before
+    // a reconnect, or a teammate's -- holds the phase; offer to resolve it.
+    let allocated_unresolved = !fire_committed
+        && staged == 0
+        && state.0.phase.is_fire()
+        && state.0.unresolved_fire().is_some();
+    if let Some(allocation) = fire_allocation
+        .as_deref_mut()
+        .filter(|_| allocated_unresolved)
+    {
+        if ui
+            .add(
+                egui::Button::new("Resolve the allocated fire")
+                    .fill(crate::ui::palette::BTN_GO)
+                    .min_size(egui::Vec2::new(120.0, 28.0)),
+            )
+            .on_hover_text(
+                "Fire was allocated this sub-phase but not resolved: roll and resolve it (§6.41)",
+            )
+            .clicked()
+        {
+            allocation.execute_requested = true;
+        }
+        ui.add_space(6.0);
+    }
+    if let Some(allocation) = fire_allocation.filter(|a| !a.committed && a.staged() > 0) {
         // A disclosure line, not a button: filled like "Resolve N attacks"
         // just below, a "Hide staged attacks" button read as a second
         // primary action.

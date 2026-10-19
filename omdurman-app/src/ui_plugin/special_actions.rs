@@ -476,16 +476,16 @@ pub(crate) fn artillery_breach_ui(
     game_state: Option<Res<crate::GameStateResource>>,
     state: Res<crate::picker::PickerState>,
     placed_units: Query<(Entity, &crate::picker::PlacedUnit)>,
-    mut submit: crate::submit::CheckedSubmit,
+    mut dispatches: ResMut<crate::dispatch::Dispatches>,
     peers: crate::peers::Peers,
-    mut game_rng: ResMut<crate::GameRng>,
+    mut allocation: ResMut<crate::fire_allocation::FireAllocationState>,
     mut layout: ResMut<crate::ScreenLayout>,
     mut fire_targets: ResMut<crate::fire::FireTargetCache>,
     mut aimed: ResMut<crate::hexside_layer::HighlightedHexside>,
     view: crate::picker::HexMapView,
     mut memo: Local<BreachCardMemo>,
 ) {
-    use omdurman_rules::effects::GameEffect;
+    use omdurman_rules::effects::FireOrder;
 
     // Cleared every frame; a hovered wall button below sets it again.
     aimed.set_if_neq(crate::hexside_layer::HighlightedHexside(None));
@@ -498,7 +498,8 @@ pub(crate) fn artillery_breach_ui(
         return;
     }
     let firing_player = gs.0.phase_player();
-    if !peers.may_act(firing_player) {
+    // §6.41: once the sub-phase's fire resolves, nothing more is allocated.
+    if !peers.may_act(firing_player) || allocation.committed {
         return;
     }
     let Some((uid, _)) = crate::picker::selected_unit_id(&state, &placed_units) else {
@@ -568,6 +569,7 @@ pub(crate) fn artillery_breach_ui(
         .iter()
         .map(|&(edge, range, _)| (edge, range))
         .collect();
+    let mut to_stage: Option<FireOrder> = None;
     let Ok(ctx) = contexts.ctx_mut() else { return };
     crate::ui::stacked_card(
         ctx,
@@ -585,6 +587,9 @@ pub(crate) fn artillery_breach_ui(
             ui.label(
                 crate::ui::text::note("Fire at a wall: a combat result of 2 or more breaches it and eliminates one enemy unit beside it."),
             );
+            ui.label(crate::ui::text::note(
+                "A shot is staged with the sub-phase's other fire and resolved with it (§6.41).",
+            ));
             if !offer.partners.is_empty() {
                 ui.add_space(2.0);
                 ui.label(crate::ui::text::note(
@@ -617,13 +622,9 @@ pub(crate) fn artillery_breach_ui(
                         "No roll gives these batteries the combat result of 3 that sinks the chain: add batteries or close the range.",
                     );
                 if button.clicked() {
-                    submit.submit(
-                        &gs.0,
-                        omdurman_net::GameEvent::Effect(GameEffect::SinkChain {
-                            firers: firers.clone(),
-                            roll: game_rng.roll_d10(),
-                        }),
-                    );
+                    to_stage = Some(FireOrder::SinkChain {
+                        firers: firers.clone(),
+                    });
                 }
             }
             let mut fire_at: Option<omdurman_types::HexsideRef> = None;
@@ -662,20 +663,30 @@ pub(crate) fn artillery_breach_ui(
                 fire_at = Some(edge);
             }
             if let Some(edge) = fire_at {
-                // The "Wall Breached" / "Breach Attempt Failed" slip on the
-                // echo reports the outcome; no slip for the click.
-                let roll = game_rng.roll_d10();
-                submit.submit(
-                    &gs.0,
-                    omdurman_net::GameEvent::Effect(GameEffect::ArtilleryBreachWall {
-                        firers: firers.clone(),
-                        target: edge,
-                        roll,
-                    }),
-                );
+                to_stage = Some(FireOrder::BreachWall {
+                    firers: firers.clone(),
+                    target: edge,
+                });
             }
         },
     );
+    // Staged into the tray, resolved with the rest of the sub-phase's fire;
+    // the "Wall Breached" / "Breach Attempt Failed" slip reports the outcome.
+    if let Some(order) = to_stage {
+        if order
+            .shots()
+            .iter()
+            .any(|shot| allocation.stages_unit(shot.unit))
+        {
+            dispatches.push(
+                "Fire Allocation",
+                "These batteries have already allocated their fire.",
+            );
+        } else {
+            allocation.specials.push(order);
+            allocation.panel_open = true;
+        }
+    }
     if joined != memo.joined {
         memo.joined = joined;
         memo.offer = None;

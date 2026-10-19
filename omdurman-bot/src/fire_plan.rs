@@ -13,10 +13,11 @@
 //! The expected value only reads the attack and the board -- never the dice
 //! already embedded in a candidate -- so planning cannot peek at outcomes.
 
+use crate::rng::BotRng;
 use omdurman_rules::combat_results_table::{FireFactorRow, combat_results_table};
 use omdurman_rules::effects::{
-    GameEffect, GameState, combine_fire_attacks, fire_target_units, firer_contributions,
-    mandatory_fire_modifiers, target_defence_modifier, total_fire_factor,
+    FireOrder, GameEffect, GameState, apply_effect, combine_fire_attacks, fire_target_units,
+    firer_contributions, mandatory_fire_modifiers, target_defence_modifier, total_fire_factor,
 };
 use omdurman_rules::{
     BritishLeader, CombatResult, DieRoll, FireAttack, FireKind, UnitIdentity, UnitPlacement,
@@ -331,6 +332,55 @@ pub fn plan_fire(state: &GameState, candidates: &[GameEffect]) -> Vec<GameEffect
     others
 }
 
+/// The fire order a fire effect resolves (§6.41), if it is one.
+pub fn order_of(effect: &GameEffect) -> Option<FireOrder> {
+    match effect {
+        GameEffect::FireCombat { attack, .. } | GameEffect::HowitzerFire { attack, .. } => {
+            Some(FireOrder::Attack(attack.clone()))
+        }
+        GameEffect::ArtilleryBreachWall { firers, target, .. } => Some(FireOrder::BreachWall {
+            firers: firers.clone(),
+            target: *target,
+        }),
+        GameEffect::SinkChain { firers, .. } => Some(FireOrder::SinkChain {
+            firers: firers.clone(),
+        }),
+        _ => None,
+    }
+}
+
+/// The firing side's next fire decision under §6.41 ("first allocate all
+/// of his fire attacks ... then resolves his attacks"): resolve the next
+/// allocated order that can still be resolved; else, before any fire has
+/// resolved, allocate the best set of `ranked` fire candidates (best
+/// first) the engine accepts together; `None` once the subphase's fire is
+/// spent.
+pub fn next_fire_step(
+    state: &GameState,
+    ranked: &[GameEffect],
+    rng: &mut BotRng,
+) -> Option<GameEffect> {
+    if let Some(order) = state.unresolved_fire() {
+        return Some(order.resolution(state, rng.game_rng()));
+    }
+    if state.fire_resolution_begun() {
+        return None;
+    }
+    let mut orders: Vec<FireOrder> = Vec::new();
+    for order in ranked.iter().filter_map(order_of) {
+        let mut trial = orders.clone();
+        trial.push(order);
+        let allocation = GameEffect::AllocateFire { orders: trial };
+        if apply_effect(&mut state.clone(), &allocation).is_ok() {
+            let GameEffect::AllocateFire { orders: accepted } = allocation else {
+                unreachable!("built just above")
+            };
+            orders = accepted;
+        }
+    }
+    (!orders.is_empty()).then_some(GameEffect::AllocateFire { orders })
+}
+
 /// Expected value of a declared melee for the attacker: expected victory
 /// points it destroys minus those it loses (§7.3: both sides roll on the
 /// Combat Results Table at once, melee factors as fire factors, §7.7
@@ -385,6 +435,63 @@ mod tests {
     use super::*;
     use omdurman_rules::unit_profiles::profile_for_unit;
     use omdurman_rules::{FireSubPhase, Phase, UnitId};
+
+    /// §6.41: the commander allocates its whole fire plan before resolving
+    /// any of it, then resolves every order -- not one shot per subphase.
+    #[test]
+    fn the_commander_allocates_all_fire_then_resolves_it() {
+        let mut state = GameState::new(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::AngloEgyptian;
+        let mut placed: Vec<UnitId> = Vec::new();
+        let mut place = |state: &mut GameState, want: fn(&UnitIdentity) -> bool, at: HexCoord| {
+            let id = UnitId::ALL
+                .iter()
+                .copied()
+                .filter(|id| !placed.contains(id))
+                .find(|id| profile_for_unit(*id).is_some_and(|p| want(&p.identity)))
+                .expect("counter");
+            placed.push(id);
+            state.units.push(UnitPlacement {
+                id,
+                position: at,
+                profile: profile_for_unit(id).unwrap(),
+                state: Default::default(),
+            });
+        };
+        let infantry = |i: &UnitIdentity| matches!(i, UnitIdentity::AngloEgyptianInfantry { .. });
+        let tribal = |i: &UnitIdentity| matches!(i, UnitIdentity::DervishTribal { .. });
+        // Two battalions, each beside a Dervish stack the other cannot see
+        // past: two attacks.
+        place(&mut state, infantry, HexCoord::new(0, 0));
+        place(&mut state, tribal, HexCoord::new(1, 0));
+        place(&mut state, infantry, HexCoord::new(0, 6));
+        place(&mut state, tribal, HexCoord::new(1, 6));
+
+        let mut rng = crate::rng::BotRng::from_seed(3);
+        let mut memory = crate::move_memory::MoveMemory::default();
+        let mut steps: Vec<&'static str> = Vec::new();
+        for _ in 0..10 {
+            let candidates = crate::actions::legal_actions(&state, &mut rng);
+            let pick = crate::commanders::pick_validated(
+                &state,
+                Player::AngloEgyptian,
+                &candidates,
+                &mut rng,
+                &mut memory,
+            );
+            if pick == GameEffect::AdvancePhase {
+                break;
+            }
+            if let GameEffect::AllocateFire { orders } = &pick {
+                assert_eq!(orders.len(), 2, "both attacks allocated at once");
+            }
+            apply_effect(&mut state, &pick).expect("the engine accepts the pick");
+            steps.push((&pick).into());
+        }
+        // (Then any §6.82 advances into hexes the fire emptied.)
+        assert_eq!(steps[..3], ["AllocateFire", "FireCombat", "FireCombat"]);
+    }
 
     /// §6.14: a gunboat, like any unit, is fired at once per fire phase --
     /// so two forts that both bear on her fire as one combined attack (a

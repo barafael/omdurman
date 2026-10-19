@@ -8,7 +8,7 @@
 //! alone.
 
 use omdurman_rules::combat_results_table::FireFactorRow;
-use omdurman_rules::effects::{GameEffect, GameState, Observation};
+use omdurman_rules::effects::{FireOrder, GameEffect, GameState, Observation};
 use omdurman_rules::turn_summary::TurnEventRecord;
 use omdurman_rules::unit_profiles::profile_for_unit;
 use omdurman_rules::{
@@ -309,6 +309,22 @@ pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
         }
         GameEffect::SinkChain { firers, roll } => {
             format!("SinkChain {} roll {}", names(firers), roll.value())
+        }
+        GameEffect::AllocateFire { orders } => {
+            let orders: Vec<String> = orders
+                .iter()
+                .map(|order| match order {
+                    FireOrder::Attack(attack) => describe_fire_attack(attack, "fire"),
+                    FireOrder::BreachWall { firers, target } => format!(
+                        "breach {}-{} with {}",
+                        hex(target.a),
+                        hex(target.b),
+                        names(firers)
+                    ),
+                    FireOrder::SinkChain { firers } => format!("chain with {}", names(firers)),
+                })
+                .collect();
+            format!("AllocateFire [{}]", orders.join("; "))
         }
         GameEffect::DeployUnit(p) => {
             format!(
