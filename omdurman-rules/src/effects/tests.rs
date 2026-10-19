@@ -12119,6 +12119,12 @@ mod tests {
             state.can_retreat_before_melee(cavalry, HexCoord::new(7, 5)),
             Err(RuleError::RetreatPathBlocked(_, _))
         ));
+        assert!(state.retreat_paths(cavalry, HexCoord::new(7, 5)).is_empty());
+        // Away from it, by the hex between.
+        assert_eq!(
+            state.retreat_paths(cavalry, HexCoord::new(3, 5)),
+            vec![HexCoord::new(4, 5)]
+        );
         // Onto a friendly battalion is fine.
         assert!(
             state

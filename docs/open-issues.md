@@ -173,7 +173,6 @@ seat handling).
 - The LOS overlay has no ray between two chosen hexes.
 - Artillery-only targets (§6.61–6.63) get a refusal card on hover, but no
   board marker before it.
-- The retreat overlay shows the destinations but not the two-hex path (§7.5).
 - The unit inspector has no status pips (loaded, engines lost/drifting,
   constructing, demolishing, retreated this turn), and there is no right-click
   unit card.

@@ -89,6 +89,33 @@ impl GameState {
         Ok(())
     }
 
+    /// The hexes a two-hex retreat of `unit_id` to `to` may pass through
+    /// (§7.5): the common neighbours of its hex and `to` it may enter and
+    /// leave like a move -- no enemy, no Nile, no closed hexside (§5.23
+    /// wall, §9.231/§9.233 Zariba), no walled city it is barred from.
+    /// Empty when no way is open (or the unit is not on the board).
+    pub fn retreat_paths(&self, unit_id: UnitId, to: HexCoord) -> Vec<HexCoord> {
+        let Some(unit) = self.find_unit(unit_id) else {
+            return Vec::new();
+        };
+        let owner = unit.profile.identity.owner();
+        let enemy_at = |hex: HexCoord| {
+            self.units
+                .iter()
+                .any(|u| u.position == hex && u.profile.identity.owner() != owner)
+        };
+        unit.position
+            .neighbors()
+            .into_iter()
+            .filter(|&mid| {
+                mid.is_adjacent_to(to)
+                    && !enemy_at(mid)
+                    && self.check_land_step(unit, unit.position, mid).is_ok()
+                    && self.check_land_step(unit, mid, to).is_ok()
+            })
+            .collect()
+    }
+
     /// Read-only check of whether `unit_id` may retreat two hexes to `to`
     /// before an impending infantry melee (§7.5): Melee phase, a pending
     /// melee with an infantry attacker on the unit's hex, cavalry/camel kind,
@@ -167,13 +194,7 @@ impl GameState {
         // unit could move -- no enemy, no Nile, no closed hexside (§5.23
         // wall, §9.231/§9.233 Zariba, the khor is merely costly), no entry
         // into the walled city by a unit barred from it (§5.23).
-        let open_path = unit.position.neighbors().iter().any(|&mid| {
-            mid.is_adjacent_to(to)
-                && !enemy_at(mid)
-                && self.check_land_step(unit, unit.position, mid).is_ok()
-                && self.check_land_step(unit, mid, to).is_ok()
-        });
-        if !open_path {
+        if self.retreat_paths(unit_id, to).is_empty() {
             return Err(RuleError::RetreatPathBlocked(unit.position, to));
         }
         Ok(())

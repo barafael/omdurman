@@ -101,15 +101,20 @@ fn valid_retreat_hexes(unit: UnitId, gs: &GameState) -> Vec<HexCoord> {
 #[derive(Component)]
 pub struct RetreatTargetRing;
 
+/// What [`retreat_overlay_mesh`] last drew: the threatened unit, its
+/// destinations, and the path to the hovered one.
+type RetreatOverlayKey = (UnitId, Vec<HexCoord>, Option<[HexCoord; 3]>);
+
 #[allow(clippy::too_many_arguments)]
 pub fn retreat_overlay_mesh(
     mut commands: Commands,
-    hex: crate::HexRender,
+    arrows: crate::DirectionArrowCtx,
+    hovered: Res<crate::HoveredHex>,
     selection: RetreatSelection,
     game_state: Option<Res<GameStateResource>>,
     peers: Peers,
     existing: Query<Entity, With<RetreatTargetRing>>,
-    mut last: Local<Option<(UnitId, Vec<HexCoord>)>>,
+    mut last: Local<Option<RetreatOverlayKey>>,
     placed_changed: Query<(), Changed<PlacedUnit>>,
     (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
@@ -123,6 +128,7 @@ pub fn retreat_overlay_mesh(
     let inputs_moved = invalidated
         || game_state.as_ref().is_some_and(|gs| gs.is_changed())
         || selection.state.is_changed()
+        || hovered.is_changed()
         || peers.changed()
         || !placed_changed.is_empty();
     if !inputs_moved {
@@ -151,18 +157,35 @@ pub fn retreat_overlay_mesh(
         }
         return;
     };
-    // Same threatened unit, same destinations: leave the rings in place.
-    if last
-        .as_ref()
-        .is_some_and(|(last_unit, last_targets)| *last_unit == unit && *last_targets == targets)
-    {
+    // §7.5: the way to the hovered destination -- through the first of the
+    // (at most two) hexes the two-hex retreat may pass.
+    let path = hovered.0.filter(|h| targets.contains(h)).and_then(|to| {
+        let gs = &game_state.as_deref()?.0;
+        let from = gs.find_unit(unit)?.position;
+        let mid = *gs.retreat_paths(unit, to).first()?;
+        Some([from, mid, to])
+    });
+    // Same threatened unit, destinations and path: leave them in place.
+    let key = (unit, targets, path);
+    if last.as_ref() == Some(&key) {
         return;
     }
-    let mut rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
-    for target in &targets {
-        rings.ring(RetreatTargetRing, *target, 1.5, 1.0, &hex.assets.orange);
+    let mut rings = crate::overlay::ring_batch(&mut commands, &arrows.hex, existing.iter());
+    for target in &key.1 {
+        rings.ring(
+            RetreatTargetRing,
+            *target,
+            1.5,
+            1.0,
+            &arrows.hex.assets.orange,
+        );
     }
-    *last = Some((unit, targets));
+    if let Some([from, mid, to]) = path {
+        for (a, b) in [(from, mid), (mid, to)] {
+            crate::combat_ui::direction_arrow(rings.commands(), &arrows, a, b, RetreatTargetRing);
+        }
+    }
+    *last = Some(key);
 }
 
 /// The defender's §7.5 retreat-window click: on the threatened hex it selects
