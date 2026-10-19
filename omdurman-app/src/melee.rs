@@ -27,28 +27,171 @@ use crate::{
     picker::{PickerState, PlacedUnit, selected_origin_hex, selected_unit_ids},
 };
 
-/// The members of the current selection that may melee `target` now
-/// (§7.4/§7.5, as the engine judges each): every melee-capable unit of a
-/// double-clicked tile ([`PickerState::SelectedTile`]), or a single-clicked
-/// counter alone -- melee is each unit's own choice, so the counter's
-/// stackmates stay out of the attack (§7.7 takes "losses from meleeing units
-/// first"). The declared attack carries exactly these.
-fn selected_melee_attackers(
-    state: &PickerState,
-    placed_units: &Query<(Entity, &PlacedUnit)>,
-    gs: &GameState,
-    target: HexCoord,
-) -> Vec<UnitId> {
-    selected_unit_ids(state, placed_units)
-        .into_iter()
-        .filter(|&id| gs.can_melee(id, target).is_ok())
-        .collect()
+/// The melee being formed from the selection (§7.4: melee is each unit's
+/// own choice; §7.6: a melee may be made from several adjacent hexes):
+/// the selected units, those held back, and units of neighbouring hexes
+/// that join. Starts afresh whenever the selection changes.
+#[derive(Resource, Default, Debug, PartialEq)]
+pub(crate) struct MeleeGroupChoice {
+    selection: Vec<UnitId>,
+    held: Vec<UnitId>,
+    joined: Vec<UnitId>,
+}
+
+impl MeleeGroupChoice {
+    /// The units that would attack `target`: the selection less those held
+    /// back, plus those joined, each able to melee it.
+    pub(crate) fn attackers(&self, gs: &GameState, target: HexCoord) -> Vec<UnitId> {
+        self.selection
+            .iter()
+            .filter(|id| !self.held.contains(id))
+            .chain(&self.joined)
+            .copied()
+            .filter(|&id| gs.can_melee(id, target).is_ok())
+            .collect()
+    }
+
+    /// Friendly units outside the selection that may join: they border a
+    /// hex the selection may melee, and may melee it themselves.
+    pub(crate) fn joinable(&self, gs: &GameState) -> Vec<UnitId> {
+        let Some(owner) = self
+            .selection
+            .first()
+            .and_then(|id| gs.find_unit(*id))
+            .map(|u| u.profile.identity.owner())
+        else {
+            return Vec::new();
+        };
+        let targets: Vec<HexCoord> = self
+            .selection
+            .iter()
+            .flat_map(|&id| valid_target_hexes(id, gs))
+            .collect();
+        gs.units
+            .iter()
+            .filter(|u| u.profile.identity.owner() == owner && !self.selection.contains(&u.id))
+            .filter(|u| targets.iter().any(|&t| gs.can_melee(u.id, t).is_ok()))
+            .map(|u| u.id)
+            .collect()
+    }
+}
+
+/// Keep the [`MeleeGroupChoice`] on the current selection: a new selection
+/// (or leaving the Melee phase) starts it afresh.
+pub(crate) fn sync_melee_group(
+    state: Res<PickerState>,
+    placed_units: Query<(Entity, &PlacedUnit)>,
+    game_state: Option<Res<GameStateResource>>,
+    mut choice: ResMut<MeleeGroupChoice>,
+) {
+    let in_melee = game_state
+        .as_deref()
+        .is_some_and(|gs| matches!(gs.0.phase, Phase::Melee));
+    let ids = if in_melee {
+        selected_unit_ids(&state, &placed_units)
+    } else {
+        Vec::new()
+    };
+    if ids != choice.selection {
+        *choice = MeleeGroupChoice {
+            selection: ids,
+            ..Default::default()
+        };
+    }
+}
+
+/// The Melee group card: with units selected in the Melee phase, tick which
+/// of them attack (§7.4: a stack may keep units out of the fight -- and so
+/// out of the losses, §7.7) and which units of neighbouring hexes join the
+/// melee (§7.6). The next click on an enemy hex declares it.
+pub(crate) fn melee_group_card(
+    mut contexts: EguiContexts,
+    game_state: Option<Res<GameStateResource>>,
+    peers: Peers,
+    mut choice: ResMut<MeleeGroupChoice>,
+    mut layout: ResMut<crate::ScreenLayout>,
+) {
+    let Some(gs) = game_state else { return };
+    if !matches!(gs.0.phase, Phase::Melee)
+        || gs.0.pending_melee.is_some()
+        || !peers.may_act(gs.0.phase_player())
+    {
+        return;
+    }
+    let fighters: Vec<UnitId> = choice
+        .selection
+        .iter()
+        .copied()
+        .filter(|&id| !valid_target_hexes(id, &gs.0).is_empty())
+        .collect();
+    let joinable = choice.joinable(&gs.0);
+    if fighters.len() < 2 && joinable.is_empty() {
+        return;
+    }
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    let mut toggle_held: Option<UnitId> = None;
+    let mut toggle_joined: Option<UnitId> = None;
+    crate::ui::stacked_card(
+        ctx,
+        &mut layout,
+        egui::Id::new("melee_group"),
+        crate::ui::frames::card(crate::ui::palette::CARD_FIRE),
+        |ui| {
+            ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
+            crate::rulebook::refs_label(
+                ui,
+                "Melee group (§7.4, §7.6)",
+                crate::ui::palette::CARD_TITLE_RUST,
+                13.0,
+            );
+            ui.label(crate::ui::text::note(
+                "Tick the units that attack, then click the enemy hex.",
+            ));
+            for &id in &fighters {
+                let mut on = !choice.held.contains(&id);
+                let name = crate::combat_ui::unit_name(id, Some(&gs.0));
+                if ui.checkbox(&mut on, name).changed() {
+                    toggle_held = Some(id);
+                }
+            }
+            if !joinable.is_empty() {
+                ui.add_space(4.0);
+                ui.label(crate::ui::text::note("Join from a neighbouring hex:"));
+                for &id in &joinable {
+                    let mut on = choice.joined.contains(&id);
+                    let at = gs.0.find_unit(id).map(|u| u.position);
+                    let name = crate::combat_ui::unit_name(id, Some(&gs.0));
+                    let label = match at {
+                        Some(at) => format!("{name}  {at}"),
+                        None => name,
+                    };
+                    if ui.checkbox(&mut on, label).changed() {
+                        toggle_joined = Some(id);
+                    }
+                }
+            }
+        },
+    );
+    if let Some(id) = toggle_held {
+        if let Some(i) = choice.held.iter().position(|h| *h == id) {
+            choice.held.remove(i);
+        } else {
+            choice.held.push(id);
+        }
+    }
+    if let Some(id) = toggle_joined {
+        if let Some(i) = choice.joined.iter().position(|h| *h == id) {
+            choice.joined.remove(i);
+        } else {
+            choice.joined.push(id);
+        }
+    }
 }
 
 /// The acting melee group of the current selection: the origin hex plus a
 /// melee-capable representative, for the target rings and the direction
 /// arrow (`can_melee` per candidate target). The attack itself is built from
-/// [`selected_melee_attackers`].
+/// the [`MeleeGroupChoice`].
 fn selected_melee_group(
     state: &PickerState,
     placed_units: &Query<(Entity, &PlacedUnit)>,
@@ -214,6 +357,7 @@ pub(crate) fn melee_hexsides(
 /// On left-click of a valid adjacent enemy hex while a melee-capable unit is
 /// selected during the Melee phase, broadcast a `DeclareMelee` effect with both
 /// pre-rolled dice.
+#[allow(clippy::too_many_arguments)]
 pub fn handle_melee_combat(
     mut clicks: bevy::ecs::message::MessageReader<MeleeClick>,
     mut state: ResMut<PickerState>,
@@ -222,6 +366,7 @@ pub fn handle_melee_combat(
     mut rng: Option<ResMut<GameRng>>,
     mut submit: crate::submit::CheckedSubmit,
     peers: Peers,
+    choice: Res<MeleeGroupChoice>,
 ) {
     // Routed by `board_click::route_board_clicks` (Melee-phase release, no
     // melee pending, the phase player's seat).
@@ -256,17 +401,22 @@ pub fn handle_melee_combat(
     if !enemy_there {
         return;
     }
+    // The melee group (§7.4, §7.6): the selection less those held back,
+    // plus units joined from neighbouring hexes.
+    let attackers = choice.attackers(&gs.0, target);
     // `can_melee` checks hexside blocking (§7.2) internally via `self.board`.
     // A refused attack on an enemy-held hex says why.
-    if let Err(error) = gs.0.can_melee(attacker, target) {
+    if attackers.is_empty() {
+        let error = gs.0.can_melee(attacker, target).err().map_or_else(
+            || "every unit able is held back".to_string(),
+            |e| e.to_string(),
+        );
         info!(target.q = target.q, target.r = target.r, %error, "melee refused");
         if let Some(dispatches) = submit.dispatches.as_deref_mut() {
             dispatches.push("Field Telegraph", format!("Melee refused — {error}."));
         }
         return;
     }
-
-    let attackers = selected_melee_attackers(&state, &placed_units, &gs.0, target);
     let Some(attack) = build_melee_attack_from(&gs.0, &attackers, target) else {
         return;
     };
@@ -545,14 +695,10 @@ pub(crate) struct MeleePreviewCache {
 /// unit and the attack assembly with its modifiers.
 fn melee_preview_for(
     gs: &GameState,
-    state: &PickerState,
-    placed_units: &Query<(Entity, &PlacedUnit)>,
+    attackers: &[UnitId],
     target: omdurman_types::HexCoord,
 ) -> Option<MeleePreview> {
-    let (attacker, _) = selected_melee_group(state, placed_units, gs)?;
-    gs.can_melee(attacker, target).ok()?;
-    let attackers = selected_melee_attackers(state, placed_units, gs, target);
-    let attack = build_melee_attack_from(gs, &attackers, target)?;
+    let attack = build_melee_attack_from(gs, attackers, target)?;
 
     // Collect attacker and defender details (identical counters counted:
     // "4\u{d7} Kehena: 6", not four lines of it).
@@ -635,11 +781,11 @@ pub fn melee_combat_preview_ui(
     mut contexts: EguiContexts,
     state: Res<PickerState>,
     game_state: Option<Res<GameStateResource>>,
-    placed_units: Query<(Entity, &PlacedUnit)>,
     hovered: Res<crate::HoveredHex>,
     mut layout: ResMut<crate::ScreenLayout>,
     mut sticky: Local<Option<omdurman_types::HexCoord>>,
     mut cache: Local<Option<MeleePreviewCache>>,
+    choice: Res<MeleeGroupChoice>,
 ) {
     let gs_moved = game_state.as_ref().is_some_and(|gs| gs.is_changed());
     let Some(gs) = game_state else { return };
@@ -662,17 +808,21 @@ pub fn melee_combat_preview_ui(
     // run only when one of them, the picker state or the engine state moved.
     // (The ids also catch a selected counter's sprite going away a frame
     // after the engine removed its unit.)
-    let selected = selected_unit_ids(&state, &placed_units);
+    // The melee group's attackers on this target (the selection less those
+    // held back, plus those joined) key the card.
+    let selected = choice.attackers(&gs.0, target);
     let stale = gs_moved
         || state.is_changed()
+        || choice.is_changed()
         || cache
             .as_ref()
             .is_none_or(|c| c.target != target || c.selected != selected);
     if stale {
+        let preview = melee_preview_for(&gs.0, &selected, target);
         *cache = Some(MeleePreviewCache {
             target,
             selected,
-            preview: melee_preview_for(&gs.0, &state, &placed_units, target),
+            preview,
         });
     }
     let Some(preview) = cache.as_ref().and_then(|c| c.preview.as_ref()) else {
@@ -937,7 +1087,11 @@ mod tests {
             let gs = gs.clone();
             world
                 .run_system_once(move |placed: Query<(Entity, &PlacedUnit)>| {
-                    selected_melee_attackers(&state, &placed, &gs, target)
+                    MeleeGroupChoice {
+                        selection: selected_unit_ids(&state, &placed),
+                        ..Default::default()
+                    }
+                    .attackers(&gs, target)
                 })
                 .expect("the query runs")
         };
@@ -1146,5 +1300,61 @@ mod hexside_mark_tests {
             super::melee_hexsides(&gs, UnitId::BritishArmy_0_0, &targets),
             vec![(edge, true)]
         );
+    }
+}
+
+#[cfg(test)]
+mod group_tests {
+    use super::MeleeGroupChoice;
+    use omdurman_rules::effects::{GameEffect, apply_effect, build_melee_attack_from};
+    use omdurman_rules::{DieRoll, Phase, UnitId, UnitPlacement};
+    use omdurman_types::{HexCoord, Player, Scenario};
+
+    /// §7.4/§7.6: the melee group holds back the units unticked and takes in
+    /// those joined from a neighbouring hex; the engine accepts the melee
+    /// from both hexes.
+    #[test]
+    fn a_melee_group_holds_back_and_joins_from_a_neighbour() {
+        let mut gs = omdurman_rules::effects::GameState::new(Scenario::Campaign);
+        gs.phase = Phase::Melee;
+        gs.active_player = Player::Dervish;
+        let target = HexCoord::new(1, 0);
+        let (a, b, c) = (
+            UnitId::Baggara_0_0,
+            UnitId::Baggara_0_1,
+            UnitId::Baggara_1_0,
+        );
+        for (id, hex) in [
+            (a, HexCoord::new(0, 0)),
+            (b, HexCoord::new(0, 0)),
+            (c, HexCoord::new(1, 1)),
+            (UnitId::BritishArmy_0_0, target),
+        ] {
+            gs.units.push(UnitPlacement {
+                id,
+                position: hex,
+                profile: omdurman_rules::unit_profiles::profile_for_unit(id).unwrap(),
+                state: Default::default(),
+            });
+        }
+        let choice = MeleeGroupChoice {
+            selection: vec![a, b],
+            held: vec![b],
+            joined: vec![c],
+        };
+        assert!(choice.joinable(&gs).contains(&c));
+        let attackers = choice.attackers(&gs, target);
+        assert_eq!(attackers, vec![a, c]);
+        let attack = build_melee_attack_from(&gs, &attackers, target).expect("from two hexes");
+        apply_effect(
+            &mut gs,
+            &GameEffect::DeclareMelee {
+                attack,
+                attacker_roll: DieRoll::One,
+                defender_roll: DieRoll::One,
+                disruption: Default::default(),
+            },
+        )
+        .expect("the engine takes a melee from several hexes");
     }
 }

@@ -122,7 +122,8 @@ impl Plugin for GamePlugin {
                             .in_set(crate::board_click::BoardClickHandlerSet),
                         crate::melee::handle_melee_combat
                             .in_set(crate::GameSet)
-                            .in_set(crate::board_click::BoardClickHandlerSet),
+                            .in_set(crate::board_click::BoardClickHandlerSet)
+                            .after(crate::melee::sync_melee_group),
                         crate::melee::handle_advance_after_combat
                             .in_set(crate::GameSet)
                             .in_set(crate::board_click::BoardClickHandlerSet)
@@ -256,6 +257,7 @@ impl Plugin for GamePlugin {
                         .after(crate::ui_plugin::mode_toolbar_ui),
                     crate::fire_allocation::resolve_fire_on_enter,
                     crate::melee::melee_reaction_ui,
+                    crate::melee::melee_group_card,
                     crate::overview::unit_overview_ui
                         .in_set(crate::ui_plugin::PanelUiSet)
                         .in_set(crate::ui_plugin::LeftRailSet)

@@ -532,10 +532,14 @@ pub fn build_melee_attack(
 /// unit's own choice (§7.4 says who *may* melee attack; §7.7 takes "losses
 /// from meleeing units first", so a stack may keep units out of the fight),
 /// and the caller names the subunits that attack rather than the whole hex
-/// -- the melee counterpart of [`build_fire_attack_from`]. Every attacker
-/// must share one hex and one owner and pass [`GameState::can_melee`] for
-/// `defender_hex`; the defenders are all meleeable enemy units there (§7.1).
-/// Returns `None` for an empty or not-fully-legal list, or no defender.
+/// -- the melee counterpart of [`build_fire_attack_from`]. The attackers may
+/// stand in any hexes adjacent to the defenders (one melee from several
+/// hexes, §7.6: "the Dervish units must have been adjacent to the vacated
+/// hex and participated in the melee attack"); every one must share one
+/// owner and pass [`GameState::can_melee`] for `defender_hex`; the defenders
+/// are all meleeable enemy units there (§7.1). `attacker_hex` is the first
+/// attacker's. Returns `None` for an empty or not-fully-legal list, or no
+/// defender.
 pub fn build_melee_attack_from(
     gs: &GameState,
     attackers: &[UnitId],
@@ -548,10 +552,7 @@ pub fn build_melee_attack_from(
     let (owner, attacker_hex) = (lead.profile.identity.owner(), lead.position);
     for &id in &attackers {
         let unit = gs.find_unit(id)?;
-        if unit.position != attacker_hex
-            || unit.profile.identity.owner() != owner
-            || gs.can_melee(id, defender_hex).is_err()
-        {
+        if unit.profile.identity.owner() != owner || gs.can_melee(id, defender_hex).is_err() {
             return None;
         }
     }

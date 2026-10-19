@@ -211,6 +211,8 @@ fn add_game(app: &mut App, room: String) {
         // calibrates it from the embedded Fall-of-Khartoum board data at startup.)
         .add_systems(Startup, spawn_lights)
         .init_resource::<crate::los::LosOverlay>()
+        .init_resource::<crate::melee::MeleeGroupChoice>()
+        .add_systems(Update, crate::melee::sync_melee_group)
         .init_resource::<crate::los::LosAnalysis>()
         // Legal-fire-target enumeration shared by the target overlay, the
         // actions-panel count, the hover preview, and the artillery panel.
