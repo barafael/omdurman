@@ -456,6 +456,16 @@ fn collect_hints(
     let optional = |rule| gs.optional_rules.contains(&rule);
     // A counter still in hand (auto-next keeps one after each placement)
     // takes every board click: say so first, with the way out.
+    // §7.7: a combat waits on a choice of losses -- nothing else can happen
+    // first, whatever the phase.
+    if let Some(choice) = gs.open_loss_choice() {
+        let s = if choice.count == 1 { "" } else { "s" };
+        out.push(hint(
+            &format!("Choose {} unit{s} to lose in the panel", choice.count),
+            Some("§7.7: the owner picks the units a combat result takes".into()),
+        ));
+        return;
+    }
     let in_hand = matches!(picker, PickerState::Placing { .. });
     if in_hand {
         out.push(hint(

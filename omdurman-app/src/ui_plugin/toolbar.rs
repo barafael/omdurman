@@ -292,6 +292,23 @@ fn turn_status(
                     "Paused \u{2014} waiting for a commander to return\u{2026}".to_string(),
                     palette::CAUTION,
                 )
+            } else if let Some(choice) = gs.open_loss_choice() {
+                // §7.7: a combat waits on its owner's choice of losses --
+                // possibly the side whose turn it is not.
+                if peers.commands_faction(choice.player) {
+                    (
+                        "\u{25b6} Your move: choose your losses (§7.7)".to_string(),
+                        palette::GOLD,
+                    )
+                } else {
+                    (
+                        format!(
+                            "Waiting for {} to choose losses\u{2026}",
+                            name(choice.player)
+                        ),
+                        palette::TEXT_DIM,
+                    )
+                }
             } else if peers.commands_faction(actor) {
                 (
                     format!("\u{25b6} Your move: {}", machine.phase_label()),
