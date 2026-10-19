@@ -571,7 +571,10 @@ mod tests {
             let mut memory = omdurman_bot::move_memory::MoveMemory::new();
             while !state.game_over && state.current_turn.value() <= 12 && steps < 20_000 {
                 steps += 1;
-                let chooser = state.phase_player();
+                // The side to decide: a §7.7 choice of losses may be the
+                // other side's.
+                let chooser =
+                    omdurman_bot::actions::decider(&state).unwrap_or(state.phase_player());
                 assert!(
                     ai.contains(&chooser),
                     "in an AI-vs-AI game every chooser is an AI faction"

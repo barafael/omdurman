@@ -13,6 +13,10 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
     // (distance/neighbour computations would otherwise overflow on extreme
     // values -- a panic on every peer instead of a clean rejection).
     check_effect_coords(effect)?;
+    // §7.7: a combat waiting on its owners' choice of losses comes first.
+    if state.pending_losses.is_some() && !matches!(effect, GameEffect::TakeLosses { .. }) {
+        return Err(RuleError::LossesPending);
+    }
     let result = match effect {
         GameEffect::AdvancePhase => advance_phase(state),
         GameEffect::AdvancePhaseFrom {
@@ -77,6 +81,7 @@ pub fn apply_effect(state: &mut GameState, effect: &GameEffect) -> Result<(), Ru
         } => apply_artillery_breach_wall(state, firers, *target, *roll),
         GameEffect::DeclineRetreatBeforeMelee => apply_decline_retreat_before_melee(state),
         GameEffect::AllocateFire { orders } => apply_allocate_fire(state, orders),
+        GameEffect::TakeLosses { player, units } => apply_take_losses(state, *player, units),
     };
     // Post-condition: per-phase trackers never reference eliminated units.
     if result.is_ok() {
@@ -145,6 +150,7 @@ fn check_effect_coords(effect: &GameEffect) -> Result<(), RuleError> {
         | GameEffect::ResolveMelee
         | GameEffect::DeclineRetreatBeforeMelee
         | GameEffect::DervishDesertion { .. }
+        | GameEffect::TakeLosses { .. }
         | GameEffect::SinkChain { .. }
         | GameEffect::RemoveDeployedUnit { .. }
         | GameEffect::ConfirmSetupReady { .. } => Ok(()),

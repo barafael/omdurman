@@ -474,6 +474,23 @@ pub enum RuleError {
     #[error("the river chain is allocated as a target twice (§10.23)")]
     ChainAllocatedTwice,
 
+    /// A combat waits on its owners' choice of losses (§7.7): nothing else
+    /// may happen first.
+    #[error("losses must be chosen first (§7.7)")]
+    LossesPending,
+
+    /// No open choice of losses for this player (§7.7).
+    #[error("there are no losses for this side to choose (§7.7)")]
+    NoLossesToTake,
+
+    /// The wrong number of losses (§7.7).
+    #[error("{expected} loss(es) to take, not {got} (§7.7)")]
+    WrongLossCount { expected: u8, got: usize },
+
+    /// A loss outside the units it must be taken from (§7.7).
+    #[error("unit {0} cannot be taken as a loss here (§7.7)")]
+    NotALossCandidate(UnitId),
+
     /// The phase may not end while allocated fire can still be resolved
     /// (§6.41).
     #[error("allocated fire must be resolved before the phase ends (§6.41)")]

@@ -50,6 +50,19 @@ const MAX_DEEP_SETUP_CANDIDATES: usize = 400;
 /// Setup while deployment candidates remain -- see below). The caller picks
 /// one at random and applies it.
 pub fn legal_actions(state: &GameState, rng: &mut BotRng) -> Vec<GameEffect> {
+    // §7.7: a combat waits on its owners' choice of losses -- nothing else
+    // is legal.
+    if let Some(pending) = &state.pending_losses {
+        return pending
+            .choices
+            .iter()
+            .filter(|c| c.chosen.is_none())
+            .map(|c| GameEffect::TakeLosses {
+                player: c.player,
+                units: choose_losses(state, c),
+            })
+            .collect();
+    }
     let (mut out, may_end) = enumerate_actions(state, rng, 1);
     // Trim if the list exploded.
     if out.len() > MAX_CANDIDATES {
@@ -1307,6 +1320,38 @@ pub fn decider(state: &GameState) -> Option<Player> {
     state.player_to_act()
 }
 
+/// The losses a commander gives up when the choice is its own (§7.7): the
+/// least valuable first, the rank and file before any leader.
+pub fn choose_losses(
+    state: &GameState,
+    choice: &omdurman_rules::effects::LossChoice,
+) -> Vec<UnitId> {
+    let mut ranked: Vec<(bool, f64, usize, UnitId)> = choice
+        .candidates
+        .iter()
+        .enumerate()
+        .filter_map(|(i, id)| {
+            let u = state.find_unit(*id)?;
+            let leader = matches!(
+                u.profile.kind,
+                omdurman_types::UnitKind::DervishLeader { .. }
+                    | omdurman_types::UnitKind::BritishLeader { .. }
+            );
+            Some((leader, crate::fire_plan::unit_value(state, u), i, *id))
+        })
+        .collect();
+    ranked.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then(a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .then(a.2.cmp(&b.2))
+    });
+    ranked
+        .into_iter()
+        .take(usize::from(choice.count))
+        .map(|(.., id)| id)
+        .collect()
+}
+
 /// The side an effect is the decision of, where that is not simply the side
 /// to act: the §7.5 reaction is the defender's -- a retreat belongs to the
 /// retreating unit's owner, the decline to the defending side -- while the
@@ -1315,6 +1360,7 @@ pub fn decider(state: &GameState) -> Option<Player> {
 pub fn effect_actor(state: &GameState, effect: &GameEffect) -> Option<Player> {
     let owner = |id: &UnitId| state.find_unit(*id).map(|u| u.profile.identity.owner());
     match effect {
+        GameEffect::TakeLosses { player, .. } => Some(*player),
         GameEffect::RetreatBeforeMelee { unit_id, .. }
         | GameEffect::AdvanceAfterCombat { unit_id, .. } => owner(unit_id),
         GameEffect::DeclineRetreatBeforeMelee => state

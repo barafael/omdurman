@@ -1565,7 +1565,7 @@ tests = [
     "omdurman-rules::src::effects::tests::destroyed_fort_takes_one_occupant_with_it",
     "omdurman-rules::src::effects::tests::the_units_inside_a_fort_are_fired_at_with_its_minus_three",
     "omdurman-rules::src::effects::tests::a_demolished_fort_takes_an_occupant_with_it",
-    "omdurman-rules::src::effects::tests::one_unit_losses_take_the_rank_and_file_before_leaders",
+    "omdurman-rules::src::effects::tests::one_unit_losses_are_the_owners_choice",
 ]
 
 [[mapping.impl]]
@@ -1586,7 +1586,7 @@ tests = [
     "omdurman-rules::src::effects::tests::breach_casualty_stands_at_the_wall","omdurman-rules::src::unit_profiles::breech_marker_cell_returns_none", "omdurman-rules::src::effects::tests::artillery_breaches_wall_only_on_crt_two_or_better", "omdurman-rules::src::effects::tests::wall_breach_eliminates_one_adjacent_enemy_unit", "omdurman-rules::src::effects::tests::breach_is_an_opening_for_los_and_effective_kinds",
     "omdurman-rules::src::effects::tests::artillery_may_fire_at_the_wall_it_faces",
     "omdurman-rules::src::effects::tests::walls_are_breached_in_the_direct_fire_subphase_only",
-    "omdurman-rules::src::effects::tests::one_unit_losses_take_the_rank_and_file_before_leaders",
+    "omdurman-rules::src::effects::tests::one_unit_losses_are_the_owners_choice",
     "omdurman-rules::src::effects::tests::demolishing_an_already_breached_wall_takes_no_second_unit",
     "omdurman-rules::src::effects::tests::a_fort_beside_a_breached_wall_can_be_the_casualty",
 ]
@@ -1937,7 +1937,10 @@ witness = "omdurman-rules::src::effects::tests::melee_modifiers_are_engine_deriv
 proofs = [
     "omdurman-rules::src::verification::melee_modifier_keeps_roll_legal",
 ]
+note = "\"Melee losses must be taken from meleeing units first!\": the losses fall tier by tier -- the meleeing units, then (attackers) their hex-mates, (defenders) the fort last -- and where a numbered result runs out inside a tier of units that differ, the owner chooses which fall (TakeLosses). The combat waits for the choice; so does every numbered fire result, and the one unit a destroyed fort or breached wall takes (§6.62, §6.63)."
 tests = [
+    "omdurman-rules::src::effects::tests::melee_losses_are_the_owners_choice",
+    "omdurman-rules::src::effects::tests::fire_losses_are_the_owners_choice",
     "omdurman-rules::src::effects::tests::melee_resolves_simultaneously",
     "omdurman-rules::src::effects::tests::melee_modifiers_are_engine_derived_and_mismatches_rejected",
     "omdurman-rules::src::effects::tests::friendlies_melee_with_the_dervish_modifier",
@@ -1946,6 +1949,10 @@ tests = [
     "omdurman-rules::src::effects::tests::melee_losses_fall_on_the_garrison_before_the_fort",
     "omdurman-rules::src::effects::tests::melee_losses_never_spill_onto_the_attackers_own_fort",
 ]
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/losses.rs"
+symbol = "apply_take_losses"
+
 [[mapping.impl]]
 file = "omdurman-rules/src/combat.rs"
 symbol = "MeleeModifier"
@@ -2972,11 +2979,11 @@ title = "Explanation of Combat Results (rulebook back cover)"
 status = "implemented"
 clause = "D* = ½ (round up) of the units in the target hex are disrupted (inverted)."
 witness = "omdurman-rules::src::effects::tests::a_disrupt_result_disrupts_half_rounded_up_picked_at_random"
-approximation = "The rulebook does not say who picks the disrupted units. They are picked at random among the undisrupted units in the hex, by a draw the acting peer rolls into the fire or melee effect with its dice (DisruptionDraw), so every peer disrupts the same units. Nor does it say who falls to a numbered (#) result: the rank and file go before their leaders, otherwise in the hex's order (in melee within §7.7's meleeing-units-first tiers), deterministically."
+approximation = "The rulebook does not say who picks the disrupted units. They are picked at random among the undisrupted units in the hex, by a draw the acting peer rolls into the fire or melee effect with its dice (DisruptionDraw), so every peer disrupts the same units. Nor does it say who falls to a numbered (#) result: the owner chooses (§7.7, TakeLosses)."
 tests = [
     "omdurman-rules::src::effects::tests::a_disrupt_result_disrupts_half_rounded_up_picked_at_random",
-    "omdurman-rules::src::effects::tests::fire_eliminates_the_rank_and_file_before_the_leader",
-    "omdurman-rules::src::effects::tests::melee_eliminates_the_rank_and_file_before_the_leader",
+    "omdurman-rules::src::effects::tests::fire_losses_are_the_owners_choice",
+    "omdurman-rules::src::effects::tests::melee_losses_are_the_owners_choice",
     "omdurman-rules::src::effects::tests::a_disruption_draw_reaches_every_ordered_pick",
     "omdurman-rules::src::effects::tests::numbered_result_eliminates_without_disrupting_survivors",
 ]

@@ -310,6 +310,9 @@ pub fn describe_effect(effect: &GameEffect, state: &GameState) -> String {
         GameEffect::SinkChain { firers, roll } => {
             format!("SinkChain {} roll {}", names(firers), roll.value())
         }
+        GameEffect::TakeLosses { player, units } => {
+            format!("TakeLosses [{player}] {}", names(units))
+        }
         GameEffect::AllocateFire { orders } => {
             let orders: Vec<String> = orders
                 .iter()
@@ -575,6 +578,14 @@ pub fn describe_observation(obs: &Observation) -> String {
             hex(*at),
             names(eligible),
             paragraphs.join(" §"),
+        ),
+        Observation::LossesToChoose {
+            player,
+            count,
+            candidates,
+        } => format!(
+            "LossesToChoose [{player}] {count} of {} [§7.7]",
+            names(candidates)
         ),
         Observation::MeleeLapsed {
             attacker_hex,

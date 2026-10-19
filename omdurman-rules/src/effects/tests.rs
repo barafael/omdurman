@@ -5750,6 +5750,16 @@ mod tests {
             state.breaches.contains(&wall),
             "the wall hexside is recorded as breached"
         );
+        // §7.7: the owner chooses which of the two falls.
+        apply_effect(
+            &mut state,
+            &GameEffect::TakeLosses {
+                player: Player::Dervish,
+                units: vec![second_adjacent],
+            },
+        )
+        .unwrap();
+        assert!(state.find_unit(first_adjacent).is_some());
         // Exactly one adjacent enemy unit is eliminated; the other survives.
         let eliminated = state
             .observations
@@ -12313,13 +12323,13 @@ mod tests {
         assert!(state.find_unit(occupant).is_none());
     }
 
-    // §6.62 (via §6.53) and §6.63: the one unit lost with a demolished fort
-    // or beside a breached wall is picked leaders last, like every casualty
-    // -- the KHALIFA does not die before the Taiasha standing with him,
-    // whatever the order the counters lie in.
+    // §6.62 (via §6.53) and §6.63 with §7.7: the one unit lost with a
+    // demolished fort, or beside a breached wall, is its owner's choice --
+    // here the Dervish player's, after the Anglo-Egyptian turn that
+    // demolished the fort.
     #[rulebook("§6.62", "§6.63")]
     #[test]
-    fn one_unit_losses_take_the_rank_and_file_before_leaders() {
+    fn one_unit_losses_are_the_owners_choice() {
         let mut state = playing(Scenario::Campaign);
         state.active_player = Player::AngloEgyptian;
         let eng = make_royal_engineers(&mut state, HexCoord::new(0, 0));
@@ -12333,10 +12343,21 @@ mod tests {
         apply_demolition(&mut state, eng, DemolitionTarget::Fort(fort)).unwrap();
         end_player_turn(&mut state);
         assert!(state.find_unit(fort).is_none());
-        assert!(state.find_unit(taiasha).is_none(), "the rank and file fall");
-        assert!(state.find_unit(khalifa).is_some(), "the leader survives");
+        let choice = &state.pending_losses.as_ref().expect("a choice").choices[0];
+        assert_eq!(choice.player, Player::Dervish);
+        assert_eq!(choice.candidates, vec![taiasha, khalifa]);
+        apply_effect(
+            &mut state,
+            &GameEffect::TakeLosses {
+                player: Player::Dervish,
+                units: vec![taiasha],
+            },
+        )
+        .unwrap();
+        assert!(state.find_unit(taiasha).is_none(), "the chosen loss");
+        assert!(state.find_unit(khalifa).is_some());
 
-        // The breach casualty, likewise.
+        // The breach casualty: the candidates, the rank and file first.
         let a = HexCoord::new(5, 5);
         let b = HexCoord::new(6, 5);
         let leader = make_unit_with_identity(
@@ -12345,8 +12366,10 @@ mod tests {
             UnitIdentity::DervishLeader(DervishLeader::KhalifaAbdullah),
         );
         let spearman = make_dervish_tribal(&mut state, b);
-        assert_eq!(breach_victim(&state, a, b, Player::Dervish), Some(spearman));
-        assert_ne!(breach_victim(&state, a, b, Player::Dervish), Some(leader));
+        assert_eq!(
+            super::super::fire::breach_candidates(&state, a, b, Player::Dervish),
+            vec![spearman, leader]
+        );
     }
 
     // §6.53/§6.63: a demolition resolving on a wall the artillery already
@@ -13634,12 +13657,12 @@ mod tests {
         (khalifa, taiasha)
     }
 
-    // §CombatResults "# = That many units in the target hex are eliminated":
-    // the manual does not say which -- the rank and file fall before their
-    // leader, whatever the placement order (fire).
-    #[rulebook("§CombatResults")]
+    // §7.7, §CombatResults "# = That many units in the target hex are
+    // eliminated": the manual does not say which -- their owner chooses. The
+    // combat waits for the choice, and nothing else may happen meanwhile.
+    #[rulebook("§7.7", "§CombatResults")]
     #[test]
-    fn fire_eliminates_the_rank_and_file_before_the_leader() {
+    fn fire_losses_are_the_owners_choice() {
         let mut base = playing(Scenario::Campaign);
         base.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
         base.active_player = Player::AngloEgyptian;
@@ -13655,7 +13678,7 @@ mod tests {
         )
         .expect("a shot");
         // Find a die that yields exactly one elimination.
-        let one_kill = (1..=10u16)
+        let mut state = (1..=10u16)
             .map(|v| DieRoll::try_from(v).unwrap())
             .find_map(|roll| {
                 let mut state = base.clone();
@@ -13668,21 +13691,69 @@ mod tests {
                     },
                 )
                 .ok()?;
-                (state.units.len() == base.units.len() - 1).then_some(state)
+                state
+                    .pending_losses
+                    .as_ref()
+                    .is_some_and(|p| p.choices[0].count == 1)
+                    .then_some(state)
             })
             .expect("some roll eliminates exactly one unit");
+        // Nobody has fallen yet; the Dervish player chooses among both.
+        assert_eq!(state.units.len(), base.units.len());
+        let choice = &state.pending_losses.as_ref().unwrap().choices[0];
+        assert_eq!(choice.player, Player::Dervish);
+        assert_eq!(choice.candidates, vec![taiasha, khalifa]);
+        assert!(state.drain_observations().iter().any(|o| matches!(
+            o,
+            Observation::LossesToChoose {
+                player: Player::Dervish,
+                count: 1,
+                ..
+            }
+        )));
+        assert!(matches!(
+            apply_effect(&mut state.clone(), &GameEffect::AdvancePhase),
+            Err(RuleError::LossesPending)
+        ));
+        let take = |state: &mut GameState, player, units: Vec<UnitId>| {
+            apply_effect(state, &GameEffect::TakeLosses { player, units })
+        };
+        assert!(matches!(
+            take(&mut state.clone(), Player::AngloEgyptian, vec![khalifa]),
+            Err(RuleError::NoLossesToTake)
+        ));
+        assert!(matches!(
+            take(&mut state.clone(), Player::Dervish, vec![khalifa, taiasha]),
+            Err(RuleError::WrongLossCount {
+                expected: 1,
+                got: 2
+            })
+        ));
+        assert!(matches!(
+            take(&mut state.clone(), Player::Dervish, vec![rifle]),
+            Err(RuleError::NotALossCandidate(_))
+        ));
+        // The Khalifa gives himself up for his Taiasha.
+        take(&mut state, Player::Dervish, vec![khalifa]).unwrap();
+        assert!(state.pending_losses.is_none());
+        assert!(state.find_unit(khalifa).is_none(), "the chosen loss");
+        assert!(state.find_unit(taiasha).is_some());
         assert!(
-            one_kill.find_unit(khalifa).is_some(),
-            "the Khalifa survives"
+            state
+                .drain_observations()
+                .iter()
+                .any(|o| matches!(o, Observation::FireResolved { .. })),
+            "the fire resolves once the losses are chosen"
         );
-        assert!(one_kill.find_unit(taiasha).is_none(), "his Taiasha falls");
+        apply_effect(&mut state, &GameEffect::AdvancePhase).unwrap();
     }
 
-    // §CombatResults, melee (§7.7): the defenders' rank and file fall before
-    // their leader.
-    #[rulebook("§CombatResults")]
+    // §7.7, melee: the defenders' owner chooses their losses, and the melee
+    // -- its records, the advance -- completes on the choice. Two identical
+    // counters side by side leave nothing to choose.
+    #[rulebook("§7.7", "§CombatResults")]
     #[test]
-    fn melee_eliminates_the_rank_and_file_before_the_leader() {
+    fn melee_losses_are_the_owners_choice() {
         let mut state = playing(Scenario::Campaign);
         state.phase = Phase::Melee;
         state.active_player = Player::AngloEgyptian;
@@ -13704,6 +13775,7 @@ mod tests {
                 )
             })
             .expect("a die for Eliminate(1)");
+        let mut twins = state.clone();
         declare_melee_on(
             &mut state,
             vec![infantry],
@@ -13713,8 +13785,50 @@ mod tests {
         )
         .unwrap();
         apply_effect(&mut state, &GameEffect::ResolveMelee).unwrap();
+        let choice = &state.pending_losses.as_ref().expect("a choice").choices;
+        assert_eq!(choice.len(), 1, "only the defenders lose a unit");
+        assert_eq!(choice[0].player, Player::Dervish);
+        apply_effect(
+            &mut state,
+            &GameEffect::TakeLosses {
+                player: Player::Dervish,
+                units: vec![taiasha],
+            },
+        )
+        .unwrap();
         assert!(state.find_unit(khalifa).is_some(), "the Khalifa survives");
-        assert!(state.find_unit(taiasha).is_none(), "his Taiasha falls");
+        assert!(
+            state.find_unit(taiasha).is_none(),
+            "his chosen Taiasha falls"
+        );
+        assert!(
+            state
+                .drain_observations()
+                .iter()
+                .any(|o| matches!(o, Observation::MeleeResolved { .. }))
+        );
+
+        // Two Taiasha alone: whichever falls, it is the same loss.
+        twins.units.retain(|u| u.id != khalifa);
+        make_profiled_unit(
+            &mut twins,
+            target,
+            crate::unit_profiles::profile_for_unit(UnitId::Taiasha_0_0).unwrap(),
+        );
+        declare_melee_on(
+            &mut twins,
+            vec![infantry],
+            target,
+            attacker_roll,
+            DieRoll::One,
+        )
+        .unwrap();
+        apply_effect(&mut twins, &GameEffect::ResolveMelee).unwrap();
+        assert!(twins.pending_losses.is_none(), "nothing to choose");
+        assert_eq!(
+            twins.units.iter().filter(|u| u.position == target).count(),
+            1
+        );
     }
 
     // §6.51(b): an Anglo-Egyptian leader is eliminated "if all of the combat

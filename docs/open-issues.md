@@ -17,10 +17,6 @@ seat handling).
   a gunboat ran onto; but the event log still carries them in clear (an
   honour-system scratchpad; commit-reveal is post-1.0). See also "private
   dice" below.
-- **§7.7 casualty choice.** Losses fall on units in list order, the rank and
-  file before their leaders (`leaders_last`); the owning player does not
-  choose them. The same order picks the one unit a breach or a destroyed fort
-  takes (§6.62/§6.63, `first_casualty`).
 
 ## Rules questions (the manual is ambiguous; current reading in brackets)
 
@@ -89,6 +85,13 @@ seat handling).
 - **§9.35 loss penalty.** "The Dervish player then loses one victory level".
   [Applies only to a Dervish result (GORDON killed by turn six), which it can
   turn into a British win; it never enlarges a British win.]
+- **§7.7 owner chooses losses.** The manual does not say who picks the
+  units a numbered result eliminates. [Their owner, as the wargame
+  convention has it: where a result runs out inside a tier of units that
+  differ, the combat waits for the owner's `TakeLosses` (the meleeing units
+  fall first, §7.7). The same for the one unit a destroyed fort or a breached
+  wall takes (§6.62, §6.63, §6.53). A demolition's victim is chosen after
+  the turn ends.]
 - **Combat Results "D".** "½ (round up) of the units in the target hex are
   disrupted" does not say who picks them. [At random among the undisrupted
   units, by a draw rolled into the effect with its dice.]

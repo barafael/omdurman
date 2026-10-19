@@ -92,20 +92,21 @@ pub(crate) fn resolve_demolition(state: &mut GameState, unit_id: UnitId, target:
                 // instant it is destroyed, one unit is eliminated with the
                 // fort" (picked before the fort leaves the board; the rank
                 // and file before their leaders, as every casualty pick).
-                let victim = fort.and_then(|f| {
-                    let occupants: Vec<UnitId> = state
-                        .units
-                        .iter()
-                        .filter(|u| {
-                            u.position == f.position
-                                && u.id != fort_id
-                                && u.profile.identity.owner() != engineer_owner
-                                && !matches!(u.profile.kind, UnitKind::BritishLeader { .. })
-                        })
-                        .map(|u| u.id)
-                        .collect();
-                    super::fire::first_casualty(state, &occupants)
-                });
+                let occupants: Vec<UnitId> = fort
+                    .map(|f| {
+                        state
+                            .units
+                            .iter()
+                            .filter(|u| {
+                                u.position == f.position
+                                    && u.id != fort_id
+                                    && u.profile.identity.owner() != engineer_owner
+                                    && !matches!(u.profile.kind, UnitKind::BritishLeader { .. })
+                            })
+                            .map(|u| u.id)
+                            .collect()
+                    })
+                    .unwrap_or_default();
                 if let Some(f) = fort {
                     state.observations.push(Observation::FortDestroyed {
                         id: fort_id,
@@ -115,9 +116,13 @@ pub(crate) fn resolve_demolition(state: &mut GameState, unit_id: UnitId, target:
                 // Recorded (and scored -- 0 VP for a fort, §9.14) through the
                 // shared elimination path.
                 eliminate_unit(state, fort_id, ElimCause::Demolition);
-                if let Some(victim) = victim {
-                    eliminate_unit(state, victim, ElimCause::Demolition);
-                }
+                // §7.7: the owner chooses which occupant falls with it.
+                let victim = eliminate_one(
+                    state,
+                    engineer_owner.opponent(),
+                    super::fire::leaders_last(state, &occupants),
+                    ElimCause::Demolition,
+                );
                 (true, victim)
             } else {
                 (false, None)
@@ -138,11 +143,12 @@ pub(crate) fn resolve_demolition(state: &mut GameState, unit_id: UnitId, target:
                 state.breach_wall(edge.a, edge.b);
                 // §6.63: if an enemy unit is adjacent to the wall hexside at
                 // the instant of breaching, one enemy unit is eliminated.
+                // §7.7: the owner chooses which.
+                let victim_owner = engineer_owner.opponent();
+                let candidates =
+                    super::fire::breach_candidates(state, edge.a, edge.b, victim_owner);
                 let enemy_adjacent =
-                    super::fire::breach_victim(state, edge.a, edge.b, engineer_owner.opponent());
-                if let Some(enemy_id) = enemy_adjacent {
-                    eliminate_unit(state, enemy_id, ElimCause::WallBreach);
-                }
+                    eliminate_one(state, victim_owner, candidates, ElimCause::WallBreach);
                 (true, enemy_adjacent)
             } else {
                 (false, None)

@@ -116,6 +116,18 @@ pub enum GameEffect {
     /// while an allocated order can still be resolved.
     AllocateFire { orders: Vec<FireOrder> },
 
+    /// The owner chooses the units a combat result takes (rulebook §7.7,
+    /// §CombatResults: "# = That many units in the target hex are
+    /// eliminated" -- the manual does not say who picks; the owner does).
+    ///
+    /// **Preconditions:** `pending_losses` holds an open choice for
+    /// `player`; `units` are exactly its count, all among its candidates,
+    /// each once.
+    /// **Postconditions:** the choice is recorded; once every side of the
+    /// combat has chosen, the combat is applied with it and any queued
+    /// combat after it runs.
+    TakeLosses { player: Player, units: Vec<UnitId> },
+
     // -- Melee combat ------------------------------------------------------
     /// Declare a melee between adjacent hexes (rulebook §7), opening the
     /// defender's reaction window (§7.5): the attack and its pre-rolled dice

@@ -61,29 +61,30 @@ pub fn validate_melee_attack(state: &GameState, attack: &MeleeAttack) -> Result<
     Ok(())
 }
 
-/// Resolve an already-validated melee (§7.3, §7.6, §7.7). Infallible: the
-/// caller ([`apply_resolve_melee`]) owns legality.
-pub(crate) fn resolve_melee_combat(
-    state: &mut GameState,
+/// What a melee's two dice come to (§7.3, §7.7): read only, shared by the
+/// resolution and the owners' choice of losses.
+pub(crate) struct MeleeOutcome {
+    pub(crate) attacker_total: u16,
+    pub(crate) defender_total: u16,
+    pub(crate) att_mod: i16,
+    pub(crate) def_mod: i16,
+    pub(crate) att_net: DieRoll,
+    pub(crate) def_net: DieRoll,
+    pub(crate) att_result: CombatResult,
+    pub(crate) def_result: CombatResult,
+    /// The defenders in the order they fall, tier by tier (§7.7).
+    pub(crate) def_tiers: Vec<Vec<UnitId>>,
+    /// The attackers -- then their hex-mates -- in the order they fall.
+    pub(crate) att_tiers: Vec<Vec<UnitId>>,
+}
+
+/// The outcome of `attack` with these dice.
+pub(crate) fn melee_outcome(
+    state: &GameState,
     attack: &MeleeAttack,
     attacker_roll: DieRoll,
     defender_roll: DieRoll,
-    disruption: DisruptionDraw,
-) {
-    if attack.defenders.is_empty() {
-        // §7.5: every defender withdrew before the blow fell -- nothing to
-        // fight. No dice, and no mandatory advance: §7.6 binds only when "a
-        // melee attack eliminates all of the defenders". (The retreat itself
-        // opened the attackers' advance window.)
-        state.observations.push(Observation::MeleeLapsed {
-            attacker_hex: attack.attacker_hex,
-            defender_hex: attack.defender_hex,
-        });
-        return;
-    }
-    let attacker_player = attack.attacker_player;
-    let defender_player = attacker_player.opponent();
-
+) -> MeleeOutcome {
     // Compute total melee factors.
     let attacker_total = melee_strength(state, &attack.attackers);
     let defender_total = melee_strength(state, &attack.defenders);
@@ -142,9 +143,9 @@ pub(crate) fn resolve_melee_combat(
     // rule, not a melee rule.)
     let (forts, garrison): (Vec<UnitId>, Vec<UnitId>) =
         attack.defenders.iter().copied().partition(is_fort);
-    let mut def_units = super::fire::leaders_last(state, &garrison);
+    let mut def_tiers = vec![super::fire::leaders_last(state, &garrison)];
     if infantry_attack {
-        def_units.extend(forts);
+        def_tiers.push(forts);
     }
     // §7.7: "Melee losses must be taken from meleeing units first!" -- an
     // elimination beyond the meleeing units falls on the other units of
@@ -154,28 +155,84 @@ pub(crate) fn resolve_melee_combat(
     // infantry melee *attack* or the Royal Engineers, and the defender's
     // counter-roll is none of those (nor on a gunboat, which takes no part
     // in melee, §7.1). Losses beyond the units that may take them lapse.
+    let hexes: Vec<HexCoord> = att_units
+        .iter()
+        .filter_map(|id| state.find_unit(*id).map(|u| u.position))
+        .collect();
+    let hex_mates: Vec<UnitId> = state
+        .units
+        .iter()
+        .filter(|u| {
+            hexes.contains(&u.position)
+                && u.profile.identity.owner() == attack.attacker_player
+                && !att_units.contains(&u.id)
+                && u.profile.kind.may_be_melee_attacked()
+                && !matches!(u.profile.kind, UnitKind::Fort { .. })
+        })
+        .map(|u| u.id)
+        .collect();
+    let att_tiers = vec![
+        super::fire::leaders_last(state, &att_units),
+        super::fire::leaders_last(state, &hex_mates),
+    ];
+    MeleeOutcome {
+        attacker_total,
+        defender_total,
+        att_mod,
+        def_mod,
+        att_net,
+        def_net,
+        att_result,
+        def_result,
+        def_tiers,
+        att_tiers,
+    }
+}
+
+/// Resolve an already-validated melee (§7.3, §7.6, §7.7). Infallible: the
+/// caller ([`apply_resolve_melee`]) owns legality. `chosen` is each side's
+/// choice of its losses -- the defender's, then the attacker's (§7.7);
+/// `None` takes them in casualty order.
+pub(crate) fn resolve_melee_combat(
+    state: &mut GameState,
+    attack: &MeleeAttack,
+    attacker_roll: DieRoll,
+    defender_roll: DieRoll,
+    disruption: DisruptionDraw,
+    chosen: [Option<&[UnitId]>; 2],
+) {
+    if attack.defenders.is_empty() {
+        // §7.5: every defender withdrew before the blow fell -- nothing to
+        // fight. No dice, and no mandatory advance: §7.6 binds only when "a
+        // melee attack eliminates all of the defenders". (The retreat itself
+        // opened the attackers' advance window.)
+        state.observations.push(Observation::MeleeLapsed {
+            attacker_hex: attack.attacker_hex,
+            defender_hex: attack.defender_hex,
+        });
+        return;
+    }
+    let attacker_player = attack.attacker_player;
+    let defender_player = attacker_player.opponent();
+    let MeleeOutcome {
+        attacker_total,
+        defender_total,
+        att_mod,
+        def_mod,
+        att_net,
+        def_net,
+        att_result,
+        def_result,
+        def_tiers,
+        att_tiers,
+    } = melee_outcome(state, attack, attacker_roll, defender_roll);
+    let [defenders_chosen, attackers_chosen] = chosen;
+    let att_units: Vec<UnitId> = attack.attackers.clone();
+    let def_units = casualty_order(&def_tiers, defenders_chosen);
+    // An elimination falls on the attackers, then their hex-mates; any
+    // other result only on the attackers (§7.7).
     let att_casualties: Vec<UnitId> = match def_result {
-        CombatResult::Eliminate(_) => {
-            let mut order = super::fire::leaders_last(state, &att_units);
-            let hexes: Vec<HexCoord> = att_units
-                .iter()
-                .filter_map(|id| state.find_unit(*id).map(|u| u.position))
-                .collect();
-            let hex_mates: Vec<UnitId> = state
-                .units
-                .iter()
-                .filter(|u| {
-                    hexes.contains(&u.position)
-                        && u.profile.identity.owner() == attacker_player
-                        && !att_units.contains(&u.id)
-                        && u.profile.kind.may_be_melee_attacked()
-                        && !matches!(u.profile.kind, UnitKind::Fort { .. })
-                })
-                .map(|u| u.id)
-                .collect();
-            order.extend(super::fire::leaders_last(state, &hex_mates));
-            order
-        }
+        CombatResult::Eliminate(_) => casualty_order(&att_tiers, attackers_chosen),
         _ => att_units.clone(),
     };
 
@@ -425,7 +482,15 @@ pub fn apply_resolve_melee(state: &mut GameState) -> Result<(), RuleError> {
     });
     // Resolution committed: close the §7.5 reaction window.
     state.pending_melee = None;
-    resolve_melee_combat(state, &attack, attacker_roll, defender_roll, disruption);
+    resolve_combat(
+        state,
+        CombatTail::Melee {
+            attack,
+            attacker_roll,
+            defender_roll,
+            disruption,
+        },
+    );
     Ok(())
 }
 

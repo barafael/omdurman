@@ -482,6 +482,20 @@ fn format_observation(
                 ),
             ))
         }
+        Observation::LossesToChoose {
+            player,
+            count,
+            candidates,
+        } => {
+            let s = if *count == 1 { "" } else { "s" };
+            Some((
+                "Losses".into(),
+                format!(
+                    "The {player} player chooses {count} unit{s} to lose of {} (§7.7).",
+                    candidates.len()
+                ),
+            ))
+        }
         Observation::MeleeLapsed { defender_hex, .. } => Some((
             "Melee".into(),
             format!(

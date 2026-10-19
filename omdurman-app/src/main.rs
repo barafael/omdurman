@@ -49,6 +49,7 @@ mod submit;
 
 mod layout;
 mod los;
+mod losses;
 mod scenario_setup;
 mod seat_arbiter;
 mod seats;

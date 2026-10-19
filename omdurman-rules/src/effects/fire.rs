@@ -152,14 +152,16 @@ pub fn apply_howitzer_fire(
         let impact = on_target
             .first()
             .map(|&(_, impact)| (impact, attack.target_hex));
-        commit_fire_attack(
+        resolve_combat(
             state,
-            &combined,
-            attack.target_hex,
-            &targets,
-            roll,
-            disruption,
-            impact,
+            CombatTail::Fire {
+                attack: combined,
+                target_hex: attack.target_hex,
+                target_units: targets,
+                roll,
+                disruption,
+                impact,
+            },
         );
     }
 
@@ -185,14 +187,16 @@ pub fn apply_howitzer_fire(
         } else {
             garrison
         };
-        commit_fire_attack(
+        resolve_combat(
             state,
-            &lone,
-            at,
-            &targets,
-            shell.roll,
-            shell.disruption,
-            Some((shell.impact, at)),
+            CombatTail::Fire {
+                attack: lone,
+                target_hex: at,
+                target_units: targets,
+                roll: shell.roll,
+                disruption: shell.disruption,
+                impact: Some((shell.impact, at)),
+            },
         );
     }
     Ok(())
@@ -305,14 +309,16 @@ pub fn resolve_fire_attack(
     let claim = claim_fire_order(state, &FireOrder::Attack(attack.clone()))?;
     commit_fire_order(state, claim);
     let target_units = fire_target_units(state, attack, target_hex);
-    commit_fire_attack(
+    resolve_combat(
         state,
-        attack,
-        target_hex,
-        &target_units,
-        roll,
-        disruption,
-        None,
+        CombatTail::Fire {
+            attack: attack.clone(),
+            target_hex,
+            target_units,
+            roll,
+            disruption,
+            impact: None,
+        },
     );
     Ok(())
 }
@@ -407,18 +413,29 @@ pub(crate) fn validate_fire_resolution(
     Ok(())
 }
 
-/// Resolve an already-validated fire attack against `target_units` in
-/// `target_hex` (the aimed hex, or a howitzer's §6.64 impact hex).
-/// Infallible: all legality was established by [`validate_fire_resolution`].
-fn commit_fire_attack(
-    state: &mut GameState,
+/// What a fire attack's die comes to (§6.22-§6.24, §6.61/§6.62): read
+/// only, shared by the resolution and the owner's choice of losses (§7.7).
+pub(crate) struct FireOutcome {
+    pub(crate) effective_total: u16,
+    pub(crate) representative_range: Option<u16>,
+    pub(crate) representative_band: Option<crate::RangeBand>,
+    pub(crate) total_mod: i16,
+    pub(crate) modified_roll: DieRoll,
+    pub(crate) row: FireFactorRow,
+    pub(crate) result: CombatResult,
+    /// The gunboat or fort the attack engages, with the result it needs
+    /// (§6.61/§6.62).
+    pub(crate) special: Option<(UnitId, UnitKind, u8)>,
+}
+
+/// The outcome of `attack` on `target_units` in `target_hex` with `roll`.
+pub(crate) fn fire_outcome(
+    state: &GameState,
     attack: &FireAttack,
     target_hex: HexCoord,
     target_units: &[UnitId],
     roll: DieRoll,
-    disruption: DisruptionDraw,
-    impact: Option<(DieRoll, HexCoord)>,
-) {
+) -> FireOutcome {
     // §6.22: each firer contributes at its *own* distance, on its *own*
     // weapon line and range-effects table (§6.52 Friendlies -> Dervish table,
     // §9.343 FoK -> Dervish table for both sides), with the §8.1 night cap
@@ -458,8 +475,77 @@ fn commit_fire_attack(
     // 3+, fort 2+), *not* by the generic disrupt/eliminate effect. "3 or more
     // on the combat results table" means Eliminate(3) or higher, not a die
     // roll of 3+.
-    let opponent = attack.firing_player.opponent();
     let special = state.special_fire_target(target_units);
+    FireOutcome {
+        effective_total,
+        representative_range,
+        representative_band,
+        total_mod,
+        modified_roll,
+        row,
+        result,
+        special,
+    }
+}
+
+/// The units of a fire attack's target hex that may fall to a numbered
+/// result, the owner's to choose from (§7.7, §CombatResults) -- every one
+/// but an Anglo-Egyptian leader (§6.51), the rank and file first.
+pub(crate) fn fire_casualty_candidates(state: &GameState, target_units: &[UnitId]) -> Vec<UnitId> {
+    let fighting: Vec<UnitId> = target_units
+        .iter()
+        .copied()
+        .filter(|id| {
+            !state
+                .find_unit(*id)
+                .is_some_and(|u| matches!(u.profile.kind, UnitKind::BritishLeader { .. }))
+        })
+        .collect();
+    leaders_last(state, &fighting)
+}
+
+/// The occupants of a fort the artillery destroys, one of whom falls with
+/// it (§6.62): the owner's to choose from.
+pub(crate) fn fort_occupants(
+    state: &GameState,
+    target_units: &[UnitId],
+    fort: UnitId,
+) -> Vec<UnitId> {
+    let occupants: Vec<UnitId> = target_units
+        .iter()
+        .copied()
+        .filter(|&id| id != fort)
+        .collect();
+    fire_casualty_candidates(state, &occupants)
+}
+
+/// Resolve an already-validated fire attack against `target_units` in
+/// `target_hex` (the aimed hex, or a howitzer's §6.64 impact hex).
+/// Infallible: all legality was established by [`validate_fire_resolution`].
+/// `chosen` is the owner's choice of the units a numbered result (or a
+/// destroyed fort, §6.62) takes (§7.7); `None` takes them in casualty order.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn commit_fire_attack(
+    state: &mut GameState,
+    attack: &FireAttack,
+    target_hex: HexCoord,
+    target_units: &[UnitId],
+    roll: DieRoll,
+    disruption: DisruptionDraw,
+    impact: Option<(DieRoll, HexCoord)>,
+    chosen: Option<&[UnitId]>,
+) {
+    let FireOutcome {
+        effective_total,
+        representative_range,
+        representative_band,
+        total_mod,
+        modified_roll,
+        row,
+        result,
+        special,
+    } = fire_outcome(state, attack, target_hex, target_units, roll);
+    let opponent = attack.firing_player.opponent();
     // An advance window needs an *enemy*-occupied hex to have been vacated
     // (§6.82) -- a howitzer scatter onto an empty or friendly hex (§6.64)
     // never opens one.
@@ -513,14 +599,14 @@ fn commit_fire_attack(
             // §6.62: if a destroyed fort contained enemy units, one is
             // eliminated with it (picked before the fort leaves the board;
             // the rank and file before their leaders, as everywhere).
+            // §7.7: the owner picks which.
             let fort_victim = matches!(special_kind, UnitKind::Fort { .. })
                 .then(|| {
-                    let occupants: Vec<UnitId> = target_units
-                        .iter()
-                        .copied()
-                        .filter(|&id| id != special_id)
-                        .collect();
-                    first_casualty(state, &occupants)
+                    chosen.and_then(|c| c.first().copied()).or_else(|| {
+                        fort_occupants(state, target_units, special_id)
+                            .first()
+                            .copied()
+                    })
                 })
                 .flatten();
             // The shared elimination path scores the kill (§9.14) and takes
@@ -552,7 +638,8 @@ fn commit_fire_attack(
     }
 
     let pre_units: Vec<UnitId> = target_units.to_vec();
-    let target_units = leaders_last(state, target_units);
+    // §7.7: the owner's choice falls first, then the casualty order.
+    let target_units = casualty_order(&[leaders_last(state, target_units)], chosen);
     apply_combat_results_table_result(state, result, &target_units, disruption);
     let eliminations: Vec<UnitId> = diff_eliminated(state, pre_units);
     record_fire(state, eliminations, None);
@@ -627,12 +714,26 @@ fn fire_paragraphs(kind: FireKind, special: Option<UnitKind>) -> Vec<String> {
 /// and is never the casualty (it falls only under §6.51 / §9.346); Dervish
 /// leaders fight and fall like any other unit (§6.51), but after the rank
 /// and file, as in every casualty pick ([`first_casualty`]).
+#[cfg(test)]
 pub(crate) fn breach_victim(
     state: &GameState,
     a: HexCoord,
     b: HexCoord,
     victim_owner: Player,
 ) -> Option<UnitId> {
+    breach_candidates(state, a, b, victim_owner)
+        .first()
+        .copied()
+}
+
+/// The units a breach of the wall between `a` and `b` may take (§6.63),
+/// in casualty order: the owner chooses which falls (§7.7).
+pub(crate) fn breach_candidates(
+    state: &GameState,
+    a: HexCoord,
+    b: HexCoord,
+    victim_owner: Player,
+) -> Vec<UnitId> {
     let candidates: Vec<UnitId> = state
         .units
         .iter()
@@ -643,7 +744,7 @@ pub(crate) fn breach_victim(
         })
         .map(|u| u.id)
         .collect();
-    first_casualty(state, &candidates)
+    leaders_last(state, &candidates)
 }
 
 /// The one unit a "one unit is eliminated" rule takes from `candidates`
@@ -1450,10 +1551,9 @@ pub fn apply_artillery_breach_wall(
         // §6.63: "If any enemy units are adjacent to the wall hexside at the
         // instant it is breached, one enemy unit is eliminated" -- leaders
         // last, as the demolition path picks.
-        if let Some(victim) = breach_victim(state, target.a, target.b, firing_player.opponent()) {
-            eliminate_unit(state, victim, ElimCause::WallBreach);
-            adjacent_eliminated = Some(victim);
-        }
+        let victim_owner = firing_player.opponent();
+        let candidates = breach_candidates(state, target.a, target.b, victim_owner);
+        adjacent_eliminated = eliminate_one(state, victim_owner, candidates, ElimCause::WallBreach);
     }
 
     state.observations.push(Observation::WallBreached {

@@ -79,6 +79,13 @@ impl Commander {
         candidates: &[GameEffect],
         rng: &mut BotRng,
     ) -> GameEffect {
+        // §7.7: a choice of losses comes before anything else.
+        if let Some(take) = candidates
+            .iter()
+            .find(|e| matches!(e, GameEffect::TakeLosses { player: p, .. } if *p == player))
+        {
+            return take.clone();
+        }
         let planned;
         let candidates = if matches!(
             state.phase,
@@ -188,6 +195,13 @@ pub fn pick_validated(
     // (or its "no"), nor the attacker's resolution for the defender.
     let own = crate::actions::own_decisions(state, player, candidates);
     let candidates = &own[..];
+    // §7.7: a choice of losses comes before anything else.
+    if let Some(take) = candidates
+        .iter()
+        .find(|e| matches!(e, GameEffect::TakeLosses { .. }))
+    {
+        return take.clone();
+    }
     // Fire phases: merge the per-stack shots into planned combined attacks
     // (§6.14) before ranking -- see `crate::fire_plan`. Movement: a unit
     // steps only onto a hex worth more to it ("position values" below), and

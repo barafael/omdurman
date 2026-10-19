@@ -53,6 +53,12 @@ impl std::fmt::Display for ElimCause {
 /// animate on replay, per project decision).
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum Observation {
+    /// `player` must choose `count` of `candidates` to lose (§7.7).
+    LossesToChoose {
+        player: Player,
+        count: u8,
+        candidates: Vec<UnitId>,
+    },
     /// A unit was eliminated.  `vp_source` is `None` when no VP are awarded
     /// (e.g. fort elimination per §9.14: "No pts: eliminating forts").
     UnitEliminated {

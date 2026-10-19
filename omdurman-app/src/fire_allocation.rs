@@ -24,6 +24,11 @@ pub struct FireAllocationState {
     /// True once "Fire" has been triggered — locks further changes
     /// until the fire phase changes and the state resets.
     pub committed: bool,
+    /// This peer resolves the side's allocated fire, one order after the
+    /// other ([`continue_fire_resolution`]): a result may wait on its
+    /// owner's choice of losses (§7.7), and nothing else is accepted until
+    /// it is made.
+    pub resolving: bool,
     /// Set by the UI panel; consumed by [`execute_fire_allocations`].
     pub execute_requested: bool,
     /// Whether the resolution overlay is open. Auto-opens on the first
@@ -593,12 +598,47 @@ pub fn execute_fire_allocations(
     }
     allocation.committed = true;
     allocation.clear_staged();
-    info!(orders = orders.len(), "fire allocated and resolved (§6.41)");
-    for order in &orders {
-        // The results arrive as Combat Resolution Cards; a refused order
-        // has posted its reason.
-        let resolution = order.resolution(&gs.0, rng);
+    info!(orders = orders.len(), "fire allocated (§6.41)");
+    // The first order now; the rest one at a time as each comes back
+    // (`continue_fire_resolution`). The results arrive as Combat Resolution
+    // Cards; a refused order has posted its reason.
+    if let Some(first) = orders.first() {
+        let resolution = first.resolution(&gs.0, rng);
         submit.submit(&gs.0, GameEvent::Effect(resolution));
+    }
+    allocation.resolving = true;
+}
+
+/// Resolve the side's allocated fire one order at a time (§6.41), once the
+/// previous one has come back and no combat waits on a choice of losses
+/// (§7.7) -- a result may stop the game for the other side's choice.
+pub fn continue_fire_resolution(
+    mut allocation: ResMut<FireAllocationState>,
+    mut rng: Option<ResMut<GameRng>>,
+    gs: Option<Res<GameStateResource>>,
+    mut submit: crate::submit::CheckedSubmit,
+) {
+    if !allocation.resolving {
+        return;
+    }
+    let (Some(rng), Some(gs)) = (rng.as_mut(), gs) else {
+        return;
+    };
+    if !gs.0.phase.is_fire() {
+        allocation.resolving = false;
+        return;
+    }
+    if gs.0.pending_losses.is_some() || !submit.pending.unconfirmed.is_empty() {
+        return;
+    }
+    let Some(order) = gs.0.unresolved_fire() else {
+        allocation.resolving = false;
+        return;
+    };
+    let resolution = order.resolution(&gs.0, rng);
+    if !submit.submit(&gs.0, GameEvent::Effect(resolution)) {
+        // Refused (the reason is on a slip): stop rather than retry it.
+        allocation.resolving = false;
     }
 }
 
@@ -692,6 +732,7 @@ pub fn reset_fire_allocation_on_phase_change(
             allocation.clear_staged();
             allocation.committed = false;
             allocation.execute_requested = false;
+            allocation.resolving = false;
         }
         *last_phase = Some(phase);
     }

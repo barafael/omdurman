@@ -201,7 +201,7 @@ mod late_joiner_tests {
             if state.game_over {
                 break;
             }
-            let chooser = state.phase_player();
+            let chooser = omdurman_bot::actions::decider(&state).unwrap_or(state.phase_player());
             let effect =
                 crate::bot_player::next_ai_action(&state, chooser, &ai, &mut rng, &mut memory);
             let event = as_recorded_event(&effect, &state);

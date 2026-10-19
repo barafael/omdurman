@@ -553,6 +553,8 @@ fn same_rule_state(a: &GameState, b: &GameState) -> bool {
         && a.units_fired_this_phase == b.units_fired_this_phase
         && a.units_fired_at_this_phase == b.units_fired_at_this_phase
         && a.fire_allocation == b.fire_allocation
+        && a.pending_losses == b.pending_losses
+        && a.combat_queue == b.combat_queue
         && a.mp_spent_this_turn == b.mp_spent_this_turn
         && a.gunboats_upstream_this_turn == b.gunboats_upstream_this_turn
         && a.zoc_stopped_this_turn == b.zoc_stopped_this_turn
@@ -873,6 +875,53 @@ fn allocate_fire_is_safe() {
         state,
         GameEffect::AllocateFire {
             orders: vec![order],
+        },
+    );
+}
+
+#[cfg_attr(kani, kani::proof)]
+#[cfg_attr(kani, kani::unwind(8))]
+#[cfg_attr(
+    kani,
+    kani::stub(
+        crate::unit_profiles::profile_for_unit,
+        crate::proof_palette::palette_profile
+    )
+)]
+#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
+fn take_losses_is_safe() {
+    let mut state = any_state();
+    // An open choice of one loss among the board's units (§7.7), present or
+    // not.
+    if any() {
+        let candidates: Vec<UnitId> = state.units.iter().map(|u| u.id).collect();
+        let player = any_player();
+        state.pending_losses = Some(PendingLosses {
+            choices: vec![LossChoice {
+                player,
+                count: 1,
+                candidates: candidates.clone(),
+                chosen: None,
+            }],
+            tail: CombatTail::Eliminate {
+                player,
+                candidates,
+                cause: ElimCause::Combat,
+            },
+        });
+    }
+    let units = biased(any_ids(2), || {
+        state
+            .pending_losses
+            .as_ref()
+            .and_then(|p| p.choices[0].candidates.first().copied())
+            .map(|id| vec![id])
+    });
+    check(
+        state,
+        GameEffect::TakeLosses {
+            player: any_player(),
+            units,
         },
     );
 }
@@ -1535,7 +1584,7 @@ fn two_moves_keep_the_invariants() {
 // decoder that panics on a malformed packet is a remote crash.
 
 /// Number of effect kinds (`GameEffect` variants).
-const EFFECT_KINDS: usize = 25;
+const EFFECT_KINDS: usize = 26;
 
 /// An arbitrary effect of kind `kind` (variant order), built from the same
 /// payload generators as the safety harnesses.
@@ -1657,6 +1706,10 @@ fn any_effect(kind: usize) -> GameEffect {
         },
         22 => GameEffect::RollDesertion { roll: any_roll() },
         23 => GameEffect::DeclineRetreatBeforeMelee,
+        25 => GameEffect::TakeLosses {
+            player: any_player(),
+            units: any_ids(2),
+        },
         _ => GameEffect::AllocateFire {
             orders: {
                 let mut orders = vec![any_fire_order()];
@@ -1711,6 +1764,7 @@ wire_round_trip! {
     wire_round_trip_confirm_setup_ready = 19;
     wire_round_trip_artillery_breach_wall = 20;
     wire_round_trip_allocate_fire = 24;
+    wire_round_trip_take_losses = 25;
 }
 
 /// Decoding any 16 bytes as an effect returns an effect or an error, never
@@ -1754,6 +1808,7 @@ fn kind_of(effect: &GameEffect) -> usize {
         GameEffect::RollDesertion { .. } => 22,
         GameEffect::DeclineRetreatBeforeMelee => 23,
         GameEffect::AllocateFire { .. } => 24,
+        GameEffect::TakeLosses { .. } => 25,
     }
 }
 
@@ -1904,6 +1959,7 @@ mod sampled {
         ("fire_combat_is_safe", fire_combat_is_safe),
         ("howitzer_fire_is_safe", howitzer_fire_is_safe),
         ("allocate_fire_is_safe", allocate_fire_is_safe),
+        ("take_losses_is_safe", take_losses_is_safe),
         ("declare_melee_is_safe", declare_melee_is_safe),
         ("resolve_melee_is_safe", resolve_melee_is_safe),
         ("retreat_before_melee_is_safe", retreat_before_melee_is_safe),

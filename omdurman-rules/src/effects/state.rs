@@ -48,6 +48,13 @@ pub struct GameState {
     /// §6.42), each marked once resolved. Cleared at every phase change.
     #[serde(default)]
     pub fire_allocation: Vec<AllocatedFire>,
+    /// A combat stopped for its owners' choice of losses (§7.7); nothing but
+    /// [`GameEffect::TakeLosses`] is accepted while it is open.
+    #[serde(default)]
+    pub pending_losses: Option<PendingLosses>,
+    /// Combat resolutions waiting behind the open choice, applied in order.
+    #[serde(default)]
+    pub combat_queue: Vec<CombatTail>,
     /// Named gunboats whose Maxim guns have fired this fire subphase (§6.42:
     /// they fire once in each subphase, independently of the gunboat's
     /// artillery, which `units_fired_this_phase` tracks). Cleared with it.
@@ -267,6 +274,8 @@ impl GameState {
             gunboat_maxims_fired_this_phase: Vec::new(),
             units_fired_at_this_phase: Vec::new(),
             fire_allocation: Vec::new(),
+            pending_losses: None,
+            combat_queue: Vec::new(),
             mp_spent_this_turn: BTreeMap::new(),
             gunboats_upstream_this_turn: Vec::new(),
             zoc_stopped_this_turn: Vec::new(),
@@ -546,6 +555,8 @@ impl GameState {
             gunboat_maxims_fired_this_phase: Vec::new(),
             units_fired_at_this_phase: Vec::new(),
             fire_allocation: Vec::new(),
+            pending_losses: None,
+            combat_queue: Vec::new(),
             mp_spent_this_turn: BTreeMap::new(),
             gunboats_upstream_this_turn: Vec::new(),
             zoc_stopped_this_turn: Vec::new(),

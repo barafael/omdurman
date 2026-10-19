@@ -747,6 +747,10 @@ impl GameState {
         if self.game_over {
             return None;
         }
+        // §7.7: a combat waits on its owner's choice of losses.
+        if let Some(choice) = self.open_loss_choice() {
+            return Some(choice.player);
+        }
         if self.phase == Phase::Setup {
             let first = self.first_to_set_up();
             return Some(if self.setup_ready(first) {

@@ -188,10 +188,15 @@ impl Plugin for GamePlugin {
             //     tuple size limit for schedule configs) --------------------
             .add_systems(
                 Update,
-                crate::fire_allocation::execute_fire_allocations
-                    .in_set(crate::GameSet)
-                    .after(crate::fire_allocation::handle_fire_allocation_click)
-                    .before(handle_picker_clicks),
+                (
+                    crate::fire_allocation::execute_fire_allocations
+                        .in_set(crate::GameSet)
+                        .after(crate::fire_allocation::handle_fire_allocation_click)
+                        .before(handle_picker_clicks),
+                    crate::fire_allocation::continue_fire_resolution
+                        .in_set(crate::GameSet)
+                        .after(crate::fire_allocation::execute_fire_allocations),
+                ),
             )
             // -- Path annotation + fire/melee direction systems ---------------
             .add_systems(
@@ -258,6 +263,7 @@ impl Plugin for GamePlugin {
                     movement_path_labels.run_if(crate::on_board),
                     crate::turn_track_ui::turn_track_labels,
                     crate::desertion::desertion_panel_ui,
+                    crate::losses::loss_choice_ui,
                 )
                     .run_if(in_state(crate::Screen::Board)),
             )
