@@ -301,16 +301,15 @@ impl UiPhaseState {
 /// invisible, and every mutation is still validated authoritatively by
 /// `apply_effect`.)
 pub fn sync_ui_phase_state(
-    game_state: Option<Res<GameStateResource>>,
+    game_state: Res<GameStateResource>,
     app_state: Res<State<crate::AppState>>,
     machine: Res<State<UiPhaseState>>,
     mut next: ResMut<NextState<UiPhaseState>>,
 ) {
     let derived = match app_state.get() {
-        crate::AppState::InGame | crate::AppState::Spectating => game_state
-            .as_deref()
-            .map(|gs| UiPhaseState::derive(&gs.0))
-            .unwrap_or(UiPhaseState::NoGame),
+        crate::AppState::InGame | crate::AppState::Spectating => {
+            UiPhaseState::derive(&game_state.0)
+        }
         _ => UiPhaseState::NoGame,
     };
     if machine.get() != &derived {

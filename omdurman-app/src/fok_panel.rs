@@ -172,13 +172,10 @@ fn fok_turn_track_widget(ui: &mut egui::Ui, current: GameTurnIndex) {
 /// below it down the board. Suppressed once the victory modal takes over.
 pub(crate) fn gordon_badge_ui(
     mut contexts: EguiContexts,
-    game_state: Option<Res<GameStateResource>>,
+    state: Res<GameStateResource>,
     mut layout: ResMut<crate::ScreenLayout>,
 ) {
-    let Some(state) = game_state.as_deref() else {
-        return;
-    };
-    if !is_fok(state) || state.0.game_over {
+    if !is_fok(&state) || state.0.game_over {
         return;
     }
     let Some(turn) = state.0.gordon_eliminated_turn else {

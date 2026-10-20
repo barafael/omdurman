@@ -461,7 +461,7 @@ pub fn fire_target_overlay_mesh(
     mut draw: crate::overlay::Overlay,
     state: Res<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
-    game_state: Option<Res<GameStateResource>>,
+    gs: Res<GameStateResource>,
     existing: Query<Entity, With<FireTargetRing>>,
     mut cache: ResMut<FireTargetCache>,
     mut last: Local<Option<FireOverlayCache>>,
@@ -480,17 +480,13 @@ pub fn fire_target_overlay_mesh(
     // a frame where neither moved (nor any counter's placement data did),
     // what we drew -- or deliberately did not draw -- is still exact.
     let inputs_moved = invalidated
-        || game_state.as_ref().is_some_and(|gs| gs.is_changed())
+        || gs.is_changed()
         || state.is_changed()
         || allocation.is_changed()
         || !placed_changed.is_empty();
     if !inputs_moved {
         return;
     }
-    let Some(gs) = game_state else {
-        *last = None;
-        return;
-    };
     let in_fire = gs.0.phase.is_fire();
     let drawn = if in_fire {
         fire_selection(&state, &placed_units, &gs.0)
@@ -630,7 +626,7 @@ pub fn fire_direction_arrow(
     mut draw: crate::overlay::Overlay,
     state: Res<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
-    game_state: Option<Res<GameStateResource>>,
+    game_state: Res<GameStateResource>,
     target: FireArrowTarget,
     peers: Peers,
     mut last: Local<Option<Option<(HexCoord, HexCoord)>>>,
@@ -648,7 +644,7 @@ pub fn fire_direction_arrow(
     // hovered hex; when none moved, the arrow we drew (or deliberately left
     // off) is still exact.
     let inputs_moved = invalidated
-        || game_state.as_ref().is_some_and(|gs| gs.is_changed())
+        || game_state.is_changed()
         || state.is_changed()
         || hovered.is_changed()
         || peers.changed()
@@ -656,19 +652,16 @@ pub fn fire_direction_arrow(
     if !inputs_moved {
         return;
     }
-    let arrow = game_state
-        .as_deref()
-        .filter(|gs| gs.0.phase.is_fire())
-        .filter(|_| peers.may_act(gs_phase_player(game_state.as_deref())))
-        .and_then(|gs| {
-            let group = fire_selection(&state, &placed_units, &gs.0)?;
-            let kinds = fire_group_kinds(&gs.0, &group);
-            if kinds.is_empty() {
-                return None;
-            }
-            let target = hovered.0?;
-            group_can_fire_at(&gs.0, &kinds, target).then_some((group.firer_hex, target))
-        });
+    let gs = &game_state.0;
+    let arrow = (gs.phase.is_fire() && peers.may_act(gs.phase_player()))
+        .then(|| fire_selection(&state, &placed_units, gs))
+        .flatten()
+        .zip(hovered.0)
+        .filter(|(group, target)| {
+            let kinds = fire_group_kinds(gs, group);
+            !kinds.is_empty() && group_can_fire_at(gs, &kinds, *target)
+        })
+        .map(|(group, target)| (group.firer_hex, target));
     if *last == Some(arrow) {
         return; // unchanged: leave the drawn arrow in place
     }
@@ -677,14 +670,6 @@ pub fn fire_direction_arrow(
     if let Some((from, to)) = arrow {
         draw.arrow(from, to, FireDirectionArrow);
     }
-}
-
-/// The player whose fire phase it is, or Dervish as a phase-neutral fallback
-/// (`may_act` is only consulted inside a fire phase, where the answer is
-/// exact).
-fn gs_phase_player(gs: Option<&GameStateResource>) -> omdurman_types::Player {
-    gs.map(|gs| gs.0.phase_player())
-        .unwrap_or(omdurman_types::Player::Dervish)
 }
 
 /// The memoized hover-preview attack plan ([`fire_combat_preview_ui`]): the
@@ -747,7 +732,7 @@ pub(crate) fn target_defence_modifiers(
 pub fn fire_combat_preview_ui(
     mut contexts: EguiContexts,
     state: Res<PickerState>,
-    game_state: Option<Res<GameStateResource>>,
+    gs: Res<GameStateResource>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     hovered: Res<crate::HoveredHex>,
     peers: Peers,
@@ -757,8 +742,7 @@ pub fn fire_combat_preview_ui(
     mut sticky: Local<Option<HexCoord>>,
     mut planned: Local<Option<PlannedPreviewCache>>,
 ) {
-    let gs_moved = game_state.as_ref().is_some_and(|gs| gs.is_changed());
-    let Some(gs) = game_state else { return };
+    let gs_moved = gs.is_changed();
     // Once this sub-phase's fire is resolved, nothing more can be allocated
     // (§6.41): no shot to preview.
     let allocated: &[FireAttack] = allocation.as_deref().map_or(&[], |a| &a.attacks);

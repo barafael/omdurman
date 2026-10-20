@@ -186,10 +186,10 @@ impl CombatCardQueue {
 fn drain_combat_observations(
     mut reader: MessageReader<events::ObservationEvent>,
     mut queue: ResMut<CombatCardQueue>,
-    game_state: Option<Res<GameStateResource>>,
+    game_state: Res<GameStateResource>,
     mut dispatches: ResMut<crate::dispatch::Dispatches>,
 ) {
-    let gs = game_state.as_deref().map(|r| &r.0);
+    let gs = Some(&game_state.0);
     for ev in reader.read() {
         let entry = match &ev.observation {
             Observation::FireResolved {

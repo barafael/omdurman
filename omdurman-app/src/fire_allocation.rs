@@ -89,7 +89,7 @@ pub fn handle_fire_allocation_click(
     mut clicks: bevy::ecs::message::MessageReader<FireClick>,
     state: ResMut<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
-    game_state: Option<Res<GameStateResource>>,
+    gs: Res<GameStateResource>,
     peers: Peers,
     mut allocation: ResMut<FireAllocationState>,
     mut dispatches: ResMut<Dispatches>,
@@ -98,7 +98,6 @@ pub fn handle_fire_allocation_click(
     let Some(&FireClick(target)) = clicks.read().last() else {
         return;
     };
-    let Some(gs) = game_state else { return };
     if !gs.0.phase.is_fire() {
         return;
     }
@@ -574,7 +573,7 @@ fn draw_allocation_row(
 /// player already has under the finger for "go".
 pub fn resolve_fire_on_enter(
     mut commands: MessageReader<crate::hotkeys::PickerCommand>,
-    game_state: Option<Res<GameStateResource>>,
+    gs: Res<GameStateResource>,
     mut allocation: ResMut<FireAllocationState>,
     peers: Peers,
 ) {
@@ -584,7 +583,6 @@ pub fn resolve_fire_on_enter(
     {
         return;
     }
-    let Some(gs) = game_state else { return };
     if allocation.staged() == 0
         || allocation.committed
         || !gs.0.phase.is_fire()
@@ -598,14 +596,13 @@ pub fn resolve_fire_on_enter(
 pub fn execute_fire_allocations(
     mut allocation: ResMut<FireAllocationState>,
     mut rng: Option<ResMut<GameRng>>,
-    gs: Option<Res<GameStateResource>>,
+    gs: Res<GameStateResource>,
     mut submit: crate::submit::CheckedSubmit,
 ) {
     if !allocation.execute_requested || allocation.committed {
         return;
     }
     let Some(rng) = rng.as_mut() else { return };
-    let Some(gs) = gs else { return };
     allocation.execute_requested = false;
 
     // An order the board has made impossible since it was staged (its
@@ -659,13 +656,13 @@ pub fn execute_fire_allocations(
 pub fn continue_fire_resolution(
     mut allocation: ResMut<FireAllocationState>,
     mut rng: Option<ResMut<GameRng>>,
-    gs: Option<Res<GameStateResource>>,
+    gs: Res<GameStateResource>,
     mut submit: crate::submit::CheckedSubmit,
 ) {
     if !allocation.resolving {
         return;
     }
-    let (Some(rng), Some(gs)) = (rng.as_mut(), gs) else {
+    let Some(rng) = rng.as_mut() else {
         return;
     };
     if !gs.0.phase.is_fire() {
@@ -691,9 +688,8 @@ pub fn continue_fire_resolution(
 /// nothing once they are committed, or outside the fire phases.
 fn allocation_arrow_key(
     allocation: &FireAllocationState,
-    gs: Option<&GameStateResource>,
+    gs: &GameStateResource,
 ) -> Vec<(HexCoord, HexCoord)> {
-    let Some(gs) = gs else { return Vec::new() };
     if allocation.committed || !gs.0.phase.is_fire() {
         return Vec::new();
     }
@@ -724,7 +720,7 @@ pub fn fire_allocation_arrows(
     mut draw: crate::overlay::Overlay,
     existing: Query<Entity, With<AllocationArrow>>,
     allocation: Res<FireAllocationState>,
-    gs: Option<Res<GameStateResource>>,
+    gs: Res<GameStateResource>,
     mut last: Local<Option<Vec<(HexCoord, HexCoord)>>>,
 ) {
     let invalidated = draw.stale();
@@ -733,12 +729,11 @@ pub fn fire_allocation_arrows(
         // come back instead of being taken for still there.
         *last = None;
     }
-    let inputs_moved =
-        invalidated || allocation.is_changed() || gs.as_ref().is_some_and(|gs| gs.is_changed());
+    let inputs_moved = invalidated || allocation.is_changed() || gs.is_changed();
     if !inputs_moved {
         return;
     }
-    let key = allocation_arrow_key(&allocation, gs.as_deref());
+    let key = allocation_arrow_key(&allocation, &gs);
     if last.as_ref() == Some(&key) {
         return;
     }
@@ -763,11 +758,10 @@ pub fn fire_allocation_arrows(
 /// resolving ([`omdurman_rules::effects::GameState::fire_resolution_begun`]),
 /// so neither a teammate nor a rejoined peer can allocate more.
 pub fn reset_fire_allocation_on_phase_change(
-    game_state: Option<Res<GameStateResource>>,
+    gs: Res<GameStateResource>,
     mut allocation: ResMut<FireAllocationState>,
     mut last_phase: Local<Option<Phase>>,
 ) {
-    let Some(gs) = game_state else { return };
     let phase = gs.0.phase;
     if *last_phase != Some(phase) {
         if last_phase.is_some() {
@@ -914,13 +908,12 @@ mod arrow_key_tests {
             ..Default::default()
         };
         assert_eq!(
-            allocation_arrow_key(&allocation, Some(&gs)),
+            allocation_arrow_key(&allocation, &gs),
             vec![(HexCoord::new(0, 0), HexCoord::new(3, 0))]
         );
-        assert!(allocation_arrow_key(&allocation, None).is_empty());
-        assert!(allocation_arrow_key(&allocation, Some(&fire_state(Phase::Movement))).is_empty());
+        assert!(allocation_arrow_key(&allocation, &fire_state(Phase::Movement)).is_empty());
         allocation.committed = true;
-        assert!(allocation_arrow_key(&allocation, Some(&gs)).is_empty());
+        assert!(allocation_arrow_key(&allocation, &gs).is_empty());
     }
 
     fn lock_app(gs: GameStateResource) -> App {
