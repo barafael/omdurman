@@ -1087,7 +1087,7 @@ fn audit_occupancy(events: &[EventLine], lines: &[&str], report: &mut AuditRepor
         }
     }
 
-    let mut event_iter = events.iter().peekable();
+    let mut next_event = 0;
     for line in lines {
         let trimmed = line.trim_start();
         // Observation lines immediately after the current event.
@@ -1118,10 +1118,15 @@ fn audit_occupancy(events: &[EventLine], lines: &[&str], report: &mut AuditRepor
             }
             continue;
         }
-        // The next event line (if this line is one).
-        let Some(e) = event_iter.peek_if_this_is_event(line) else {
+        // The next event line (if this line is one: it opens with the
+        // event's `[seq]`).
+        let Some(e) = events
+            .get(next_event)
+            .filter(|e| trimmed.starts_with(&format!("[{}]", e.seq)))
+        else {
             continue;
         };
+        next_event += 1;
         let text = &e.text;
         // Apply the event to the reconstructed board.
         if let Some(rest) = text.strip_prefix("DeployUnit ") {
@@ -1270,34 +1275,6 @@ fn parse_mp(tail: &str) -> Option<(i16, i16)> {
     let mp = tail.split_once(" mp ")?.1.split_whitespace().next()?;
     let (spent, _allowance) = mp.split_once('/')?;
     Some((cost, spent.parse().ok()?))
-}
-
-/// Event-iterator helper: advance only when this log line *is* the next
-/// event (identified by seq prefix), returning it.
-trait PeekIfEvent<'a, I>
-where
-    I: Iterator<Item = &'a EventLine>,
-{
-    fn peek_if_this_is_event(&mut self, line: &str) -> Option<&'a EventLine>;
-}
-impl<'a, I> PeekIfEvent<'a, I> for std::iter::Peekable<I>
-where
-    I: Iterator<Item = &'a EventLine>,
-{
-    fn peek_if_this_is_event(&mut self, line: &str) -> Option<&'a EventLine> {
-        let next = self.peek()?;
-        let prefix = format!("[{}] ", next.seq);
-        if line.starts_with(&prefix) {
-            let e = self.next();
-            return e;
-        }
-        // Old-format logs render `[seq]` followed by two spaces before T.
-        let alt = format!("[{}]", next.seq);
-        if line.trim_start().starts_with(&alt) {
-            return self.next();
-        }
-        None
-    }
 }
 
 #[cfg(test)]

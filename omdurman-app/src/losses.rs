@@ -35,15 +35,16 @@ fn cause(tail: &CombatTail) -> String {
 }
 
 /// The choice this seat has to make, if any.
-fn local_choice<'a>(
-    gs: &'a omdurman_rules::effects::GameState,
+fn local_choice(
+    gs: &omdurman_rules::effects::GameState,
     peers: &crate::peers::Peers,
-) -> Option<&'a LossChoice> {
+) -> Option<LossChoice> {
     gs.pending_losses
         .as_ref()?
         .choices
         .iter()
         .find(|c| c.chosen.is_none() && peers.may_act(c.player))
+        .cloned()
 }
 
 pub(crate) fn loss_choice_ui(

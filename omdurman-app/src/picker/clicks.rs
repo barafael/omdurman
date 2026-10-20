@@ -111,7 +111,6 @@ fn picker_click(
     // §1.1 multi-player commands: with scopes assigned at StartGame, a unit
     // another member commands may not be picked up. Communal units (no
     // scope claims them) are every member's to act on.
-    let scope_ok = |identity: &omdurman_rules::UnitIdentity| peers.scope_allows(identity);
 
     let origin = picker_ctx
         .layout
@@ -139,14 +138,15 @@ fn picker_click(
     {
         // Pick the specific counter under the cursor (a stack fans out, so the
         // nearest-by-rendered-position is the right one, not just the first).
-        if let Some((entity, placed)) = nearest_placed_unit_at(
+        if let Some(entity) = nearest_placed_unit_at(
             &picker_ctx.placed_units,
             coord,
             center,
             hit,
             stack_spread,
             picker_ctx.overlay.params.hex_size,
-        ) {
+        ) && let Ok((_, placed)) = picker_ctx.placed_units.get(entity)
+        {
             let owner = omdurman_rules::unit_profiles::section_owner(placed.section_name);
             if restrict_to.is_some_and(|f| owner != Some(f)) {
                 return None; // not your unit
@@ -158,7 +158,7 @@ fn picker_click(
                 placed.section_name,
                 placed.col,
                 placed.row,
-            ) && !scope_ok(&identity)
+            ) && !peers.scope_allows(&identity)
             {
                 return None; // another member's command
             }
@@ -214,7 +214,7 @@ fn picker_click(
                     game_state,
                     coord,
                     restrict_to,
-                    &scope_ok,
+                    peers,
                 );
             }
             // Movement and Setup keep the group-move stack selection (a
@@ -227,7 +227,7 @@ fn picker_click(
                     coord,
                     game_state,
                     restrict_to,
-                    &scope_ok,
+                    peers,
                     &mut picker_ctx.movement_path,
                 );
             }
@@ -245,7 +245,7 @@ fn picker_click(
                 coord,
                 game_state,
                 restrict_to,
-                &scope_ok,
+                peers,
                 &click,
             );
         }
@@ -357,7 +357,7 @@ fn picker_click(
                     click.stack_spread,
                     click.hex_size,
                 )
-                .is_some_and(|(entity, _)| entity == source);
+                .is_some_and(|entity| entity == source);
                 if !holds_foreign
                     && !same_counter
                     && select_single_unit(
@@ -367,7 +367,7 @@ fn picker_click(
                         coord,
                         game_state,
                         restrict_to,
-                        &scope_ok,
+                        peers,
                         &click,
                     )
                 {
@@ -446,7 +446,7 @@ fn picker_click(
                         coord,
                         game_state,
                         restrict_to,
-                        &scope_ok,
+                        peers,
                         &click,
                     )
                 {
@@ -479,7 +479,7 @@ fn picker_click(
 /// `restrict_to`, when `Some`, is the only faction whose units may be picked
 /// up -- set in bound multiplayer so a player can't grab an enemy counter on
 /// their own turn.  `None` (unbound session / single-seat) allows selecting
-/// either side, so solo play/testing can drive both factions. `scope_ok`
+/// either side, so solo play/testing can drive both factions. `peers`
 /// additionally gates on the §1.1 multi-player command scopes.
 fn select_single_unit(
     state: &mut PickerState,
@@ -488,10 +488,10 @@ fn select_single_unit(
     coord: HexCoord,
     game_state: Option<&crate::GameStateResource>,
     restrict_to: Option<omdurman_types::Player>,
-    scope_ok: &dyn Fn(&omdurman_rules::UnitIdentity) -> bool,
+    peers: &crate::peers::Peers,
     click: &ClickGeometry,
 ) -> bool {
-    let Some((entity, placed)) = nearest_placed_unit_at(
+    let Some(entity) = nearest_placed_unit_at(
         placed_units,
         coord,
         click.center,
@@ -499,6 +499,9 @@ fn select_single_unit(
         click.stack_spread,
         click.hex_size,
     ) else {
+        return false;
+    };
+    let Ok((_, placed)) = placed_units.get(entity) else {
         return false;
     };
     // §5.21: a "Friendlies" unit aboard a gunboat moves only with her, and
@@ -524,7 +527,7 @@ fn select_single_unit(
         placed.section_name,
         placed.col,
         placed.row,
-    ) && !scope_ok(&identity)
+    ) && !peers.scope_allows(&identity)
     {
         return false; // another member's command (§1.1) -- ignore the click
     }
@@ -560,7 +563,7 @@ fn handle_stack_double_click(
     coord: HexCoord,
     game_state: Option<&crate::GameStateResource>,
     restrict_to: Option<omdurman_types::Player>,
-    scope_ok: &dyn Fn(&omdurman_rules::UnitIdentity) -> bool,
+    peers: &crate::peers::Peers,
     movement_path: &mut MovementPath,
 ) {
     // The whole-stack selection covers only the *normal* stack: disrupted
@@ -577,7 +580,7 @@ fn handle_stack_double_click(
         })
         .filter(|(_, u)| {
             omdurman_rules::unit_profiles::identity_for_counter(u.section_name, u.col, u.row)
-                .is_none_or(|identity| scope_ok(&identity))
+                .is_none_or(|identity| peers.scope_allows(&identity))
         })
         .map(|(e, _)| e)
         .collect();
@@ -657,7 +660,7 @@ fn select_combat_tile(
     game_state: Option<&crate::GameStateResource>,
     coord: HexCoord,
     restrict_to: Option<omdurman_types::Player>,
-    scope_ok: &dyn Fn(&omdurman_rules::UnitIdentity) -> bool,
+    peers: &crate::peers::Peers,
 ) -> bool {
     let in_fire = game_state.is_some_and(|gs| {
         matches!(
@@ -676,7 +679,7 @@ fn select_combat_tile(
         })
         .filter(|(_, u)| {
             omdurman_rules::unit_profiles::identity_for_counter(u.section_name, u.col, u.row)
-                .is_none_or(|identity| scope_ok(&identity))
+                .is_none_or(|identity| peers.scope_allows(&identity))
         })
         .filter(|(_, u)| {
             // Only counters that can act in this phase join the tile: firing
@@ -2018,6 +2021,10 @@ mod tests {
         baggara(&mut world, first, 0);
         let other = baggara(&mut world, second, 1);
         world.insert_resource(PickerState::default());
+        // An unbound session: every counter is in scope.
+        world.init_resource::<crate::seats::Seats>();
+        world.insert_resource(crate::seats::LocalPlayerKey(omdurman_net::PlayerKey(1)));
+        world.init_resource::<crate::seats::SeatPresence>();
         world.insert_resource(MovementPath {
             legs: vec![(first, HexCoord::new(12, 21))],
             cost_so_far: 3,
@@ -2028,6 +2035,7 @@ mod tests {
                 move |mut state: ResMut<PickerState>,
                       mut commands: Commands,
                       placed: Query<(Entity, &PlacedUnit)>,
+                      peers: crate::peers::Peers,
                       mut path: ResMut<MovementPath>| {
                     handle_stack_double_click(
                         &mut state,
@@ -2036,7 +2044,7 @@ mod tests {
                         second,
                         None,
                         None,
-                        &|_| true,
+                        &peers,
                         &mut path,
                     );
                 },

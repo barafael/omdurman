@@ -75,14 +75,14 @@ fn counter_offset(
 /// the first in the stack. `center` is the hex's world position; `spread`
 /// and `hex_size` should match the rendered layout (use the expanded
 /// spread, since a hex is hovered when clicked).
-pub(crate) fn nearest_placed_unit_at<'a>(
-    units: &'a Query<(Entity, &PlacedUnit)>,
+pub(crate) fn nearest_placed_unit_at(
+    units: &Query<(Entity, &PlacedUnit)>,
     coord: HexCoord,
     center: Vec3,
     hit: Vec3,
     spread: f32,
     hex_size: f32,
-) -> Option<(Entity, &'a PlacedUnit)> {
+) -> Option<Entity> {
     // Common case: at most one counter on the hex. A lone counter sits
     // centred (its rendered position always wins), so no stack needs laying
     // out and the Vec + sort below are skipped.
@@ -96,7 +96,7 @@ pub(crate) fn nearest_placed_unit_at<'a>(
         sole = Some(item);
     }
     if count <= 1 {
-        return sole;
+        return sole.map(|(entity, _)| entity);
     }
     let mut stack: Vec<(Entity, &PlacedUnit)> =
         units.iter().filter(|(_, u)| u.coord == coord).collect();
@@ -122,7 +122,8 @@ pub(crate) fn nearest_placed_unit_at<'a>(
             _ => best = Some((i, d)),
         }
     }
-    best.and_then(|(i, _)| stack.get(i).copied())
+    best.and_then(|(i, _)| stack.get(i))
+        .map(|(entity, _)| *entity)
 }
 
 // -- Resources ------------------------------------------------------------------

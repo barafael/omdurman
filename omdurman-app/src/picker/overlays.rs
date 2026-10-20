@@ -926,11 +926,12 @@ pub(crate) fn update_hovered_unit(
         spread,
         overlay.params.hex_size,
     )
-    .filter(|(_, p)| match local {
-        Some(local) => omdurman_rules::unit_profiles::section_owner(p.section_name) == Some(local),
+    .filter(|&entity| match local {
+        Some(local) => placed_units.get(entity).is_ok_and(|(_, p)| {
+            omdurman_rules::unit_profiles::section_owner(p.section_name) == Some(local)
+        }),
         None => true,
-    })
-    .map(|(e, _)| e);
+    });
     hovered.set_if_neq(crate::HoveredUnit(target));
 }
 

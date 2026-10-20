@@ -110,19 +110,16 @@ fn exposed_enemy(state: &GameState) -> impl Iterator<Item = &UnitPlacement> {
     })
 }
 
-/// The nearest unit of `units` that a land unit at `from` can reach the
+/// The nearest of the unit `positions` that a land unit at `from` can reach the
 /// side of in `reach` movement points (§5.11: the ground counts, a hex of
 /// the Surgham ridge is not a hex of open plain); `u32::MAX` for any.
-fn nearest_within<'a>(
+fn nearest_within(
     state: &GameState,
-    units: impl Iterator<Item = &'a UnitPlacement>,
+    positions: impl Iterator<Item = HexCoord>,
     from: HexCoord,
     reach: u32,
 ) -> Option<HexCoord> {
-    let mut targets: Vec<HexCoord> = units
-        .map(|u| u.position)
-        .filter(|p| p.distance(from) <= reach)
-        .collect();
+    let mut targets: Vec<HexCoord> = positions.filter(|p| p.distance(from) <= reach).collect();
     targets.sort_by_key(|p| (p.distance(from), p.q, p.r));
     targets.dedup();
     if reach == u32::MAX {
@@ -193,7 +190,12 @@ fn khalifa_campaign_goal(state: &GameState, unit: &UnitPlacement) -> Option<Goal
     }
     // An army caught on the plain is attacked wherever it is; the Zariba
     // is not, before dawn.
-    let target = nearest_within(state, exposed_enemy(state), unit.position, u32::MAX);
+    let target = nearest_within(
+        state,
+        exposed_enemy(state).map(|u| u.position),
+        unit.position,
+        u32::MAX,
+    );
     Some(match target {
         Some(target) => Goal::Hex(target),
         None => Goal::Hex(on_land(
@@ -216,7 +218,13 @@ fn khalifa_historical_goal(state: &GameState, unit: &UnitPlacement) -> Option<Go
     // reach to wait there a turn (§5.11, §6.22).
     let one_move = movement_allowance(unit);
     let strike = |reach: u32| {
-        nearest_within(state, exposed_enemy(state), unit.position, reach).map(|target| {
+        nearest_within(
+            state,
+            exposed_enemy(state).map(|u| u.position),
+            unit.position,
+            reach,
+        )
+        .map(|target| {
             if guns {
                 Goal::Band {
                     target,
@@ -252,7 +260,9 @@ fn khalifa_historical_goal(state: &GameState, unit: &UnitPlacement) -> Option<Go
         // Turn 1: over the Kerreri hills after the mounted troops there.
         (Flag::Green, 1) => nearest_within(
             state,
-            exposed_enemy(state).filter(|u| HISTORICAL_KERRERI_UNITS.contains(&u.id)),
+            exposed_enemy(state)
+                .filter(|u| HISTORICAL_KERRERI_UNITS.contains(&u.id))
+                .map(|u| u.position),
             unit.position,
             u32::MAX,
         )

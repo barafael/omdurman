@@ -336,20 +336,34 @@ fn clamp_focus_to_board(state: &mut RtsCameraState, dims: &MapDims) {
 /// or once a step no longer changes it (far out, an f32 step can round to
 /// nothing short of `eps`, and the camera would never settle). Returns
 /// whether it is still on the way.
-fn ease<T>(smooth: &mut T, target: T, t: f32, eps: f32, gap: impl Fn(T, T) -> f32) -> bool
-where
-    T: Copy + PartialEq + std::ops::Add<Output = T> + std::ops::Sub<Output = T>,
-    T: std::ops::Mul<f32, Output = T>,
-{
+fn ease(smooth: &mut f32, target: f32, t: f32, eps: f32) -> bool {
     if *smooth == target {
         return false;
     }
-    if gap(*smooth, target) <= eps {
+    if (target - *smooth).abs() <= eps {
         *smooth = target;
         return false;
     }
     let next = *smooth + (target - *smooth) * t;
     // (A frame without time passing, `t == 0`, steps by nothing too.)
+    if t > 0.0 && next == *smooth {
+        *smooth = target;
+        return false;
+    }
+    *smooth = next;
+    true
+}
+
+/// [`ease`] for a point, within `eps` of its target by distance.
+fn ease_point(smooth: &mut Vec3, target: Vec3, t: f32, eps: f32) -> bool {
+    if *smooth == target {
+        return false;
+    }
+    if smooth.distance(target) <= eps {
+        *smooth = target;
+        return false;
+    }
+    let next = smooth.lerp(target, t);
     if t > 0.0 && next == *smooth {
         *smooth = target;
         return false;
@@ -371,25 +385,13 @@ fn apply_camera_transform(
 ) -> bool {
     let t = (settings.smoothing * dt).min(1.0);
     let target_focus = state.focus;
-    let mut easing = ease(&mut state.smooth_focus, target_focus, t, 0.01, |a, b| {
-        a.distance(b)
-    });
+    let mut easing = ease_point(&mut state.smooth_focus, target_focus, t, 0.01);
     let target_distance = state.distance;
-    easing |= ease(
-        &mut state.smooth_distance,
-        target_distance,
-        t,
-        0.01,
-        |a, b| (a - b).abs(),
-    );
+    easing |= ease(&mut state.smooth_distance, target_distance, t, 0.01);
     let target_yaw = state.yaw;
-    easing |= ease(&mut state.smooth_yaw, target_yaw, t, 1e-5, |a, b| {
-        (a - b).abs()
-    });
+    easing |= ease(&mut state.smooth_yaw, target_yaw, t, 1e-5);
     let target_pitch = state.pitch;
-    easing |= ease(&mut state.smooth_pitch, target_pitch, t, 1e-5, |a, b| {
-        (a - b).abs()
-    });
+    easing |= ease(&mut state.smooth_pitch, target_pitch, t, 1e-5);
 
     let hdist = state.smooth_distance * state.smooth_pitch.cos();
     let vert = state.smooth_distance * state.smooth_pitch.sin();
@@ -535,8 +537,7 @@ mod tests {
         let target = 6000.02_f32;
         let mut smooth = 6000.0_f32;
         assert!((target - smooth).abs() > 0.01, "the gap is above eps");
-        let gap = |a: f32, b: f32| (a - b).abs();
-        let still_easing = ease(&mut smooth, target, 0.01, 0.01, gap);
+        let still_easing = ease(&mut smooth, target, 0.01, 0.01);
         assert!(!still_easing);
         assert_eq!(smooth, target);
     }
@@ -544,14 +545,14 @@ mod tests {
     #[test]
     fn a_frame_without_time_does_not_snap() {
         let mut smooth = 0.0_f32;
-        assert!(ease(&mut smooth, 10.0, 0.0, 0.01, |a: f32, b: f32| (a - b).abs()));
+        assert!(ease(&mut smooth, 10.0, 0.0, 0.01));
         assert_eq!(smooth, 0.0);
     }
 
     #[test]
     fn an_ease_that_can_step_steps() {
         let mut smooth = 0.0_f32;
-        assert!(ease(&mut smooth, 10.0, 0.5, 0.01, |a: f32, b: f32| (a - b).abs()));
+        assert!(ease(&mut smooth, 10.0, 0.5, 0.01));
         assert_eq!(smooth, 5.0);
     }
 }

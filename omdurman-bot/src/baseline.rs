@@ -91,7 +91,7 @@ impl Commander {
                 best_idxs.push(i);
             }
         }
-        let idx = rng.choose(&best_idxs).copied().unwrap_or(0);
+        let idx = rng.choose(&best_idxs).unwrap_or(0);
         candidates[idx].clone()
     }
 
@@ -139,7 +139,7 @@ pub fn pick_setup(
             best_idxs.push(i);
         }
     }
-    let idx = rng.choose(&best_idxs).copied().unwrap_or(0);
+    let idx = rng.choose(&best_idxs).unwrap_or(0);
     candidates[idx].clone()
 }
 

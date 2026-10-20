@@ -409,12 +409,6 @@ pub struct SequencedDelivery {
     pub from: PeerId,
 }
 
-impl omdurman_types::net_seq::Sequenced for SequencedDelivery {
-    fn seq(&self) -> u32 {
-        self.seq
-    }
-}
-
 /// Guest-side reorder buffer for `Sequenced` deliveries (see
 /// [`omdurman_types::net_seq::ReorderBuffer`], where it is proven).
 pub type ReorderBuffer = omdurman_types::net_seq::ReorderBuffer<SequencedDelivery>;
@@ -729,9 +723,9 @@ mod receive_tests {
     #[test]
     fn reorder_buffer_pops_contiguous_runs_in_order() {
         let mut buf = ReorderBuffer::default();
-        assert!(buf.insert(delivery(5)));
-        assert!(buf.insert(delivery(3)));
-        assert!(buf.insert(delivery(4)));
+        assert!(buf.insert(5, delivery(5)));
+        assert!(buf.insert(3, delivery(3)));
+        assert!(buf.insert(4, delivery(4)));
         // Seq 2 is missing: nothing is ready.
         assert_eq!(buf.pop_next(2), None);
         assert_eq!(buf.len(), 3);
@@ -746,8 +740,8 @@ mod receive_tests {
     #[test]
     fn reorder_buffer_discards_entries_below_expected() {
         let mut buf = ReorderBuffer::default();
-        buf.insert(delivery(4));
-        buf.insert(delivery(9));
+        buf.insert(4, delivery(4));
+        buf.insert(9, delivery(9));
         // A history install moved the watermark to 7: seq 4 is stale.
         assert_eq!(buf.pop_next(8), None);
         assert_eq!(buf.first_seq(), Some(9));
@@ -758,13 +752,13 @@ mod receive_tests {
     fn reorder_buffer_times_out_once_per_stall() {
         let mut buf = ReorderBuffer::default();
         assert!(!buf.tick(10.0), "an empty buffer never times out");
-        buf.insert(delivery(3));
+        buf.insert(3, delivery(3));
         assert!(!buf.tick(SEQ_GAP_TIMEOUT_SECS * 0.5));
         assert!(buf.tick(SEQ_GAP_TIMEOUT_SECS));
         assert!(!buf.tick(SEQ_GAP_TIMEOUT_SECS), "reported once per stall");
         // Draining ends the stall; a new gap reports again.
         assert!(buf.pop_next(3).is_some());
-        buf.insert(delivery(7));
+        buf.insert(7, delivery(7));
         assert!(buf.tick(SEQ_GAP_TIMEOUT_SECS * 2.0));
     }
 

@@ -48,7 +48,7 @@ pub fn pick(
             best_idxs.push(i);
         }
     }
-    let pick = rng.choose(&best_idxs).copied().unwrap_or(0);
+    let pick = rng.choose(&best_idxs).unwrap_or(0);
     candidates[pick].clone()
 }
 

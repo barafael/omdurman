@@ -191,7 +191,7 @@ pub(crate) fn receive_sequenced(
                 buffered = net.reorder.len(),
                 "seq gap detected; buffering out-of-order delivery"
             );
-            if !net.reorder.insert(delivery) {
+            if !net.reorder.insert(seq, delivery) {
                 warn!(seq, uid, "reorder buffer full; dropping delivery");
             }
             return Vec::new();

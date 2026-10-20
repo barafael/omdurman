@@ -102,7 +102,7 @@ mod rules_root_paths {
         let _ = FireModifier::BrigadeIntegrity;
         let _ = MeleeModifier::die_modifier;
         let _ = GameTurnIndex::value;
-        let _ = MeleeFactor::sum(std::iter::empty::<&MeleeFactor>());
+        let _ = MeleeFactor::sum(std::iter::empty::<MeleeFactor>());
         let _ = MovementAllowance::halve;
         let _ = UnitKind::may_be_melee_attacked;
         let _ = UnitKind::may_melee_attack;
@@ -259,7 +259,7 @@ mod rules_submodule_paths {
     fn methods_resolve() {
         let _ = FireFactorRow::from_total;
         let _ = omdurman_rules::FireFactor::sum_to_row(std::iter::empty::<
-            &omdurman_rules::FireFactor,
+            omdurman_rules::FireFactor,
         >());
         let _ = BoardInfo::is_walled_city;
         let _ = omdurman_rules::effects::GameState::is_zariba_entrenched;

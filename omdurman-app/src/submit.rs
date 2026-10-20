@@ -69,7 +69,7 @@ pub(crate) fn submit_checked(
     gs: &GameState,
     event: GameEvent,
 ) -> bool {
-    let unconfirmed: Vec<GameEvent> = pending.unconfirmed.iter().map(|(_, e)| e.clone()).collect();
+    let unconfirmed = pending.unconfirmed_events();
     match dry_run(gs, &unconfirmed, &event) {
         Ok(()) => {
             pending.submit_game(event);

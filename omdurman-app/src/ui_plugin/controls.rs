@@ -92,8 +92,7 @@ pub(crate) fn ends_phase(event: &omdurman_net::GameEvent) -> bool {
 /// Submit the End Phase request for the phase this peer's pending
 /// submissions lead to (see [`end_phase_effect`]).
 fn submit_end_phase(gs: &omdurman_rules::effects::GameState, pending: &mut crate::PendingEdits) {
-    let unconfirmed: Vec<omdurman_net::GameEvent> =
-        pending.unconfirmed.iter().map(|(_, e)| e.clone()).collect();
+    let unconfirmed = pending.unconfirmed_events();
     let projected = crate::submit::projected_state(gs, &unconfirmed);
     pending.submit_game(omdurman_net::GameEvent::Effect(end_phase_effect(
         &projected,
@@ -269,8 +268,7 @@ fn end_phase_button(
     let (next, lost_advances) = match cached {
         Some(cached) => (cached.next, cached.lost_advances),
         None => {
-            let unconfirmed: Vec<omdurman_net::GameEvent> =
-                pending.unconfirmed.iter().map(|(_, e)| e.clone()).collect();
+            let unconfirmed = pending.unconfirmed_events();
             let next = end_phase_preview(&state.0, &unconfirmed);
             let lost_advances = advances_lost_by_ending(&state.0, &unconfirmed);
             ui.data_mut(|d| {

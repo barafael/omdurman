@@ -70,6 +70,11 @@ pub struct PendingEdits {
 }
 
 impl PendingEdits {
+    /// The submitted events still awaiting their echo, oldest first.
+    pub(crate) fn unconfirmed_events(&self) -> Vec<GameEvent> {
+        self.unconfirmed.iter().map(|(_, e)| e.clone()).collect()
+    }
+
     /// Staging buffers seeded with a fresh random uid base.
     pub fn with_uid_base(base: u64) -> Self {
         Self {

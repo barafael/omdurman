@@ -426,10 +426,7 @@ pub(crate) fn apply_seat_event(seats: &mut Vec<Seat>, event: &GameEvent) -> bool
 
 /// The seat table after the given (e.g. still unconfirmed) seat events --
 /// what a decision made now will be applied against.
-pub(crate) fn projected_seats<'a>(
-    seats: &[Seat],
-    pending: impl IntoIterator<Item = &'a GameEvent>,
-) -> Vec<Seat> {
+pub(crate) fn projected_seats(seats: &[Seat], pending: &[GameEvent]) -> Vec<Seat> {
     let mut table = seats.to_vec();
     for event in pending {
         apply_seat_event(&mut table, event);

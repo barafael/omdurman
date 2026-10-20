@@ -197,9 +197,7 @@ pub fn playthrough(scenario: Scenario, seed: u64, cfg: PlayConfig, agents: Agent
                 move_memory.record(&state, &pick);
                 pick
             } else {
-                rng.choose(&candidates)
-                    .cloned()
-                    .unwrap_or(GameEffect::AdvancePhase)
+                rng.choose(&candidates).unwrap_or(GameEffect::AdvancePhase)
             }
         };
 

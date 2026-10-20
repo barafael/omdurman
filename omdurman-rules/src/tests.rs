@@ -746,7 +746,7 @@ fn halving_rounds_down_and_never_below_one() {
 #[test]
 fn fire_factor_sum_to_row() {
     let factors = [FireFactor::Eight, FireFactor::Eight];
-    let row = FireFactor::sum_to_row(&factors);
+    let row = FireFactor::sum_to_row(factors);
     // 8 + 8 = 16 → Row16to20.
     assert!(matches!(
         row,
@@ -754,7 +754,7 @@ fn fire_factor_sum_to_row() {
     ));
 
     let factors2 = [FireFactor::Five, FireFactor::Five];
-    let row2 = FireFactor::sum_to_row(&factors2);
+    let row2 = FireFactor::sum_to_row(factors2);
     // 5 + 5 = 10 → Row06to10.
     assert!(matches!(
         row2,
@@ -773,7 +773,7 @@ fn melee_factor_values_and_sum() {
     assert_eq!(MeleeFactor::Six.value(), 6);
     assert_eq!(MeleeFactor::Seven.value(), 7);
     let combined = [MeleeFactor::Three, MeleeFactor::Five];
-    assert_eq!(MeleeFactor::sum(&combined), 8);
+    assert_eq!(MeleeFactor::sum(combined), 8);
 }
 
 #[test]

@@ -31,12 +31,12 @@ impl BotRng {
     }
 
     /// Pick a uniform-random element, or `None` if the slice is empty.
-    pub fn choose<'a, T>(&mut self, slice: &'a [T]) -> Option<&'a T> {
+    pub fn choose<T: Clone>(&mut self, slice: &[T]) -> Option<T> {
         if slice.is_empty() {
             None
         } else {
             let idx = (self.0.random_u32() as usize) % slice.len();
-            Some(&slice[idx])
+            Some(slice[idx].clone())
         }
     }
 

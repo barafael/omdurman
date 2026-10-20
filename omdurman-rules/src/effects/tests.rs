@@ -8812,7 +8812,7 @@ mod tests {
                 [firer1]
                     .iter()
                     .filter_map(|id| state.find_unit(*id))
-                    .filter_map(|u| u.profile.fire.as_ref())
+                    .filter_map(|u| u.profile.fire)
             ),
             "the single firer contributes exactly its own factor"
         );

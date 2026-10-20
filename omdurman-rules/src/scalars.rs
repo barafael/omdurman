@@ -29,8 +29,8 @@ value_enum! {
 
 impl FireFactor {
     /// Sum multiple fire factors and return the corresponding Combat Results Table row (rulebook §6.11).
-    pub fn sum_to_row<'a>(factors: impl IntoIterator<Item = &'a FireFactor>) -> FireFactorRow {
-        let total: u16 = factors.into_iter().map(|f| f.value()).sum();
+    pub fn sum_to_row(factors: impl IntoIterator<Item = FireFactor>) -> FireFactorRow {
+        let total: u16 = factors.into_iter().map(FireFactor::value).sum();
         crate::combat_results_table::FireFactorRow::from_total(total)
     }
 }
@@ -50,8 +50,8 @@ value_enum! {
 
 impl MeleeFactor {
     /// Sum multiple melee factors (rulebook §7.1).
-    pub fn sum<'a>(factors: impl IntoIterator<Item = &'a MeleeFactor>) -> u16 {
-        factors.into_iter().map(|f| f.value()).sum()
+    pub fn sum(factors: impl IntoIterator<Item = MeleeFactor>) -> u16 {
+        factors.into_iter().map(MeleeFactor::value).sum()
     }
 }
 

@@ -387,7 +387,7 @@ pub fn melee_strength(state: &GameState, units: &[UnitId]) -> u16 {
             .iter()
             .filter_map(|id| state.find_unit(*id))
             .filter(|u| !u.state.disrupted)
-            .filter_map(|u| u.profile.melee.as_ref()),
+            .filter_map(|u| u.profile.melee),
     )
 }
 

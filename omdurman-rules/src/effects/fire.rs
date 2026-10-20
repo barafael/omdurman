@@ -1039,12 +1039,12 @@ fn build_attack_from_validated(
 /// The Combat Results Table row of the printed factors an attack sums before
 /// range effects (§6.14): the printed factor of every weapon firing.
 fn printed_factor_row(gs: &GameState, attack: &FireAttack) -> FireFactorRow {
-    let factors: Vec<FireFactor> = attack
-        .shots()
-        .into_iter()
-        .filter_map(|shot| gs.find_unit(shot.unit)?.fire_factor(shot.mount))
-        .collect();
-    FireFactor::sum_to_row(factors.iter())
+    FireFactor::sum_to_row(
+        attack
+            .shots()
+            .into_iter()
+            .filter_map(|shot| gs.find_unit(shot.unit)?.fire_factor(shot.mount)),
+    )
 }
 
 /// Add named gunboats' Maxim guns to `attack` (§2.32, §6.14), or build a

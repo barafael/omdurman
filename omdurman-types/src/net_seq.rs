@@ -54,11 +54,6 @@ impl RecentUids {
     }
 }
 
-/// A delivery that carries its canonical sequence number.
-pub trait Sequenced {
-    fn seq(&self) -> u32;
-}
-
 /// Guest-side reorder buffer for sequenced deliveries that arrive past the
 /// next expected seq. Applying such an event immediately would run it
 /// against a state missing the events in between; instead it waits here
@@ -84,15 +79,15 @@ impl<T> Default for ReorderBuffer<T> {
     }
 }
 
-impl<T: Sequenced> ReorderBuffer<T> {
+impl<T> ReorderBuffer<T> {
     /// Upper bound on buffered deliveries. Past it the history request is
     /// the recovery path anyway, so further deliveries are dropped.
     pub const CAP: usize = 1024;
 
-    /// Buffer `delivery`. Returns `false` if it was not stored (buffer full).
-    /// A later delivery at an already-buffered seq replaces the earlier one.
-    pub fn insert(&mut self, delivery: T) -> bool {
-        let seq = delivery.seq();
+    /// Buffer `delivery`, sequenced at `seq`. Returns `false` if it was not
+    /// stored (buffer full). A later delivery at an already-buffered seq
+    /// replaces the earlier one.
+    pub fn insert(&mut self, seq: u32, delivery: T) -> bool {
         if self.pending.len() >= Self::CAP && !self.pending.contains_key(&seq) {
             return false;
         }
@@ -163,12 +158,6 @@ mod verification {
         tag: u8,
     }
 
-    impl Sequenced for Delivery {
-        fn seq(&self) -> u32 {
-            self.seq
-        }
-    }
-
     /// Identity dedup is exact: a uid is new exactly once, and known ever
     /// after, whatever the other uids around it.
     #[cfg(feature = "kani-expensive")]
@@ -211,7 +200,7 @@ mod verification {
         });
         let mut buffer = ReorderBuffer::default();
         for d in arrivals {
-            assert!(buffer.insert(d));
+            assert!(buffer.insert(d.seq, d));
         }
         // The latest arrival at `seq`, if any.
         let latest = |seq: u32| arrivals.iter().rev().find(|d| d.seq == seq).copied();
@@ -246,7 +235,7 @@ mod verification {
         let dt: f32 = kani::any();
         kani::assume(dt.is_finite() && dt >= 0.0 && dt <= 10.0);
         assert!(!buffer.tick(dt), "an empty buffer reported a gap");
-        buffer.insert(Delivery { seq: 3, tag: 0 });
+        buffer.insert(3, Delivery { seq: 3, tag: 0 });
         let mut reports = 0;
         for _ in 0..4 {
             if buffer.tick(dt) {
@@ -270,12 +259,6 @@ mod tests {
     struct Delivery {
         seq: u32,
         tag: u8,
-    }
-
-    impl Sequenced for Delivery {
-        fn seq(&self) -> u32 {
-            self.seq
-        }
     }
 
     /// Exhaustive over every sequence of four uids from five values: a uid
@@ -311,7 +294,7 @@ mod tests {
                         let arrivals = [a, b, c];
                         let mut buffer = ReorderBuffer::default();
                         for d in arrivals {
-                            assert!(buffer.insert(d));
+                            assert!(buffer.insert(d.seq, d));
                         }
                         let latest =
                             |seq: u32| arrivals.iter().rev().find(|d| d.seq == seq).copied();

@@ -224,7 +224,7 @@ pub(crate) fn seat_control(time: Res<Time>, mut traffic: SeatTraffic, mut books:
             } => {
                 let projected = seats::projected_seats(
                     &books.view.seats.0,
-                    traffic.pending.unconfirmed.iter().map(|(_, e)| e),
+                    &traffic.pending.unconfirmed_events(),
                 );
                 let presence = &books.view.presence;
                 match seats::decide_request(&projected, requester, &kind, |k| presence.abandoned(k))
@@ -373,8 +373,7 @@ fn resolve(
 ) {
     match outcome {
         VoteOutcome::Approved { request_id, event } => {
-            let projected =
-                seats::projected_seats(&view.seats.0, pending.unconfirmed.iter().map(|(_, e)| e));
+            let projected = seats::projected_seats(&view.seats.0, &pending.unconfirmed_events());
             if !seats::vote_still_stands(&event, |k| view.presence.abandoned(k)) {
                 out.push(Route::All(closed(
                     request_id,

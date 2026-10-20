@@ -679,7 +679,7 @@ mod late_joiner_tests {
                     .is_empty(),
                 "filed only by the recorded echo"
             );
-            pending.unconfirmed.iter().map(|(_, e)| e.clone()).collect()
+            pending.unconfirmed_events()
         };
         assert!(written(false).is_empty(), "a guest writes nothing");
         let host = written(true);
