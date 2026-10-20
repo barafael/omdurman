@@ -142,7 +142,7 @@ struct CombatCardEntry {
     hold: crate::ui::CardHold,
     /// Stable per-card id (egui click target), assigned on push.
     serial: u64,
-    /// Arrival order in the event feed (see `dispatch::feed_seq`).
+    /// Arrival order in the event feed (see `Dispatches::next_feed_seq`).
     seq: u64,
 }
 
@@ -160,10 +160,10 @@ impl CombatCardQueue {
 
     /// Queue a card, evicting the oldest unpinned card beyond
     /// [`MAX_ENTRIES`].
-    fn push(&mut self, mut entry: CombatCardEntry) {
+    fn push(&mut self, mut entry: CombatCardEntry, feed_seq: u64) {
         self.next_serial += 1;
         entry.serial = self.next_serial;
-        entry.seq = crate::dispatch::feed_seq();
+        entry.seq = feed_seq;
         self.entries.push(entry);
         while self.entries.len() > MAX_ENTRIES {
             let victim = self
@@ -264,7 +264,7 @@ fn drain_combat_observations(
             _ => continue,
         };
         dispatches.log_line(log_line(&entry));
-        queue.push(entry);
+        queue.push(entry, dispatches.next_feed_seq());
     }
 }
 

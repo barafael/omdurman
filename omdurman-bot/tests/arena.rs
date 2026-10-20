@@ -10,8 +10,6 @@
 //! `ae_score` is positive when the Anglo-Egyptians are ahead (Campaign: VP
 //! superiority; Historical: net level x10 + tie-break; FoK: level -3..3).
 
-use std::sync::mpsc;
-
 use omdurman_bot::arena::{ArenaResult, Version, play};
 use omdurman_types::{Player, Scenario};
 
@@ -44,30 +42,29 @@ fn run(scenario: Scenario, seeds: &[u64], pairings: &[(Version, Version)]) -> Ve
         .map(|n| n.get())
         .unwrap_or(4)
         .min(env_u64("ARENA_THREADS", 8) as usize);
-    let jobs = std::sync::Arc::new(std::sync::Mutex::new(jobs));
-    let (tx, rx) = mpsc::channel();
-    let mut handles = Vec::new();
-    for _ in 0..threads {
-        let jobs = jobs.clone();
-        let tx = tx.clone();
-        handles.push(std::thread::spawn(move || {
-            loop {
-                let job = jobs.lock().unwrap().pop();
-                let Some((seed, a, d)) = job else { break };
-                let r = play(scenario, seed, a, d);
-                if std::env::var("ARENA_VERBOSE").is_ok() {
-                    eprintln!("{}", r.line());
-                }
-                tx.send(r).unwrap();
-            }
-        }));
-    }
-    drop(tx);
-    let out: Vec<ArenaResult> = rx.iter().collect();
-    for h in handles {
-        h.join().unwrap();
-    }
-    out
+    let jobs = std::sync::Mutex::new(jobs);
+    let next_job = || jobs.lock().unwrap().pop();
+    std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..threads)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut results = Vec::new();
+                    while let Some((seed, a, d)) = next_job() {
+                        let r = play(scenario, seed, a, d);
+                        if std::env::var("ARENA_VERBOSE").is_ok() {
+                            eprintln!("{}", r.line());
+                        }
+                        results.push(r);
+                    }
+                    results
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .flat_map(|w| w.join().unwrap())
+            .collect()
+    })
 }
 
 struct Summary {

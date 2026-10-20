@@ -34,15 +34,8 @@ pub struct Dispatch {
     /// Stable per-slip id (egui click target).
     pub serial: u64,
     /// Arrival order across the whole event feed (slips and combat cards
-    /// share one column, newest first; see [`feed_seq`]).
+    /// share one column, newest first; see [`Dispatches::next_feed_seq`]).
     pub seq: u64,
-}
-
-/// The next arrival number of the event feed, shared by dispatch slips and
-/// combat cards so the one column orders them as they happened.
-pub(crate) fn feed_seq() -> u64 {
-    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 /// How many lines the event log keeps.
@@ -55,6 +48,8 @@ const LOG_LINES: usize = 200;
 pub struct Dispatches {
     pub slips: Vec<Dispatch>,
     next_serial: u64,
+    /// The event feed's arrival counter (see [`Self::next_feed_seq`]).
+    feed_seq: u64,
     /// Every message of the game session, oldest first, as one line each --
     /// slips and combat results alike -- for the top bar's Log menu, so a
     /// faded message can still be read.
@@ -68,19 +63,27 @@ impl Dispatches {
         self.log.clear();
     }
 
+    /// The next arrival number of the event feed, shared by dispatch slips
+    /// and combat cards so the one column orders them as they happened.
+    pub(crate) fn next_feed_seq(&mut self) -> u64 {
+        self.feed_seq += 1;
+        self.feed_seq
+    }
+
     /// Queue a dispatch. `header` is the small-caps frame label; `body` is the
     /// factual message (may contain `§N` references).
     pub fn push(&mut self, header: impl Into<String>, body: impl Into<String>) {
         self.next_serial += 1;
         let (header, body) = (header.into(), body.into());
         self.log_line(format!("{header}: {body}"));
+        let seq = self.next_feed_seq();
         self.slips.push(Dispatch {
             header,
             body,
             age: 0.0,
             hold: crate::ui::CardHold::default(),
             serial: self.next_serial,
-            seq: feed_seq(),
+            seq,
         });
         // Cap the backlog so a burst can't pile up indefinitely: evict the
         // oldest unpinned slip first.
