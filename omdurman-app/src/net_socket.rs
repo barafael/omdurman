@@ -289,58 +289,20 @@ pub(crate) fn reset_session_state(
     }
 }
 
+/// What applying the host-sequenced stream reads and writes: the net state
+/// and the outbound queue, the record, the engine and its projections, and
+/// the app state a `StartGame` or an installed history moves.
 #[derive(bevy::ecs::system::SystemParam)]
-pub(crate) struct SocketContext<'w> {
-    pub incoming: ResMut<'w, PendingIncoming>,
-    pub recorder: ResMut<'w, game_record::GameRecorder>,
-}
-
-/// Bundle of the reconnect room resource + the room id so [`handle_reconnect`]
-/// stays under the system-parameter limit.
-#[derive(bevy::ecs::system::SystemParam)]
-pub(crate) struct ReconnectInfo<'w> {
-    pub reconnect: Option<ResMut<'w, ReconnectRoom>>,
-    pub room: ResMut<'w, RoomId>,
-}
-
-/// Bundle of the net-side state reset by [`handle_reconnect`] (recorder + next
-/// app state) so the system stays under the parameter limit.
-#[derive(bevy::ecs::system::SystemParam)]
-pub(crate) struct NetResetState<'w> {
-    pub traffic: NetTraffic<'w>,
-    pub recorder: ResMut<'w, game_record::GameRecorder>,
-    pub next_state: ResMut<'w, NextState<AppState>>,
-}
-
-/// Bundle of `PendingEdits` + `NetState` + `TurnState` -- the network-side
-/// buffers and turn counter that [`handle_reconnect`] resets and
-/// [`handle_socket`] drains each frame. [`handle_reconnect`] additionally takes
-/// `PendingIncoming` separately (it does not also use [`SocketContext`], so
-/// there is no double-borrow).
-#[derive(bevy::ecs::system::SystemParam)]
-pub(crate) struct NetTraffic<'w> {
+pub(crate) struct Session<'w> {
     pub net: ResMut<'w, NetState>,
     pub pending: ResMut<'w, PendingEdits>,
     pub turn: ResMut<'w, TurnState>,
-    /// Frame clock for the election-stability window.
-    pub time: Res<'w, Time>,
-}
-
-/// The picker selection plus the per-game state a room change abandons,
-/// reset by [`handle_reconnect`] after reopening the socket.
-#[derive(bevy::ecs::system::SystemParam)]
-pub(crate) struct GameResetState<'w> {
-    pub picker_state: ResMut<'w, picker::PickerState>,
-    pub game_state: ResMut<'w, crate::GameStateResource>,
-    pub seats: ResMut<'w, crate::seats::Seats>,
-}
-
-/// Bundle of the live `AppState` (read) and its `NextState` (write) used by
-/// [`handle_socket`] to transition into `InGame`/`Spectating`.
-#[derive(bevy::ecs::system::SystemParam)]
-pub(crate) struct AppStateShift<'w> {
+    pub recorder: ResMut<'w, game_record::GameRecorder>,
+    pub gsp: GameStateParams<'w>,
     pub state: Res<'w, State<AppState>>,
     pub next_state: ResMut<'w, NextState<AppState>>,
+    /// This instance's stable player key (seat binding identity).
+    pub local_key: Res<'w, crate::seats::LocalPlayerKey>,
 }
 
 pub struct NetSocketPlugin;
@@ -373,32 +335,13 @@ impl Plugin for NetSocketPlugin {
 
 pub(crate) fn handle_reconnect(
     mut commands: Commands,
-    reconnect: ReconnectInfo,
-    net_state: NetResetState,
-    game: GameResetState,
+    mut s: Session,
+    reconnect: Option<Res<ReconnectRoom>>,
+    mut room: ResMut<RoomId>,
+    mut picker_state: ResMut<picker::PickerState>,
     mut incoming: ResMut<PendingIncoming>,
     socket: Option<Res<MatchboxSocket>>,
 ) {
-    let ReconnectInfo {
-        reconnect,
-        mut room,
-    } = reconnect;
-    let NetResetState {
-        traffic,
-        mut recorder,
-        mut next_state,
-    } = net_state;
-    let NetTraffic {
-        mut net,
-        mut turn,
-        mut pending,
-        ..
-    } = traffic;
-    let GameResetState {
-        mut picker_state,
-        mut game_state,
-        mut seats,
-    } = game;
     let Some(reconnect) = reconnect else { return };
     let new_room = reconnect.0.clone();
 
@@ -408,7 +351,7 @@ pub(crate) fn handle_reconnect(
     }
 
     let same_room = new_room == room.as_str();
-    let reset = SessionReset::for_reconnect(same_room, net.peers().is_empty());
+    let reset = SessionReset::for_reconnect(same_room, s.net.peers().is_empty());
     info!(%new_room, ?reset, "reconnecting");
 
     // -- despawn old socket --
@@ -417,23 +360,23 @@ pub(crate) fn handle_reconnect(
     }
 
     // -- reset state --
-    *net = NetState::default();
+    *s.net = NetState::default();
     if reset == SessionReset::OwnLine {
         // Nobody else was here: our record is the room's line. It is kept
         // (below) and we resume its numbering, as a peer that installed it
         // would -- no resync gate, no snapshot to wait for, and solitude is
         // session evidence again (we are not `rejoining` anyone).
-        restore_own_line(&mut net, &recorder);
+        restore_own_line(&mut s.net, &s.recorder);
     } else {
-        *turn = TurnState::default();
+        *s.turn = TurnState::default();
         // Our record is wiped below: request the canonical history on
         // reconnect (any peer with a record may serve it) and block host
         // authority until it is installed or the bootstrap budget expires.
-        net.needs_snapshot = true;
-        net.resync_gate_secs = RESYNC_BOOTSTRAP_SECS;
+        s.net.needs_snapshot = true;
+        s.net.resync_gate_secs = RESYNC_BOOTSTRAP_SECS;
         // Back into the same room: a session lives here, and our record is
         // gone until a history is installed (see `NetState::rejoining`).
-        net.rejoining = same_room;
+        s.net.rejoining = same_room;
     }
     incoming.ephemeral.clear();
     incoming.loopback.clear();
@@ -441,10 +384,10 @@ pub(crate) fn handle_reconnect(
     incoming.held.clear();
     reset_session_state(
         reset,
-        &mut pending,
-        &mut recorder,
-        &mut game_state.0,
-        &mut seats,
+        &mut s.pending,
+        &mut s.recorder,
+        &mut s.gsp.game_state.0,
+        &mut s.gsp.seats,
     );
 
     // -- drop any in-progress selection. The counters and the picker tray
@@ -468,7 +411,7 @@ pub(crate) fn handle_reconnect(
     // -- return to the lobby so the player can re-pick faction / scenario --
     // The socket is fresh; the lobby renders immediately and `handle_socket`
     // processes peer/list state next frame.
-    next_state.set(AppState::Lobby);
+    s.next_state.set(AppState::Lobby);
 
     commands.remove_resource::<ReconnectRoom>();
 }
@@ -597,16 +540,8 @@ pub(crate) fn retry_snapshot_request(
 /// Record and apply deliveries that [`receive_sequenced`] /
 /// [`drain_contiguous`] released (already marked applied), in order.
 fn apply_ready(
-    net: &mut NetState,
-    pending: &mut PendingEdits,
-    turn: &mut TurnState,
-    gsp: &mut GameStateParams,
-    recorder: &mut game_record::GameRecorder,
-    state: &AppState,
-    next_state: &mut NextState<AppState>,
+    s: &mut Session,
     targeted: &mut Vec<(NetMsg, PeerId)>,
-    // This instance's stable player key (seat binding identity).
-    local_key: omdurman_net::PlayerKey,
     ready: Vec<SequencedDelivery>,
 ) {
     for delivery in ready {
@@ -616,15 +551,15 @@ fn apply_ready(
             event: ev,
             from,
         } = delivery;
-        let sender_idx = net.sender_idx(from);
-        recorder.push_event(&ev, sender_idx, seq, Some(uid));
+        let sender_idx = s.net.sender_idx(from);
+        s.recorder.push_event(&ev, sender_idx, seq, Some(uid));
         info!(seq, uid, "applied sequenced event");
         // Our own submission made it through the host: stop retransmitting it.
-        pending.confirm(uid);
+        s.pending.confirm(uid);
         // The board shows a review: the event, now recorded, reaches the live
         // state through `timeline::catch_up_live_stash` instead.
-        if !gsp.reviewing() {
-            apply_to_board(gsp, &ev);
+        if !s.gsp.reviewing() {
+            apply_to_board(&mut s.gsp, &ev);
         }
         let GameEvent::StartGame {
             seats, scenario, ..
@@ -632,12 +567,12 @@ fn apply_ready(
         else {
             continue;
         };
-        let first_start = !turn.game_started;
-        turn.game_started = true;
+        let first_start = !s.turn.game_started;
+        s.turn.game_started = true;
         // The engine always takes the StartGame (the record is the state); only
         // the *view* switch is gated on the lobby, so a player browsing the menu
         // is not yanked.
-        if *state != AppState::Lobby {
+        if *s.state.get() != AppState::Lobby {
             info!(%scenario, "StartGame applied; view unchanged (not in lobby)");
             continue;
         }
@@ -645,20 +580,20 @@ fn apply_ready(
         // board rather than whatever screen preceded the lobby. (The board data
         // loads from `pending_map_load`; the board picked follows the scenario
         // via `sync_board_to_game`.)
-        gsp.next_app_mode.set(crate::AppMode::Game);
-        next_state.set(AppState::InGame);
+        s.gsp.next_app_mode.set(crate::AppMode::Game);
+        s.next_state.set(AppState::InGame);
         info!(%scenario, "game started via host StartGame");
         // A guest without a seat is a spectator: request the full record from
         // the host so it converges to every unit already placed, not just
         // events seen after this point. (Seated guests are present from the
         // start, so they don't need it.) Seats are keyed by the stable player
         // key, never by the session `PeerId`.
-        let locally_assigned = crate::seats::seat_of(seats, local_key).is_some();
-        if first_start && !net.is_host && !locally_assigned && !net.snapshot_applied {
+        let locally_assigned = crate::seats::seat_of(seats, s.local_key.0).is_some();
+        if first_start && !s.net.is_host && !locally_assigned && !s.net.snapshot_applied {
             info!("no faction assigned to this peer; requesting snapshot as spectator");
-            net.needs_snapshot = true;
-            net.snapshot_retry_timer = 0.0;
-            if let Some(host) = net.host_id() {
+            s.net.needs_snapshot = true;
+            s.net.snapshot_retry_timer = 0.0;
+            if let Some(host) = s.net.host_id() {
                 targeted.push((NetMsg::Control(Control::RequestSnapshot), host));
             }
         }
@@ -1102,16 +1037,9 @@ fn serve_snapshot(
 /// re-queues own events the canonical line lacks, and rebuilds the world
 /// from the record (§divergence healing).
 fn install_foreign_history(
-    net: &mut NetState,
-    recorder: &mut game_record::GameRecorder,
-    pending: &mut PendingEdits,
-    gsp: &mut GameStateParams,
+    s: &mut Session,
     commands: &mut Commands,
-    state: &AppState,
-    next_state: &mut NextState<AppState>,
-    turn: &mut TurnState,
     targeted: &mut Vec<(NetMsg, PeerId)>,
-    local_key: omdurman_net::PlayerKey,
     record: omdurman_net::GameRecord,
 ) {
     // Accept a record only if it carries events we haven't applied
@@ -1136,54 +1064,54 @@ fn install_foreign_history(
     // A host that has applied nothing (a relaunched process that
     // re-won the election) has no line to defend: it takes the
     // record a guest offers it.
-    if net.is_host && net.resync_gate_secs <= 0.0 && net.last_applied_seq.is_some() {
+    if s.net.is_host && s.net.resync_gate_secs <= 0.0 && s.net.last_applied_seq.is_some() {
         debug!("host: ignoring foreign game history");
         return;
     }
     let record_max = record.events.iter().map(|e| e.seq).max();
-    let ahead = match (record_max, net.last_applied_seq) {
+    let ahead = match (record_max, s.net.last_applied_seq) {
         (Some(hi), Some(applied)) => hi > applied,
         (Some(_), None) => true,
         (None, _) => false,
     };
-    if !ahead && !net.force_install_history {
+    if !ahead && !s.net.force_install_history {
         // A record whose highest seq *equals* our watermark is not
         // junk -- it is proof that we are already converged. Clear
         // the snapshot latch so the 2s request loop stops; only a
         // record strictly *behind* us leaves the latch alone (it
-        // cannot satisfy a pending resync, so keep retrying).
-        if record_max == net.last_applied_seq {
+        // cannot satisfy a s.pending resync, so keep retrying).
+        if record_max == s.net.last_applied_seq {
             info!(
-                watermark = ?net.last_applied_seq,
+                watermark = ?s.net.last_applied_seq,
                 "received game history matching local state; already converged"
             );
-            net.snapshot_applied = true;
-            net.needs_snapshot = false;
-            net.rejoining = false;
-            net.snapshot_retry_timer = 0.0;
-            net.force_install_history = false;
+            s.net.snapshot_applied = true;
+            s.net.needs_snapshot = false;
+            s.net.rejoining = false;
+            s.net.snapshot_retry_timer = 0.0;
+            s.net.force_install_history = false;
         } else {
             info!("ignoring game history that is not ahead of local state");
         }
         return;
     }
-    net.snapshot_applied = true;
-    net.needs_snapshot = false;
-    net.rejoining = false;
-    net.snapshot_retry_timer = 0.0;
-    net.force_install_history = false;
-    net.resync_gate_secs = 0.0;
+    s.net.snapshot_applied = true;
+    s.net.needs_snapshot = false;
+    s.net.rejoining = false;
+    s.net.snapshot_retry_timer = 0.0;
+    s.net.force_install_history = false;
+    s.net.resync_gate_secs = 0.0;
     info!(
         "received game history ({} events), replaying to resync",
         record.events.len()
     );
-    let old_record = recorder.record.take();
-    recorder.install_history(record.clone());
+    let old_record = s.recorder.record.take();
+    s.recorder.install_history(record.clone());
     // Own events the discarded line applied but the canonical one
     // lacks were confirmed by their (rogue) echo; re-queue them so
     // player input survives the rollback.
     if let Some(old) = old_record {
-        let requeued = pending.requeue_missing_own(&old, &record);
+        let requeued = s.pending.requeue_missing_own(&old, &record);
         if requeued > 0 {
             warn!(
                 requeued,
@@ -1196,13 +1124,14 @@ fn install_foreign_history(
     // an event also present in the snapshot isn't applied a second
     // time (only seqs above the watermark are new to this joiner).
     // The uid dedup set must describe the installed line too.
-    net.last_applied_seq = record_max;
-    net.recent_uids
+    s.net.last_applied_seq = record_max;
+    s.net
+        .recent_uids
         .rebuild(record.events.iter().filter_map(|e| e.uid));
     // (Under a review the board shows the reviewed position: the
     // stashed live state replays the installed record instead,
     // `timeline::catch_up_live_stash`.)
-    if !gsp.reviewing() {
+    if !s.gsp.reviewing() {
         let GameStateParams {
             game_state,
             game_map,
@@ -1215,7 +1144,7 @@ fn install_foreign_history(
             press,
             rng,
             ..
-        } = gsp;
+        } = &mut s.gsp;
         rebuild_state_to(
             &record,
             None,
@@ -1248,18 +1177,16 @@ fn install_foreign_history(
         // The installed history proves a game is running: host
         // promotion must resume its numbering, and the
         // proactive history push must serve reconnectees.
-        turn.game_started = true;
-        gsp.next_app_mode.set(crate::AppMode::Game);
-        if *state == AppState::Lobby {
-            next_state.set(AppState::InGame);
+        s.turn.game_started = true;
+        s.gsp.next_app_mode.set(crate::AppMode::Game);
+        if *s.state.get() == AppState::Lobby {
+            s.next_state.set(AppState::InGame);
         }
     }
     // Live deliveries buffered past the old watermark may now be
     // contiguous with the installed history.
-    let ready = drain_contiguous(net, pending);
-    apply_ready(
-        net, pending, turn, gsp, recorder, state, next_state, targeted, local_key, ready,
-    );
+    let ready = drain_contiguous(&mut s.net, &mut s.pending);
+    apply_ready(s, targeted, ready);
 }
 
 /// The per-frame receive path: socket I/O (peer roster, election, inbound
@@ -1268,12 +1195,10 @@ fn install_foreign_history(
 /// (`OfflineMode`) sequences and applies its own submissions.
 pub(crate) fn handle_socket(
     mut socket: Option<ResMut<MatchboxSocket>>,
-    traffic: NetTraffic,
-    app_state: AppStateShift,
+    mut s: Session,
+    mut incoming: ResMut<PendingIncoming>,
+    time: Res<Time>,
     mut commands: Commands,
-    mut gsp: GameStateParams,
-    mut ctx: SocketContext,
-    local_key: Res<crate::seats::LocalPlayerKey>,
     mut memo: Local<SocketMemo>,
 ) {
     let SocketMemo {
@@ -1281,25 +1206,15 @@ pub(crate) fn handle_socket(
         socket_lost,
         undecodable_from,
     } = &mut *memo;
-    let NetTraffic {
-        mut net,
-        mut pending,
-        mut turn,
-        time,
-    } = traffic;
-    let AppStateShift {
-        state,
-        mut next_state,
-    } = app_state;
 
     let (peers_changed, my_id_changed, newly_connected, socket_live) =
-        poll_socket_roster(&mut socket, &mut net, socket_lost, &mut commands);
+        poll_socket_roster(&mut socket, &mut s.net, socket_lost, &mut commands);
     update_election(
-        &mut net,
+        &mut s.net,
         &time,
         peers_changed,
         my_id_changed,
-        turn.game_started,
+        s.turn.game_started,
     );
 
     // The lobby is entered voluntarily (via the mode picker), not
@@ -1312,8 +1227,8 @@ pub(crate) fn handle_socket(
     // world, so socket processing is suppressed; a review on top of a session
     // does not stop it (the events go to the stashed live state, see
     // `timeline`). During `Splash` there is no socket yet.
-    if *state.get() == AppState::Splash
-        || (*state.get() == AppState::Spectating && !gsp.reviewing())
+    if *s.state.get() == AppState::Splash
+        || (*s.state.get() == AppState::Spectating && !s.gsp.reviewing())
     {
         return;
     }
@@ -1322,21 +1237,21 @@ pub(crate) fn handle_socket(
     let mut sequenced_out: Vec<NetMsg> = Vec::new();
 
     stage_catch_up(
-        &mut net,
-        &turn,
+        &mut s.net,
+        &s.turn,
         &time,
-        &ctx.recorder,
+        &s.recorder,
         &newly_connected,
         &mut targeted,
     );
 
-    let is_host = net.is_host;
-    let my_id = net.my_id().unwrap_or(PeerId(uuid::Uuid::nil()));
+    let is_host = s.net.is_host;
+    let my_id = s.net.my_id().unwrap_or(PeerId(uuid::Uuid::nil()));
     let decoded = collect_decoded(
         socket_live,
         &mut socket,
-        &mut net,
-        &mut ctx.incoming,
+        &mut s.net,
+        &mut incoming,
         undecodable_from,
         my_id,
     );
@@ -1353,7 +1268,7 @@ pub(crate) fn handle_socket(
                     // so re-forward it to whoever *we* currently consider the
                     // host. If we are in fact the host, the two views reconcile
                     // within a frame or two and the resend reaches us.
-                    match net.host_id() {
+                    match s.net.host_id() {
                         Some(host) => {
                             warn!(
                                 "received unsequenced Game event but we are not host; re-forwarding to current host"
@@ -1366,7 +1281,7 @@ pub(crate) fn handle_socket(
                             );
                             // Bounce it back onto our own outgoing broadcast so
                             // `flush_pending` re-submits once a host is known.
-                            pending
+                            s.pending
                                 .outgoing_broadcast
                                 .push(NetMsg::Game { uid, event: ev });
                         }
@@ -1374,10 +1289,10 @@ pub(crate) fn handle_socket(
                     continue;
                 }
                 host_handle_game(
-                    &mut net,
-                    &mut ctx.incoming,
-                    &ctx.recorder,
-                    &turn,
+                    &mut s.net,
+                    &mut incoming,
+                    &s.recorder,
+                    &s.turn,
                     held_uids,
                     &mut sequenced_out,
                     uid,
@@ -1391,9 +1306,9 @@ pub(crate) fn handle_socket(
                 event: ev,
             } => {
                 let ready = receive_sequenced(
-                    &mut net,
-                    &ctx.recorder,
-                    &mut pending,
+                    &mut s.net,
+                    &s.recorder,
+                    &mut s.pending,
                     own_loopback,
                     SequencedDelivery {
                         seq,
@@ -1402,24 +1317,13 @@ pub(crate) fn handle_socket(
                         from: peer,
                     },
                 );
-                apply_ready(
-                    &mut net,
-                    &mut pending,
-                    &mut turn,
-                    &mut gsp,
-                    &mut ctx.recorder,
-                    state.get(),
-                    &mut next_state,
-                    &mut targeted,
-                    local_key.0,
-                    ready,
-                );
+                apply_ready(&mut s, &mut targeted, ready);
             }
             NetMsg::Ephemeral(eph) => {
-                ctx.incoming.ephemeral.push((eph, peer));
+                incoming.ephemeral.push((eph, peer));
             }
             NetMsg::Control(Control::RequestSnapshot) => {
-                serve_snapshot(is_host, &net, &turn, &ctx.recorder, peer, &mut targeted);
+                serve_snapshot(is_host, &s.net, &s.turn, &s.recorder, peer, &mut targeted);
             }
             NetMsg::Control(
                 control @ (Control::SeatRequest { .. }
@@ -1428,34 +1332,22 @@ pub(crate) fn handle_socket(
                 | Control::SeatVoteClosed { .. }),
             ) => {
                 // Seat claims and votes: handled by `seat_arbiter`.
-                ctx.incoming.seat_control.push((control, peer));
+                incoming.seat_control.push((control, peer));
             }
             NetMsg::Control(Control::Chunk { .. }) => {
                 // Reassembled above (`ChunkAssembler::receive` never passes
                 // a chunk through).
             }
             NetMsg::Control(Control::GameHistory(record)) => {
-                install_foreign_history(
-                    &mut net,
-                    &mut ctx.recorder,
-                    &mut pending,
-                    &mut gsp,
-                    &mut commands,
-                    state.get(),
-                    &mut next_state,
-                    &mut turn,
-                    &mut targeted,
-                    local_key.0,
-                    record,
-                );
+                install_foreign_history(&mut s, &mut commands, &mut targeted, record);
             }
         }
     }
     for (msg, peer) in targeted {
-        pending.outgoing_targeted.push((msg, peer));
+        s.pending.outgoing_targeted.push((msg, peer));
     }
     for msg in sequenced_out {
-        pending.outgoing_broadcast.push(msg);
+        s.pending.outgoing_broadcast.push(msg);
     }
 }
 
