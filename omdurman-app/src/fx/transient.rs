@@ -465,9 +465,11 @@ pub(super) fn clear_effects_on_snap(
     mut commands: Commands,
     marks: Query<Entity, With<Transient>>,
     mut sightings: ResMut<super::pointers::Sightings>,
+    mut zariba: ResMut<super::zariba::ZaribaGrowth>,
 ) {
     if snap.is_some() {
         clear_marks(&mut commands, &marks, &mut sightings);
+        zariba.clear();
     }
 }
 
@@ -477,8 +479,10 @@ pub(super) fn clear_effects_on_exit(
     steady: Query<Entity, SteadyMarks>,
     mut sightings: ResMut<super::pointers::Sightings>,
     mut focus: ResMut<super::CardFocus>,
+    mut zariba: ResMut<super::zariba::ZaribaGrowth>,
 ) {
     clear_marks(&mut commands, &marks, &mut sightings);
+    zariba.clear();
     for entity in &steady {
         commands.entity(entity).despawn();
     }

@@ -161,7 +161,7 @@ seat handling).
 
 ## UI
 
-- Polish: selection pulse, howitzer scatter animation, Zariba build animation.
+- Polish: selection pulse, howitzer scatter animation.
 - Unconfirmed, from the play-test and review notes:
   - Fire slips pile up.
   - Turn and phase are shown in five places (review 4.11).

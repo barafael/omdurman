@@ -17,7 +17,9 @@
 //! * a refused click flashes its hex, and a committed move keeps faint dots
 //!   along its route until its echo arrives ([`orders`]);
 //! * the combat card under the pointer rings its hexes ([`pointers`]);
-//! * a short note says when it becomes your move ([`banner`]).
+//! * a short note says when it becomes your move ([`banner`]);
+//! * newly built Zariba hexsides are laid along their length, one after
+//!   another ([`zariba`]).
 //!
 //! All of it is presentation only: the engine state is final before anything
 //! starts, and nothing here gates input, submissions or the apply path. The
@@ -35,7 +37,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiPrimaryContextPass, egui};
 use omdurman_rules::UnitId;
 use omdurman_rules::effects::GameState;
-use omdurman_types::HexCoord;
+use omdurman_types::{HexCoord, HexsideRef};
 
 pub mod announce;
 pub mod banner;
@@ -44,6 +46,7 @@ pub mod orders;
 pub mod pointers;
 pub mod review;
 pub mod transient;
+pub mod zariba;
 
 pub use counters::{CounterTurn, MovementAnimation};
 pub use pointers::CardFocus;
@@ -178,33 +181,50 @@ pub fn motion_menu(ui: &mut egui::Ui, settings: &mut MotionSettings) {
 #[derive(Resource, Default)]
 pub struct SnapSprites;
 
-/// What one live (sequenced-echo) event did to the counters: who moved where,
-/// who entered. Filled by the receive path, never by a rebuild, so replays and
-/// installs raise no marks.
+/// What one live (sequenced-echo) event did to the board: who moved where,
+/// who entered, which Zariba hexsides were built. Filled by the receive path,
+/// never by a rebuild, so replays and installs raise no marks.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct LiveChange {
     /// Units now on another hex: `(unit, new hex)`.
     pub moved: Vec<(UnitId, HexCoord)>,
     /// Units new on the board: `(unit, hex)`.
     pub placed: Vec<(UnitId, HexCoord)>,
+    /// Zariba hexsides built (§5.3).
+    pub built: Vec<HexsideRef>,
     /// The change happened during set-up (deployment is no news).
     pub setup: bool,
 }
 
+/// What [`LiveChange::between`] diffs against: every unit's position, and
+/// how many Zariba hexsides stood (the engine only ever adds to that list).
+pub struct LiveSnapshot {
+    positions: HashMap<UnitId, HexCoord>,
+    zariba_sides: usize,
+}
+
 impl LiveChange {
-    /// Positions of every unit, to diff against after an apply.
-    pub fn snapshot(gs: &GameState) -> HashMap<UnitId, HexCoord> {
-        gs.units.iter().map(|u| (u.id, u.position)).collect()
+    /// The board before an apply, to diff against after it.
+    pub fn snapshot(gs: &GameState) -> LiveSnapshot {
+        LiveSnapshot {
+            positions: gs.units.iter().map(|u| (u.id, u.position)).collect(),
+            zariba_sides: gs.zariba_hexsides.len(),
+        }
     }
 
     /// The change from `before` (a [`snapshot`](Self::snapshot)) to `after`.
-    pub fn between(before: &HashMap<UnitId, HexCoord>, after: &GameState, setup: bool) -> Self {
+    pub fn between(before: &LiveSnapshot, after: &GameState, setup: bool) -> Self {
         let mut change = LiveChange {
+            built: after
+                .zariba_hexsides
+                .get(before.zariba_sides..)
+                .unwrap_or_default()
+                .to_vec(),
             setup,
             ..Default::default()
         };
         for unit in &after.units {
-            match before.get(&unit.id) {
+            match before.positions.get(&unit.id) {
                 Some(&was) if was != unit.position => change.moved.push((unit.id, unit.position)),
                 Some(_) => {}
                 None => change.placed.push((unit.id, unit.position)),
@@ -214,7 +234,7 @@ impl LiveChange {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.moved.is_empty() && self.placed.is_empty()
+        self.moved.is_empty() && self.placed.is_empty() && self.built.is_empty()
     }
 }
 
@@ -263,6 +283,7 @@ impl Plugin for FxPlugin {
             .init_resource::<LiveApplied>()
             .init_resource::<pointers::Sightings>()
             .init_resource::<CardFocus>()
+            .init_resource::<zariba::ZaribaGrowth>()
             .add_message::<FxRequest>()
             .add_systems(Startup, transient::spawn_fx_assets)
             .add_systems(
@@ -293,6 +314,7 @@ impl Plugin for FxPlugin {
                         .after(crate::picker::reconcile_unit_sprites)
                         .run_if(crate::on_board),
                     transient::animate_transients.after(transient::spawn_fx),
+                    zariba::grow_zariba.after(announce::announce_live_changes),
                 ),
             )
             .add_systems(
@@ -356,6 +378,19 @@ mod tests {
             change.placed,
             vec![(UnitId::AliWadHelu_0_0, HexCoord::new(7, 0))]
         );
+    }
+
+    #[test]
+    fn the_live_change_lists_the_zariba_sides_built() {
+        let mut gs = GameState::new(omdurman_types::Scenario::Campaign);
+        let side = |q| omdurman_types::HexsideRef::new(HexCoord::new(q, 0), HexCoord::new(q, 1));
+        gs.zariba_hexsides.push(side(0));
+        let before = LiveChange::snapshot(&gs);
+        assert!(LiveChange::between(&before, &gs, false).is_empty());
+        gs.zariba_hexsides.push(side(1));
+        gs.zariba_hexsides.push(side(2));
+        let change = LiveChange::between(&before, &gs, false);
+        assert_eq!(change.built, vec![side(1), side(2)]);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! What on the board is news to the local player: the opponent's moves and
-//! entries (a ring, and a sighting for the edge pointer), and every combat (a
-//! trace or a melee mark).
+//! entries (a ring, and a sighting for the edge pointer), every combat (a
+//! trace or a melee mark), and the Zariba going up.
 
 use bevy::ecs::message::{MessageReader, MessageWriter};
 use bevy::prelude::*;
@@ -27,18 +27,23 @@ fn owner_of(unit: UnitId) -> Option<Player> {
 }
 
 /// The opponent's moves and entries: a ring at each hex they ended on, and a
-/// sighting for the edge pointer.
+/// sighting for the edge pointer. Zariba hexsides anyone built are laid.
 pub fn announce_live_changes(
     mut live: ResMut<LiveApplied>,
     peers: crate::peers::Peers,
     mut fx: MessageWriter<FxRequest>,
     mut sightings: ResMut<Sightings>,
+    settings: Res<super::MotionSettings>,
+    mut zariba: ResMut<super::zariba::ZaribaGrowth>,
 ) {
     if live.0.is_empty() {
         return;
     }
     let mut hexes: Vec<HexCoord> = Vec::new();
     for change in live.0.drain(..) {
+        if settings.motion() {
+            zariba.start(&change.built);
+        }
         if change.setup || change.is_empty() {
             continue;
         }

@@ -135,6 +135,7 @@ fn update_dynamic_hexside_bars(
     game_map: Option<Res<omdurman_hexmap::GameMap>>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
+    zariba: Res<crate::fx::zariba::ZaribaGrowth>,
     mut pool: ResMut<HexsideBars>,
     mut bars_q: Query<
         (
@@ -147,7 +148,7 @@ fn update_dynamic_hexside_bars(
     >,
 ) {
     let Some(gs) = game_state else { return };
-    if !gs.is_changed() && !pool.placing {
+    if !gs.is_changed() && !pool.placing && !zariba.is_changed() {
         return;
     }
     let Some(game_map) = game_map else { return };
@@ -166,7 +167,14 @@ fn update_dynamic_hexside_bars(
         if !built_zariba && game_map.hexsides.get(edge) == Some(&kind) {
             continue; // unchanged — the authored map texture already shows it
         }
-        let (p0, p1) = hexside_segment(edge, layout.adjusted_origin(&overlay.params), &overlay);
+        let (p0, mut p1) = hexside_segment(edge, layout.adjusted_origin(&overlay.params), &overlay);
+        // A side going up live is laid from one end (fx::zariba).
+        if let Some(fraction) = zariba.fraction(edge) {
+            if fraction <= 0.0 {
+                continue;
+            }
+            p1 = p0.lerp(p1, fraction);
+        }
         let width = overlay.params.hex_size * HEXSIDE_WIDTH_FRAC;
         if kind == HexsideKind::Breach {
             // The manual marks a breach with a counter beside the wall
@@ -302,7 +310,10 @@ impl Plugin for HexsideLayerPlugin {
             .init_resource::<HighlightedHexside>()
             .add_systems(
                 Update,
-                (update_dynamic_hexside_bars, update_hexside_highlight),
+                (
+                    update_dynamic_hexside_bars.after(crate::fx::zariba::grow_zariba),
+                    update_hexside_highlight,
+                ),
             );
     }
 }
