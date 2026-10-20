@@ -279,7 +279,7 @@ impl Plugin for NetPlugin {
             .insert_resource(crate::LocalOptionalRule::default())
             .insert_resource(crate::lobby::LocalAiCommanders::default())
             .insert_resource(crate::LobbyScenario::default())
-            .insert_resource(crate::lobby::RemoteScenario::default())
+            .init_resource::<crate::lobby::SettingsChosen>()
             .insert_resource(crate::events::PendingObservations::default())
             .insert_resource(TurnState::default())
             .insert_resource(crate::LobbyTab::default())
@@ -405,6 +405,7 @@ pub(crate) struct LocalAnnouncement<'w> {
     scenario: Res<'w, crate::LobbyScenario>,
     optional_rules: Res<'w, crate::LocalOptionalRule>,
     ai_commanders: Res<'w, crate::lobby::LocalAiCommanders>,
+    chosen: Res<'w, crate::lobby::SettingsChosen>,
 }
 
 /// Who [`send_player_info_on_connect`] has told what: the id and key we
@@ -417,20 +418,19 @@ pub(crate) struct Announced {
     was_host: bool,
 }
 
-/// The host's lobby settings as the messages that announce them: the
-/// scenario pick and the optional rules + AI commanders.
-pub(crate) fn host_lobby_settings(
+/// The lobby settings we hold, as the message that announces them.
+pub(crate) fn lobby_settings_message(
     scenario: &crate::LobbyScenario,
     optional_rules: &crate::LocalOptionalRule,
     ai_commanders: &crate::lobby::LocalAiCommanders,
-) -> [NetMsg; 2] {
-    [
-        NetMsg::Ephemeral(Ephemeral::ScenarioChoice(scenario.0)),
-        NetMsg::Ephemeral(Ephemeral::HostLobbyRules {
-            optional_rules: optional_rules.0.clone(),
-            ai_commanders: ai_commanders.0.clone(),
-        }),
-    ]
+    chosen: &crate::lobby::SettingsChosen,
+) -> NetMsg {
+    NetMsg::Ephemeral(Ephemeral::LobbySettings(omdurman_net::LobbySettings {
+        scenario: scenario.0,
+        optional_rules: optional_rules.0.clone(),
+        ai_commanders: ai_commanders.0.clone(),
+        chosen: chosen.0,
+    }))
 }
 
 /// Announce ourselves (identity, picks, readiness) to every peer we have not
@@ -444,7 +444,10 @@ pub(crate) fn host_lobby_settings(
 /// command scope (§1.1) and, while we host, the host's lobby settings --
 /// since they are otherwise only broadcast when they change: a joiner would
 /// show its own defaults as the host's choice. A peer just promoted to host
-/// announces its settings to everyone.
+/// announces its settings to everyone. A guest holding settings a host chose
+/// announces them to joiners as well: a joiner that wins the host election
+/// takes them over instead of imposing its defaults (see
+/// [`crate::lobby::RoomSettings::adopt`]).
 pub(crate) fn send_player_info_on_connect(
     net: Res<NetState>,
     me: LocalAnnouncement,
@@ -462,6 +465,7 @@ pub(crate) fn send_player_info_on_connect(
         scenario,
         optional_rules,
         ai_commanders,
+        chosen,
     } = me;
     if !claim.is_settled() {
         return;
@@ -475,7 +479,7 @@ pub(crate) fn send_player_info_on_connect(
     told.notified.retain(|peer| net.peers().contains(peer));
     let promoted = net.is_host && !told.was_host;
     told.was_host = net.is_host;
-    let host_settings = host_lobby_settings(&scenario, &optional_rules, &ai_commanders);
+    let settings = lobby_settings_message(&scenario, &optional_rules, &ai_commanders, &chosen);
     for &peer in net.peers() {
         let new_peer = !told.notified.contains(&peer);
         if new_peer {
@@ -509,24 +513,25 @@ pub(crate) fn send_player_info_on_connect(
                 peer,
             ));
         }
-        if net.is_host && (new_peer || promoted) {
-            for msg in host_settings.iter().cloned() {
-                pending.outgoing_targeted.push((msg, peer));
-            }
+        let announce = if net.is_host {
+            new_peer || promoted
+        } else {
+            new_peer && chosen.0
+        };
+        if announce {
+            pending.outgoing_targeted.push((settings.clone(), peer));
         }
     }
 }
 
 /// What [`apply_ephemeral`] adopts from other peers besides the peer
-/// entities: the host's lobby settings, and our own key (a duplicate).
+/// entities: the room's lobby settings, and our own key (a duplicate).
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct EphemeralSinks<'w> {
-    remote_scenario: ResMut<'w, crate::lobby::RemoteScenario>,
-    lobby_scenario: ResMut<'w, crate::LobbyScenario>,
-    optional_rules: ResMut<'w, crate::LocalOptionalRule>,
-    ai_commanders: ResMut<'w, crate::lobby::LocalAiCommanders>,
+    settings: crate::lobby::RoomSettings<'w>,
     local_key: ResMut<'w, crate::seats::LocalPlayerKey>,
     turn: Res<'w, TurnState>,
+    pending: ResMut<'w, PendingEdits>,
 }
 
 pub(crate) fn apply_ephemeral(
@@ -626,22 +631,16 @@ pub(crate) fn apply_ephemeral(
                         .try_insert(crate::peers::SetupReadyFlag(ready));
                 }
             }
-            // The host's lobby settings. Only the current host's count (a
-            // demoted host's last word may still be in flight); guests adopt
-            // them, so a guest promoted to host carries on with them.
-            Ephemeral::ScenarioChoice(scenario) => {
-                if net.host_id() == Some(peer) && !net.is_host {
-                    sinks.remote_scenario.0 = Some(scenario);
-                    sinks.lobby_scenario.0 = scenario;
-                }
-            }
-            Ephemeral::HostLobbyRules {
-                optional_rules,
-                ai_commanders,
-            } => {
-                if net.host_id() == Some(peer) && !net.is_host {
-                    sinks.optional_rules.0 = optional_rules;
-                    sinks.ai_commanders.0 = ai_commanders;
+            // The room's lobby settings: the current host's (a demoted
+            // host's last word may still be in flight), or anyone's chosen
+            // ones over our defaults. Guests adopt the host's, so a guest
+            // promoted to host carries on with them; a host that takes over
+            // a room's chosen settings tells the room.
+            Ephemeral::LobbySettings(settings) => {
+                let from_host = net.host_id() == Some(peer) && !net.is_host;
+                if sinks.settings.adopt(settings, from_host) && net.is_host {
+                    let msg = sinks.settings.message();
+                    sinks.pending.outgoing_broadcast.push(msg);
                 }
             }
             Ephemeral::SpectatorChoice(spectating) => {
@@ -931,6 +930,7 @@ mod tests {
             .init_resource::<crate::LobbyScenario>()
             .init_resource::<crate::LocalOptionalRule>()
             .init_resource::<crate::lobby::LocalAiCommanders>()
+            .init_resource::<crate::lobby::SettingsChosen>()
             .add_systems(Update, send_player_info_on_connect);
         app
     }
@@ -998,9 +998,8 @@ mod tests {
                 .filter(|m| {
                     matches!(
                         m,
-                        NetMsg::Ephemeral(Ephemeral::ScenarioChoice(
-                            omdurman_types::Scenario::FallOfKhartoum
-                        ))
+                        NetMsg::Ephemeral(Ephemeral::LobbySettings(settings))
+                            if settings.scenario == omdurman_types::Scenario::FallOfKhartoum
                     )
                 })
                 .count()
@@ -1025,8 +1024,8 @@ mod tests {
         assert_eq!(scenario(&promoted), 2, "both peers");
         assert!(promoted.iter().any(|m| matches!(
             m,
-            NetMsg::Ephemeral(Ephemeral::HostLobbyRules { ai_commanders, .. })
-                if ai_commanders == &[omdurman_types::Player::Dervish]
+            NetMsg::Ephemeral(Ephemeral::LobbySettings(settings))
+                if settings.ai_commanders == [omdurman_types::Player::Dervish]
         )));
         assert_eq!(scenario(&sent(&mut app)), 0, "once");
         let joiner = PeerId(uuid::Uuid::from_u128(40));
@@ -1035,6 +1034,76 @@ mod tests {
             scenario(&sent(&mut app)),
             1,
             "a joiner learns the host's pick"
+        );
+    }
+
+    /// A guest holding chosen settings tells a joiner; a joiner that won the
+    /// election takes them over, and its own defaults never displace them.
+    #[test]
+    fn a_newcomer_host_takes_over_the_rooms_settings() {
+        use crate::lobby::RoomSettings;
+        use bevy::ecs::system::RunSystemOnce;
+        let chosen = omdurman_net::LobbySettings {
+            scenario: omdurman_types::Scenario::FallOfKhartoum,
+            optional_rules: vec![],
+            ai_commanders: vec![omdurman_types::Player::Dervish],
+            chosen: true,
+        };
+        // The established guest announces its chosen settings to a joiner.
+        let mut guest = announce_app();
+        guest
+            .world_mut()
+            .run_system_once({
+                let chosen = chosen.clone();
+                move |mut s: RoomSettings| assert!(s.adopt(chosen.clone(), true))
+            })
+            .unwrap();
+        let joiner = PeerId(uuid::Uuid::from_u128(5));
+        {
+            let mut net = guest.world_mut().resource_mut::<NetState>();
+            net.set_my_id(Some(PeerId(uuid::Uuid::from_u128(20))));
+            net.add_peer(joiner);
+        }
+        guest.update();
+        let told = guest
+            .world()
+            .resource::<PendingEdits>()
+            .outgoing_targeted
+            .iter()
+            .any(|(m, to)| {
+                *to == joiner
+                    && matches!(m, NetMsg::Ephemeral(Ephemeral::LobbySettings(s)) if *s == chosen)
+            });
+        assert!(told, "the guest tells the joiner the room's settings");
+        // The joiner hosts with its defaults: they adopt the guest's chosen
+        // settings; the guest ignores the new host's defaults.
+        let mut host = announce_app();
+        let adopted = host
+            .world_mut()
+            .run_system_once({
+                let chosen = chosen.clone();
+                move |mut s: RoomSettings| s.adopt(chosen.clone(), false)
+            })
+            .unwrap();
+        assert!(adopted);
+        assert_eq!(
+            host.world().resource::<crate::LobbyScenario>().0,
+            omdurman_types::Scenario::FallOfKhartoum
+        );
+        let defaults = omdurman_net::LobbySettings {
+            scenario: omdurman_types::Scenario::Campaign,
+            optional_rules: vec![],
+            ai_commanders: vec![],
+            chosen: false,
+        };
+        let replaced = guest
+            .world_mut()
+            .run_system_once(move |mut s: RoomSettings| s.adopt(defaults.clone(), true))
+            .unwrap();
+        assert!(!replaced, "a host's defaults never replace chosen settings");
+        assert_eq!(
+            guest.world().resource::<crate::LobbyScenario>().0,
+            omdurman_types::Scenario::FallOfKhartoum
         );
     }
 

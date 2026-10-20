@@ -204,9 +204,12 @@ seq-conflict / seq-gap healing, stall auto-reconnect — is specified in CLAUDE.
   not yet in a game that hears its own key from another peer takes a fresh one.
 - **Lobby picks on connect.** Besides `PlayerInfo`, each peer announces its faction, spectator
   and command-scope (§1.1) picks to every newly connected peer; the host also announces its
-  `ScenarioChoice` and `HostLobbyRules` (optional rules, AI commanders), to newcomers and to
-  everyone when it is promoted. Guests adopt the current host's settings, so a guest promoted
-  to host carries on with them and every lobby view converges.
+  `LobbySettings` (scenario, optional rules, AI commanders), to newcomers and to everyone when
+  it is promoted. Guests adopt the current host's settings, so a guest promoted to host carries
+  on with them and every lobby view converges. Settings a host edited are *chosen*: a peer
+  holding chosen settings announces them to newcomers too, and they win over a fresh peer's
+  defaults whoever hosts -- a newcomer that wins the election takes over the room's settings
+  (and re-announces them) instead of replacing them.
 - **Seat table.** `StartGame { seats, scenario, optional_rules }` commits `Seat { faction, scope:
   Option<CommandScope>, holder: Human(PlayerKey) | Ai }`. The app mirrors it in `seats::Seats`,
   written *only* by `game_apply::apply_game_event` (live echo and replay alike). `peers::Peers`

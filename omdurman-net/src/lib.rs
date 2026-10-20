@@ -211,24 +211,31 @@ pub enum Ephemeral {
     /// finished deploying *their* command. The faction's engine-level
     /// `ConfirmSetupReady` is submitted once every member is ready.
     SetupReady(bool),
-    /// Lobby scenario pick (live preview, host-authoritative). The committed
-    /// value travels in [`GameEvent::StartGame`].
-    ScenarioChoice(Scenario),
     /// Lobby spectator toggle (live preview). A spectator joins the game to
     /// watch only: it is never given a seat in `StartGame`, so all action
     /// gates no-op for it. Kept
     /// separate from `FactionChoice` so peers can distinguish "spectating" from
     /// "undecided" in the lobby roster.
     SpectatorChoice(bool),
-    /// The host's lobby rules (live preview, host-authoritative): the optional rules
-    /// (§10.11, §10.21) and the factions handed to the AI. Guests adopt
-    /// them, so the roster shows the AI commanders and a guest promoted to
-    /// host carries on with the same settings. The committed values travel
-    /// in [`GameEvent::StartGame`].
-    HostLobbyRules {
-        optional_rules: Vec<OptionalRule>,
-        ai_commanders: Vec<Player>,
-    },
+    /// The room's lobby settings (live preview, host-authoritative; the
+    /// committed values travel in [`GameEvent::StartGame`]). The host
+    /// announces them to every joiner; a peer holding settings someone
+    /// chose announces them to every joiner too, so a newcomer that wins
+    /// the host election takes over the room's settings instead of
+    /// replacing them with its defaults.
+    LobbySettings(LobbySettings),
+}
+
+/// What the lobby settles before a game: the scenario, the optional rules
+/// (§10.11, §10.21) and the factions handed to the AI.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct LobbySettings {
+    pub scenario: Scenario,
+    pub optional_rules: Vec<OptionalRule>,
+    pub ai_commanders: Vec<Player>,
+    /// Someone picked these (a host edited them); `false` for a fresh
+    /// peer's defaults. Chosen settings win over defaults, whoever hosts.
+    pub chosen: bool,
 }
 
 /// Snapshot-handshake messages. Always reliable.

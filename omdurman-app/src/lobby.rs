@@ -40,7 +40,7 @@ pub enum LobbyTab {
 
 /// Host's lobby scenario selection (§lobby), committed into
 /// [`GameEvent::StartGame`]. Other peers see it as a live preview via
-/// [`Ephemeral::ScenarioChoice`].
+/// [`Ephemeral::LobbySettings`].
 #[derive(Resource)]
 pub struct LobbyScenario(pub Scenario);
 
@@ -50,11 +50,50 @@ impl Default for LobbyScenario {
     }
 }
 
-/// Latest scenario broadcast by the host's lobby (live preview, §lobby).
-/// `None` until the host sends one; the committed value rides in
-/// [`GameEvent::StartGame`].
+/// Whether the lobby settings were chosen (a host edited them, here or
+/// anywhere in the room) rather than left at this peer's defaults: see
+/// [`omdurman_net::LobbySettings::chosen`].
 #[derive(Resource, Default)]
-pub struct RemoteScenario(pub Option<Scenario>);
+pub struct SettingsChosen(pub bool);
+
+/// The lobby settings this peer holds: the host's, or its own while it
+/// hosts.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct RoomSettings<'w> {
+    pub scenario: ResMut<'w, LobbyScenario>,
+    pub optional_rules: ResMut<'w, LocalOptionalRule>,
+    pub ai_commanders: ResMut<'w, LocalAiCommanders>,
+    pub chosen: ResMut<'w, SettingsChosen>,
+}
+
+impl RoomSettings<'_> {
+    pub(crate) fn message(&self) -> NetMsg {
+        NetMsg::Ephemeral(Ephemeral::LobbySettings(omdurman_net::LobbySettings {
+            scenario: self.scenario.0,
+            optional_rules: self.optional_rules.0.clone(),
+            ai_commanders: self.ai_commanders.0.clone(),
+            chosen: self.chosen.0,
+        }))
+    }
+
+    /// Take over `settings` from another peer if they win over ours: the
+    /// host's, unless they are its defaults and ours were chosen; anyone's
+    /// chosen ones over our defaults. Returns whether they were adopted.
+    pub(crate) fn adopt(&mut self, settings: omdurman_net::LobbySettings, from_host: bool) -> bool {
+        let wins = if from_host {
+            settings.chosen || !self.chosen.0
+        } else {
+            settings.chosen && !self.chosen.0
+        };
+        if wins {
+            self.scenario.0 = settings.scenario;
+            self.optional_rules.0 = settings.optional_rules;
+            self.ai_commanders.0 = settings.ai_commanders;
+            self.chosen.0 = settings.chosen;
+        }
+        wins
+    }
+}
 
 /// The local player's current lobby faction pick (pre-commit).
 #[derive(Resource, Default)]
@@ -109,15 +148,12 @@ pub struct LobbyContext<'w, 's> {
     pub local_faction: ResMut<'w, LocalFaction>,
     pub local_spectator: ResMut<'w, LocalSpectator>,
     pub local_command: ResMut<'w, LocalCommand>,
-    pub local_optional_rule: ResMut<'w, LocalOptionalRule>,
-    pub remote_scenario: Res<'w, RemoteScenario>,
-    pub lobby_scenario: ResMut<'w, LobbyScenario>,
+    pub settings: RoomSettings<'w>,
     pub pending: ResMut<'w, PendingEdits>,
     pub tab: ResMut<'w, LobbyTab>,
     pub timeline: ResMut<'w, SpectatorTimeline>,
     pub recorder: Res<'w, GameRecorder>,
     pub saved_games: ResMut<'w, SavedGamesCache>,
-    pub local_ai: ResMut<'w, LocalAiCommanders>,
     pub next_state: ResMut<'w, NextState<AppState>>,
     pub room: Res<'w, RoomId>,
     /// This instance's stable player key (the local roster row's seat key).
@@ -423,10 +459,10 @@ fn setup_tab(
     let local_faction = &mut *ctx.local_faction;
     let local_spectator = &mut *ctx.local_spectator;
     let local_command = &mut *ctx.local_command;
-    let remote_scenario = &*ctx.remote_scenario;
-    let lobby_scenario = &mut *ctx.lobby_scenario;
-    let optional_rule = &mut *ctx.local_optional_rule;
-    let local_ai = &mut *ctx.local_ai;
+    let lobby_scenario = &mut *ctx.settings.scenario;
+    let optional_rule = &mut *ctx.settings.optional_rules;
+    let local_ai = &mut *ctx.settings.ai_commanders;
+    let settings_chosen = &mut ctx.settings.chosen.0;
     let pending = &mut *ctx.pending;
     let room = &*ctx.room;
     let local_key = ctx.local_key.0;
@@ -574,15 +610,15 @@ fn setup_tab(
 
         ui.add_space(8.0);
 
+        // The host changed its lobby settings this frame: guests preview
+        // them (`Ephemeral::LobbySettings`).
+        let mut settings_changed = false;
+
         // -- Scenario picker (host-authoritative) ----------------------
         ui.group(|ui| {
-            // Guests preview the host's latest broadcast pick; the host
-            // edits its own selection.
-            let display = if net.is_host {
-                lobby_scenario.0
-            } else {
-                remote_scenario.0.unwrap_or(lobby_scenario.0)
-            };
+            // Guests preview the host's pick (adopted from its broadcast);
+            // the host edits its own selection.
+            let display = lobby_scenario.0;
             ui.label(crate::ui::text::subheading("Scenario"));
             ui.horizontal(|ui| {
                 for scenario in Scenario::ALL {
@@ -591,9 +627,7 @@ fn setup_tab(
                     if net.is_host {
                         if ui.add(button).clicked() && !selected {
                             lobby_scenario.0 = scenario;
-                            pending
-                                .outgoing_broadcast
-                                .push(NetMsg::Ephemeral(Ephemeral::ScenarioChoice(scenario)));
+                            settings_changed = true;
                         }
                     } else {
                         // Read-only preview for guests.
@@ -611,15 +645,7 @@ fn setup_tab(
         });
 
         // -- Optional rule picker (host edits, guests preview; campaign) -
-        let shown_scenario = if net.is_host {
-            lobby_scenario.0
-        } else {
-            remote_scenario.0.unwrap_or(lobby_scenario.0)
-        };
-        // The host's rules (optional rules, AI commanders) changed this
-        // frame: guests preview them (`Ephemeral::HostLobbyRules`).
-        let mut rules_changed = false;
-        if shown_scenario == Scenario::Campaign {
+        if lobby_scenario.0 == Scenario::Campaign {
             ui.add_space(4.0);
             ui.group(|ui| {
                 crate::rulebook::refs_rich(ui, "Optional Rules (§10)", 14.0, |t| {
@@ -651,7 +677,7 @@ fn setup_tab(
                         omdurman_rules::OptionalRule::RiverMines,
                         mines,
                     );
-                    rules_changed = true;
+                    settings_changed = true;
                 }
                 let mut chain = opt_rule
                     .0
@@ -674,7 +700,7 @@ fn setup_tab(
                         omdurman_rules::OptionalRule::RiverChain,
                         chain,
                     );
-                    rules_changed = true;
+                    settings_changed = true;
                 }
             });
         }
@@ -785,7 +811,7 @@ fn setup_tab(
                             }
                         );
                         if ui.checkbox(&mut toggled, label).changed() {
-                            rules_changed = true;
+                            settings_changed = true;
                             if toggled {
                                 if !local_ai.0.contains(&faction) {
                                     local_ai.0.push(faction);
@@ -807,18 +833,23 @@ fn setup_tab(
             });
         }
 
-        if net.is_host && rules_changed {
+        if net.is_host && settings_changed {
+            *settings_chosen = true;
             pending
                 .outgoing_broadcast
-                .push(NetMsg::Ephemeral(Ephemeral::HostLobbyRules {
-                    optional_rules: optional_rule.0.clone(),
-                    ai_commanders: local_ai.0.clone(),
-                }));
+                .push(NetMsg::Ephemeral(Ephemeral::LobbySettings(
+                    omdurman_net::LobbySettings {
+                        scenario: lobby_scenario.0,
+                        optional_rules: optional_rule.0.clone(),
+                        ai_commanders: local_ai.0.clone(),
+                        chosen: true,
+                    },
+                )));
         }
 
         // AI commander rows in the roster (every peer sees the host's
         // committed list via StartGame once started; in the lobby guests
-        // preview the host's toggles, adopted from `HostLobbyRules`).
+        // preview the host's toggles, adopted from `LobbySettings`).
         for faction in &effective_ai {
             ui.horizontal(|ui| {
                 let (rect, _) =

@@ -177,24 +177,6 @@ seat handling).
   the bootstrap budget has passed).
 - Broadcast retention is all-or-nothing.
 - 23 systems still take `Option<Res<GameStateResource>>`.
-- Duplicated web tab (`seats.rs`): the localStorage probe is compile-checked
-  only, never run in a browser. Two tabs that start in the same instant with
-  the same key don't answer each other's probe; only the `PlayerInfo`
-  fallback covers that, and only before a game starts.
-- A newcomer that wins the lobby election replaces the old host's scenario,
-  optional-rule and AI picks with its own defaults (every view agrees, but
-  the earlier picks are lost).
-
-## Board data
-
-- The Omdurman road links were checked against the printed map (each link
-  drawn on the map scan): all follow the printed roads except two spurs to
-  confirm with the print -- a link into the Arsenal hex from the road west
-  of the Palace Grounds, and one into the Treasury hex from the diagonal
-  road beside it. No printed road enters either building on the scan; if
-  there is none, drop the two links from `campaign.ron` (they make entering
-  those hexes cost 1 MP). The Roads toolbar toggle shows the links.
-
 ## Verification
 
 - Weak clause witnesses (`docs/traceability.toml`): the named test asserts
