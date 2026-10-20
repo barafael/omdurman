@@ -109,7 +109,7 @@ pub fn retreat_overlay_mesh(
     mut draw: crate::overlay::Overlay,
     hovered: Res<crate::HoveredHex>,
     selection: RetreatSelection,
-    game_state: Option<Res<GameStateResource>>,
+    game_state: Res<GameStateResource>,
     peers: Peers,
     existing: Query<Entity, With<RetreatTargetRing>>,
     mut last: Local<Option<RetreatOverlayKey>>,
@@ -123,7 +123,7 @@ pub fn retreat_overlay_mesh(
         *last = None;
     }
     let inputs_moved = invalidated
-        || game_state.as_ref().is_some_and(|gs| gs.is_changed())
+        || game_state.is_changed()
         || selection.state.is_changed()
         || hovered.is_changed()
         || peers.changed()
@@ -135,15 +135,13 @@ pub fn retreat_overlay_mesh(
         state,
         placed_units,
     } = selection;
-    let drawn = game_state.as_deref().and_then(|gs| {
-        // The defender is the opponent of the active (attacking) player; an
-        // unbound session may act (single-seat play/testing) — `may_act`'s rule.
-        if !matches!(gs.0.phase, Phase::Melee) || !peers.may_act(gs.0.active_player.opponent()) {
-            return None;
-        }
-        let unit = selected_threatened_unit(&state, &placed_units, &gs.0)?;
-        Some((unit, valid_retreat_hexes(unit, &gs.0)))
-    });
+    let gs = &game_state.0;
+    // The defender is the opponent of the active (attacking) player; an
+    // unbound session may act (single-seat play/testing) — `may_act`'s rule.
+    let drawn = (matches!(gs.phase, Phase::Melee) && peers.may_act(gs.active_player.opponent()))
+        .then(|| selected_threatened_unit(&state, &placed_units, gs))
+        .flatten()
+        .map(|unit| (unit, valid_retreat_hexes(unit, gs)));
     let Some((unit, targets)) = drawn else {
         // Nothing to highlight: clear any rings left over (once, not every
         // frame).
@@ -156,7 +154,6 @@ pub fn retreat_overlay_mesh(
     // §7.5: the way to the hovered destination -- through the first of the
     // (at most two) hexes the two-hex retreat may pass.
     let path = hovered.0.filter(|h| targets.contains(h)).and_then(|to| {
-        let gs = &game_state.as_deref()?.0;
         let from = gs.find_unit(unit)?.position;
         let mid = *gs.retreat_paths(unit, to).first()?;
         Some([from, mid, to])
@@ -191,7 +188,7 @@ pub fn handle_retreat(
     mut clicks: bevy::ecs::message::MessageReader<RetreatClick>,
     mut state: ResMut<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
-    game_state: Option<Res<GameStateResource>>,
+    gs: Res<GameStateResource>,
     peers: Peers,
     mut submit: crate::submit::CheckedSubmit,
 ) {
@@ -199,7 +196,6 @@ pub fn handle_retreat(
     let Some(&RetreatClick(to)) = clicks.read().last() else {
         return;
     };
-    let Some(gs) = game_state else { return };
     if !peers.may_act(gs.0.active_player.opponent()) {
         return;
     }

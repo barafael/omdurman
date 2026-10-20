@@ -81,12 +81,10 @@ impl MeleeGroupChoice {
 pub(crate) fn sync_melee_group(
     state: Res<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
-    game_state: Option<Res<GameStateResource>>,
+    game_state: Res<GameStateResource>,
     mut choice: ResMut<MeleeGroupChoice>,
 ) {
-    let in_melee = game_state
-        .as_deref()
-        .is_some_and(|gs| matches!(gs.0.phase, Phase::Melee));
+    let in_melee = matches!(game_state.0.phase, Phase::Melee);
     let ids = if in_melee {
         selected_unit_ids(&state, &placed_units)
     } else {
@@ -106,12 +104,11 @@ pub(crate) fn sync_melee_group(
 /// melee (§7.6). The next click on an enemy hex declares it.
 pub(crate) fn melee_group_card(
     mut contexts: EguiContexts,
-    game_state: Option<Res<GameStateResource>>,
+    gs: Res<GameStateResource>,
     peers: Peers,
     mut choice: ResMut<MeleeGroupChoice>,
     mut layout: ResMut<crate::ScreenLayout>,
 ) {
-    let Some(gs) = game_state else { return };
     if !matches!(gs.0.phase, Phase::Melee)
         || gs.0.pending_melee.is_some()
         || !peers.may_act(gs.0.phase_player())
@@ -241,7 +238,7 @@ pub fn melee_target_overlay_mesh(
     mut draw: crate::overlay::Overlay,
     state: Res<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
-    game_state: Option<Res<GameStateResource>>,
+    game_state: Res<GameStateResource>,
     existing: Query<Entity, With<MeleeTargetRing>>,
     mut last: Local<Option<MeleeOverlayCache>>,
     placed_changed: Query<(), Changed<PlacedUnit>>,
@@ -253,26 +250,21 @@ pub fn melee_target_overlay_mesh(
         // instead of silently leaving them despawned.
         *last = None;
     }
-    let inputs_moved = invalidated
-        || game_state.as_ref().is_some_and(|gs| gs.is_changed())
-        || state.is_changed()
-        || !placed_changed.is_empty();
+    let inputs_moved =
+        invalidated || game_state.is_changed() || state.is_changed() || !placed_changed.is_empty();
     if !inputs_moved {
         return;
     }
-    let drawn = game_state.as_deref().and_then(|gs| {
-        if !matches!(gs.0.phase, Phase::Melee) {
-            return None;
-        }
-        let (attacker, _) = selected_melee_group(&state, &placed_units, &gs.0)?;
-        Some((attacker, valid_target_hexes(attacker, &gs.0)))
-    });
+    let gs = &game_state.0;
+    let drawn = matches!(gs.phase, Phase::Melee)
+        .then(|| selected_melee_group(&state, &placed_units, gs))
+        .flatten()
+        .map(|(attacker, _)| (attacker, valid_target_hexes(attacker, gs)));
     // §7.2: the hexsides that decide a melee next door -- a wall that bars
     // it, a gate or breach it may go through.
     let sides: Vec<(omdurman_types::HexsideRef, bool)> = drawn
         .as_ref()
-        .zip(game_state.as_deref())
-        .map(|((attacker, targets), gs)| melee_hexsides(&gs.0, *attacker, targets))
+        .map(|(attacker, targets)| melee_hexsides(gs, *attacker, targets))
         .unwrap_or_default();
     let Some(drawn) = drawn else {
         // Nothing to highlight: clear any rings left over from a selection
@@ -368,7 +360,7 @@ pub fn handle_melee_combat(
     mut clicks: bevy::ecs::message::MessageReader<MeleeClick>,
     mut state: ResMut<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
-    game_state: Option<Res<GameStateResource>>,
+    gs: Res<GameStateResource>,
     mut rng: Option<ResMut<GameRng>>,
     mut submit: crate::submit::CheckedSubmit,
     peers: Peers,
@@ -379,7 +371,7 @@ pub fn handle_melee_combat(
     let Some(&MeleeClick(target)) = clicks.read().last() else {
         return;
     };
-    let (Some(gs), Some(rng)) = (game_state, rng.as_mut()) else {
+    let Some(rng) = rng.as_mut() else {
         return;
     };
     // One declaration at a time: a melee already awaiting resolution must be
@@ -461,7 +453,7 @@ pub fn handle_melee_combat(
 /// highlighted unit. The attacker resolves by broadcasting `ResolveMelee`.
 pub fn melee_reaction_ui(
     mut contexts: EguiContexts,
-    game_state: Option<Res<GameStateResource>>,
+    gs: Res<GameStateResource>,
     peers: Peers,
     seats: Res<crate::seats::Seats>,
     mut submit: crate::submit::CheckedSubmit,
@@ -472,7 +464,6 @@ pub fn melee_reaction_ui(
     let enter = keys
         .read()
         .any(|c| *c == crate::hotkeys::PickerCommand::ConfirmMove);
-    let Some(gs) = game_state else { return };
     let Some(pm) = &gs.0.pending_melee else {
         return;
     };
@@ -575,7 +566,7 @@ pub fn handle_advance_after_combat(
     mut clicks: bevy::ecs::message::MessageReader<AdvanceClick>,
     mut state: ResMut<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
-    game_state: Option<Res<GameStateResource>>,
+    gs: Res<GameStateResource>,
     mut submit: crate::submit::CheckedSubmit,
 ) {
     // Routed by `board_click::route_board_clicks` when a selected unit may
@@ -583,7 +574,6 @@ pub fn handle_advance_after_combat(
     let Some(&AdvanceClick(to)) = clicks.read().last() else {
         return;
     };
-    let Some(gs) = game_state else { return };
     // §6.7: no advance after combat from defensive fire -- only after melee
     // (§7.6) and offensive fire (§6.82). (Phase gate: the click router only
     // routes advances in those phases; the engine re-checks.) Any member of the tile may be the advancer — the
@@ -619,7 +609,7 @@ pub fn melee_direction_arrow(
     mut draw: crate::overlay::Overlay,
     state: Res<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
-    game_state: Option<Res<GameStateResource>>,
+    game_state: Res<GameStateResource>,
     hovered: Res<crate::HoveredHex>,
     existing: Query<Entity, With<MeleeDirectionArrow>>,
     mut last: Local<Option<Option<(HexCoord, HexCoord)>>>,
@@ -633,23 +623,20 @@ pub fn melee_direction_arrow(
         *last = None;
     }
     let inputs_moved = invalidated
-        || game_state.as_ref().is_some_and(|gs| gs.is_changed())
+        || game_state.is_changed()
         || state.is_changed()
         || hovered.is_changed()
         || !placed_changed.is_empty();
     if !inputs_moved {
         return;
     }
-    let arrow = game_state.as_deref().and_then(|gs| {
-        if !matches!(gs.0.phase, Phase::Melee) {
-            return None;
-        }
-        let (attacker, attacker_hex) = selected_melee_group(&state, &placed_units, &gs.0)?;
-        let target = hovered.0?;
-        gs.0.can_melee(attacker, target)
-            .is_ok()
-            .then_some((attacker_hex, target))
-    });
+    let gs = &game_state.0;
+    let arrow = matches!(gs.phase, Phase::Melee)
+        .then(|| selected_melee_group(&state, &placed_units, gs))
+        .flatten()
+        .zip(hovered.0)
+        .filter(|&((attacker, _), target)| gs.can_melee(attacker, target).is_ok())
+        .map(|((_, attacker_hex), target)| (attacker_hex, target));
     if *last == Some(arrow) {
         return; // unchanged: leave the drawn arrow in place
     }
@@ -782,15 +769,14 @@ fn melee_preview_for(
 pub fn melee_combat_preview_ui(
     mut contexts: EguiContexts,
     state: Res<PickerState>,
-    game_state: Option<Res<GameStateResource>>,
+    gs: Res<GameStateResource>,
     hovered: Res<crate::HoveredHex>,
     mut layout: ResMut<crate::ScreenLayout>,
     mut sticky: Local<Option<omdurman_types::HexCoord>>,
     mut cache: Local<Option<MeleePreviewCache>>,
     choice: Res<MeleeGroupChoice>,
 ) {
-    let gs_moved = game_state.as_ref().is_some_and(|gs| gs.is_changed());
-    let Some(gs) = game_state else { return };
+    let gs_moved = gs.is_changed();
     if gs.0.pending_melee.is_some() {
         return; // already declared -- show reaction UI instead
     }
@@ -962,7 +948,7 @@ pub fn advance_target_overlay_mesh(
     mut draw: crate::overlay::Overlay,
     state: Res<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
-    game_state: Option<Res<GameStateResource>>,
+    game_state: Res<GameStateResource>,
     existing: Query<Entity, With<AdvanceTargetRing>>,
     mut last: Local<Option<Vec<HexCoord>>>,
     placed_changed: Query<(), Changed<PlacedUnit>>,
@@ -974,22 +960,19 @@ pub fn advance_target_overlay_mesh(
         // instead of silently leaving them despawned.
         *last = None;
     }
-    let inputs_moved = invalidated
-        || game_state.as_ref().is_some_and(|gs| gs.is_changed())
-        || state.is_changed()
-        || !placed_changed.is_empty();
+    let inputs_moved =
+        invalidated || game_state.is_changed() || state.is_changed() || !placed_changed.is_empty();
     if !inputs_moved {
         return;
     }
-    let drawn = game_state.as_deref().and_then(|gs| {
-        if !matches!(gs.0.phase, Phase::Melee | Phase::OffensiveFire(_)) {
-            return None;
-        }
-        let candidates = selected_unit_ids(&state, &placed_units);
-        // All members share the origin hex, so the neighbour set is the same;
-        // only per-unit eligibility differs.
-        let any_unit = candidates.iter().find_map(|&id| gs.0.find_unit(id))?;
-        Some(
+    let gs = &game_state.0;
+    let candidates = selected_unit_ids(&state, &placed_units);
+    // All members share the origin hex, so the neighbour set is the same;
+    // only per-unit eligibility differs.
+    let drawn = matches!(gs.phase, Phase::Melee | Phase::OffensiveFire(_))
+        .then(|| candidates.iter().find_map(|&id| gs.find_unit(id)))
+        .flatten()
+        .map(|any_unit| {
             any_unit
                 .position
                 .neighbors()
@@ -997,11 +980,10 @@ pub fn advance_target_overlay_mesh(
                 .filter(|&target| {
                     candidates
                         .iter()
-                        .any(|&unit_id| gs.0.can_advance_after_combat(unit_id, target).is_ok())
+                        .any(|&unit_id| gs.can_advance_after_combat(unit_id, target).is_ok())
                 })
-                .collect::<Vec<HexCoord>>(),
-        )
-    });
+                .collect::<Vec<HexCoord>>()
+        });
     let Some(drawn) = drawn else {
         // Nothing to highlight (no selection / wrong phase): clear any rings
         // left over, once.

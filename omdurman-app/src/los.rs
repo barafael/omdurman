@@ -71,7 +71,7 @@ pub fn los_ray(
     mut draw: crate::overlay::Overlay,
     toggle: Res<LosOverlay>,
     hovered: Res<crate::render::HoveredHex>,
-    game_state: Option<Res<GameStateResource>>,
+    game_state: Res<GameStateResource>,
     existing: Query<Entity, With<LosRayBar>>,
     mut last: Local<Option<(HexCoord, HexCoord)>>,
 ) {
@@ -83,16 +83,16 @@ pub fn los_ray(
         .filter(|_| toggle.visible)
         .zip(hovered.0)
         .filter(|(from, to)| from != to);
-    let moved = game_state.as_ref().is_some_and(|gs| gs.is_changed());
+    let moved = game_state.is_changed();
     if ends == *last && !moved {
         return;
     }
     draw.clear(existing.iter());
     *last = ends;
-    let (Some((from, to)), Some(gs)) = (ends, game_state.as_deref()) else {
+    let Some((from, to)) = ends else {
         return;
     };
-    let gs = &gs.0;
+    let gs = &game_state.0;
     let segments = los_segments(gs, from, to);
     let origin = draw.origin();
     let params = &draw.hex.overlay.params;
@@ -199,17 +199,18 @@ pub fn update_los_analysis(
     hovered: Res<crate::render::HoveredHex>,
     picker: Res<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
-    game_state: Option<Res<GameStateResource>>,
+    game_state: Res<GameStateResource>,
     mut analysis: ResMut<LosAnalysis>,
 ) {
     let hovered_from = hovered.0;
     // A pinned origin (P) wins over the hovered hex and the firing group.
-    let from = match game_state.as_deref() {
-        _ if toggle.pinned.is_some() => toggle.pinned,
-        Some(gs) if gs.0.phase.is_fire() => {
-            fire_selection(&picker, &placed_units, &gs.0).map(|g| g.firer_hex)
-        }
-        _ => hovered_from,
+    let gs = &game_state.0;
+    let from = if toggle.pinned.is_some() {
+        toggle.pinned
+    } else if gs.phase.is_fire() {
+        fire_selection(&picker, &placed_units, gs).map(|g| g.firer_hex)
+    } else {
+        hovered_from
     };
     if !toggle.visible {
         analysis.from = None;
@@ -225,16 +226,10 @@ pub fn update_los_analysis(
     };
     // Recompute when the origin moves or the game changes (units block,
     // §6.3 "Units").
-    if analysis.from == Some(from) && !game_state.as_ref().is_some_and(|gs| gs.is_changed()) {
+    if analysis.from == Some(from) && !game_state.is_changed() {
         return;
     }
-    let Some(gs) = game_state else {
-        analysis.from = None;
-        analysis.clear.clear();
-        analysis.blocked.clear();
-        return;
-    };
-    let partition = los_from(&gs.0, from);
+    let partition = los_from(gs, from);
     analysis.from = Some(from);
     analysis.clear = partition.clear.into_iter().collect();
     analysis.blocked = partition.blocked;
