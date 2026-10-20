@@ -120,7 +120,7 @@ pub fn handle_fire_allocation_click(
         // resolution nothing more may be allocated. Say so rather than
         // ignore the shot.
         if enemy_there {
-            dispatches.push(
+            dispatches.refuse(
                 "Fire Allocation",
                 format!(
                     "Fire refused — {}.",
@@ -153,7 +153,7 @@ pub fn handle_fire_allocation_click(
             Err(error) => error.to_string(),
             Ok(()) => "the selected units cannot fire there".to_string(),
         };
-        dispatches.push("Field Telegraph", format!("Fire refused — {reason}."));
+        dispatches.refuse("Field Telegraph", format!("Fire refused — {reason}."));
         return;
     }
 
@@ -195,7 +195,7 @@ pub fn handle_fire_allocation_click(
                     )
                 });
             let Some(rebuilt) = rebuilt else {
-                dispatches.push(
+                dispatches.refuse(
                     "Fire Allocation",
                     "These units have already allocated their fire.",
                 );

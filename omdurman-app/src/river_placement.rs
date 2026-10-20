@@ -46,7 +46,7 @@ pub(crate) fn handle_optional_rule_click(
         // of the khor's mouth), like a refused mine.
         if let Err(error) = gs.0.can_plot_chain(&hexes) {
             if let Some(dispatches) = submit.dispatches.as_deref_mut() {
-                dispatches.push(crate::submit::REFUSED_HEADER, error.to_string());
+                dispatches.refuse(crate::submit::REFUSED_HEADER, error.to_string());
             }
             return;
         }

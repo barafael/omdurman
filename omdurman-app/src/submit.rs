@@ -85,7 +85,7 @@ pub(crate) fn submit_checked(
             if let Some(dispatches) = dispatches
                 && !ended_by_our_own_order
             {
-                dispatches.push(REFUSED_HEADER, error.to_string());
+                dispatches.refuse(REFUSED_HEADER, error.to_string());
             }
             false
         }
@@ -142,7 +142,7 @@ impl CheckedSubmit<'_> {
         {
             info!(?event, "local action refused: not this seat's decision");
             if let Some(dispatches) = self.dispatches.as_deref_mut() {
-                dispatches.push(
+                dispatches.refuse(
                     REFUSED_HEADER,
                     "That is the other side's decision.".to_string(),
                 );

@@ -111,7 +111,7 @@ pub(crate) fn desertion_panel_ui(
     if unlock_refused(&mut desertion, &submit.pending)
         && let Some(dispatches) = submit.dispatches.as_deref_mut()
     {
-        dispatches.push(
+        dispatches.refuse(
             crate::submit::REFUSED_HEADER,
             "The desertion was refused; choose the deserters again (§8.2).".to_string(),
         );

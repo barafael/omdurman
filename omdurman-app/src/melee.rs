@@ -411,7 +411,7 @@ pub fn handle_melee_combat(
         );
         info!(target.q = target.q, target.r = target.r, %error, "melee refused");
         if let Some(dispatches) = submit.dispatches.as_deref_mut() {
-            dispatches.push("Field Telegraph", format!("Melee refused — {error}."));
+            dispatches.refuse("Field Telegraph", format!("Melee refused — {error}."));
         }
         return;
     }

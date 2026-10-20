@@ -778,6 +778,31 @@ fn setup_tab(
             .filter(|f| !human_picked(*f))
             .collect();
 
+        // AI commander rows in the roster (every peer sees the host's
+        // committed list via StartGame once started; in the lobby guests
+        // preview the host's toggles, adopted from `LobbySettings`).
+        for faction in &effective_ai {
+            ui.horizontal(|ui| {
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+                ui.painter()
+                    .rect_filled(rect, 3.0, crate::ui::palette::AI_SWATCH);
+                ui.label(
+                    egui::RichText::new(format!(
+                        "AI \u{b7} {}",
+                        crate::bot_player::commander_name_for(*faction, lobby_scenario.0)
+                    ))
+                    .color(crate::ui::palette::INFO),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(
+                        egui::RichText::new(crate::ui::faction_name(*faction))
+                            .color(crate::ui::palette::GOLD),
+                    );
+                });
+            });
+        }
+
         if net.is_host {
             ui.add_space(8.0);
             ui.group(|ui| {
@@ -845,31 +870,6 @@ fn setup_tab(
                         chosen: true,
                     },
                 )));
-        }
-
-        // AI commander rows in the roster (every peer sees the host's
-        // committed list via StartGame once started; in the lobby guests
-        // preview the host's toggles, adopted from `LobbySettings`).
-        for faction in &effective_ai {
-            ui.horizontal(|ui| {
-                let (rect, _) =
-                    ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
-                ui.painter()
-                    .rect_filled(rect, 3.0, crate::ui::palette::AI_SWATCH);
-                ui.label(
-                    egui::RichText::new(format!(
-                        "AI \u{b7} {}",
-                        crate::bot_player::commander_name_for(*faction, lobby_scenario.0)
-                    ))
-                    .color(crate::ui::palette::INFO),
-                );
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(
-                        egui::RichText::new(crate::ui::faction_name(*faction))
-                            .color(crate::ui::palette::GOLD),
-                    );
-                });
-            });
         }
 
         ui.add_space(16.0);

@@ -162,10 +162,9 @@ seat handling).
 ## UI
 
 - Polish: selection pulse, howitzer scatter animation.
-- Unconfirmed, from the play-test and review notes:
-  - Fire slips pile up.
-  - Turn and phase are shown in five places (review 4.11).
-  - Surfaces overlap (review 4.13).
+- The top-center cards (fire and melee previews, prompts) centre on the
+  window, the event feed column sits at the right edge: in a window narrower
+  than about 1100 px they would overlap. Not seen at 1280 or 1920 wide.
 
 ## Net and app plumbing
 

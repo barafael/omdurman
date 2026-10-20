@@ -328,10 +328,8 @@ fn turn_status(
                     )
                 }
             } else if peers.commands_faction(actor) {
-                (
-                    format!("\u{25b6} Your move: {}", machine.phase_label()),
-                    palette::GOLD,
-                )
+                // The ladder just left of it names the phase.
+                ("\u{25b6} Your move".to_string(), palette::GOLD)
             } else {
                 (
                     format!("Waiting for {}\u{2026}", name(actor)),

@@ -675,7 +675,7 @@ pub(crate) fn artillery_breach_ui(
             .iter()
             .any(|shot| allocation.stages_unit(shot.unit))
         {
-            dispatches.push(
+            dispatches.refuse(
                 "Fire Allocation",
                 "These batteries have already allocated their fire.",
             );

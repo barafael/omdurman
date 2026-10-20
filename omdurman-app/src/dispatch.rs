@@ -36,6 +36,8 @@ pub struct Dispatch {
     /// Arrival order across the whole event feed (slips and combat cards
     /// share one column, newest first; see [`Dispatches::next_feed_seq`]).
     pub seq: u64,
+    /// An answer to the player's last input (see [`Dispatches::refuse`]).
+    pub refusal: bool,
 }
 
 /// How many lines the event log keeps.
@@ -73,8 +75,21 @@ impl Dispatches {
     /// Queue a dispatch. `header` is the small-caps frame label; `body` is the
     /// factual message (may contain `§N` references).
     pub fn push(&mut self, header: impl Into<String>, body: impl Into<String>) {
+        self.queue(header.into(), body.into(), false);
+    }
+
+    /// Queue a refusal of the player's input. Only the latest refusal
+    /// stands: it replaces the earlier ones not held under the pointer or
+    /// pinned (each answered a click since superseded, and the Log keeps
+    /// them) -- a run of refused clicks once stacked a slip per click down
+    /// the feed column, over the board.
+    pub fn refuse(&mut self, header: impl Into<String>, body: impl Into<String>) {
+        self.slips.retain(|s| !s.refusal || s.hold.is_held());
+        self.queue(header.into(), body.into(), true);
+    }
+
+    fn queue(&mut self, header: String, body: String, refusal: bool) {
         self.next_serial += 1;
-        let (header, body) = (header.into(), body.into());
         self.log_line(format!("{header}: {body}"));
         let seq = self.next_feed_seq();
         self.slips.push(Dispatch {
@@ -84,6 +99,7 @@ impl Dispatches {
             hold: crate::ui::CardHold::default(),
             serial: self.next_serial,
             seq,
+            refusal,
         });
         // Cap the backlog so a burst can't pile up indefinitely: evict the
         // oldest unpinned slip first.
@@ -512,6 +528,20 @@ fn format_observation(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A run of refused clicks leaves only the latest refusal standing
+    /// (and every one in the log); other slips stay.
+    #[test]
+    fn a_refusal_replaces_the_earlier_ones() {
+        let mut dispatches = Dispatches::default();
+        dispatches.push("Dispatch", "A unit was eliminated.");
+        for hex in 1..=4 {
+            dispatches.refuse("Order Refused", format!("hex {hex} is out of reach"));
+        }
+        let bodies: Vec<&str> = dispatches.slips.iter().map(|s| s.body.as_str()).collect();
+        assert_eq!(bodies, ["A unit was eliminated.", "hex 4 is out of reach"]);
+        assert_eq!(dispatches.log.len(), 5);
+    }
 
     /// A leader's slip names whose leader fell -- not the side that was
     /// moving, which in defensive fire is the one that lost him.

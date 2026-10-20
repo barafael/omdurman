@@ -70,7 +70,7 @@ pub fn handle_picker_clicks(
             // The reason goes to the feed; the flash says where.
             fx.write(crate::fx::FxRequest::Refused { hex: click.hex });
             if let Some(dispatches) = dispatches.as_deref_mut() {
-                dispatches.push(crate::submit::REFUSED_HEADER, reason);
+                dispatches.refuse(crate::submit::REFUSED_HEADER, reason);
             }
         }
     }
@@ -1720,7 +1720,7 @@ pub(crate) fn confirm_movement_path(
                 // can route on, undo a leg, or cancel.
                 Err(reason) => {
                     if let Some(dispatches) = dispatches.as_deref_mut() {
-                        dispatches.push(crate::submit::REFUSED_HEADER, reason);
+                        dispatches.refuse(crate::submit::REFUSED_HEADER, reason);
                     }
                 }
             }
