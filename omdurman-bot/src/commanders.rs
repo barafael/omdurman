@@ -74,6 +74,7 @@ impl Commander {
     /// owner, which differs from `state.active_player` in defensive fire (§6.7).
     pub fn pick(
         &self,
+        threat: &mut crate::threat::ThreatCache,
         state: &GameState,
         player: Player,
         candidates: &[GameEffect],
@@ -94,7 +95,7 @@ impl Commander {
             let fire = crate::fire_plan::plan_fire(state, candidates);
             // §6.41: the whole fire plan is allocated, then resolved.
             if player == state.phase_player() {
-                let ranked = rank(state, player, &fire);
+                let ranked = rank(threat, state, player, &fire);
                 if let Some(step) = crate::fire_plan::next_fire_step(state, &ranked, rng) {
                     return step;
                 }
@@ -113,7 +114,7 @@ impl Commander {
         let mut best = i32::MIN;
         let mut best_idxs: Vec<usize> = Vec::new();
         for (i, effect) in candidates.iter().enumerate() {
-            let score = self.score(effect, state, player);
+            let score = self.score(threat, effect, state, player);
             if score > best {
                 best = score;
                 best_idxs.clear();
@@ -128,10 +129,16 @@ impl Commander {
 
     /// Score one candidate. Higher = more in keeping with the commander's
     /// doctrine.
-    fn score(&self, effect: &GameEffect, state: &GameState, player: Player) -> i32 {
+    fn score(
+        &self,
+        threat: &mut crate::threat::ThreatCache,
+        effect: &GameEffect,
+        state: &GameState,
+        player: Player,
+    ) -> i32 {
         match self {
-            Self::Kitchener => kitchener_score(effect, state, player),
-            Self::Khalifa => khalifa_score(effect, state, player),
+            Self::Kitchener => kitchener_score(threat, effect, state, player),
+            Self::Khalifa => khalifa_score(threat, effect, state, player),
         }
     }
 }
@@ -142,6 +149,7 @@ impl Commander {
 /// by the commander of the side that owns it; confirming ready and advancing
 /// stay last-resort moves.
 pub fn pick_setup(
+    threat: &mut crate::threat::ThreatCache,
     state: &GameState,
     candidates: &[GameEffect],
     _agents: &crate::agent::Agents,
@@ -153,11 +161,11 @@ pub fn pick_setup(
         let score = match effect {
             GameEffect::DeployUnit(p) => {
                 let owner = p.profile.identity.owner();
-                Commander::for_player(owner).score(effect, state, owner)
+                Commander::for_player(owner).score(threat, effect, state, owner)
             }
             GameEffect::RemoveDeployedUnit { player, .. }
             | GameEffect::ConfirmSetupReady { player, .. } => {
-                Commander::for_player(*player).score(effect, state, *player)
+                Commander::for_player(*player).score(threat, effect, state, *player)
             }
             GameEffect::PlaceMine { .. } | GameEffect::PlaceChain { .. } => 30,
             GameEffect::AdvancePhase => 1,
@@ -185,6 +193,7 @@ pub fn pick_setup(
 /// rolls only the dice of an allocated fire order's resolution (§6.41). `memory` is the driver's
 /// [`crate::move_memory::MoveMemory`], fed with the pick.
 pub fn pick_validated(
+    threat: &mut crate::threat::ThreatCache,
     state: &GameState,
     player: Player,
     candidates: &[GameEffect],
@@ -215,7 +224,7 @@ pub fn pick_validated(
         // §6.41: the whole fire plan is allocated, then resolved; what is
         // left to choose from is everything but fire.
         if player == state.phase_player() {
-            let ranked = rank(state, player, &fire);
+            let ranked = rank(threat, state, player, &fire);
             if let Some(step) = crate::fire_plan::next_fire_step(state, &ranked, rng) {
                 return step;
             }
@@ -229,9 +238,9 @@ pub fn pick_validated(
         candidates
     };
     let ranked = if state.phase == Phase::Movement {
-        rank_planned(state, player, candidates, memory)
+        rank_planned(threat, state, player, candidates, memory)
     } else {
-        rank(state, player, candidates)
+        rank(threat, state, player, candidates)
     };
     for candidate in ranked {
         if memory.revisits(state, &candidate) {
@@ -282,6 +291,7 @@ pub fn pick_validated(
 /// one faction is AI-commanded; the human deploys their own units).
 /// Like [`pick_validated`], deterministic: `_rng` is not drawn from.
 pub fn pick_setup_validated(
+    threat: &mut crate::threat::ThreatCache,
     state: &GameState,
     candidates: &[GameEffect],
     own_side: Option<Player>,
@@ -301,7 +311,7 @@ pub fn pick_setup_validated(
         })
         .cloned()
         .collect();
-    rank_setup(state, &owned)
+    rank_setup(threat, state, &owned)
         .into_iter()
         .find(|candidate| crate::actions::engine_accepts(state, candidate))
         .unwrap_or(GameEffect::AdvancePhase)
@@ -315,7 +325,11 @@ pub fn pick_setup_validated(
 /// the ones Kitchener would otherwise have killed for a VP each -- and never
 /// a leader or the Tomb garrison while anyone else can go. Any other effect
 /// passes through unchanged.
-pub fn choose_deserters(state: &GameState, effect: GameEffect) -> GameEffect {
+pub fn choose_deserters(
+    threat: &mut crate::threat::ThreatCache,
+    state: &GameState,
+    effect: GameEffect,
+) -> GameEffect {
     let GameEffect::DervishDesertion { roll, deserters } = effect else {
         return effect;
     };
@@ -336,7 +350,7 @@ pub fn choose_deserters(state: &GameState, effect: GameEffect) -> GameEffect {
                     .iter()
                     .any(|e| e.profile.identity.owner() == enemy)
             });
-            let lanes = crate::threat::fire_reaching(state, u.position, enemy) as i64;
+            let lanes = crate::threat::fire_reaching(threat, state, u.position, enemy) as i64;
             let keep = matches!(u.profile.identity, UnitIdentity::DervishLeader(_))
                 || Some(u.position) == tomb;
             let rank = i64::from(u.state.disrupted) * 1000 + lanes * 10
@@ -366,6 +380,7 @@ pub fn choose_deserters(state: &GameState, effect: GameEffect) -> GameEffect {
 /// army's planned steps fall out of it -- the phase would end with most of
 /// the army halfway.
 fn rank_planned(
+    threat: &mut crate::threat::ThreatCache,
     state: &GameState,
     player: Player,
     candidates: &[GameEffect],
@@ -377,7 +392,10 @@ fn rank_planned(
         if matches!(effect, GameEffect::MoveUnit { .. }) {
             continue;
         }
-        scored.push((commander.score(effect, state, player), effect.clone()));
+        scored.push((
+            commander.score(threat, effect, state, player),
+            effect.clone(),
+        ));
     }
     // Planning is a search per unit; a decision plans at most a batch of
     // units afresh (the in-game AI decides on the frame), the rest on later
@@ -388,10 +406,11 @@ fn rank_planned(
     // The whole way in one move: the stacking limit binds only where a
     // move ends (§5.51), so a column passes through a full friendly stack
     // that a step-by-step walk would have to stop short of.
-    let plan_step = |unit: &omdurman_rules::UnitPlacement,
-                     memory: &mut crate::move_memory::MoveMemory,
-                     scored: &mut Vec<(i32, GameEffect)>| {
-        let (way, gain) = memory.plan_way(state, unit.id, || plan_move(state, unit, player));
+    let mut plan_step = |unit: &omdurman_rules::UnitPlacement,
+                         memory: &mut crate::move_memory::MoveMemory,
+                         scored: &mut Vec<(i32, GameEffect)>| {
+        let (way, gain) =
+            memory.plan_way(state, unit.id, || plan_move(threat, state, unit, player));
         let to = *way.last()?;
         // A land route the engine cannot price is not a route.
         if !unit.profile.kind.is_boat() {
@@ -436,15 +455,21 @@ fn rank_planned(
 const NEW_PLANS_PER_DECISION: usize = 6;
 
 /// `player`'s goal for one unit (its commander's).
-fn goal_for(state: &GameState, unit_id: UnitId, player: Player) -> Option<Goal> {
+fn goal_for(
+    threat: &mut crate::threat::ThreatCache,
+    state: &GameState,
+    unit_id: UnitId,
+    player: Player,
+) -> Option<Goal> {
     match Commander::for_player(player) {
-        Commander::Kitchener => kitchener_goal(state, unit_id, player),
-        Commander::Khalifa => khalifa_goal(state, unit_id, player),
+        Commander::Kitchener => kitchener_goal(threat, state, unit_id, player),
+        Commander::Khalifa => khalifa_goal(threat, state, unit_id, player),
     }
 }
 
 /// `player`'s value of `unit` standing on `at` (its commander's).
 fn position_value(
+    threat: &mut crate::threat::ThreatCache,
     state: &GameState,
     unit: &omdurman_rules::UnitPlacement,
     at: HexCoord,
@@ -453,10 +478,19 @@ fn position_value(
 ) -> i32 {
     let palace = palace_hex(state);
     match Commander::for_player(player) {
-        Commander::Kitchener => kitchener_position_value(state, unit, at, goal, player, palace),
-        Commander::Khalifa => {
-            khalifa_position_value(state, unit, at, goal, player, palace, is_night(state))
+        Commander::Kitchener => {
+            kitchener_position_value(threat, state, unit, at, goal, player, palace)
         }
+        Commander::Khalifa => khalifa_position_value(
+            threat,
+            state,
+            unit,
+            at,
+            goal,
+            player,
+            palace,
+            is_night(state),
+        ),
     }
 }
 
@@ -472,6 +506,7 @@ fn position_value(
 /// walled city's entry rules, §5.23) are refused when taken, and the unit
 /// then holds.
 fn plan_move(
+    threat: &mut crate::threat::ThreatCache,
     state: &GameState,
     unit: &omdurman_rules::UnitPlacement,
     player: Player,
@@ -482,8 +517,8 @@ fn plan_move(
     if budget <= 0 {
         return (Vec::new(), 0);
     }
-    let goal = goal_for(state, unit.id, player);
-    let value = |at: HexCoord| position_value(state, unit, at, goal, player);
+    let goal = goal_for(threat, state, unit.id, player);
+    let mut value = |at: HexCoord| position_value(threat, state, unit, at, goal, player);
     let enemy = player.opponent();
     let is_boat = unit.profile.kind.is_boat();
     let start = unit.position;
@@ -558,12 +593,17 @@ fn plan_move(
 /// Candidates ordered best-first by the commander's score. The sort is
 /// stable, so equal scores keep their enumeration order -- no rng is drawn,
 /// and the order is reproducible from the state alone.
-fn rank(state: &GameState, player: Player, candidates: &[GameEffect]) -> Vec<GameEffect> {
+fn rank(
+    threat: &mut crate::threat::ThreatCache,
+    state: &GameState,
+    player: Player,
+    candidates: &[GameEffect],
+) -> Vec<GameEffect> {
     let commander = Commander::for_player(player);
     let mut scored: Vec<(i32, usize)> = candidates
         .iter()
         .enumerate()
-        .map(|(i, e)| (commander.score(e, state, player), i))
+        .map(|(i, e)| (commander.score(threat, e, state, player), i))
         .collect();
     scored.sort_by_key(|(s, _)| std::cmp::Reverse(*s));
     scored
@@ -574,7 +614,11 @@ fn rank(state: &GameState, player: Player, candidates: &[GameEffect]) -> Vec<Gam
 
 /// Setup candidates ordered best-first per owning side's commander (stable:
 /// ties keep enumeration order; no rng involved).
-fn rank_setup(state: &GameState, candidates: &[GameEffect]) -> Vec<GameEffect> {
+fn rank_setup(
+    threat: &mut crate::threat::ThreatCache,
+    state: &GameState,
+    candidates: &[GameEffect],
+) -> Vec<GameEffect> {
     let mut scored: Vec<(i32, usize)> = candidates
         .iter()
         .enumerate()
@@ -582,11 +626,11 @@ fn rank_setup(state: &GameState, candidates: &[GameEffect]) -> Vec<GameEffect> {
             let s = match e {
                 GameEffect::DeployUnit(p) => {
                     let owner = p.profile.identity.owner();
-                    Commander::for_player(owner).score(e, state, owner)
+                    Commander::for_player(owner).score(threat, e, state, owner)
                 }
                 GameEffect::RemoveDeployedUnit { player, .. }
                 | GameEffect::ConfirmSetupReady { player, .. } => {
-                    Commander::for_player(*player).score(e, state, *player)
+                    Commander::for_player(*player).score(threat, e, state, *player)
                 }
                 // The river obstacles (§10.11, §10.21): after the force is
                 // placed (deployment scores higher), before Ready.
@@ -946,14 +990,22 @@ impl Goal {
     /// the straight-line distance would see none and the unit would never
     /// find the way out. Boats count the river (see
     /// [`crate::threat::river_cost`]).
-    fn term(self, state: &GameState, at: HexCoord, per_hex: i32, land: bool) -> i32 {
+    fn term(
+        self,
+        threat: &mut crate::threat::ThreatCache,
+        state: &GameState,
+        at: HexCoord,
+        per_hex: i32,
+        land: bool,
+    ) -> i32 {
         // Distances in quarter hexes: a boat's river way is (see
         // `river_cost`), and a land road is scaled to match.
-        let dist4 = |goal: HexCoord| {
+        let mut dist4 = |goal: HexCoord| {
             if land {
-                4 * crate::threat::path_cost(state, at, goal).unwrap_or(100)
+                4 * crate::threat::path_cost(threat, state, at, goal).unwrap_or(100)
             } else {
-                crate::threat::river_cost(state, at, goal).unwrap_or(4 * at.distance(goal) as i32)
+                crate::threat::river_cost(threat, state, at, goal)
+                    .unwrap_or(4 * at.distance(goal) as i32)
             }
         };
         match self {
@@ -967,7 +1019,7 @@ impl Goal {
                     -per_hex * (s - d) / 8
                 }
             }
-            Goal::March(goal) => match crate::threat::path_cost(state, at, goal) {
+            Goal::March(goal) => match crate::threat::path_cost(threat, state, at, goal) {
                 Some(cost) => -per_hex * cost,
                 // Cut off from the goal: worse than any reachable hex.
                 None => -per_hex * 100,
@@ -1031,6 +1083,7 @@ const LANE_FEAR: f32 = 3.0;
 /// the fire it would stand in, plus the company it would keep. `goal` is
 /// [`kitchener_goal`]'s for `unit`.
 fn kitchener_position_value(
+    threat: &mut crate::threat::ThreatCache,
     state: &GameState,
     unit: &omdurman_rules::UnitPlacement,
     at: HexCoord,
@@ -1039,16 +1092,17 @@ fn kitchener_position_value(
     palace: Option<HexCoord>,
 ) -> i32 {
     let land = !unit.profile.kind.is_boat();
-    let mut value = goal.map_or(0, |g| g.term(state, at, KITCHENER_PER_HEX, land));
+    let mut value = goal.map_or(0, |g| g.term(threat, state, at, KITCHENER_PER_HEX, land));
     if !land {
         // Only artillery may fire at a gunboat, and only a 3 or more on
         // the table sinks it (§6.61): the rifles and spears a land unit
         // fears are nothing to a boat. It hunts by its shot and keeps out
         // of the guns' reach -- forts and batteries (a boat is 10 VP to
         // the Dervish in the Campaign, §9.14).
-        let guns = crate::threat::artillery_reaching(state, at, player.opponent());
+        let guns = crate::threat::artillery_reaching(threat, state, at, player.opponent());
         return value
-            + (KITCHENER_SHOT_WEIGHT * crate::threat::best_shot_from(state, unit, at)) as i32
+            + (KITCHENER_SHOT_WEIGHT * crate::threat::best_shot_from(threat, state, unit, at))
+                as i32
             - guns as i32;
     }
     // Don't stand in a killing zone (§6.7): leaders and artillery fear
@@ -1080,7 +1134,7 @@ fn kitchener_position_value(
         } else {
             0.35
         };
-        let lane = crate::threat::fire_reaching(state, at, player.opponent());
+        let lane = crate::threat::fire_reaching(threat, state, at, player.opponent());
         value -= (LANE_FEAR * weight * lane) as i32;
         // A leader dies with his stack (§6.51): keep him beyond the reach
         // of the spears as well as the rifles.
@@ -1094,7 +1148,8 @@ fn kitchener_position_value(
     // that could reach the hex are the price (§7.7: the Dervish melee at
     // +2).
     if !is_leader {
-        value += (KITCHENER_SHOT_WEIGHT * crate::threat::best_shot_from(state, unit, at)) as i32;
+        value +=
+            (KITCHENER_SHOT_WEIGHT * crate::threat::best_shot_from(threat, state, unit, at)) as i32;
         value -= (crate::threat::melee_reaching(state, at, player.opponent())
             * KITCHENER_SPEAR_FEAR) as i32;
     }
@@ -1115,6 +1170,7 @@ fn kitchener_position_value(
 /// with its tribe, out of the lanes of the Maxims and gunboats unless in
 /// contact (where the +2 melee lives, §7.7), guns out of melee reach.
 fn khalifa_position_value(
+    threat: &mut crate::threat::ThreatCache,
     state: &GameState,
     unit: &omdurman_rules::UnitPlacement,
     at: HexCoord,
@@ -1124,7 +1180,7 @@ fn khalifa_position_value(
     night: bool,
 ) -> i32 {
     let land = !unit.profile.kind.is_boat();
-    let mut value = goal.map_or(0, |g| g.term(state, at, KHALIFA_PER_HEX, land));
+    let mut value = goal.map_or(0, |g| g.term(threat, state, at, KHALIFA_PER_HEX, land));
     // Mass by tribe (§5.52 stacks are single-tribe anyway).
     value += friends_in(state, at, player, unit.id).min(3) * 4;
     // Fire (§6.7). In Fall of Khartoum the clock (§9.35) outranks blood: a
@@ -1137,9 +1193,9 @@ fn khalifa_position_value(
     } else if matches!(goal, Some(Goal::Close { .. })) {
         // The dawn assault on the Zariba (see `crate::battle_plan`) walks
         // into the fire it was sent into.
-        lane_cost(state, at, player) / 8
+        lane_cost(threat, state, at, player) / 8
     } else {
-        lane_cost(state, at, player)
+        lane_cost(threat, state, at, player)
     };
     // Artillery is the breach key: keep it out of melee reach.
     if unit.profile.weapon == omdurman_rules::WeaponClass::Artillery
@@ -1154,7 +1210,12 @@ fn khalifa_position_value(
 // Kitchener (Anglo-Egyptian)
 // ---------------------------------------------------------------------------
 
-fn kitchener_score(effect: &GameEffect, state: &GameState, player: Player) -> i32 {
+fn kitchener_score(
+    threat: &mut crate::threat::ThreatCache,
+    effect: &GameEffect,
+    state: &GameState,
+    player: Player,
+) -> i32 {
     use GameEffect::*;
     let palace = palace_hex(state);
     match effect {
@@ -1285,7 +1346,7 @@ fn kitchener_score(effect: &GameEffect, state: &GameState, player: Player) -> i3
         // see `crate::battle_plan`).
         AdvanceAfterCombat { unit_id, to } => {
             if let Some(unit) = state.find_unit(*unit_id)
-                && kitchener_goal(state, *unit_id, player) == Some(Goal::Hex(unit.position))
+                && kitchener_goal(threat, state, *unit_id, player) == Some(Goal::Hex(unit.position))
                 && *to != unit.position
             {
                 return -10;
@@ -1302,8 +1363,9 @@ fn kitchener_score(effect: &GameEffect, state: &GameState, player: Player) -> i3
             let Some(unit) = state.find_unit(*unit_id) else {
                 return 0;
             };
-            let goal = kitchener_goal(state, unit.id, player);
-            let value = |at| kitchener_position_value(state, unit, at, goal, player, palace);
+            let goal = kitchener_goal(threat, state, unit.id, player);
+            let mut value =
+                |at| kitchener_position_value(threat, state, unit, at, goal, player, palace);
             move_score(value(*to) - value(unit.position))
         }
         Demolition { .. } => 45,
@@ -1338,7 +1400,11 @@ const TOMB_DASH_MP_PER_TURN: i32 = 4;
 /// the Dervish, §9.14 -- a 50-VP swing). A unit sets off only when the turns
 /// left just cover its path: a column that arrives early sits for turns
 /// under the guns of the city's forts (§6.54) and dies there.
-fn tomb_objective(state: &GameState, unit: &omdurman_rules::UnitPlacement) -> Option<HexCoord> {
+fn tomb_objective(
+    threat: &mut crate::threat::ThreatCache,
+    state: &GameState,
+    unit: &omdurman_rules::UnitPlacement,
+) -> Option<HexCoord> {
     if state.scenario != Scenario::Campaign {
         return None;
     }
@@ -1352,11 +1418,11 @@ fn tomb_objective(state: &GameState, unit: &omdurman_rules::UnitPlacement) -> Op
     }
     let tomb = state.board.hex_of_location(Location::MahdisTomb)?;
     let turns_left = i32::from(CAMPAIGN_LAST_TURN.saturating_sub(state.current_turn.value())) + 1;
-    let due = |hex: HexCoord| {
+    let mut due = |hex: HexCoord| {
         // Due: the turns left just cover the path. Still feasible: even an
         // unopposed march (~7 MP a turn) could make it -- otherwise call it
         // off rather than lose the column on the last turn.
-        crate::threat::path_cost(state, hex, tomb).is_some_and(|cost| {
+        crate::threat::path_cost(threat, state, hex, tomb).is_some_and(|cost| {
             turns_left * TOMB_DASH_MP_PER_TURN <= cost + TOMB_DASH_MP_PER_TURN
                 && cost <= turns_left * 7
         })
@@ -1368,7 +1434,7 @@ fn tomb_objective(state: &GameState, unit: &omdurman_rules::UnitPlacement) -> Op
     // a city still full of the field army is a massacre, not a dash.
     let leader_due = state.units.iter().any(|u| {
         matches!(u.profile.identity, UnitIdentity::AngloEgyptianLeader(_))
-            && crate::threat::path_cost(state, u.position, tomb)
+            && crate::threat::path_cost(threat, state, u.position, tomb)
                 .is_some_and(|cost| cost <= turns_left * TOMB_DASH_MP_PER_TURN + 4)
     });
     // The forts ring the city (§9.111) and fire every turn even alone
@@ -1387,10 +1453,15 @@ fn tomb_objective(state: &GameState, unit: &omdurman_rules::UnitPlacement) -> Op
 /// and the palace ring in Fall of Khartoum; on the campaign map, close on
 /// the field army at rifle range (forts last), leaders sheltering with the
 /// safest stack, the Tomb column dashing when it is due.
-fn kitchener_goal(state: &GameState, unit_id: UnitId, player: Player) -> Option<Goal> {
+fn kitchener_goal(
+    threat: &mut crate::threat::ThreatCache,
+    state: &GameState,
+    unit_id: UnitId,
+    player: Player,
+) -> Option<Goal> {
     let unit = state.find_unit(unit_id)?;
     let enemy = player.opponent();
-    if let Some(tomb) = tomb_objective(state, unit) {
+    if let Some(tomb) = tomb_objective(threat, state, unit) {
         return Some(Goal::March(tomb));
     }
     if let Some(goal) = crate::battle_plan::kitchener_goal(state, unit) {
@@ -1404,21 +1475,21 @@ fn kitchener_goal(state: &GameState, unit_id: UnitId, player: Player) -> Option<
             } else {
                 // Off the FoK walls a leader is 10 VP (§9.14) and dies with
                 // his stack (§6.51): shelter with the safest stack near by.
-                safest_friendly_stack(state, unit.position, player).map(Goal::Hex)
+                safest_friendly_stack(threat, state, unit.position, player).map(Goal::Hex)
             }
         }
         // Guns stand off at their own range (§6.22): the batteries'
         // artillery at full strength out to six hexes, beyond the Dervish
         // rifles' four; the Maxims at their normal range of three.
         UnitIdentity::AngloEgyptianArtillery => {
-            let nearest_enemy = nearest_enemy_on_land(state, unit.position, enemy);
+            let nearest_enemy = nearest_enemy_on_land(threat, state, unit.position, enemy);
             nearest_enemy.map(|target| Goal::Band {
                 target,
                 standoff: 6,
             })
         }
         UnitIdentity::AngloEgyptianMaxim => {
-            let nearest_enemy = nearest_enemy_on_land(state, unit.position, enemy);
+            let nearest_enemy = nearest_enemy_on_land(threat, state, unit.position, enemy);
             nearest_enemy.map(|target| Goal::Band {
                 target,
                 standoff: 5,
@@ -1454,7 +1525,8 @@ fn kitchener_goal(state: &GameState, unit_id: UnitId, player: Player) -> Option<
                 // river, outranks a nearer one inland the boat can only
                 // shell from afar.
                 .min_by_key(|&p| {
-                    crate::threat::river_field(state, unit.position, p, 16).unwrap_or(i32::MAX)
+                    crate::threat::river_field(threat, state, unit.position, p, 16)
+                        .unwrap_or(i32::MAX)
                 })
                 .map(|target| Goal::Band {
                     target,
@@ -1649,7 +1721,12 @@ fn gap_plugs(state: &GameState, palace: HexCoord) -> Vec<HexCoord> {
 // Khalifa (Dervish)
 // ---------------------------------------------------------------------------
 
-fn khalifa_score(effect: &GameEffect, state: &GameState, player: Player) -> i32 {
+fn khalifa_score(
+    threat: &mut crate::threat::ThreatCache,
+    effect: &GameEffect,
+    state: &GameState,
+    player: Player,
+) -> i32 {
     use GameEffect::*;
     let palace = palace_hex(state);
     let night = is_night(state);
@@ -1778,8 +1855,9 @@ fn khalifa_score(effect: &GameEffect, state: &GameState, player: Player) -> i32 
             let Some(unit) = state.find_unit(*unit_id) else {
                 return 0;
             };
-            let goal = khalifa_goal(state, unit.id, player);
-            let value = |at| khalifa_position_value(state, unit, at, goal, player, palace, night);
+            let goal = khalifa_goal(threat, state, unit.id, player);
+            let mut value =
+                |at| khalifa_position_value(threat, state, unit, at, goal, player, palace, night);
             move_score(value(*to) - value(unit.position))
         }
         Demolition { .. } => 45,
@@ -1796,7 +1874,12 @@ fn khalifa_score(effect: &GameEffect, state: &GameState, player: Player) -> i32 
 /// [`crate::threat`]): a bonus in contact (the melee is the point),
 /// otherwise the fire that reaches the hex, lighter at night (§8.1 halves
 /// every range).
-fn lane_cost(state: &GameState, at: HexCoord, player: Player) -> i32 {
+fn lane_cost(
+    threat: &mut crate::threat::ThreatCache,
+    state: &GameState,
+    at: HexCoord,
+    player: Player,
+) -> i32 {
     let enemy = player.opponent();
     let contact = at.neighbors().iter().any(|&n| {
         state
@@ -1820,17 +1903,22 @@ fn lane_cost(state: &GameState, at: HexCoord, player: Player) -> i32 {
         (_, false) => 0.25,
         (_, true) => 0.08,
     };
-    (weight * crate::threat::fire_reaching(state, at, enemy)) as i32
+    (weight * crate::threat::fire_reaching(threat, state, at, enemy)) as i32
 }
 
 /// Khalifa's goal for one unit: the assault corridor (gate or breach) until
 /// the way in is open, then the palace (§9.346); artillery stays in breach
 /// range of the axis wall; the bodyguard shadows the Khalifa on the campaign
 /// map.
-fn khalifa_goal(state: &GameState, unit_id: UnitId, player: Player) -> Option<Goal> {
+fn khalifa_goal(
+    threat: &mut crate::threat::ThreatCache,
+    state: &GameState,
+    unit_id: UnitId,
+    player: Player,
+) -> Option<Goal> {
     let unit = state.find_unit(unit_id)?;
     let enemy = player.opponent();
-    if let Some(goal) = crate::battle_plan::khalifa_goal(state, unit) {
+    if let Some(goal) = crate::battle_plan::khalifa_goal(threat, state, unit) {
         return Some(goal);
     }
     if let Some(palace) = palace_hex(state) {
@@ -1860,7 +1948,8 @@ fn khalifa_goal(state: &GameState, unit_id: UnitId, player: Player) -> Option<Go
         });
         let closer = |c: HexCoord| {
             if gap {
-                let cost = |h| crate::threat::path_cost(state, h, palace).unwrap_or(i32::MAX);
+                let mut cost =
+                    |h| crate::threat::path_cost(threat, state, h, palace).unwrap_or(i32::MAX);
                 cost(unit.position) <= cost(c)
             } else {
                 unit.position.distance(palace) < c.distance(palace)
@@ -1907,20 +1996,20 @@ fn khalifa_goal(state: &GameState, unit_id: UnitId, player: Player) -> Option<Go
     match unit.profile.identity {
         // The Khalifa stays guarded (10 VP, §9.14): hover behind the line.
         UnitIdentity::DervishLeader(_) => {
-            let nearest_enemy = nearest_enemy_on_land(state, unit.position, enemy);
+            let nearest_enemy = nearest_enemy_on_land(threat, state, unit.position, enemy);
             nearest_enemy.map(|target| Goal::Band {
                 target,
                 standoff: 4,
             })
         }
         UnitIdentity::DervishArtillery => {
-            let nearest_enemy = nearest_enemy_on_land(state, unit.position, enemy);
+            let nearest_enemy = nearest_enemy_on_land(threat, state, unit.position, enemy);
             nearest_enemy.map(|target| Goal::Band {
                 target,
                 standoff: 3,
             })
         }
-        _ => nearest_enemy_on_land(state, unit.position, enemy).map(Goal::Hex),
+        _ => nearest_enemy_on_land(threat, state, unit.position, enemy).map(Goal::Hex),
     }
 }
 
@@ -1933,7 +2022,12 @@ fn khalifa_goal(state: &GameState, unit_id: UnitId, player: Player) -> Option<Go
 /// with a way to it over land -- the Nile and the walls between closed
 /// (see [`crate::threat::path_cost`]). A goal across the river would leave
 /// every hex of the bank equally far, and the unit would never move.
-fn nearest_enemy_on_land(state: &GameState, from: HexCoord, enemy: Player) -> Option<HexCoord> {
+fn nearest_enemy_on_land(
+    threat: &mut crate::threat::ThreatCache,
+    state: &GameState,
+    from: HexCoord,
+    enemy: Player,
+) -> Option<HexCoord> {
     let mut targets: Vec<HexCoord> = state
         .units
         .iter()
@@ -1944,7 +2038,7 @@ fn nearest_enemy_on_land(state: &GameState, from: HexCoord, enemy: Player) -> Op
     targets.dedup();
     targets
         .into_iter()
-        .find(|&p| crate::threat::path_cost(state, from, p).is_some())
+        .find(|&p| crate::threat::path_cost(threat, state, from, p).is_some())
 }
 
 /// Position of the enemy unit closest to `from`.
@@ -1982,7 +2076,12 @@ fn nearest_friendly_stack(state: &GameState, from: HexCoord, unit_id: UnitId) ->
 /// The friendly combat stack a leader should shelter with: within 8 hexes,
 /// the one least exposed to enemy fire (see [`crate::threat`]) and not in
 /// contact, nearer ones preferred.
-fn safest_friendly_stack(state: &GameState, from: HexCoord, player: Player) -> Option<HexCoord> {
+fn safest_friendly_stack(
+    threat: &mut crate::threat::ThreatCache,
+    state: &GameState,
+    from: HexCoord,
+    player: Player,
+) -> Option<HexCoord> {
     let enemy = player.opponent();
     let mut best: Option<(i32, HexCoord)> = None;
     for u in &state.units {
@@ -2006,7 +2105,7 @@ fn safest_friendly_stack(state: &GameState, from: HexCoord, player: Player) -> O
                 .iter()
                 .any(|e| e.profile.identity.owner() == enemy)
         });
-        let threat = crate::threat::fire_reaching(state, u.position, enemy) as i32;
+        let threat = crate::threat::fire_reaching(threat, state, u.position, enemy) as i32;
         let spears = crate::threat::melee_reaching(state, u.position, enemy) as i32;
         // A stack is the leaders' shelter only while it lives (§6.51): one
         // lucky shot must not take the whole staff, and a thin stack of

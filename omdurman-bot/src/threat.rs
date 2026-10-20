@@ -9,9 +9,9 @@
 //! Units are left out of the line-of-sight test (the terrain alone decides),
 //! so the map depends only on the enemy's positions, the board and the time
 //! of day -- it is computed lazily per hex and cached until those change,
-//! which keeps a long movement phase cheap.
+//! which keeps a long movement phase cheap. The caches live in a
+//! [`ThreatCache`] the bot's driver owns for one game.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
@@ -40,8 +40,16 @@ struct Cache {
     hexes: HashMap<(HexCoord, bool), f32>,
 }
 
-thread_local! {
-    static CACHE: RefCell<Option<Cache>> = const { RefCell::new(None) };
+/// The memo of every costly threat query, kept by whoever drives the bot
+/// through a game (one per game: a fresh game starts it afresh). Each
+/// entry is keyed by everything its answer depends on, so a hit is always
+/// the answer a fresh computation would give.
+#[derive(Default)]
+pub struct ThreatCache {
+    fire: Option<Cache>,
+    shots: Option<ShotCache>,
+    paths: Vec<PathCache>,
+    river: Vec<PathCache>,
 }
 
 fn key(state: &GameState, shooter: Player) -> Key {
@@ -71,41 +79,45 @@ fn band_multiplier(band: RangeBand) -> f32 {
 
 /// Effective fire factors of `shooter`'s undisrupted units that can reach
 /// `hex` with direct fire (a foot unit standing there as the target).
-pub fn fire_reaching(state: &GameState, hex: HexCoord, shooter: Player) -> f32 {
-    reaching(state, hex, shooter, false)
+pub fn fire_reaching(
+    cache: &mut ThreatCache,
+    state: &GameState,
+    hex: HexCoord,
+    shooter: Player,
+) -> f32 {
+    reaching(cache, state, hex, shooter, false)
 }
 
 /// [`fire_reaching`] from `shooter`'s guns alone (artillery, forts,
 /// gunboats): the only fire that can sink a gunboat (§6.61).
-pub fn artillery_reaching(state: &GameState, hex: HexCoord, shooter: Player) -> f32 {
-    reaching(state, hex, shooter, true)
+pub fn artillery_reaching(
+    cache: &mut ThreatCache,
+    state: &GameState,
+    hex: HexCoord,
+    shooter: Player,
+) -> f32 {
+    reaching(cache, state, hex, shooter, true)
 }
 
-fn reaching(state: &GameState, hex: HexCoord, shooter: Player, guns_only: bool) -> f32 {
+fn reaching(
+    cache: &mut ThreatCache,
+    state: &GameState,
+    hex: HexCoord,
+    shooter: Player,
+    guns_only: bool,
+) -> f32 {
     let k = key(state, shooter);
-    if let Some(v) = CACHE.with(|c| {
-        c.borrow()
-            .as_ref()
-            .filter(|c| c.key == k)
-            .and_then(|c| c.hexes.get(&(hex, guns_only)).copied())
-    }) {
-        return v;
-    }
-    let v = compute(state, hex, shooter, guns_only);
-    CACHE.with(|c| {
-        let mut c = c.borrow_mut();
-        match c.as_mut() {
-            Some(cache) if cache.key == k => {
-                cache.hexes.insert((hex, guns_only), v);
-            }
-            _ => {
-                let mut hexes = HashMap::new();
-                hexes.insert((hex, guns_only), v);
-                *c = Some(Cache { key: k, hexes });
-            }
-        }
-    });
-    v
+    let fire = match &mut cache.fire {
+        Some(fire) if fire.key == k => fire,
+        fire => fire.insert(Cache {
+            key: k,
+            hexes: HashMap::new(),
+        }),
+    };
+    *fire
+        .hexes
+        .entry((hex, guns_only))
+        .or_insert_with(|| compute(state, hex, shooter, guns_only))
 }
 
 fn compute(state: &GameState, hex: HexCoord, shooter: Player, guns_only: bool) -> f32 {
@@ -171,10 +183,6 @@ struct ShotCache {
     shots: HashMap<(HexCoord, u8, u16, u8), f32>,
 }
 
-thread_local! {
-    static SHOTS: RefCell<Option<ShotCache>> = const { RefCell::new(None) };
-}
-
 /// The best shot `unit` would have from `at` in the coming fire phase: the
 /// largest effective fire factor (§6.22 range band, §8.1 at night, §6.3
 /// line of sight over the terrain) it could put on any one enemy-held hex.
@@ -182,6 +190,7 @@ thread_local! {
 /// whole movement phase of candidate hexes costs one pass per hex and
 /// weapon.
 pub fn best_shot_from(
+    cache: &mut ThreatCache,
     state: &GameState,
     unit: &omdurman_rules::UnitPlacement,
     at: HexCoord,
@@ -194,12 +203,14 @@ pub fn best_shot_from(
     let k = (key(state, target_side), terrain_key(state));
     let level_kind = los_level_for_unit(unit.profile.kind, at, state.board) as u8;
     let entry = (at, unit.profile.weapon as u8, fire.value(), level_kind);
-    if let Some(v) = SHOTS.with(|c| {
-        c.borrow()
-            .as_ref()
-            .filter(|c| c.key == k)
-            .and_then(|c| c.shots.get(&entry).copied())
-    }) {
+    let shots = match &mut cache.shots {
+        Some(shots) if shots.key == k => shots,
+        shots => shots.insert(ShotCache {
+            key: k,
+            shots: HashMap::new(),
+        }),
+    };
+    if let Some(&v) = shots.shots.get(&entry) {
         return v;
     }
     let night = state.day_night == DayNight::Night;
@@ -258,19 +269,7 @@ pub fn best_shot_from(
         }
         best = shot;
     }
-    SHOTS.with(|c| {
-        let mut c = c.borrow_mut();
-        match c.as_mut() {
-            Some(cache) if cache.key == k => {
-                cache.shots.insert(entry, best);
-            }
-            _ => {
-                let mut shots = HashMap::new();
-                shots.insert(entry, best);
-                *c = Some(ShotCache { key: k, shots });
-            }
-        }
-    });
+    shots.shots.insert(entry, best);
     best
 }
 
@@ -307,7 +306,7 @@ struct PathCache {
 /// (by scenario) and the hexsides the game has changed -- breached walls
 /// (§6.63) and the Zariba sides built in the Campaign (§5.3). Hashing the
 /// sets themselves, not their sizes, keeps a field from one game (or one
-/// breach) from ever answering for another on the same thread.
+/// breach) from ever answering for another.
 fn terrain_key(state: &GameState) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     (state.scenario as u8).hash(&mut h);
@@ -316,40 +315,29 @@ fn terrain_key(state: &GameState) -> u64 {
     h.finish()
 }
 
-thread_local! {
-    static PATHS: RefCell<Vec<PathCache>> = const { RefCell::new(Vec::new()) };
-}
-
 /// Movement-point distance from `from` to `goal` for a land unit (§5.11
 /// terrain costs, §5.23 walls closed except at gates and breaches, the Nile
 /// and the closed Zariba impassable), ignoring units and roads. `None` when
 /// `goal` cannot be reached. A Dijkstra field per goal, cached.
-pub fn path_cost(state: &GameState, from: HexCoord, goal: HexCoord) -> Option<i32> {
+pub fn path_cost(
+    cache: &mut ThreatCache,
+    state: &GameState,
+    from: HexCoord,
+    goal: HexCoord,
+) -> Option<i32> {
     let key = (goal, terrain_key(state));
-    if let Some(v) = PATHS.with(|p| {
-        p.borrow()
-            .iter()
-            .find(|c| c.key == key)
-            .map(|c| c.cost.get(&from).copied())
-    }) {
-        return v;
+    if let Some(c) = cache.paths.iter().find(|c| c.key == key) {
+        return c.cost.get(&from).copied();
     }
     let field = dijkstra(state, goal);
     let v = field.get(&from).copied();
-    PATHS.with(|p| {
-        let mut p = p.borrow_mut();
-        // A field per goal: the commanders route every unit to its goal
-        // (a handful of enemy stacks and objectives per phase).
-        if p.len() >= 32 {
-            p.remove(0);
-        }
-        p.push(PathCache { key, cost: field });
-    });
+    // A field per goal: the commanders route every unit to its goal (a
+    // handful of enemy stacks and objectives per phase).
+    if cache.paths.len() >= 32 {
+        cache.paths.remove(0);
+    }
+    cache.paths.push(PathCache { key, cost: field });
     v
-}
-
-thread_local! {
-    static RIVER: RefCell<Vec<PathCache>> = const { RefCell::new(Vec::new()) };
 }
 
 /// A gunboat's way to `target` by river, in quarter hexes: the hexes it
@@ -359,27 +347,28 @@ thread_local! {
 /// the river toward the hex nearest the target counts -- hex distance alone
 /// sees no progress where the river bends away from the target, and a boat
 /// would never round the bend. `None` off the river.
-pub fn river_cost(state: &GameState, at: HexCoord, target: HexCoord) -> Option<i32> {
-    river_field(state, at, target, 4)
+pub fn river_cost(
+    cache: &mut ThreatCache,
+    state: &GameState,
+    at: HexCoord,
+    target: HexCoord,
+) -> Option<i32> {
+    river_field(cache, state, at, target, 4)
 }
 
 /// [`river_cost`] with the range from the bank weighted `range_weight`
 /// river hexes per hex (a heavier weight prefers a target near the river
 /// however far downstream).
 pub fn river_field(
+    cache: &mut ThreatCache,
     state: &GameState,
     at: HexCoord,
     target: HexCoord,
     range_weight: i32,
 ) -> Option<i32> {
     let key = (target, terrain_key(state) ^ range_weight as u64);
-    if let Some(v) = RIVER.with(|p| {
-        p.borrow()
-            .iter()
-            .find(|c| c.key == key)
-            .map(|c| c.cost.get(&at).copied())
-    }) {
-        return v;
+    if let Some(c) = cache.river.iter().find(|c| c.key == key) {
+        return c.cost.get(&at).copied();
     }
     use std::cmp::Reverse;
     use std::collections::BinaryHeap;
@@ -409,14 +398,11 @@ pub fn river_field(
         }
     }
     let v = cost.get(&at).copied();
-    RIVER.with(|p| {
-        let mut p = p.borrow_mut();
-        // One field per enemy stack a boat weighs as its quarry.
-        if p.len() >= 96 {
-            p.remove(0);
-        }
-        p.push(PathCache { key, cost });
-    });
+    // One field per enemy stack a boat weighs as its quarry.
+    if cache.river.len() >= 96 {
+        cache.river.remove(0);
+    }
+    cache.river.push(PathCache { key, cost });
     v
 }
 

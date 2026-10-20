@@ -31,6 +31,7 @@ fn main() {
     let mut state = GameState::with_board(scenario, board);
     let mut rng = BotRng::from_seed(seed);
     let mut memory = omdurman_bot::move_memory::MoveMemory::new();
+    let mut threat = omdurman_bot::threat::ThreatCache::default();
     let mut telegrams: Vec<(u8, String)> = Vec::new();
     // The record: StartGame with two AI seats, every applied effect, and
     // each turn's telegram where the host would file it.
@@ -67,6 +68,7 @@ fn main() {
             e.clone()
         } else if state.phase == Phase::Setup {
             omdurman_bot::commanders::pick_setup_validated(
+                &mut threat,
                 &state,
                 &candidates,
                 Some(chooser),
@@ -74,6 +76,7 @@ fn main() {
             )
         } else {
             omdurman_bot::commanders::pick_validated(
+                &mut threat,
                 &state,
                 chooser,
                 &candidates,

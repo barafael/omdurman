@@ -187,13 +187,20 @@ mod late_joiner_tests {
         let mut events = vec![start];
         let mut rng = omdurman_bot::rng::BotRng::from_seed(7);
         let mut memory = omdurman_bot::move_memory::MoveMemory::new();
+        let mut threat = omdurman_bot::threat::ThreatCache::default();
         for _ in 0..max_actions {
             if state.game_over {
                 break;
             }
             let chooser = omdurman_bot::actions::decider(&state).unwrap_or(state.phase_player());
-            let effect =
-                crate::bot_player::next_ai_action(&state, chooser, &ai, &mut rng, &mut memory);
+            let effect = crate::bot_player::next_ai_action(
+                &mut threat,
+                &state,
+                chooser,
+                &ai,
+                &mut rng,
+                &mut memory,
+            );
             let event = as_recorded_event(&effect, &state);
             apply_effect(&mut state, &effect).expect("the AI submits only validated effects");
             state.drain_observations();

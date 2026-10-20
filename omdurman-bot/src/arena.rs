@@ -34,6 +34,7 @@ impl Version {
 
     fn pick(
         self,
+        threat: &mut crate::threat::ThreatCache,
         state: &GameState,
         player: Player,
         candidates: &[GameEffect],
@@ -43,13 +44,14 @@ impl Version {
         match self {
             Version::Baseline => crate::baseline::pick_validated(state, player, candidates, rng),
             Version::Current => {
-                crate::commanders::pick_validated(state, player, candidates, rng, memory)
+                crate::commanders::pick_validated(threat, state, player, candidates, rng, memory)
             }
         }
     }
 
     fn pick_setup(
         self,
+        threat: &mut crate::threat::ThreatCache,
         state: &GameState,
         candidates: &[GameEffect],
         own_side: Option<Player>,
@@ -60,7 +62,7 @@ impl Version {
                 crate::baseline::pick_setup_validated(state, candidates, own_side, rng)
             }
             Version::Current => {
-                crate::commanders::pick_setup_validated(state, candidates, own_side, rng)
+                crate::commanders::pick_setup_validated(threat, state, candidates, own_side, rng)
             }
         }
     }
@@ -207,6 +209,8 @@ pub fn play_observed(
     let mut steps = 0usize;
     let mut stuck = 0usize;
     let mut memory = crate::move_memory::MoveMemory::new();
+    let mut threat = crate::threat::ThreatCache::default();
+    let threat = &mut threat;
     let mut revisit_check = crate::move_memory::MoveMemory::new();
     let mut revisits = 0usize;
     let trace = std::env::var("ARENA_TRACE").is_ok();
@@ -217,7 +221,7 @@ pub fn play_observed(
         steps += 1;
         if trace && state.current_turn.value() != traced_turn {
             traced_turn = state.current_turn.value();
-            eprintln!("{}", trace_line(&state));
+            eprintln!("{}", trace_line(threat, &state));
         }
         let decided = std::time::Instant::now();
         // The app's `ai_chooser` (`actions::decider`): the mine roll is the
@@ -238,12 +242,12 @@ pub fn play_observed(
         {
             match dervish {
                 Version::Baseline => e.clone(),
-                Version::Current => crate::commanders::choose_deserters(&state, e.clone()),
+                Version::Current => crate::commanders::choose_deserters(threat, &state, e.clone()),
             }
         } else if state.phase == Phase::Setup {
-            version(chooser).pick_setup(&state, &candidates, Some(chooser), &mut rng)
+            version(chooser).pick_setup(threat, &state, &candidates, Some(chooser), &mut rng)
         } else {
-            version(chooser).pick(&state, chooser, &candidates, &mut rng, &mut memory)
+            version(chooser).pick(threat, &state, chooser, &candidates, &mut rng, &mut memory)
         };
         // Count the steps back onto ground covered this phase (see
         // `crate::move_memory`), whichever doctrine took them.
@@ -293,7 +297,7 @@ pub fn play_observed(
 
 /// One diagnostic line per turn (`ARENA_TRACE`): unit counts, losses, and
 /// the Anglo-Egyptian leaders' path cost to the Mahdi's Tomb.
-fn trace_line(state: &GameState) -> String {
+fn trace_line(threat: &mut crate::threat::ThreatCache, state: &GameState) -> String {
     let count = |p: Player| {
         state
             .units
@@ -314,7 +318,7 @@ fn trace_line(state: &GameState) -> String {
             )
         })
         .map(|u| {
-            let cost = tomb.and_then(|t| crate::threat::path_cost(state, u.position, t));
+            let cost = tomb.and_then(|t| crate::threat::path_cost(threat, state, u.position, t));
             format!("({},{})~{:?}", u.position.q, u.position.r, cost)
         })
         .collect();
