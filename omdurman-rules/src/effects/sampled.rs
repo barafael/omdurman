@@ -1,9 +1,9 @@
-//! The expensive proof tier: one harness per [`GameEffect`] kind, each over
-//! an arbitrary effect of that kind on a rich symbolic state. For every
-//! input the harness can build, [`apply_effect`]
+//! The sampled invariants of the engine: one check per [`GameEffect`]
+//! kind, each over an arbitrary effect of that kind on a random rich state.
+//! For every input it draws, [`apply_effect`]
 //!
-//! 1. never panics, overflows or indexes out of bounds (Kani checks these in
-//!    every harness), so no effect a peer sends can crash the others;
+//! 1. never panics, overflows or indexes out of bounds, so no effect a peer
+//!    sends can crash the others;
 //! 2. leaves the state untouched when it rejects the effect (a rejected
 //!    event is never retried, so a partial mutation is a permanent desync);
 //! 3. keeps the global invariants when it accepts it: every hex legally
@@ -11,16 +11,16 @@
 //!    `debug_assert`s), unit ids unique, no eliminated unit back on the
 //!    board, and no per-phase tracker naming a unit that has left it.
 //!
-//! Proofs only under `--features kani-expensive` (`KANI_EXPENSIVE=1
-//! ./run-kani.sh`, or `./scripts/kani.sh -p omdurman-rules --features
-//! kani-expensive --harness expensive::`): each harness is sized for a
-//! machine with tens of GB per job and an hour or more, not for the
-//! everyday suite. Under `cargo test` the same harnesses run on random
-//! samples (see the end of this file).
+//! These were Kani proofs (the "expensive tier") until 2026-10-20: each ran
+//! past the five minutes a proof gets on a desktop, so they were retired,
+//! and what is left is their randomized twin -- `any`, `assume` and `cover`
+//! drawn from a seeded [`GameRng`](crate::rng::GameRng) (`sample`, near the
+//! end of this file). 20 000 samples per check by default,
+//! `EXPENSIVE_SAMPLES=<n>` for a deeper run.
 //!
 //! # The state
 //!
-//! Three distinct real counters from the [palette](crate::proof_palette),
+//! Three distinct real counters from the [palette](crate::test_palette),
 //! each on any hex of a 5x5 window, disrupted or not, every scenario, phase,
 //! active player, turn and time of day, the optional rules on or off, and
 //! each unit independently in or out of the per-phase trackers -- assumed to
@@ -30,8 +30,7 @@
 //!
 //! The board is the engine's rule-neutral empty board (`BoardInfo` with no
 //! terrain), on which the engine skips every terrain and hexside check: the
-//! terrain branches are covered by the unit tests and the table proofs, and
-//! a non-empty board would put a hash of a symbolic hex in every lookup.
+//! terrain branches are covered by the unit tests and the table proofs.
 //!
 //! # Payloads
 //!
@@ -40,24 +39,10 @@
 //! vectors hold up to two or three entries, and modifiers, rolls and table
 //! rows range over their whole types -- including a `Terrain` fire modifier
 //! of any `i16`.
-//!
-//! # Stubs
-//!
-//! `profile_for_unit` is replaced by the palette's `match`
-//! (`proof_palette::palette_profile`): every id a harness can produce is a
-//! palette counter, and the palette is held to the roster by its unit test,
-//! so the stub is exact on every reachable input. `BoardInfo::bank_of` is
-//! replaced by `None`, which is what it returns everywhere on the empty
-//! board.
-//!
-//! `kani::cover!` marks both outcomes of every effect; a harness whose
-//! "accepted" cover is UNSATISFIABLE proves only its rejection half.
 
 use super::*;
-#[cfg(kani)]
-use crate::board::{BoardInfo, NileBank};
 use crate::combat_results_table::FireFactorRow;
-use crate::proof_palette::{PALETTE, PALETTE_LEN};
+use crate::test_palette::{PALETTE, PALETTE_LEN};
 use crate::transport::ChainPlacement;
 use crate::{
     DemolitionTarget, DieRoll, FireAttack, FireKind, FireModifier, FireSubPhase, FriendliesAction,
@@ -66,44 +51,15 @@ use crate::{
 };
 use omdurman_types::{DayNight, HexCoord, HexsideRef, Player, Scenario, UnitKind};
 
-#[cfg(kani)]
-use kani::{any, assume};
-#[cfg(not(kani))]
-use sample::{any, assume};
+use sample::{any, assume, cover};
 
-/// `kani::cover!` under Kani; counted when sampled.
-macro_rules! cover {
-    ($cond:expr, $msg:literal) => {
-        #[cfg(kani)]
-        kani::cover!($cond, $msg);
-        #[cfg(not(kani))]
-        sample::cover($cond, $msg);
-    };
-}
-
-/// Most units a harness state can hold: three on the board, plus two
+/// Most units a check's state can hold: three on the board, plus two
 /// placed by the effect.
 const MAX_UNITS: usize = 6;
 
-/// `BoardInfo::bank_of` on the empty board.
-#[cfg(kani)]
-fn stub_bank_of_none(_board: &BoardInfo, _hex: HexCoord) -> Option<NileBank> {
-    None
-}
-
-/// A `usize` below `n` (a bounded choice: symbolic under Kani, drawn
-/// directly when sampled).
+/// A `usize` below `n`.
 fn any_below(n: usize) -> usize {
-    #[cfg(kani)]
-    {
-        let i: usize = kani::any();
-        kani::assume(i < n);
-        i
-    }
-    #[cfg(not(kani))]
-    {
-        sample::below(n)
-    }
+    sample::below(n)
 }
 
 /// An `i32` in `lo..=hi`.
@@ -319,8 +275,7 @@ fn palette_unit(index: usize) -> UnitPlacement {
 /// Whether every occupied hex holds a legal stack (the engine's
 /// `validate_stacking_invariants`, without its grouping map). Each hex is
 /// checked once, at its first occupant, and `stacking_rule` always sees a
-/// slice of concrete length: with a symbolic length every loop inside it
-/// unrolls to the bound.
+/// slice of concrete length.
 fn stacking_ok(state: &GameState) -> bool {
     let units = &state.units;
     let mut ok = true;
@@ -349,7 +304,7 @@ fn stacking_ok(state: &GameState) -> bool {
     ok
 }
 
-/// The rich symbolic state (see the module doc), legally stacked.
+/// The rich random state (see the module doc), legally stacked.
 fn any_state() -> GameState {
     let mut state = GameState::kani_minimal();
     state.scenario = any_scenario();
@@ -617,8 +572,8 @@ fn invariants_hold(state: &GameState) -> bool {
 fn check(mut state: GameState, effect: GameEffect) {
     let before = state.clone();
     let result = apply_effect(&mut state, &effect);
-    cover!(result.is_ok(), "the effect can be accepted");
-    cover!(result.is_err(), "the effect can be rejected");
+    cover(result.is_ok(), "the effect can be accepted");
+    cover(result.is_err(), "the effect can be rejected");
     if result.is_err() {
         assert!(
             same_rule_state(&before, &state),
@@ -630,8 +585,6 @@ fn check(mut state: GameState, effect: GameEffect) {
             "an accepted effect broke a global invariant"
         );
     }
-    state.kani_discard();
-    before.kani_discard();
 }
 
 // -- Sampling bias -----------------------------------------------------------
@@ -640,34 +593,25 @@ fn check(mut state: GameState, effect: GameEffect) {
 // phase, side, firers and target), so a random run would only ever check the
 // rejected half. When sampled, half the inputs are therefore shaped the way
 // a client shapes them: the state put in the effect's phase with the right
-// side to move, the payload built by the engine's own builders. Under Kani
-// these are no-ops -- the arbitrary inputs already contain every legal
-// effect, and the `cover!`s report whether the solver reached one.
+// side to move, the payload built by the engine's own builders.
 
-/// When sampled, half the time: `plausible`'s value (if any) in place of
-/// `arbitrary`.
+/// Half the time: `plausible`'s value (if any) in place of `arbitrary`.
 fn biased<T>(arbitrary: T, plausible: impl FnOnce() -> Option<T>) -> T {
-    #[cfg(not(kani))]
     if any::<bool>()
         && let Some(value) = plausible()
     {
         return value;
     }
-    #[cfg(kani)]
-    drop(plausible);
     arbitrary
 }
 
-/// When sampled, half the time: apply `shape` to the state (then re-assume
-/// the starting invariant it may have broken).
+/// Half the time: apply `shape` to the state (then re-assume the starting
+/// invariant it may have broken).
 fn nudge(state: &mut GameState, shape: impl FnOnce(&mut GameState)) {
-    #[cfg(not(kani))]
     if any::<bool>() {
         shape(state);
         assume(stacking_ok(state));
     }
-    #[cfg(kani)]
-    drop((state, shape));
 }
 
 /// Put `state` in `phase` with the owner of one of its units to move.
@@ -708,18 +652,8 @@ fn plausible_melee(state: &mut GameState) -> Option<MeleeAttack> {
     build_melee_attack(state, attacker.position, hex)
 }
 
-// -- One harness per effect kind ---------------------------------------------
+// -- One check per effect kind -----------------------------------------------
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn advance_phase_is_safe() {
     let mut state = any_state();
     with_pending_melee(&mut state);
@@ -730,16 +664,6 @@ fn advance_phase_is_safe() {
     check(state, GameEffect::AdvancePhase);
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn advance_phase_from_is_safe() {
     let mut state = any_state();
     with_pending_melee(&mut state);
@@ -767,16 +691,6 @@ fn advance_phase_from_is_safe() {
     );
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn move_unit_is_safe() {
     let mut state = any_state();
     with_mine(&mut state);
@@ -795,16 +709,6 @@ fn move_unit_is_safe() {
     check(state, effect);
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn fire_combat_is_safe() {
     let mut state = any_state();
     nudge(&mut state, |s| {
@@ -820,16 +724,6 @@ fn fire_combat_is_safe() {
     check(state, effect);
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn howitzer_fire_is_safe() {
     let mut state = any_state();
     nudge(&mut state, |s| {
@@ -853,16 +747,6 @@ fn howitzer_fire_is_safe() {
     check(state, effect);
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn allocate_fire_is_safe() {
     let mut state = any_state();
     nudge(&mut state, |s| {
@@ -879,16 +763,6 @@ fn allocate_fire_is_safe() {
     );
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn take_losses_is_safe() {
     let mut state = any_state();
     // An open choice of one loss among the board's units (§7.7), present or
@@ -926,16 +800,6 @@ fn take_losses_is_safe() {
     );
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn declare_melee_is_safe() {
     let mut state = any_state();
     with_pending_melee(&mut state);
@@ -951,48 +815,18 @@ fn declare_melee_is_safe() {
     check(state, effect);
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn resolve_melee_is_safe() {
     let mut state = any_state();
     with_pending_melee(&mut state);
     check(state, GameEffect::ResolveMelee);
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn decline_retreat_before_melee_is_safe() {
     let mut state = any_state();
     with_pending_melee(&mut state);
     check(state, GameEffect::DeclineRetreatBeforeMelee);
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn retreat_before_melee_is_safe() {
     let mut state = any_state();
     with_pending_melee(&mut state);
@@ -1009,16 +843,6 @@ fn retreat_before_melee_is_safe() {
     check(state, effect);
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn advance_after_combat_is_safe() {
     let mut state = any_state();
     with_vacated_hex(&mut state);
@@ -1034,16 +858,6 @@ fn advance_after_combat_is_safe() {
     check(state, effect);
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn construct_zariba_is_safe() {
     let state = any_state();
     let effect = GameEffect::ConstructZariba {
@@ -1053,16 +867,6 @@ fn construct_zariba_is_safe() {
     check(state, effect);
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn demolition_is_safe() {
     let mut state = any_state();
     with_demolition(&mut state);
@@ -1078,16 +882,6 @@ fn demolition_is_safe() {
     check(state, effect);
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn place_reinforcements_is_safe() {
     let state = any_state();
     let mut placements = Vec::new();
@@ -1100,16 +894,6 @@ fn place_reinforcements_is_safe() {
     check(state, GameEffect::PlaceReinforcements(placements));
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn dervish_desertion_is_safe() {
     let mut state = any_state();
     // The first night's Dervish movement phase of the Campaign (§8.2).
@@ -1145,16 +929,6 @@ fn dervish_desertion_is_safe() {
     check(state, effect);
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn friendlies_transport_is_safe() {
     let mut state = any_state();
     with_passenger(&mut state);
@@ -1181,16 +955,6 @@ fn friendlies_transport_is_safe() {
     check(state, GameEffect::FriendliesTransport(action));
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn river_mine_is_safe() {
     let mut state = any_state();
     with_mine(&mut state);
@@ -1203,16 +967,6 @@ fn river_mine_is_safe() {
     check(state, effect);
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn sink_chain_is_safe() {
     let mut state = any_state();
     with_chain(&mut state);
@@ -1233,32 +987,12 @@ fn sink_chain_is_safe() {
     check(state, effect);
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn deploy_unit_is_safe() {
     let mut state = any_state();
     nudge(&mut state, |s| to_move(s, Phase::Setup));
     check(state, GameEffect::DeployUnit(any_placement()));
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn remove_deployed_unit_is_safe() {
     let mut state = any_state();
     nudge(&mut state, |s| to_move(s, Phase::Setup));
@@ -1270,16 +1004,6 @@ fn remove_deployed_unit_is_safe() {
     check(state, effect);
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn place_mine_is_safe() {
     let mut state = any_state();
     with_mine(&mut state);
@@ -1294,16 +1018,6 @@ fn place_mine_is_safe() {
     check(state, effect);
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn place_chain_is_safe() {
     let mut state = any_state();
     with_chain(&mut state);
@@ -1327,16 +1041,6 @@ fn place_chain_is_safe() {
     check(state, GameEffect::PlaceChain { hexes });
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn confirm_setup_ready_is_safe() {
     let mut state = any_state();
     nudge(&mut state, |s| to_move(s, Phase::Setup));
@@ -1346,16 +1050,6 @@ fn confirm_setup_ready_is_safe() {
     check(state, effect);
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn artillery_breach_wall_is_safe() {
     let state = any_state();
     let effect = GameEffect::ArtilleryBreachWall {
@@ -1387,16 +1081,6 @@ fn next_to_enemy_zoc(state: &GameState, mover: &UnitPlacement, hex: HexCoord) ->
 /// projects a zone of control over it (it must stop on entering one); and
 /// the points it has spent this turn stay within the allowance it now moves
 /// under.
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn an_accepted_move_is_a_legal_move() {
     let mut state = any_state();
     let k = any_slot();
@@ -1413,7 +1097,7 @@ fn an_accepted_move_is_a_legal_move() {
     };
     let before = state.clone();
     let result = apply_effect(&mut state, &effect);
-    cover!(result.is_ok(), "a move can be accepted");
+    cover(result.is_ok(), "a move can be accepted");
     if result.is_ok() {
         let moved = state
             .find_unit(mover.id)
@@ -1447,17 +1131,14 @@ fn an_accepted_move_is_a_legal_move() {
             );
         }
     }
-    state.kani_discard();
-    before.kani_discard();
 }
 
 // -- Effect pairs ------------------------------------------------------------
 //
 // Bugs between effects -- a declared melee lost across a phase change, a
-// fire tracker surviving its phase -- are invisible to one-effect proofs.
+// fire tracker surviving its phase -- are invisible to one-effect checks.
 // These apply two arbitrary effects of the given kinds in sequence and hold
-// the global invariants after every accepted step. (A symbolic effect *kind*
-// would pull every dispatcher arm into one instance; pairs keep it to two.)
+// the global invariants after every accepted step.
 
 /// Apply `first` then `second`, holding the invariants after each accepted
 /// one and atomicity after each rejected one.
@@ -1465,7 +1146,7 @@ fn check_pair(mut state: GameState, first: GameEffect, second: GameEffect) {
     for effect in [first, second] {
         let before = state.clone();
         let result = apply_effect(&mut state, &effect);
-        cover!(result.is_ok(), "a step can be accepted");
+        cover(result.is_ok(), "a step can be accepted");
         if result.is_ok() {
             assert!(
                 invariants_hold(&state),
@@ -1477,21 +1158,9 @@ fn check_pair(mut state: GameState, first: GameEffect, second: GameEffect) {
                 "a rejected effect changed the state"
             );
         }
-        before.kani_discard();
     }
-    state.kani_discard();
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn declare_melee_then_advance_phase_keeps_the_invariants() {
     let mut state = any_state();
     nudge(&mut state, |s| to_move(s, Phase::Melee));
@@ -1506,16 +1175,6 @@ fn declare_melee_then_advance_phase_keeps_the_invariants() {
     check_pair(state, declare, GameEffect::AdvancePhase);
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn fire_then_advance_phase_keeps_the_invariants() {
     let mut state = any_state();
     nudge(&mut state, |s| {
@@ -1531,16 +1190,6 @@ fn fire_then_advance_phase_keeps_the_invariants() {
     check_pair(state, fire, GameEffect::AdvancePhase);
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn declare_melee_then_resolve_melee_keeps_the_invariants() {
     let mut state = any_state();
     nudge(&mut state, |s| to_move(s, Phase::Melee));
@@ -1555,16 +1204,6 @@ fn declare_melee_then_resolve_melee_keeps_the_invariants() {
     check_pair(state, declare, GameEffect::ResolveMelee);
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn two_moves_keep_the_invariants() {
     let mut state = any_state();
     nudge(&mut state, |s| to_move(s, Phase::Movement));
@@ -1587,7 +1226,7 @@ fn two_moves_keep_the_invariants() {
 const EFFECT_KINDS: usize = 26;
 
 /// An arbitrary effect of kind `kind` (variant order), built from the same
-/// payload generators as the safety harnesses.
+/// payload generators as the safety checks.
 fn any_effect(kind: usize) -> GameEffect {
     match kind {
         0 => GameEffect::AdvancePhase,
@@ -1730,48 +1369,9 @@ fn round_trips(effect: GameEffect) {
     assert!(back == effect, "the wire round trip changed the effect");
 }
 
-macro_rules! wire_round_trip {
-    ($($name:ident = $kind:expr;)*) => {$(
-        #[cfg(kani)]
-        #[kani::proof]
-        #[cfg_attr(kani, kani::unwind(8))]
-        fn $name() {
-            round_trips(any_effect($kind));
-        }
-    )*};
-}
-
-wire_round_trip! {
-    wire_round_trip_advance_phase = 0;
-    wire_round_trip_move_unit = 1;
-    wire_round_trip_fire_combat = 2;
-    wire_round_trip_howitzer_fire = 3;
-    wire_round_trip_declare_melee = 4;
-    wire_round_trip_resolve_melee = 5;
-    wire_round_trip_retreat_before_melee = 6;
-    wire_round_trip_advance_after_combat = 7;
-    wire_round_trip_construct_zariba = 8;
-    wire_round_trip_demolition = 9;
-    wire_round_trip_place_reinforcements = 10;
-    wire_round_trip_dervish_desertion = 11;
-    wire_round_trip_friendlies_transport = 12;
-    wire_round_trip_river_mine = 13;
-    wire_round_trip_sink_chain = 14;
-    wire_round_trip_deploy_unit = 15;
-    wire_round_trip_remove_deployed_unit = 16;
-    wire_round_trip_place_mine = 17;
-    wire_round_trip_place_chain = 18;
-    wire_round_trip_confirm_setup_ready = 19;
-    wire_round_trip_artillery_breach_wall = 20;
-    wire_round_trip_allocate_fire = 24;
-    wire_round_trip_take_losses = 25;
-}
-
 /// Decoding any 16 bytes as an effect returns an effect or an error, never
 /// a panic. (Each decoded element consumes at least one byte, so no decode
 /// loop runs past 16 trips.)
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(18))]
 fn decoding_any_bytes_never_panics() {
     let bytes: [u8; 16] = core::array::from_fn(|_| any());
     let len = any_below(17);
@@ -1779,8 +1379,8 @@ fn decoding_any_bytes_never_panics() {
 }
 
 /// The kind index of `effect`, in variant order. Exhaustive on purpose: a
-/// new `GameEffect` variant fails to compile here until `any_effect` and the
-/// wire proofs cover it.
+/// new `GameEffect` variant fails to compile here until `any_effect` builds
+/// it (and so the wire round trip covers it).
 fn kind_of(effect: &GameEffect) -> usize {
     match effect {
         GameEffect::AdvancePhase => 0,
@@ -1813,24 +1413,18 @@ fn kind_of(effect: &GameEffect) -> usize {
 }
 
 /// `any_effect(k)` builds an effect of kind `k` for every kind, so the
-/// round-trip harnesses above cover every variant.
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-fn every_effect_kind_has_a_wire_proof() {
+/// wire round trip covers every variant.
+fn any_effect_builds_every_kind() {
     let kind = any_below(EFFECT_KINDS);
     assert!(kind_of(&any_effect(kind)) == kind);
 }
 
-// -- The same harnesses as a randomized test --------------------------------
+// -- Sampling ------------------------------------------------------------------
 //
-// Under `cargo test` the harnesses above run on random concrete samples: the
-// Kani API is replaced by a seeded `GameRng`, an `assume` that fails rejects
-// the sample, and any other panic -- a failed property or an engine panic --
-// fails the test with the harness name and seed. A proof run takes hours on
-// a big machine; this takes seconds and catches most false alarms and real
-// bugs first.
+// `any`, `assume` and `cover` over a seeded `GameRng`: an `assume` that
+// fails rejects the sample, and any other panic -- a failed property or an
+// engine panic -- fails the test with the check's name and seed.
 
-#[cfg(not(kani))]
 mod sample {
     use crate::rng::GameRng;
     use std::cell::RefCell;
@@ -1915,16 +1509,6 @@ mod sample {
     }
 }
 
-#[cfg_attr(kani, kani::proof)]
-#[cfg_attr(kani, kani::unwind(8))]
-#[cfg_attr(
-    kani,
-    kani::stub(
-        crate::unit_profiles::profile_for_unit,
-        crate::proof_palette::palette_profile
-    )
-)]
-#[cfg_attr(kani, kani::stub(BoardInfo::bank_of, stub_bank_of_none))]
 fn roll_desertion_is_safe() {
     let mut state = any_state();
     // The first night's Dervish movement phase of the Campaign (§8.2).
@@ -1947,112 +1531,106 @@ fn roll_desertion_is_safe() {
     check(state, GameEffect::RollDesertion { roll: any_roll() });
 }
 
-#[cfg(test)]
-mod sampled {
-    use super::*;
+// -- The test --------------------------------------------------------------
 
-    const SAFETY: &[(&str, fn())] = &[
-        ("advance_phase_is_safe", advance_phase_is_safe),
-        ("advance_phase_from_is_safe", advance_phase_from_is_safe),
-        ("roll_desertion_is_safe", roll_desertion_is_safe),
-        ("move_unit_is_safe", move_unit_is_safe),
-        ("fire_combat_is_safe", fire_combat_is_safe),
-        ("howitzer_fire_is_safe", howitzer_fire_is_safe),
-        ("allocate_fire_is_safe", allocate_fire_is_safe),
-        ("take_losses_is_safe", take_losses_is_safe),
-        ("declare_melee_is_safe", declare_melee_is_safe),
-        ("resolve_melee_is_safe", resolve_melee_is_safe),
-        ("retreat_before_melee_is_safe", retreat_before_melee_is_safe),
-        ("advance_after_combat_is_safe", advance_after_combat_is_safe),
-        ("construct_zariba_is_safe", construct_zariba_is_safe),
-        ("demolition_is_safe", demolition_is_safe),
-        ("place_reinforcements_is_safe", place_reinforcements_is_safe),
-        ("dervish_desertion_is_safe", dervish_desertion_is_safe),
-        ("friendlies_transport_is_safe", friendlies_transport_is_safe),
-        ("river_mine_is_safe", river_mine_is_safe),
-        ("sink_chain_is_safe", sink_chain_is_safe),
-        ("deploy_unit_is_safe", deploy_unit_is_safe),
-        ("remove_deployed_unit_is_safe", remove_deployed_unit_is_safe),
-        ("place_mine_is_safe", place_mine_is_safe),
-        ("place_chain_is_safe", place_chain_is_safe),
-        ("confirm_setup_ready_is_safe", confirm_setup_ready_is_safe),
-        (
-            "artillery_breach_wall_is_safe",
-            artillery_breach_wall_is_safe,
-        ),
-        (
-            "decline_retreat_before_melee_is_safe",
-            decline_retreat_before_melee_is_safe,
-        ),
-        (
-            "an_accepted_move_is_a_legal_move",
-            an_accepted_move_is_a_legal_move,
-        ),
-        (
-            "declare_melee_then_advance_phase_keeps_the_invariants",
-            declare_melee_then_advance_phase_keeps_the_invariants,
-        ),
-        (
-            "fire_then_advance_phase_keeps_the_invariants",
-            fire_then_advance_phase_keeps_the_invariants,
-        ),
-        (
-            "declare_melee_then_resolve_melee_keeps_the_invariants",
-            declare_melee_then_resolve_melee_keeps_the_invariants,
-        ),
-        (
-            "two_moves_keep_the_invariants",
-            two_moves_keep_the_invariants,
-        ),
-        (
-            "decoding_any_bytes_never_panics",
-            decoding_any_bytes_never_panics,
-        ),
-        (
-            "every_effect_kind_has_a_wire_proof",
-            every_effect_kind_has_a_wire_proof,
-        ),
-    ];
+const SAFETY: &[(&str, fn())] = &[
+    ("advance_phase_is_safe", advance_phase_is_safe),
+    ("advance_phase_from_is_safe", advance_phase_from_is_safe),
+    ("roll_desertion_is_safe", roll_desertion_is_safe),
+    ("move_unit_is_safe", move_unit_is_safe),
+    ("fire_combat_is_safe", fire_combat_is_safe),
+    ("howitzer_fire_is_safe", howitzer_fire_is_safe),
+    ("allocate_fire_is_safe", allocate_fire_is_safe),
+    ("take_losses_is_safe", take_losses_is_safe),
+    ("declare_melee_is_safe", declare_melee_is_safe),
+    ("resolve_melee_is_safe", resolve_melee_is_safe),
+    ("retreat_before_melee_is_safe", retreat_before_melee_is_safe),
+    ("advance_after_combat_is_safe", advance_after_combat_is_safe),
+    ("construct_zariba_is_safe", construct_zariba_is_safe),
+    ("demolition_is_safe", demolition_is_safe),
+    ("place_reinforcements_is_safe", place_reinforcements_is_safe),
+    ("dervish_desertion_is_safe", dervish_desertion_is_safe),
+    ("friendlies_transport_is_safe", friendlies_transport_is_safe),
+    ("river_mine_is_safe", river_mine_is_safe),
+    ("sink_chain_is_safe", sink_chain_is_safe),
+    ("deploy_unit_is_safe", deploy_unit_is_safe),
+    ("remove_deployed_unit_is_safe", remove_deployed_unit_is_safe),
+    ("place_mine_is_safe", place_mine_is_safe),
+    ("place_chain_is_safe", place_chain_is_safe),
+    ("confirm_setup_ready_is_safe", confirm_setup_ready_is_safe),
+    (
+        "artillery_breach_wall_is_safe",
+        artillery_breach_wall_is_safe,
+    ),
+    (
+        "decline_retreat_before_melee_is_safe",
+        decline_retreat_before_melee_is_safe,
+    ),
+    (
+        "an_accepted_move_is_a_legal_move",
+        an_accepted_move_is_a_legal_move,
+    ),
+    (
+        "declare_melee_then_advance_phase_keeps_the_invariants",
+        declare_melee_then_advance_phase_keeps_the_invariants,
+    ),
+    (
+        "fire_then_advance_phase_keeps_the_invariants",
+        fire_then_advance_phase_keeps_the_invariants,
+    ),
+    (
+        "declare_melee_then_resolve_melee_keeps_the_invariants",
+        declare_melee_then_resolve_melee_keeps_the_invariants,
+    ),
+    (
+        "two_moves_keep_the_invariants",
+        two_moves_keep_the_invariants,
+    ),
+    (
+        "decoding_any_bytes_never_panics",
+        decoding_any_bytes_never_panics,
+    ),
+    ("any_effect_builds_every_kind", any_effect_builds_every_kind),
+];
 
-    /// Samples per harness: 20 000 by default, `EXPENSIVE_SAMPLES` for a
-    /// deeper run.
-    fn samples() -> u64 {
-        std::env::var("EXPENSIVE_SAMPLES")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(20_000)
-    }
+/// Samples per check: 20 000 by default, `EXPENSIVE_SAMPLES` for a
+/// deeper run.
+fn samples() -> u64 {
+    std::env::var("EXPENSIVE_SAMPLES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(20_000)
+}
 
-    /// Every harness holds on random samples, and enough samples get past
-    /// the harness's assumptions to mean something (a harness that rejects
-    /// everything tests nothing). Prints, per harness, the samples that ran
-    /// and how many had their effect accepted (`--nocapture` to see them).
-    #[test]
-    fn every_expensive_harness_holds_on_random_samples() {
-        let quiet = std::panic::take_hook();
-        std::panic::set_hook(Box::new(|_| {}));
-        let samples = samples();
-        let mut failures = Vec::new();
-        for (name, harness) in SAFETY {
-            sample::take_covered();
-            match sample::run(*harness, samples) {
-                Ok(ran) => {
-                    let covered = sample::take_covered();
-                    println!("{name:<55} ran {ran:>6}  accepted {covered:>6}");
-                    if ran < samples / 100 {
-                        failures.push(format!("{name}: only {ran} of {samples} samples ran"));
-                    }
+/// Every check holds on random samples, and enough samples get past
+/// the check's assumptions to mean something (a check that rejects
+/// everything tests nothing). Prints, per check, the samples that ran
+/// and how many had their effect accepted (`--nocapture` to see them).
+#[test]
+fn every_effect_check_holds_on_random_samples() {
+    let quiet = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let samples = samples();
+    let mut failures = Vec::new();
+    for (name, harness) in SAFETY {
+        sample::take_covered();
+        match sample::run(*harness, samples) {
+            Ok(ran) => {
+                let covered = sample::take_covered();
+                println!("{name:<55} ran {ran:>6}  accepted {covered:>6}");
+                if ran < samples / 100 {
+                    failures.push(format!("{name}: only {ran} of {samples} samples ran"));
                 }
-                Err(e) => failures.push(format!("{name}: {e}")),
             }
+            Err(e) => failures.push(format!("{name}: {e}")),
         }
-        for kind in 0..EFFECT_KINDS {
-            let round_trip = move || round_trips(any_effect(kind));
-            if let Err(e) = sample::run(round_trip, 500) {
-                failures.push(format!("wire round trip of kind {kind}: {e}"));
-            }
-        }
-        std::panic::set_hook(quiet);
-        assert!(failures.is_empty(), "{failures:#?}");
     }
+    for kind in 0..EFFECT_KINDS {
+        let round_trip = move || round_trips(any_effect(kind));
+        if let Err(e) = sample::run(round_trip, 500) {
+            failures.push(format!("wire round trip of kind {kind}: {e}"));
+        }
+    }
+    std::panic::set_hook(quiet);
+    assert!(failures.is_empty(), "{failures:#?}");
 }

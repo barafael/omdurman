@@ -17,12 +17,6 @@ workspace = true
 # `--features kani` uniformly.
 kani = []
 
-# The expensive proof tier (src/effects/expensive.rs): one harness per effect
-# kind over a rich symbolic state. Sized for tens of GB per job; not part of
-# the everyday suite. `KANI_EXPENSIVE=1 ./run-kani.sh` turns it on. Pulls in
-# postcard for the wire-format proofs (the peers' encoding).
-kani-expensive = ["dep:postcard"]
-
 [dependencies]
 omdurman-types = { path = "../omdurman-types" }
 ron = { workspace = true }
@@ -45,8 +39,6 @@ tracing = { workspace = true }
 # rules crate needs only `SeedableRng` + `RngExt` over the seeded `GameRng`.
 rand = { version = "0.10", default-features = false, features = ["std", "alloc"] }
 rand_chacha = { workspace = true }
-# Only for the `kani-expensive` wire-format proofs.
-postcard = { workspace = true, optional = true }
 
 # `#[rulebook]` on the Kani proofs (the proof modules are `cfg(kani)` on the
 # lib, where dev-dependencies are not available). Proof builds only.
@@ -54,7 +46,7 @@ postcard = { workspace = true, optional = true }
 traceability-macro = { path = "../traceability-macro" }
 
 [dev-dependencies]
-# The sampled run of the expensive wire-format harnesses.
+# The wire round trip in the sampled engine checks (`effects/sampled.rs`).
 postcard = { workspace = true }
 traceability-macro = { path = "../traceability-macro" }
 # Shared traceability index + checks, also used by the `traceability-lsp` server

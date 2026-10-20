@@ -75,10 +75,9 @@ pub use victory::*;
 #[cfg(test)]
 mod tests;
 
-// The expensive proof tier; under `cargo test`, the same harnesses on random
-// samples.
-#[cfg(any(all(kani, feature = "kani-expensive"), test))]
-mod expensive;
+// Every effect kind's safety and the global invariants, on random samples.
+#[cfg(test)]
+mod sampled;
 
 /// Kani proof harnesses for [`apply_effect`] over a *bounded* symbolic
 /// [`GameState`] (`cargo kani`, see `scripts/kani.sh`).

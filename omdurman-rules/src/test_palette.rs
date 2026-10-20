@@ -1,11 +1,8 @@
-//! A palette of real counters for the proof harnesses: one of each shape the
-//! rules treat differently (leaders, tribal and British infantry, cavalry,
-//! artillery, Maxims, engineers, gunboats, forts, "Friendlies", GORDON).
-//!
-//! The profiles are literals so a harness can draw a unit, or stub
-//! [`profile_for_unit`](crate::unit_profiles::profile_for_unit) with a
-//! loop-free `match`, without symexing the roster tables. The test below
-//! holds every literal to the real roster.
+//! A palette of real counters for the sampled engine checks
+//! (`effects/sampled.rs`): one of each shape the rules treat differently
+//! (leaders, tribal and British infantry, cavalry, artillery, Maxims,
+//! engineers, gunboats, forts, "Friendlies", GORDON). The test below holds
+//! every literal to the real roster.
 
 use crate::{
     BattalionOrdinal, BritishLeader, DervishLeader, FireFactor, GunboatId, GunboatMovement,
@@ -238,31 +235,6 @@ pub(crate) const PALETTE: [(UnitId, UnitProfile); PALETTE_LEN] = [
         },
     ),
 ];
-
-/// [`profile_for_unit`](crate::unit_profiles::profile_for_unit) restricted to
-/// the palette: the real profile for a palette counter, `None` for any other
-/// id. A `match`, not a scan, so a proof pays no loop for it.
-#[cfg(kani)]
-pub(crate) fn palette_profile(id: UnitId) -> Option<UnitProfile> {
-    let i = match id {
-        UnitId::AliWadHelu_0_0 => 0,
-        UnitId::AliWadHelu_0_1 => 1,
-        UnitId::KhalifaAbdullah_0_1 => 2,
-        UnitId::KhalifaAbdullah_1_0 => 3,
-        UnitId::Hadendowa_7_1 => 4,
-        UnitId::BritishArmy_0_0 => 5,
-        UnitId::BritishArmy_0_1 => 6,
-        UnitId::BritishArmy_1_0 => 7,
-        UnitId::BritishArmy_2_0 => 8,
-        UnitId::BritishArmy_4_0 => 9,
-        UnitId::BritishBoats_3_0 => 10,
-        UnitId::BritishBoats_3_1 => 11,
-        UnitId::Kitchener_0_1 => 12,
-        UnitId::BritishForts_0_0 => 13,
-        _ => return None,
-    };
-    Some(PALETTE[i].1)
-}
 
 #[cfg(test)]
 mod tests {

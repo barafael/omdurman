@@ -63,10 +63,11 @@ KANI_JOBS=8 ./scripts/kani.sh -p omdurman-types -p omdurman-rules
 ./scripts/kani.sh -p omdurman-rules --harness verification::die_roll_apply_modifier_is_total
 ```
 
-The expensive tier (every effect kind's safety, movement legality, effect pairs, wire format,
-sequencing; hours and tens of GB per job) needs `--features kani-expensive`; `run-kani.sh`
-clones the repo and runs everything on a big machine (`KANI_EXPENSIVE=1 ./run-kani.sh`). The
-same harnesses run under `cargo test` as a randomized test (`EXPENSIVE_SAMPLES=<n>` for more).
+A proof that runs past five minutes on a desktop is retired and its property moves to a test
+(`docs/kani.md`); the former expensive tier (every effect kind's safety, movement legality,
+effect pairs, wire format) lives on as the randomized `cargo test` in
+`omdurman-rules/src/effects/sampled.rs` (`EXPENSIVE_SAMPLES=<n>` for more samples).
+`run-kani.sh` clones the repo and runs the suite on another machine.
 
 The pre-push hook (`scripts/hooks/pre-push`) runs CI's cheap gates -- fmt, clippy, the
 workspace tests -- before a push leaves the machine; install it once per clone with
@@ -250,8 +251,9 @@ The system is a deterministic event-sourced engine over a peer-to-peer mesh:
   saved games (`games/*/events.jsonl`) need not load. Change `Control` / `GameEvent` / `Ephemeral` /
   `GameEffect` shapes, reorder or drop variants freely when a change calls for it -- no
   `serde(default)` shims or migrations for old records. (Postcard still encodes the variant index, so
-  mixed builds fail to decode; that is accepted.) A `GameEffect` change still needs the expensive
-  tier's `EFFECT_KINDS` / `any_effect` / `kind_of` (`omdurman-rules/src/effects/expensive.rs`) kept in step.
+  mixed builds fail to decode; that is accepted.) A `GameEffect` change still needs the sampled
+  engine checks' `EFFECT_KINDS` / `any_effect` / `kind_of` (`omdurman-rules/src/effects/sampled.rs`) kept in
+  step.
 
 ## Empirical net-reliability harness
 

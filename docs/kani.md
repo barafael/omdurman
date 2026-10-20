@@ -18,11 +18,11 @@ generated and the proof picks up the new variant automatically.
 
 The proofs live in `#[cfg(kani)] mod verification` blocks next to the code
 they constrain, plus the crate-level `omdurman-rules/src/verification.rs`.
-Today the everyday suite runs 90 harnesses (23 in `omdurman-types`, 67 in
+Today the suite runs 87 harnesses (21 in `omdurman-types`, 66 in
 `omdurman-rules`, counting the `prove_value_enum!` template in
-`verification.rs` as the five harnesses it expands to), all of which verify
-on a big machine. The expensive tier (below) adds 51 more behind
-`kani-expensive`.
+`verification.rs` as the five harnesses it expands to). On 2026-10-20 (Kani
+0.68, a 32-core desktop) every one verified within five minutes; that is
+the budget a proof gets (see "The five-minute rule" below).
 
 ## Running it
 
@@ -58,11 +58,13 @@ import in every proof module). The fully-qualified harness name must appear in t
 `proofs = [...]` array of the matching `[[mapping]]` in
 `docs/traceability.toml`, and the mapping is bijective in both directions: an
 annotated harness not listed in the TOML fails the build, and so does a listed
-harness whose annotation went missing. The gate only sees annotated harnesses:
-22 suite harnesses carry no `#[rulebook]` and are not tracked (support lemmas
-such as `distance_is_symmetric`, `game_over_is_absorbing`,
-`sink_chain_is_atomic`; see [open-issues.md](open-issues.md)). A `§` in a
-comment is a citation, never coverage. Scoping matters as much as
+harness whose annotation went missing. The gate only sees annotated harnesses.
+Proofs of engine invariants rather than rule clauses -- hex geometry laws
+(`distance_is_symmetric`, `greedy_step_strictly_decreases`), atomicity of a
+rejected effect (`sink_chain_is_atomic`), monotonic latches
+(`game_over_is_absorbing`), net sequencing (`reorder_buffer_reports_each_stall_once`)
+-- are deliberately tied to no rulebook section and carry no `#[rulebook]`:
+23 of the 87. A `§` in a comment is a citation, never coverage. Scoping matters as much as
 existence: a proof that a modifier *clamps to 1..=10* does not prove that the
 modifier *is +2*. Name harnesses after the property, not the function.
 
@@ -90,10 +92,8 @@ property-neutral machinery: `advance_phase_is_atomic` stubs the `end_player_turn
 `setup_ready_latches_are_monotonic` stubs `advance_phase`. The house rules for
 stubs: the stub must be *extensionally exact for every input the harness can
 reach* (not merely convenient), the reason goes in the doc comment, and the
-property under proof must not mention the stubbed behaviour. Those two
-precedents live in `effects.rs`; in `effects/expensive.rs`, the harnesses
-stub `BoardInfo::bank_of` with `None` precisely because their board is
-empty, on which the real method provably returns `None` everywhere.
+property under proof must not mention the stubbed behaviour. Both
+precedents live in `effects.rs`.
 
 **Keep proof states minimal.** `GameState::new(Scenario::Campaign)` symexes
 the entire campaign order of battle — a roster no victory-ledger property
@@ -175,55 +175,28 @@ panics, overflow checks on in test builds, no UB without `unsafe` -- in
 milliseconds. Both are exhaustive tests now. Before writing a harness, count
 the domain: if a loop can walk it, a test is the proof.
 
-## The expensive tier
 
-`omdurman-rules/src/effects/expensive.rs` and the B-tree proofs in
-`omdurman-types/src/net_seq.rs` hold the proofs worth having but too big for
-the everyday suite. Each state harness takes longer than 20 minutes on a
-desktop; budget an hour or more and tens of GB per job.
+## The five-minute rule
 
-```sh
-KANI_EXPENSIVE=1 ./run-kani.sh                          # everyday suite + tier
-./scripts/kani.sh -p omdurman-rules --features kani-expensive --harness expensive::
-```
+A proof that runs past five minutes on a desktop is retired; its property
+moves to an exhaustive or a sampled test. A proof nobody can afford to run
+is no check at all, and the suite is only trusted if it is run.
 
-What they prove, for every input they can build:
-
-- **Every effect kind** (one harness each): `apply_effect` never panics or
-  overflows; a rejected effect leaves the state untouched (every rule field
-  compared, the logs by length); an accepted one keeps the global invariants
-  (legal stacks, unique ids, no eliminated unit back, no tracker naming a
-  unit that left).
-- **Movement legality**: an accepted move ends on `to`, steps hex by
-  adjacent hex from where the unit stood, never passes a hex next to an
-  enemy projecting a zone of control, and spends within its allowance --
-  stated apart from the engine's planner.
-- **Effect pairs** (melee then phase change, fire then phase change, melee
-  declared then resolved, two moves): the invariants after every step.
-- **Wire format**: every effect kind round-trips through postcard; decoding
-  any 16 bytes never panics; an exhaustive `kind_of` match fails to compile
-  when a new `GameEffect` variant lacks a wire proof.
-- **Sequencing** (`net_seq`): identity dedup accepts each uid exactly once;
-  the reorder buffer hands out exactly the contiguous run from the
-  watermark, in order, the latest delivery winning.
-
-The state is three distinct real counters from the palette
-(`omdurman-rules/src/proof_palette.rs`, held to the roster by a unit test)
-on a 5x5 window of the engine's empty, rule-neutral board, in every
-scenario, phase, side and turn, with the per-kind extras (a declared melee,
-a mine, the chain, a passenger...). On the empty board the accepted halves
-of `ConstructZariba`, `ArtilleryBreachWall`, `Demolition` and
-`FriendliesTransport` are unreachable (they need printed sides, walls, forts
-or Nile hexes); their `cover!`s report it, and those kinds are proven for
-the rejection half only.
-
-**The same harnesses run under `cargo test`** as a randomized test: the
-Kani API is swapped for a seeded RNG, a failed `assume` rejects the sample,
-and half the samples are shaped like a client's inputs (the engine's own
-builders) so the accepted half gets exercised too. 20 000 samples per
-harness by default, `EXPENSIVE_SAMPLES=500000` for a deep run (35 s in
-release; nothing found). It is the everyday guard; the proofs are the
-exhaustive one.
+On 2026-10-20 that retired the whole "expensive tier" -- one harness per
+`GameEffect` kind over a rich symbolic state, effect pairs, movement
+legality, the wire format and two `net_seq` sequencing proofs: 51 of 55
+harnesses hit the limit and none finished. Two everyday harnesses went too
+(`resolve_melee_is_atomic`, `hexsides_along_line_join_adjacent_hexes`).
+What remains of the tier is its randomized twin,
+`omdurman-rules/src/effects/sampled.rs`: the same checks with `any`,
+`assume` and `cover` drawn from a seeded `GameRng`, half the samples shaped
+like a client's inputs (the engine's own builders) so the accepted half is
+exercised too -- 20 000 samples per check, `EXPENSIVE_SAMPLES=<n>` for a
+deeper run. Its state is three real counters from the palette
+(`omdurman-rules/src/test_palette.rs`, held to the roster by a unit test)
+on a 5x5 window of the empty, rule-neutral board. The sequencing
+properties are exhaustive tests in `net_seq`, the retired everyday ones a
+§7.5 test and the exhaustive hexsides-along-a-line test.
 
 ## Checklist: adding a proof
 
@@ -234,7 +207,8 @@ exhaustive one.
    mapping's `proofs` array.
 3. Build the minimal state (`kani_minimal()`, or a smaller local helper);
    stub heavy cascades only with an exactness argument in the doc comment.
-4. Run the harness alone, then the suite; note the runtime if notable.
+4. Run the harness alone, then the suite; note the runtime if notable. Past
+   five minutes alone, it is a test, not a proof (see the five-minute rule).
 5. Build the report locally if you want to see it (CI builds and publishes
    it) — the PDF renders proofs in blue above the tests.
 

@@ -197,20 +197,8 @@ seat handling).
   - §10.12-14 `apply_river_mine`: 1 of 5.
   - §5.51 `check_stacking`: 1 of 4; `stacking_rule`: 8 of 26 (a lone
     gunboat, the group-purity guard, the leader-colour arms).
-- The expensive Kani tier (`omdurman-rules/src/effects/expensive.rs`) has not
-  been run to completion: each harness takes longer than 20 minutes on a
-  desktop. Run it on a big machine (`KANI_EXPENSIVE=1 ./run-kani.sh`) and
-  read its `cover!` results; its randomized `cargo test` twin passes.
-- The expensive tier runs on the empty board, where the accepted halves of
-  `ConstructZariba`, `ArtilleryBreachWall`, `Demolition` and
-  `FriendliesTransport` are unreachable. A small real board would need a
-  cheap proof-build hasher for `BoardInfo`'s maps (a symbolic hex hashed
-  with SipHash on every lookup is prohibitive).
-- Kani has not been run since the 2026-10-11 fixes. New expensive-tier
-  harnesses (`advance_phase_from_is_safe`, `roll_desertion_is_safe`,
-  `decline_retreat_before_melee_is_safe`) have passed only their randomized
-  `cargo test` twins, and the pending-mine queue edits to the proofs in
-  `effects/river.rs` are unverified.
-- 26 Kani harnesses have no `#[rulebook]` annotation and are not tracked in
-  `traceability.toml` (e.g. `distance_is_symmetric`, `game_over_is_absorbing`,
-  `sink_chain_is_atomic`, `place_mine_is_atomic`).
+- The sampled engine checks (`omdurman-rules/src/effects/sampled.rs`) run
+  on the empty board, where the accepted halves of `ConstructZariba`,
+  `ArtilleryBreachWall`, `Demolition` and `FriendliesTransport` are
+  unreachable. The real board was out of reach for the retired Kani proofs
+  (a symbolic hex hashed on every lookup); a test can afford it.

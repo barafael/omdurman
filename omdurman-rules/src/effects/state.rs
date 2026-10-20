@@ -502,9 +502,9 @@ impl GameState {
 /// full campaign roster, which on its own dominates CBMC's memory; harnesses
 /// that only need "a state with empty ledgers" use this instead.
 ///
-/// Deliberately gated to proof builds (and the sampled run of the expensive
-/// harnesses under `cargo test`) and field-complete: adding a `GameState`
-/// field breaks the proof build here loudly instead of drifting silently.
+/// Deliberately gated to proof builds and tests (the sampled engine checks
+/// start from it too) and field-complete: adding a `GameState` field breaks
+/// the build here loudly instead of drifting silently.
 #[cfg(any(test, kani))]
 impl GameState {
     pub(crate) fn kani_minimal() -> Self {
@@ -567,6 +567,7 @@ impl GameState {
     /// proves no less: every assertion has already run, the engine holds no
     /// `unsafe` (`#![forbid(unsafe_code)]`) and no `Drop` impl of its own,
     /// so the drop glue is std's, and Kani does not check for leaks.
+    #[cfg(kani)]
     pub(crate) fn kani_discard(self) {
         core::mem::forget(self);
     }

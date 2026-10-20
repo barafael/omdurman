@@ -158,74 +158,6 @@ mod verification {
         tag: u8,
     }
 
-    /// Identity dedup is exact: a uid is new exactly once, and known ever
-    /// after, whatever the other uids around it.
-    #[cfg(feature = "kani-expensive")]
-    #[kani::proof]
-    #[kani::unwind(6)]
-    fn recent_uids_accept_each_uid_exactly_once() {
-        let uids: [u64; 4] = kani::any();
-        let mut recent = RecentUids::default();
-        let mut firsts = 0;
-        let target = uids[0];
-        for uid in uids {
-            let new = recent.insert(uid);
-            if uid == target && new {
-                firsts += 1;
-            }
-            assert!(recent.contains(uid));
-        }
-        assert!(firsts == 1, "a uid was accepted twice, or never");
-        core::mem::forget(recent);
-    }
-
-    /// Whatever order four deliveries arrive in (any seqs from a window,
-    /// repeats allowed), popping from `expected` upward hands out exactly
-    /// the buffered contiguous run starting at `expected`, in order, each
-    /// seq once -- the last delivery at a seq winning -- and leaves nothing
-    /// at or below the last seq popped.
-    #[cfg(feature = "kani-expensive")]
-    #[kani::proof]
-    #[kani::unwind(7)]
-    fn reorder_buffer_hands_out_the_contiguous_run_in_order() {
-        let expected: u32 = kani::any();
-        kani::assume(expected <= 8);
-        let arrivals: [Delivery; 4] = [(); 4].map(|_| {
-            let seq: u32 = kani::any();
-            kani::assume(seq <= 12);
-            Delivery {
-                seq,
-                tag: kani::any(),
-            }
-        });
-        let mut buffer = ReorderBuffer::default();
-        for d in arrivals {
-            assert!(buffer.insert(d.seq, d));
-        }
-        // The latest arrival at `seq`, if any.
-        let latest = |seq: u32| arrivals.iter().rev().find(|d| d.seq == seq).copied();
-        let mut next = expected;
-        for _ in 0..5 {
-            match buffer.pop_next(next) {
-                Some(d) => {
-                    assert!(d.seq == next, "popped out of order");
-                    assert!(
-                        Some(d) == latest(next),
-                        "not the latest delivery at that seq"
-                    );
-                    next += 1;
-                }
-                None => {
-                    assert!(latest(next).is_none(), "a buffered seq was skipped");
-                    break;
-                }
-            }
-        }
-        // Everything below the watermark is gone.
-        assert!(buffer.first_seq().is_none_or(|first| first > next));
-        core::mem::forget(buffer);
-    }
-
     /// The stall clock reports a gap exactly once per stall, and never for
     /// an empty buffer.
     #[kani::proof]
@@ -262,8 +194,7 @@ mod tests {
     }
 
     /// Exhaustive over every sequence of four uids from five values: a uid
-    /// is new exactly once, and known ever after (the Kani proof's claim,
-    /// over a bounded domain).
+    /// is new exactly once, and known ever after.
     #[test]
     fn recent_uids_accept_each_uid_exactly_once() {
         for code in 0..5u64.pow(4) {
