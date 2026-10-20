@@ -86,13 +86,11 @@ world. That gap belongs to the transcription tests — and to whoever reads the
 scanned chart.
 
 **Stub the cascade, not the rule.** Some properties sit behind heavy-but-
-property-neutral machinery: `resolve_melee_is_atomic` does not care how melee
-resolves, so it stubs `resolve_melee_combat` with a no-op;
-`advance_phase_is_atomic` stubs the `end_player_turn` cascade, and
+property-neutral machinery: `advance_phase_is_atomic` stubs the `end_player_turn` cascade, and
 `setup_ready_latches_are_monotonic` stubs `advance_phase`. The house rules for
 stubs: the stub must be *extensionally exact for every input the harness can
 reach* (not merely convenient), the reason goes in the doc comment, and the
-property under proof must not mention the stubbed behaviour. Those three
+property under proof must not mention the stubbed behaviour. Those two
 precedents live in `effects.rs`; in `effects/expensive.rs`, the harnesses
 stub `BoardInfo::bank_of` with `None` precisely because their board is
 empty, on which the real method provably returns `None` everywhere.

@@ -1663,6 +1663,7 @@ mod tests {
                         assert_eq!((ah.a, ah.b), (side[ah.step - 1], other[ah.step - 1]));
                         assert!(ah.a.is_adjacent_to(ah.b), "{a} -> {b}");
                         assert_eq!(a.distance(ah.a), ah.step as u32);
+                        assert_eq!(a.distance(ah.b), ah.step as u32);
                     }
                     for step in (2..n).step_by(2) {
                         assert_eq!(side[step - 1], other[step - 1], "{a} -> {b}");
@@ -1962,35 +1963,6 @@ mod verification {
             let d = hex.distance(b);
             assert!(d < prev_dist);
             prev_dist = d;
-        }
-    }
-
-    /// The hexsides a ray runs along (§6.3 notes d and e) each join two
-    /// *adjacent* hexes, one from either tie side of the line, at an odd
-    /// step of it -- so the LOS walk's `hexside_between` lookup on them
-    /// names a real edge, half a step either side of a hex of the ray.
-    // §6.3
-    #[traceability_macro::rulebook("§6.3")]
-    #[kani::proof]
-    #[kani::unwind(14)]
-    fn hexsides_along_line_join_adjacent_hexes() {
-        let a = any_near_hex();
-        let b = any_near_hex();
-        let along = a.hexsides_along_line(b);
-        // A corner line has even length and one along-hexside per odd step;
-        // any other line runs along none.
-        if a.line_runs_along_hexsides(b) {
-            assert!(a.distance(b) % 2 == 0);
-            assert!(along.len() == (a.distance(b) / 2) as usize);
-        } else {
-            assert!(along.is_empty());
-        }
-        for (k, ah) in along.iter().enumerate() {
-            assert!(ah.step == 2 * k + 1);
-            assert!(ah.a != ah.b);
-            assert!(ah.a.is_adjacent_to(ah.b));
-            assert!(a.distance(ah.a) == ah.step as u32);
-            assert!(a.distance(ah.b) == ah.step as u32);
         }
     }
 

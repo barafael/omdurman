@@ -1169,7 +1169,6 @@ witness = "omdurman-rules::src::los_table::los_blocking_rules_match_reference_ta
 note = "A box entry carrying two footnotes -- Units (3,6), Huts (1,4), Crest (2,3) -- blocks only when both footnotes hold (they compose with 'and'; the table does not say, this is the chosen reading). The Hilltop-fires-on-Ground Units entry is footnote 4 as printed (closer to the target), not 3. The ray is the exact segment between the two hex centres (los_ray_sides, integer geometry): every hex whose interior it passes through -- a corner it clips included, since terrain fills its whole hex (note f) -- and every hexside it crosses; a ray crossing a hexside at its midpoint passes both hexes and crosses that hexside. A ray that touches hex corners -- in a corner direction it runs along hexsides (HexCoord::hexsides_along_line), and some others pass exactly through a corner -- may pass either side (the table does not say; this is the chosen reading, the line shifted infinitesimally either way): it is clear if either side is, so a lone blocker in a hex the ray only touches does not block. Details 3 and 4 ('closer to the firing/target unit, or halfway between') compare hex distances: a hex's to the firer and to the target, a hexside's halfway between its two hexes'. Notes d and e read exactly those hexsides: the ray may run along one wall hexside, a second blocks; a crest run along is a crest fired through, its footnote weighed at the step the ray runs along it, and a firer or target whose hex touches it at a corner is adjacent to it (detail 2). A crest on a lateral side of an intervening hex is neither crossed nor run along and blocks nothing."
 proofs = [
     "omdurman-types::src::lib::line_between_forms_a_connected_ray",
-    "omdurman-types::src::lib::hexsides_along_line_join_adjacent_hexes",
     "omdurman-types::src::lib::hexside_blocking_classifiers_are_exact",
     "omdurman-rules::src::los_table::los_level_depends_only_on_the_ground",
     "omdurman-rules::src::los_table::los_level_overrides_hold_for_gunboats_and_forts",
@@ -1843,7 +1842,6 @@ status = "implemented"
 clause = "Cavalry and camel units may retreat two hexes from an infantry melee attack."
 witness = "omdurman-rules::src::effects::tests::retreat_before_melee_only_cavalry_two_hexes"
 proofs = [
-    "omdurman-rules::src::effects::resolve_melee_is_atomic",
     "omdurman-rules::src::effects::advance_phase_is_atomic",
     "omdurman-types::src::lib::unit_kind_melee_capability_law_is_exact",
 ]

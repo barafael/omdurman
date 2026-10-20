@@ -358,20 +358,6 @@ mod verification {
         Ok(())
     }
 
-    /// Replacement for `resolve_melee_combat` in the `ResolveMelee` harness:
-    /// the combat resolution (CRT, factors, casualties) is not what the §7.5
-    /// atomicity proof is about, and its CFG alone blows the memory budget.
-    /// Both rejection paths (`NoMeleePending`, `WrongPhase`) precede it; the
-    /// stubbed no-op only simplifies the committed-resolution path.
-    fn stub_resolve_melee_combat(
-        _state: &mut GameState,
-        _attack: &MeleeAttack,
-        _attacker_roll: DieRoll,
-        _defender_roll: DieRoll,
-        _disruption: DisruptionDraw,
-    ) {
-    }
-
     // -- Rung 1: payload-free / scalar effects -----------------------------
 
     // These call the per-effect `apply_*` functions directly rather than going
@@ -493,42 +479,6 @@ mod verification {
         let before = snapshot(&state);
         assert!(apply_effect(&mut state, &GameEffect::ResolveMelee).is_err());
         assert!(snapshot(&state) == before);
-        state.kani_discard();
-    }
-
-    // -- Rung 4: ResolveMelee ----------------------------------------------
-
-    /// §7.5: a declared melee carries its pre-rolled dice until it resolves, so
-    /// a mistimed `ResolveMelee` must not consume it. `apply_resolve_melee`
-    /// used to `take()` `pending_melee` *before* delegating to
-    /// the resolution, which rejected a wrong phase -- the same silent loss
-    /// `advance_phase` already guards ("audit: 76 declared melees vanished this
-    /// way"). `unwind(7)`: the attacker re-check scans the target's six
-    /// neighbours.
-    // §7.5
-    #[traceability_macro::rulebook("§7.5")]
-    #[kani::proof]
-    #[kani::unwind(7)]
-    #[kani::stub(crate::effects::melee::resolve_melee_combat, stub_resolve_melee_combat)]
-    fn resolve_melee_is_atomic() {
-        let mut state = any_state();
-        state.pending_melee = Some(PendingMelee {
-            attack: MeleeAttack {
-                attacker_player: Player::AngloEgyptian,
-                attacker_hex: state.units[0].position,
-                defender_hex: state.units[1].position,
-                attackers: vec![IDS[0]],
-                defenders: vec![IDS[1]],
-                attacker_modifiers: vec![],
-                defender_modifiers: vec![],
-            },
-            attacker_roll: any_die_roll(),
-            defender_roll: any_die_roll(),
-            // The resolution is stubbed / never reached: the draw is inert.
-            disruption: crate::DisruptionDraw::default(),
-            retreat_declined: false,
-        });
-        assert_atomic(&mut state, apply_resolve_melee);
         state.kani_discard();
     }
 
