@@ -379,7 +379,6 @@ fn route_hint(
         });
         let gunboat = crate::picker::GunboatBudget::of(game_state, placed, movement_path);
         let route = crate::picker::cheapest_route(
-            gs.board,
             placed_units,
             placed,
             from,
@@ -399,7 +398,6 @@ fn route_hint(
                 slowest - cost
             ),
             None => match crate::picker::cheapest_route(
-                gs.board,
                 placed_units,
                 placed,
                 from,

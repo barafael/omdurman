@@ -205,13 +205,13 @@ pub(crate) fn hexside_blocks_step(
 /// variant passes its first unit; the engine re-validates every unit at
 /// commit). `uid` is the mover's rules identity, when one exists.
 pub(crate) fn movement_leg_check(
-    board: &BoardInfo,
     placed_units: &Query<(Entity, &PlacedUnit)>,
     placed: &PlacedUnit,
     start_coord: HexCoord,
     coord: HexCoord,
     game_state: &crate::GameStateResource,
 ) -> MovementLegCheck {
+    let board = game_state.0.board;
     let mover_owner = omdurman_rules::unit_profiles::section_owner(placed.section_name);
     let gs = &game_state.0;
     let mover = placed.unit_id.and_then(|uid| gs.find_unit(uid));
@@ -281,7 +281,6 @@ pub(crate) fn movement_leg_check(
 /// the largest remaining MP of the mover(s). Returns the hexes after `start`,
 /// or `None` if the goal is out of reach.
 pub(crate) fn auto_route(
-    board: &BoardInfo,
     placed_units: &Query<(Entity, &PlacedUnit)>,
     placed: &PlacedUnit,
     start: HexCoord,
@@ -291,7 +290,6 @@ pub(crate) fn auto_route(
     game_state: &crate::GameStateResource,
 ) -> Option<Vec<HexCoord>> {
     cheapest_route(
-        board,
         placed_units,
         placed,
         start,
@@ -308,7 +306,6 @@ pub(crate) fn auto_route(
 /// have 15" a refusal should tell the player. A `gunboat` budget prices the
 /// route under §5.24: the search state is (hex, went upstream yet).
 pub(crate) fn cheapest_route(
-    board: &BoardInfo,
     placed_units: &Query<(Entity, &PlacedUnit)>,
     placed: &PlacedUnit,
     start: HexCoord,
@@ -317,6 +314,7 @@ pub(crate) fn cheapest_route(
     gunboat: Option<GunboatBudget>,
     game_state: &crate::GameStateResource,
 ) -> Option<(Vec<HexCoord>, i16)> {
+    let board = game_state.0.board;
     use std::cmp::Reverse;
     use std::collections::{BinaryHeap, HashMap};
     type Node = (HexCoord, bool);
@@ -348,7 +346,7 @@ pub(crate) fn cheapest_route(
             if board.terrain_at(next).is_none() {
                 continue;
             }
-            let leg = movement_leg_check(board, placed_units, placed, hex, next, game_state);
+            let leg = movement_leg_check(placed_units, placed, hex, next, game_state);
             if leg.enemy_occupied || !leg.passable || leg.cost <= 0 {
                 continue;
             }

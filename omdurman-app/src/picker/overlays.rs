@@ -523,14 +523,8 @@ pub fn movement_overlay_mesh(
             if neighbor == start_coord || board.terrain_at(neighbor).is_none() {
                 continue;
             }
-            let leg = super::movement::movement_leg_check(
-                board,
-                &placed_units,
-                placed,
-                cur,
-                neighbor,
-                gs_ref,
-            );
+            let leg =
+                super::movement::movement_leg_check(&placed_units, placed, cur, neighbor, gs_ref);
             if leg.enemy_occupied || !leg.passable || leg.cost <= 0 {
                 continue;
             }

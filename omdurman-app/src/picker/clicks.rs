@@ -960,7 +960,6 @@ fn price_unreachable(
     game_state: &crate::GameStateResource,
 ) -> (Option<i16>, i16) {
     let Some((route, cost)) = cheapest_route(
-        game_state.0.board,
         placed_units,
         placed,
         start,
@@ -1075,7 +1074,6 @@ fn plot_single_route(
     };
     let gunboat = GunboatBudget::of(game_state, placed, &ctx.movement_path);
     let Some(route) = auto_route(
-        game_state.0.board,
         &ctx.placed_units,
         placed,
         start,
@@ -1191,14 +1189,7 @@ fn single_click(
         return plot_single_route(ctx, plan, source, start_coord, coord, game_state);
     }
 
-    let leg = movement_leg_check(
-        game_state.0.board,
-        &ctx.placed_units,
-        placed,
-        start_coord,
-        coord,
-        game_state,
-    );
+    let leg = movement_leg_check(&ctx.placed_units, placed, start_coord, coord, game_state);
     let affordable = leg.cost > 0
         && plan.remaining_mp >= leg.cost
         && gunboat_cap_ok(
@@ -1370,7 +1361,6 @@ fn plot_stack_route(
     };
     let gunboat = GunboatBudget::of(game_state, placed, &ctx.movement_path);
     let Some(route) = auto_route(
-        game_state.0.board,
         &ctx.placed_units,
         placed,
         start,
@@ -1458,14 +1448,7 @@ fn stack_click(
     // (the engine re-validates each unit's move at commit, so this is a
     // courtesy gate for the common case -- moving a stack into a hex that
     // already pushes past the §5.51 cap).
-    let leg = movement_leg_check(
-        game_state.0.board,
-        &ctx.placed_units,
-        placed,
-        start_coord,
-        coord,
-        game_state,
-    );
+    let leg = movement_leg_check(&ctx.placed_units, placed, start_coord, coord, game_state);
     // A leg is affordable if at least one unit's budget covers it. Units
     // that can't afford it keep their remaining (they are dropped here).
     let affordable = leg.cost > 0
