@@ -6,9 +6,7 @@ use bevy_egui::{EguiContexts, egui};
 use omdurman_rules::UnitIdentity;
 
 use crate::GameStateResource;
-use crate::peers::Peers;
 use crate::picker::{MovementPath, PickerState, PlacedUnit, UnitPicker};
-use crate::rulebook::Rulebook;
 
 /// The picker resources the rail reads and -- through the counter tray --
 /// writes: the hand (`PickerState`) and the tray itself.
@@ -31,29 +29,14 @@ pub fn unit_overview_ui(
     mut contexts: EguiContexts,
     mode: Res<State<crate::AppMode>>,
     app_state: Res<State<crate::AppState>>,
-    rail: RailPicker,
-    phase_machine: Res<State<crate::ui_phase_state::UiPhaseState>>,
-    mut rulebook: ResMut<Rulebook>,
-    peers: Peers,
-    mut fire_targets: ResMut<crate::fire::FireTargetCache>,
-    mut allocation: Option<ResMut<crate::fire_allocation::FireAllocationState>>,
+    mut rail: RailPicker,
+    mut panel: crate::actions_panel::ActionsPanel,
     mut pending: Option<ResMut<crate::PendingEdits>>,
     mut local_setup_ready: Option<ResMut<crate::peers::LocalSetupReady>>,
     mut layout: ResMut<crate::ScreenLayout>,
-    (mut victory, mut unit_list, mut hints): (
-        ResMut<crate::ui_plugin::VictoryModalState>,
-        Local<Option<UnitListCache>>,
-        Local<crate::actions_panel::HintsCache>,
-    ),
-    mut picker_commands: bevy::ecs::message::MessageWriter<crate::hotkeys::PickerCommand>,
+    mut victory: ResMut<crate::ui_plugin::VictoryModalState>,
+    mut unit_list: Local<Option<UnitListCache>>,
 ) {
-    let RailPicker {
-        mut picker_state,
-        mut tray,
-        movement_path,
-        game_state,
-        placed_units,
-    } = rail;
     let Ok(ctx) = contexts.ctx_mut() else { return };
     if !mode.is_play() {
         return;
@@ -61,12 +44,12 @@ pub fn unit_overview_ui(
     // The grouped forces list is rebuilt only when the engine state moved or
     // counters came or went -- not every frame (a sort plus a name lookup
     // per counter).
-    let counters = placed_units.iter().count();
+    let counters = rail.placed_units.iter().count();
     let stale = unit_list.as_ref().is_none_or(|cache| {
-        cache.counters != counters || game_state.as_ref().is_some_and(|gs| gs.is_changed())
+        cache.counters != counters || rail.game_state.as_ref().is_some_and(|gs| gs.is_changed())
     });
     if stale {
-        let mut units: Vec<_> = placed_units.iter().map(|(_, p)| p).collect();
+        let mut units: Vec<_> = rail.placed_units.iter().map(|(_, p)| p).collect();
         units.sort_by_key(|u| (u.section_name.display_name(), u.col, u.row));
         let mut groups: std::collections::BTreeMap<(u8, String), (usize, usize)> =
             std::collections::BTreeMap::new();
@@ -76,14 +59,15 @@ pub fn unit_overview_ui(
                 Some(omdurman_types::Player::Dervish) => 1,
                 None => 2,
             };
-            let label = placed_unit_identity(placed, game_state.as_deref());
+            let label = placed_unit_identity(placed, rail.game_state.as_deref());
             let entry = groups.entry((side, label)).or_default();
             entry.0 += 1;
             entry.1 += usize::from(placed.disrupted);
         }
         // The units off the board for good: the casualties, and the Dervish
         // deserters of the first night (§8.2), listed apart.
-        let scenario = game_state
+        let scenario = rail
+            .game_state
             .as_deref()
             .map_or(omdurman_types::Scenario::Campaign, |gs| gs.0.scenario);
         let off_board = |ids: &[omdurman_rules::UnitId]| {
@@ -103,7 +87,7 @@ pub fn unit_overview_ui(
             }
             gone
         };
-        let (eliminated, deserted) = match game_state.as_deref() {
+        let (eliminated, deserted) = match rail.game_state.as_deref() {
             Some(gs) => (off_board(&gs.0.eliminated), off_board(&gs.0.deserted)),
             None => Default::default(),
         };
@@ -115,7 +99,7 @@ pub fn unit_overview_ui(
         });
     }
     let unit_list = unit_list.as_ref().expect("filled above");
-    let local = peers.local();
+    let local = panel.peers.local();
 
     crate::layout::left_rail_panel(
         ctx,
@@ -136,25 +120,25 @@ pub fn unit_overview_ui(
                         .id_salt("command_rail_scroll")
                         .show(ui, |ui| {
                             if *app_state.get() == crate::AppState::InGame
-                                && let Some(state) = game_state.as_deref()
+                                && let Some(state) = rail.game_state.as_deref()
                             {
                                 let state_moved =
-                                    game_state.as_ref().is_some_and(|gs| gs.is_changed());
+                                    rail.game_state.as_ref().is_some_and(|gs| gs.is_changed());
                                 crate::ui_plugin::game_control_section(
                                     ui,
                                     state,
-                                    &peers,
+                                    &panel.peers,
                                     pending.as_deref_mut(),
                                     local_setup_ready.as_deref_mut(),
-                                    allocation.as_deref_mut(),
+                                    panel.allocation.as_deref_mut(),
                                     &mut victory,
                                     state_moved,
                                 );
                                 ui.add_space(8.0);
 
-                                let local_may_act = peers.may_act_now(&state.0);
+                                let local_may_act = panel.peers.may_act_now(&state.0);
                                 let tray_open =
-                                    local_may_act && tray.available.iter().any(|u| u.shown());
+                                    local_may_act && rail.tray.available.iter().any(|u| u.shown());
                                 // -- Counter tray: set-up force / this turn's arrivals,
                                 // straight under the phase control --
                                 if tray_open {
@@ -181,7 +165,7 @@ pub fn unit_overview_ui(
                                     // The tray's flags are rewritten every frame by
                                     // `unit_picker_ui` around change detection; only a pick
                                     // marks the hand changed.
-                                    let before = picker_state.clone();
+                                    let before = rail.picker_state.clone();
                                     let mut hand = before.clone();
                                     // This phase's placements keep their slots: the turn's
                                     // arrivals, or in set-up the side's deployed counters.
@@ -213,15 +197,15 @@ pub fn unit_overview_ui(
                                     };
                                     crate::picker::draw_tray(
                                         ui,
-                                        tray.bypass_change_detection(),
+                                        rail.tray.bypass_change_detection(),
                                         &mut hand,
-                                        &rulebook,
+                                        &panel.rulebook,
                                         &stamp,
                                         &ghosts,
                                         !in_setup,
                                     );
                                     if !same_hand(&before, &hand) {
-                                        *picker_state = hand;
+                                        *rail.picker_state = hand;
                                     }
                                 }
 
@@ -229,32 +213,9 @@ pub fn unit_overview_ui(
                                 // placed, so a hint coming or going never moves the
                                 // tray under the pointer.
                                 ui.add_space(8.0);
-                                let mut clicked_section: Option<String> = None;
-                                let mut commands_out = Vec::new();
                                 crate::actions_panel::draw_actions_section(
-                                    ui,
-                                    state,
-                                    *phase_machine.get(),
-                                    &picker_state,
-                                    &placed_units,
-                                    &rulebook,
-                                    &mut clicked_section,
-                                    &movement_path,
-                                    &mut fire_targets,
-                                    allocation.as_deref_mut(),
-                                    local_may_act,
-                                    (tray_open, peers.is_spectator()),
-                                    &mut commands_out,
-                                    &mut hints,
-                                    state_moved,
+                                    ui, &mut panel, &rail, state, tray_open,
                                 );
-                                for cmd in commands_out {
-                                    crate::ui_trace::button(cmd.key_label());
-                                    picker_commands.write(cmd);
-                                }
-                                if let Some(sec) = clicked_section {
-                                    crate::rulebook::request_section(&mut rulebook, &sec);
-                                }
                                 ui.add_space(10.0);
                                 crate::ui_plugin::score_section(ui, state);
                             }

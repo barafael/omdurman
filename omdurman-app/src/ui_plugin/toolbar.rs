@@ -1,29 +1,37 @@
 //! The top toolbar switching between Menu / Game / Spectate modes.
 use super::*;
 
+/// The two screen axes the toolbar reads and moves (see `Screen`).
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct ScreenNav<'w> {
+    mode: Res<'w, State<crate::AppMode>>,
+    app_state: Res<'w, State<crate::AppState>>,
+    next_mode: ResMut<'w, NextState<crate::AppMode>>,
+    next_app_state: ResMut<'w, NextState<crate::AppState>>,
+}
+
+/// The board overlays the toolbar switches on and off.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct OverlayToggles<'w> {
+    zoc: ResMut<'w, crate::zoc::ZocOverlay>,
+    los: ResMut<'w, crate::los::LosOverlay>,
+    roads: ResMut<'w, crate::render::RoadOverlay>,
+}
+
 pub(crate) fn mode_toolbar_ui(
     mut contexts: EguiContexts,
-    mode: Res<State<crate::AppMode>>,
-    app_state: Res<State<crate::AppState>>,
-    mut next_mode: ResMut<NextState<crate::AppMode>>,
-    mut next_app_state: ResMut<NextState<crate::AppState>>,
+    mut nav: ScreenNav,
     mut timeline: ResMut<crate::timeline::SpectatorTimeline>,
     game_state: Res<crate::GameStateResource>,
     phase_machine: Option<Res<State<crate::ui_phase_state::UiPhaseState>>>,
     mut layout: ResMut<crate::ScreenLayout>,
     progress: (Res<crate::TurnState>, Res<crate::game_record::GameRecorder>),
     peers: Peers,
-    (mut zoc, mut los, mut roads, room): (
-        ResMut<crate::zoc::ZocOverlay>,
-        ResMut<crate::los::LosOverlay>,
-        ResMut<crate::render::RoadOverlay>,
-        Res<RoomId>,
-    ),
-    (telegrams, dispatches, mut motion): (
-        Option<Res<crate::telegram::TelegramLog>>,
-        Option<Res<crate::dispatch::Dispatches>>,
-        ResMut<crate::fx::MotionSettings>,
-    ),
+    mut toggles: OverlayToggles,
+    room: Res<RoomId>,
+    telegrams: Option<Res<crate::telegram::TelegramLog>>,
+    dispatches: Option<Res<crate::dispatch::Dispatches>>,
+    mut motion: ResMut<crate::fx::MotionSettings>,
 ) {
     let game_in_progress = crate::game_in_progress(&progress.0, &progress.1);
     let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -47,20 +55,20 @@ pub(crate) fn mode_toolbar_ui(
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         // Spectator exit: leave review mode back to the lobby.
-                        if *app_state.get() == crate::AppState::Spectating {
+                        if *nav.app_state.get() == crate::AppState::Spectating {
                             if ui.button("\u{2b05} Back to lobby").clicked() {
                                 timeline.record = None;
-                                next_mode.set(crate::AppMode::Lobby);
-                                next_app_state.set(crate::AppState::Lobby);
+                                nav.next_mode.set(crate::AppMode::Lobby);
+                                nav.next_app_state.set(crate::AppState::Lobby);
                             }
                             ui.separator();
                         }
 
                         // Mode label (the game view says where it is in
                         // the turn instead).
-                        if **mode != crate::AppMode::Game {
+                        if **nav.mode != crate::AppMode::Game {
                             ui.label(
-                                egui::RichText::new(match **mode {
+                                egui::RichText::new(match **nav.mode {
                                     crate::AppMode::Menu => "Menu",
                                     crate::AppMode::Lobby => "Lobby",
                                     crate::AppMode::Game => "Game",
@@ -74,16 +82,16 @@ pub(crate) fn mode_toolbar_ui(
                         // Mode switching buttons: the same transitions as the
                         // M key and the menu's buttons.
                         if ui.button("Menu").clicked() {
-                            next_mode.set(crate::AppMode::Menu);
+                            nav.next_mode.set(crate::AppMode::Menu);
                         }
-                        if **mode != crate::AppMode::Game {
+                        if **nav.mode != crate::AppMode::Game {
                             let game = ui
                                 .add_enabled(game_in_progress, egui::Button::new("Game"))
                                 .on_disabled_hover_text(
                                     "No game in progress — start one from the Lobby",
                                 );
                             if game.clicked() {
-                                crate::enter_game_view(&mut next_mode, &mut next_app_state);
+                                crate::enter_game_view(&mut nav.next_mode, &mut nav.next_app_state);
                             }
                         }
 
@@ -107,7 +115,7 @@ pub(crate) fn mode_toolbar_ui(
 
                         // Every message of the session, newest first: what
                         // the event feed showed, after it faded.
-                        if **mode == crate::AppMode::Game
+                        if **nav.mode == crate::AppMode::Game
                             && let Some(dispatches) = dispatches.as_ref()
                         {
                             ui.menu_button("Log", |ui| {
@@ -133,8 +141,8 @@ pub(crate) fn mode_toolbar_ui(
                         // The turn and who acts now: the one place the game
                         // view says it (it used to be said four times).
                         if let Some(machine) = phase_machine.as_ref()
-                            && **mode == crate::AppMode::Game
-                            && *app_state.get() == crate::AppState::InGame
+                            && **nav.mode == crate::AppMode::Game
+                            && *nav.app_state.get() == crate::AppState::InGame
                         {
                             ui.separator();
                             let telegram_due = telegrams
@@ -154,29 +162,29 @@ pub(crate) fn mode_toolbar_ui(
                                     if overlay_toggle(
                                         ui,
                                         "LOS",
-                                        los.visible,
+                                        toggles.los.visible,
                                         "Line of sight: hover a hex -- green rings are clear, red blocked (§6.3); P pins \
                                          the hovered hex as the origin and draws the line to the next one hovered",
                                     ) {
-                                        los.visible = !los.visible;
+                                        toggles.los.visible = !toggles.los.visible;
                                         crate::ui_trace::button("overlay: LOS");
                                     }
                                     if overlay_toggle(
                                         ui,
                                         "ZOC",
-                                        zoc.visible,
+                                        toggles.zoc.visible,
                                         "Enemy zones of control (§5.41)",
                                     ) {
-                                        zoc.visible = !zoc.visible;
+                                        toggles.zoc.visible = !toggles.zoc.visible;
                                         crate::ui_trace::button("overlay: ZOC");
                                     }
                                     if overlay_toggle(
                                         ui,
                                         "Roads",
-                                        roads.visible,
+                                        toggles.roads.visible,
                                         "Road links: a step along a road costs 1 MP whatever the terrain (§5.11)",
                                     ) {
-                                        roads.visible = !roads.visible;
+                                        toggles.roads.visible = !toggles.roads.visible;
                                         crate::ui_trace::button("overlay: Roads");
                                     }
                                 },

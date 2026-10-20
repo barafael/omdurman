@@ -462,7 +462,8 @@ pub fn handle_melee_combat(
 pub fn melee_reaction_ui(
     mut contexts: EguiContexts,
     game_state: Option<Res<GameStateResource>>,
-    (peers, seats): (Peers, Res<crate::seats::Seats>),
+    peers: Peers,
+    seats: Res<crate::seats::Seats>,
     mut submit: crate::submit::CheckedSubmit,
     mut layout: ResMut<crate::ScreenLayout>,
     mut keys: bevy::ecs::message::MessageReader<crate::hotkeys::PickerCommand>,

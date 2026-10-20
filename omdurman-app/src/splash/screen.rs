@@ -772,8 +772,10 @@ pub(super) fn sync_credits(
 /// widget's [`Activate`], observed per button: [`activate_menu_button`].)
 #[allow(clippy::type_complexity)]
 pub(super) fn menu_buttons(
-    (mut commands, mut activity): (Commands, ResMut<crate::activity::Activity>),
-    (time, over_egui): (Res<Time>, Res<EguiPointerOverUi>),
+    mut commands: Commands,
+    mut activity: ResMut<crate::activity::Activity>,
+    time: Res<Time>,
+    over_egui: Res<EguiPointerOverUi>,
     progress: (Res<crate::TurnState>, Res<crate::game_record::GameRecorder>),
     window: Query<&Window, With<PrimaryWindow>>,
     mut buttons: Query<(

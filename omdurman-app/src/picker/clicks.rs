@@ -51,10 +51,8 @@ pub fn handle_picker_clicks(
     peers: crate::peers::Peers,
     time: Res<Time>,
     // A refused click: the engine's reason to the feed, a flash on the hex.
-    (mut dispatches, mut fx): (
-        Option<ResMut<crate::dispatch::Dispatches>>,
-        MessageWriter<crate::fx::FxRequest>,
-    ),
+    mut dispatches: Option<ResMut<crate::dispatch::Dispatches>>,
+    mut fx: MessageWriter<crate::fx::FxRequest>,
     mut last_click: Local<Option<(f64, HexCoord)>>,
 ) {
     let game_state = game_state.as_deref();

@@ -222,7 +222,8 @@ pub fn spawn_placed_unit(
 /// (`fx::MovementAnimation`) are left to their glide. Without motion
 /// ([`crate::fx::MotionSettings`]) the counters take their slots at once.
 pub fn layout_stacked_units(
-    (time, motion): (Res<Time>, Res<crate::fx::MotionSettings>),
+    time: Res<Time>,
+    motion: Res<crate::fx::MotionSettings>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     hovered: Res<crate::HoveredHex>,

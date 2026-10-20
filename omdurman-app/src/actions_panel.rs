@@ -16,6 +16,8 @@
 //! the same engine `can_*` predicates the input handlers gate on -- so the
 //! panel and the rings on the map cannot disagree about what's legal.
 
+use bevy::ecs::message::MessageWriter;
+use bevy::prelude::{DetectChanges, Local, Res, ResMut, State};
 use bevy_egui::egui;
 
 use omdurman_rules::Phase;
@@ -23,7 +25,7 @@ use omdurman_types::HexCoord;
 
 use crate::GameStateResource;
 use crate::hotkeys::PickerCommand;
-use crate::picker::{MovementPath, PickerState, PlacedUnit, selected_unit_id, selected_unit_ids};
+use crate::picker::{PickerState, PlacedUnit, selected_unit_id, selected_unit_ids};
 use crate::rulebook::Rulebook;
 use crate::ui_phase_state::UiPhaseState;
 
@@ -62,27 +64,71 @@ pub struct HintsCache {
     hints: Vec<ActionHint>,
 }
 
-/// Render the action panel into the right sidebar's "Actions" section.
-/// Called by [`crate::overview::unit_overview_ui`] so it shares the sidebar
-/// with the Game-control and Unit-list sections. `ui_state` is the mirrored
-/// §4 turn machine (see `ui_phase_state`), not a per-call derivation.
+/// What the rail's **Next step** section reads and acts on, beside the
+/// picker state it shares with the rest of the rail
+/// ([`crate::overview::RailPicker`]).
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct ActionsPanel<'w, 's> {
+    pub rulebook: ResMut<'w, Rulebook>,
+    pub fire_targets: ResMut<'w, crate::fire::FireTargetCache>,
+    pub allocation: Option<ResMut<'w, crate::fire_allocation::FireAllocationState>>,
+    pub peers: crate::peers::Peers<'w, 's>,
+    /// The mirrored §4 turn machine (see `ui_phase_state`).
+    phase: Res<'w, State<UiPhaseState>>,
+    commands: MessageWriter<'w, PickerCommand>,
+    hints: Local<'s, HintsCache>,
+}
+
+/// Render the rail's **Next step** section. Called by
+/// [`crate::overview::unit_overview_ui`] so it shares the rail with the
+/// phase control and the counter tray (`tray_open`: the tray is up).
 pub fn draw_actions_section(
     ui: &mut egui::Ui,
+    panel: &mut ActionsPanel,
+    rail: &crate::overview::RailPicker,
     state: &GameStateResource,
-    ui_state: UiPhaseState,
-    picker: &PickerState,
-    placed_units: &bevy::ecs::system::Query<(bevy::prelude::Entity, &PlacedUnit)>,
-    rulebook: &Rulebook,
-    clicked_section: &mut Option<String>,
-    movement_path: &MovementPath,
-    fire_targets: &mut crate::fire::FireTargetCache,
-    mut fire_allocation: Option<&mut crate::fire_allocation::FireAllocationState>,
-    local_may_act: bool,
-    (tray_open, spectator): (bool, bool),
-    commands_out: &mut Vec<PickerCommand>,
-    hints: &mut HintsCache,
-    state_moved: bool,
+    tray_open: bool,
 ) {
+    let mut clicked_section = None;
+    let mut commands_out = Vec::new();
+    next_step(
+        ui,
+        panel,
+        rail,
+        state,
+        tray_open,
+        &mut clicked_section,
+        &mut commands_out,
+    );
+    for cmd in commands_out {
+        crate::ui_trace::button(cmd.key_label());
+        panel.commands.write(cmd);
+    }
+    if let Some(section) = clicked_section {
+        crate::rulebook::request_section(&mut panel.rulebook, &section);
+    }
+}
+
+fn next_step(
+    ui: &mut egui::Ui,
+    panel: &mut ActionsPanel,
+    rail: &crate::overview::RailPicker,
+    state: &GameStateResource,
+    tray_open: bool,
+    clicked_section: &mut Option<String>,
+    commands_out: &mut Vec<PickerCommand>,
+) {
+    let ui_state = *panel.phase.get();
+    let picker = &*rail.picker_state;
+    let placed_units = &rail.placed_units;
+    let movement_path = &*rail.movement_path;
+    let state_moved = rail.game_state.as_ref().is_some_and(|gs| gs.is_changed());
+    let local_may_act = panel.peers.may_act_now(&state.0);
+    let spectator = panel.peers.is_spectator();
+    let rulebook = &*panel.rulebook;
+    let fire_targets = &mut *panel.fire_targets;
+    let mut fire_allocation = panel.allocation.as_deref_mut();
+    let hints = &mut *panel.hints;
     crate::ui::section_header(ui, "Next step");
 
     // The battle is over: nothing left to do but read the result.

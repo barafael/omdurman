@@ -46,7 +46,8 @@ const TRAIL_DELAY_SECS: f64 = 0.25;
 /// they go once the engine accepts it (and the counter glides along the same
 /// route) or rejects it. Static: they only say "on its way".
 pub(super) fn pending_order_trail(
-    (time, pending): (Res<Time>, Res<crate::PendingEdits>),
+    time: Res<Time>,
+    pending: Res<crate::PendingEdits>,
     assets: Option<Res<FxAssets>>,
     board: crate::BoardGeometry,
     dots: Query<Entity, With<TrailDot>>,

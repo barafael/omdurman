@@ -646,7 +646,8 @@ pub fn deployment_zone_overlay_mesh(
     peers: crate::peers::Peers,
     existing: Query<Entity, With<DeploymentZoneRing>>,
     mut last_key: Local<Option<ZoneKey>>,
-    (picker_state, tray): (Res<PickerState>, Res<UnitPicker>),
+    picker_state: Res<PickerState>,
+    tray: Res<UnitPicker>,
 ) {
     // A board load moves every hex: rebuild even though the key is the same.
     // (The rings were cached while the default board's calibration was still
