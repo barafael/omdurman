@@ -503,6 +503,24 @@ pub struct NetState {
 }
 
 impl NetState {
+    /// Ask for the canonical game history (now, then on the retry clock).
+    /// `force`: our record is known wrong (a seq conflict or a gap that
+    /// would not fill), so the history is installed even if it is not ahead.
+    pub fn request_history(&mut self, force: bool) {
+        self.needs_snapshot = true;
+        self.snapshot_retry_timer = 0.0;
+        self.force_install_history |= force;
+    }
+
+    /// A history arrived that leaves us on the canonical line: stop asking.
+    pub fn history_settled(&mut self) {
+        self.snapshot_applied = true;
+        self.needs_snapshot = false;
+        self.rejoining = false;
+        self.snapshot_retry_timer = 0.0;
+        self.force_install_history = false;
+    }
+
     /// The connected remote peers.
     pub fn peers(&self) -> &[PeerId] {
         &self.peers

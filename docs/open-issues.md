@@ -169,14 +169,13 @@ seat handling).
 
 ## Net and app plumbing
 
-- `net_socket.rs` is ~2150 lines (`handle_socket` itself is ~200 after the
-  helper split); an optional `GameSession` struct.
 - `GameMap` (hexmap) and `BoardInfo` (rules) duplicate board topology.
 - Private dice: every roll is visible in the event log.
 - Snapshot-request retry never gives up (every 2 s, then every 15 s once
   the bootstrap budget has passed).
 - Broadcast retention is all-or-nothing.
 - 23 systems still take `Option<Res<GameStateResource>>`.
+
 ## Verification
 
 - Weak clause witnesses (`docs/traceability.toml`): the named test asserts

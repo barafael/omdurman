@@ -156,7 +156,9 @@ flow) and the per-domain `apply_*` modules (`movement`, `fire`, `melee`, `setup`
 ## 4. Networking & event sourcing
 
 Message types in `omdurman-net/src/lib.rs`; glue in `omdurman-app` (`net_plugin.rs`,
-`net_socket.rs`, `game_record.rs`, `game_apply.rs`, `submit.rs`, `seats.rs`, `seat_arbiter.rs`).
+`net_socket/` -- the receive path in `mod.rs`, host sequencing and the receive gate in
+`sequencing.rs`, history requests and installs in `resync.rs`, socket rebuilds in
+`reconnect.rs` -- `game_record.rs`, `game_apply.rs`, `submit.rs`, `seats.rs`, `seat_arbiter.rs`).
 The robustness machinery — submission retransmit, election stabilization, the reorder buffer,
 seq-conflict / seq-gap healing, stall auto-reconnect — is specified in CLAUDE.md
 ("Architecture: event-sourced, peer-to-peer, host-relayed") and not repeated here.
