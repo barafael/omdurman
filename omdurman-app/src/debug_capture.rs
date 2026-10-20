@@ -120,7 +120,6 @@ impl Plugin for HexProbePlugin {
 /// The board resources the probe projects hex centres from.
 #[derive(bevy::ecs::system::SystemParam)]
 struct ProbeBoard<'w> {
-    map: Option<Res<'w, omdurman_hexmap::GameMap>>,
     layout: Option<Res<'w, omdurman_hexmap::HexLayout>>,
     overlay: Option<Res<'w, omdurman_hexmap::HexOverlay>>,
     turn: Option<Res<'w, crate::TurnState>>,
@@ -141,22 +140,21 @@ fn write_hex_probe(
     }
     *last = now;
     let ProbeBoard {
-        map,
         layout,
         overlay,
         turn,
     } = board;
-    let (Some(map), Some(layout), Some(overlay), Ok((camera, cam_tf))) =
-        (map, layout, overlay, cams.single())
+    let (Some(layout), Some(overlay), Ok((camera, cam_tf))) = (layout, overlay, cams.single())
     else {
         return;
     };
+    let board = crate::board_of(game_state.as_deref());
     let origin = layout.adjusted_origin(&overlay.params);
     // Physical pixels, as the screenshot and the input tools address them
     // (viewport coordinates are logical: off by the DPI scale otherwise).
     let scale = window.single().map_or(1.0, Window::scale_factor);
     let mut out = String::new();
-    for coord in map.hexes.keys() {
+    for coord in board.terrain.keys() {
         let world = omdurman_hexmap::hex_world_pos(*coord, origin, &overlay.params);
         if let Ok(screen) = camera.world_to_viewport(cam_tf, world) {
             out.push_str(&format!(

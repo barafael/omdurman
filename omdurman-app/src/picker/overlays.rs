@@ -11,33 +11,30 @@ use super::*;
 #[derive(Component)]
 pub(crate) struct MovementPathArrow;
 
-/// Bundle of the picker + picker-state + game-map resources consumed by
+/// Bundle of the picker + picker-state resources consumed by
 /// [`placement_preview_mesh`], so the system stays under Bevy's
 /// system-parameter limit.
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct PickerPlacementState<'w> {
     pub picker: Res<'w, UnitPicker>,
     pub state: ResMut<'w, PickerState>,
-    pub game_map: Res<'w, GameMap>,
 }
 
-/// Bundle of the hex-layout + overlay + game-map + cameras used by
+/// Bundle of the hex-layout + overlay + cameras used by
 /// [`movement_path_labels`] and other picker mesh systems, so their signatures
 /// stay under Bevy's system-parameter limit.
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct HexMapView<'w, 's> {
     pub layout: Res<'w, HexLayout>,
     pub overlay: Res<'w, HexOverlay>,
-    pub game_map: Res<'w, GameMap>,
     pub cameras: Query<'w, 's, (&'static Camera, &'static GlobalTransform), With<RtsCamera>>,
 }
 
-/// Bundle of the game-map + optional game-state consumed by
+/// Bundle of the optional game-state + plotted path consumed by
 /// [`movement_overlay_mesh`], so its signature stays under Bevy's
 /// system-parameter limit.
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct MovementOverlayCtx<'w> {
-    pub game_map: Res<'w, GameMap>,
     pub game_state: Option<Res<'w, crate::GameStateResource>>,
     pub movement_path: Res<'w, MovementPath>,
 }
@@ -89,11 +86,8 @@ pub fn placement_preview_mesh(
         layout,
         overlay,
     } = &draw.hex;
-    let PickerPlacementState {
-        picker,
-        mut state,
-        game_map,
-    } = picker_state;
+    let PickerPlacementState { picker, mut state } = picker_state;
+    let board = crate::board_of(game_state.as_deref());
 
     // Look before borrowing mutably: a `&mut *state` on every frame would
     // mark `PickerState` changed even while nothing is being placed.
@@ -126,7 +120,7 @@ pub fn placement_preview_mesh(
             break 'compute;
         };
         let coord = hit_to_hex(hit, origin, &overlay.params);
-        if !game_map.hexes.contains_key(&coord) {
+        if board.terrain_at(coord).is_none() {
             break 'compute;
         }
         // Gate the preview on the same engine predicate the click and the
@@ -150,7 +144,7 @@ pub fn placement_preview_mesh(
                 }
                 _ => {
                     let occupied = placed_units.iter().any(|u| u.coord == coord);
-                    !occupied && coord_passable(&game_map, coord, unit.is_boat)
+                    !occupied && coord_passable(board, coord, unit.is_boat)
                 }
             }
         };
@@ -253,7 +247,6 @@ pub(crate) fn movement_path_labels(
     let HexMapView {
         layout,
         overlay,
-        game_map,
         cameras,
     } = view;
     if movement_path.legs.is_empty() {
@@ -306,7 +299,7 @@ pub(crate) fn movement_path_labels(
         }
         _ => return,
     };
-    let board = game_state.as_deref().map(|gs| &gs.0.board);
+    let board = crate::board_of(game_state.as_deref());
 
     // Per-leg cost labels are path-static: recomputed only when the plotted
     // legs, the mover kind, or the engine state changed. Each frame then only
@@ -327,13 +320,12 @@ pub(crate) fn movement_path_labels(
             .legs
             .iter()
             .map(|&(from, to)| {
-                game_map
-                    .hexes
-                    .get(&to)
+                board
+                    .terrain_at(to)
                     .map(|_| {
                         // The same step price the plot and the engine use (§5.11).
                         let cost = floor_movement_cost(
-                            &game_map,
+                            board,
                             from,
                             to,
                             is_gunboat,
@@ -341,10 +333,7 @@ pub(crate) fn movement_path_labels(
                         );
                         // For gunboats, annotate upstream (↑) / downstream (↓)
                         // direction (§5.24).
-                        let dir = if is_gunboat
-                            && let Some(b) = board
-                            && let Some(dir) = b.step_direction(from, to)
-                        {
+                        let dir = if is_gunboat && let Some(dir) = board.step_direction(from, to) {
                             match dir {
                                 omdurman_rules::board::StepDirection::Upstream => "↑",
                                 omdurman_rules::board::StepDirection::Downstream => "↓",
@@ -422,7 +411,6 @@ pub fn movement_overlay_mesh(
         *last_key = None;
     }
     let MovementOverlayCtx {
-        game_map,
         game_state,
         movement_path,
     } = view;
@@ -538,6 +526,7 @@ pub fn movement_overlay_mesh(
     // A gunboat's search also carries "went upstream yet" (§5.24), priced by
     // the same `GunboatBudget` click-routing uses.
     let gs_ref = game_state.as_deref();
+    let board = crate::board_of(gs_ref);
     let gunboat = super::movement::GunboatBudget::of(gs_ref, placed, &movement_path);
     let limit = |up: bool| gunboat.map_or(budget, |g| budget.min(g.left(up)));
     let mut best: HashMap<(HexCoord, bool), i16> = HashMap::from([((start_coord, false), 0)]);
@@ -549,11 +538,11 @@ pub fn movement_overlay_mesh(
             continue;
         }
         for neighbor in cur.neighbors() {
-            if neighbor == start_coord || !game_map.hexes.contains_key(&neighbor) {
+            if neighbor == start_coord || board.terrain_at(neighbor).is_none() {
                 continue;
             }
             let leg = super::movement::movement_leg_check(
-                &game_map,
+                board,
                 &placed_units,
                 placed,
                 cur,
@@ -726,9 +715,7 @@ pub fn deployment_zone_overlay_mesh(
 
     let origin = layout.adjusted_origin(&overlay.params);
     let size = overlay.params.hex_size;
-    // Iterate the full board terrain (not the clipped game_map) so edge
-    // hexes that the overlay doesn't cover still get deployment rings. A hex
-    // is highlighted if it is a legal deploy hex for *either* a gunboat or a
+    // Iterate the board's terrain. A hex is highlighted if it is a legal deploy hex for *either* a gunboat or a
     // land unit (§5.22 makes the FoK zones boat/land-exclusive), so the player
     // sees the full set: Nile hexes for the gunboats, and the garrison /
     // landmark / wall-adjacent hexes for the land units.

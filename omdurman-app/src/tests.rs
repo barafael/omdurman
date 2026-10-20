@@ -7,17 +7,16 @@
 #[cfg(test)]
 mod late_joiner_tests {
     use crate::{
-        LoadedAnnotations, PendingEdits, PendingIncoming, PendingMapLoad, TurnState, game_apply,
-        game_record, map_kind_for_scenario, picker::UnitPaths, rebuild_state_to,
+        PendingEdits, PendingIncoming, PendingMapLoad, TurnState, game_apply, game_record,
+        map_kind_for_scenario, picker::UnitPaths, rebuild_state_to,
     };
     use bevy::prelude::*;
     use chrono::Utc;
-    use omdurman_hexmap::{GameMap, load_map_data};
     use omdurman_net::{
         GameEvent, GameRecord, InitialGameState, NetState, RecordedEvent, new_seed,
     };
     use omdurman_rules::effects::GameState;
-    use omdurman_types::{HexCoord, MapKind, SectionName, SpriteRef, Terrain};
+    use omdurman_types::{HexCoord, MapKind, SectionName, SpriteRef};
 
     /// Build a minimal GameRecord from a list of events.
     fn make_record(events: Vec<GameEvent>) -> GameRecord {
@@ -39,16 +38,14 @@ mod late_joiner_tests {
     }
 
     /// Common setup for replay tests: holds all the mutable state that
-    /// [`rebuild_state_to`] reads and writes, so the `GameMap::default()` /
-    /// ... stanza lives in one place.
+    /// [`rebuild_state_to`] reads and writes, so the set-up stanza lives in
+    /// one place.
     struct TestHarness {
         rng: crate::GameRng,
-        game_map: GameMap,
         game_state: GameState,
         seats: crate::seats::Seats,
         local_setup_ready: crate::peers::LocalSetupReady,
         bot_driver: crate::bot_player::BotDriver,
-        loaded_annotations: LoadedAnnotations,
         pending_map_load: PendingMapLoad,
         unit_paths: UnitPaths,
         press: crate::telegram::TelegramLog,
@@ -56,20 +53,12 @@ mod late_joiner_tests {
 
     impl TestHarness {
         fn new() -> Self {
-            let mut game_map = GameMap::default();
-            let loaded_annotations = LoadedAnnotations::from_board_ron();
-            load_map_data(
-                loaded_annotations.map(MapKind::FallOfKhartoum),
-                &mut game_map,
-            );
             Self {
                 rng: crate::GameRng::from_seed(1),
-                game_map,
                 game_state: GameState::new(omdurman_types::Scenario::Campaign),
                 seats: crate::seats::Seats::default(),
                 local_setup_ready: crate::peers::LocalSetupReady::default(),
                 bot_driver: crate::bot_player::BotDriver::default(),
-                loaded_annotations,
                 pending_map_load: PendingMapLoad::default(),
                 unit_paths: UnitPaths::default(),
                 press: crate::telegram::TelegramLog::default(),
@@ -96,8 +85,6 @@ mod late_joiner_tests {
                 record,
                 upto,
                 &mut self.rng,
-                &mut self.game_map,
-                &mut self.loaded_annotations,
                 &mut game_apply::EventSinks {
                     game_state: &mut self.game_state,
                     seats: &mut self.seats,
@@ -376,40 +363,6 @@ mod late_joiner_tests {
         }
     }
 
-    // -- map is cleared before replay ----------------------------------------
-
-    #[test]
-    fn map_cleared_before_replay() {
-        // Pre-populate the map with a hex that is NOT in the record.
-        // After replay it must be gone. The map is seeded from the board RON
-        // data, then rebuild_state_to clears it and re-seeds the default
-        // board (map edits no longer travel as events; the boards are data
-        // files under assets/boards/).
-        let record = make_record(vec![GameEvent::PlaceUnit {
-            sprite: SpriteRef {
-                section_name: SectionName::HadendowaForts,
-                col: 0,
-                row: 0,
-            },
-            coord: HexCoord::new(1, 1),
-            is_boat: false,
-        }]);
-
-        let mut h = TestHarness::new();
-        h.game_map.hexes.insert(
-            HexCoord::new(99, 99),
-            omdurman_types::HexData::new(Terrain::Swamp, None),
-        );
-        h.replay(&record, None);
-
-        assert!(
-            !h.game_map.hexes.contains_key(&HexCoord::new(99, 99)),
-            "stale hex must be cleared before replay"
-        );
-        // The default board is re-seeded after the clear.
-        assert!(h.game_map.hexes.contains_key(&HexCoord::new(3, 2)));
-    }
-
     // -- scenario selects the board (§dual-map) -------------------------------
 
     // §9.31
@@ -429,9 +382,8 @@ mod late_joiner_tests {
         );
     }
 
-    /// A replayed `StartGame { scenario: Campaign }` must request the campaign
-    /// board, and `LoadedAnnotations` (initialised from compiled codegen data)
-    /// must keep both boards' data regardless of which board is live.
+    /// A replayed `StartGame { scenario: Campaign }` must attach the campaign
+    /// board to the engine and request it for the screen.
     // §9.31
     #[traceability_macro::rulebook("§9.31")]
     #[test]
@@ -449,15 +401,11 @@ mod late_joiner_tests {
 
         // StartGame requested the campaign board...
         assert_eq!(h.pending_map_load.0, Some(MapKind::Campaign));
-        // ...and both boards' data survived in the in-memory file.
-        assert!(
-            h.loaded_annotations.campaign.tiles.contains_key(&(7, 8)),
-            "campaign tile present in LoadedAnnotations"
-        );
-        assert_eq!(
-            h.loaded_annotations.fall_of_khartoum.image,
-            "fall_of_khartoum_1885.webp"
-        );
+        // ...and attached it to the engine, the one source of its topology.
+        assert!(std::ptr::eq(
+            h.game_state.board,
+            omdurman_rules::board_data::board_info(MapKind::Campaign)
+        ));
     }
 
     // §1.1: a replayed StartGame installs the seat table with its per-human

@@ -23,7 +23,7 @@ through at all.
 |---|---|---|
 | `omdurman-types` | no | Pure serde leaf types shared by everything (`HexCoord`, `SectionName`, `MapData`, hexside/Nile/overlay types, `Faction`, `Brigade`, `CommandScope`). |
 | `omdurman-rules` | no | The authoritative rules engine: `GameState`, `GameEffect`, `apply_effect`; the four printed tables as `static` consts (see §3, §9). |
-| `omdurman-hexmap` | yes | `HexMapPlugin`: `GameMap`, `HexLayout`, `MapDims`, world-space conversion, the shared board plane (`MapPlane`, `HexOverlay`). |
+| `omdurman-hexmap` | yes | `HexMapPlugin`: `HexLayout`, `MapDims`, world-space conversion, the shared board plane (`MapPlane`, `HexOverlay`). Draws the board; holds none of its topology. |
 | `omdurman-board-ui` | yes | Board-view plumbing for the app (split out while the retired map editor shared it): RTS camera, input/raycast helpers, egui pointer gating (`MapPointerInputSet`), night shading, the two-board store (`LoadedAnnotations`, `PendingMapLoad`). |
 | `omdurman-net` | yes | Net glue: `NetMsg`, `GameEvent`, `GameRecord`, `InitialGameState`, `PlayerKey`, `Seat`, `room_id()`. Pulls Bevy for `Resource` derives and the log macros. |
 | `omdurman-app` | yes | The Bevy binary: rendering, input, egui UI, camera, net glue, seats, the in-game AI driver (`bot_player.rs`). |
@@ -67,7 +67,10 @@ git history if a large re-authoring is ever needed).
    hexsides, roads, landmarks, entrance areas and the walled city. With a board, map-dependent
    rules (terrain cost, ZOC hexside blockers, gunboat up/downstream, Mahdi's Tomb scoring) are
    enforced; with an empty board (`BoardInfo::empty()`) the engine still runs (tests/demos) and those
-   rules go rule-neutral.
+   rules go rule-neutral. The board is also the app's one source of topology: the move plot, reach
+   rings, hover tooltip and hexside layer read the game state's `board` (`board_of`); the screen
+   keeps only how to draw it (`HexOverlay`, `HexLayout`) and reads display-only annotations (hex
+   names, set-up letters) from the board's `MapData` (`board_data::map_data`).
 
 ---
 

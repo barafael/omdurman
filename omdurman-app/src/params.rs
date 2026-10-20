@@ -5,9 +5,9 @@
 //! continue to resolve.
 
 use bevy::prelude::*;
-use omdurman_hexmap::{GameMap, HexLayout};
+use omdurman_hexmap::HexLayout;
 
-use crate::board_state::{LoadedAnnotations, PendingMapLoad};
+use crate::board_state::PendingMapLoad;
 use crate::events::PendingObservations;
 use crate::picker::UnitPaths;
 use crate::render::{HexOverlay, HexRingAssets};
@@ -18,14 +18,9 @@ use crate::state::{AppMode, GameStateResource};
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct GameStateParams<'w> {
     pub game_state: ResMut<'w, GameStateResource>,
-    /// The live board, mutated by map-edit events (`OverlayUpdate` etc.).
-    pub game_map: ResMut<'w, GameMap>,
     /// Set by the `StartGame` handler so the view switches to the game board
     /// (the board data loads via `pending_map_load`; the view follows `AppMode`).
     pub next_app_mode: ResMut<'w, NextState<AppMode>>,
-    /// In-memory two-board annotations file; the `StartGame` handler stores
-    /// into it, and `request_map_load` reads from it.
-    pub loaded_annotations: ResMut<'w, LoadedAnnotations>,
     /// Set by the `StartGame` handler to ask
     /// `apply_map_selection` to (re)load a board on the next frame (§dual-map).
     pub pending_map_load: ResMut<'w, PendingMapLoad>,

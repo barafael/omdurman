@@ -32,7 +32,6 @@
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
-use omdurman_hexmap::{GameMap, load_map_data};
 use omdurman_net::{GameRecord, RecordedEvent};
 use omdurman_rules::effects::GameState;
 
@@ -523,8 +522,6 @@ pub(crate) fn rebuild_state_to(
     record: &GameRecord,
     upto: Option<usize>,
     rng: &mut GameRng,
-    game_map: &mut GameMap,
-    loaded_annotations: &mut crate::LoadedAnnotations,
     sinks: &mut game_apply::EventSinks,
 ) {
     let upto = upto.unwrap_or(record.events.len().saturating_sub(1));
@@ -534,27 +531,19 @@ pub(crate) fn rebuild_state_to(
         "rebuilding state from log"
     );
 
-    // Clear the map -- the event stream is canonical so we rebuild from a
-    // known state. The dice need no rewinding: every effect carries its
-    // pre-rolled dice, so replay never draws from `GameRng`. Reseed it from
-    // fresh entropy instead of the record seed: restarting the record-seeded
-    // stream at position 0 would make this peer's next rolls repeat the
-    // rolls already made at the start of the game.
+    // The event stream is canonical, so we rebuild from a known state. The
+    // dice need no rewinding: every effect carries its pre-rolled dice, so
+    // replay never draws from `GameRng`. Reseed it from fresh entropy
+    // instead of the record seed: restarting the record-seeded stream at
+    // position 0 would make this peer's next rolls repeat the rolls already
+    // made at the start of the game. (The board needs no reset: the replayed
+    // `StartGame` attaches the scenario's board and queues its load via
+    // `PendingMapLoad`.)
     *rng = GameRng::from_seed(omdurman_net::new_seed());
-    game_map.hexes.clear();
     sinks.unit_paths.0.clear();
     // The seat table is part of the log's state too: only the replayed
     // `StartGame` (and seat events) may populate it.
     sinks.seats.0.clear();
-
-    // Seed LoadedAnnotations from the board RON data and load the default
-    // board (Fall-of-Khartoum) into the live map; the replayed `StartGame`
-    // then queues the scenario's own board via `PendingMapLoad`.
-    *loaded_annotations = crate::board_state::LoadedAnnotations::from_board_ron();
-    load_map_data(
-        loaded_annotations.map(omdurman_types::MapKind::FallOfKhartoum),
-        game_map,
-    );
 
     let end = (upto + 1).min(record.events.len());
     for event in &record.events[..end] {

@@ -1,7 +1,7 @@
 use std::f32::consts::PI;
 
 use bevy::prelude::*;
-use omdurman_hexmap::{GameMap, HexLayout};
+use omdurman_hexmap::HexLayout;
 
 use omdurman_hexmap::{hex_ring_mesh, hex_world_pos, hit_to_hex};
 
@@ -139,7 +139,7 @@ pub fn update_selection_marker(
     ground: Res<crate::picking::PointerGroundHit>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
-    game_map: Res<GameMap>,
+    game_state: Res<crate::GameStateResource>,
     mut marker: Query<(&mut Transform, &mut Visibility), With<SelectionMarker>>,
     mut hovered: ResMut<HoveredHex>,
 ) {
@@ -157,7 +157,7 @@ pub fn update_selection_marker(
     let origin = layout.adjusted_origin(&overlay.params);
     let coord = hit_to_hex(hit, origin, &overlay.params);
 
-    if game_map.hexes.contains_key(&coord) {
+    if game_state.0.board.terrain_at(coord).is_some() {
         let pos = hex_world_pos(coord, origin, &overlay.params);
         let placed = Transform {
             translation: Vec3::new(pos.x, 0.5, pos.z),
@@ -701,20 +701,14 @@ mod tests {
             layout.adjusted_origin(&overlay.params),
             &overlay.params,
         );
-        let mut map = GameMap::default();
-        map.hexes.insert(
-            hex,
-            omdurman_types::HexData {
-                terrain: omdurman_types::Terrain::Clear,
-                name: None,
-                setup_letter: None,
-                named_area: None,
-            },
-        );
+        let mut board = omdurman_rules::board::BoardInfo::default();
+        board.terrain.insert(hex, omdurman_types::Terrain::Clear);
+        let mut gs = omdurman_rules::effects::GameState::new(omdurman_types::Scenario::Campaign);
+        gs.board = board.leak();
         app.insert_resource(crate::picking::PointerGroundHit(Some(at)))
             .insert_resource(layout)
             .insert_resource(overlay)
-            .insert_resource(map)
+            .insert_resource(crate::GameStateResource(gs))
             .init_resource::<HoveredHex>()
             .init_resource::<Changes>()
             .add_systems(Update, (update_selection_marker, count).chain());

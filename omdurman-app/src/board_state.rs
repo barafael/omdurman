@@ -15,7 +15,7 @@ pub use omdurman_board_ui::board_store::{
 
 /// The shared load context plus the game's engine state.
 #[derive(SystemParam)]
-pub(crate) struct GameMapLoadContext<'w> {
+pub(crate) struct BoardLoadContext<'w> {
     pub shared: MapLoadContext<'w>,
     pub game_state: ResMut<'w, GameStateResource>,
 }
@@ -27,7 +27,7 @@ pub(crate) struct GameMapLoadContext<'w> {
 /// `GameState`, so replay/late-join reproduce it), then run the shared
 /// loading flow.
 pub(crate) fn apply_map_selection(
-    mut ctx: GameMapLoadContext,
+    mut ctx: BoardLoadContext,
     plane: Query<
         (&Mesh3d, &MeshMaterial3d<bevy::pbr::StandardMaterial>),
         With<omdurman_hexmap::MapPlane>,

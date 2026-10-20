@@ -13,41 +13,37 @@ fn terrain_passable(terrain: Terrain, is_boat: bool) -> bool {
     }
 }
 
-/// Whether a unit may occupy `coord`. Off-map coordinates (those not present
-/// in `game_map.hexes`, which is clipped to the active overlay) are never
-/// valid -- earlier code allowed land units to be placed off-map because the
-/// map wasn't guaranteed loaded; late-joiners now replay the event log from
-/// compiled board data, guaranteeing the map is populated before placement.
-pub(crate) fn coord_passable(game_map: &GameMap, coord: HexCoord, is_boat: bool) -> bool {
-    game_map
-        .hexes
-        .get(&coord)
-        .is_some_and(|h| terrain_passable(h.terrain, is_boat))
+/// Whether a unit may occupy `coord`. Off-map coordinates (those without
+/// terrain on the engine's board) are never valid.
+pub(crate) fn coord_passable(board: &BoardInfo, coord: HexCoord, is_boat: bool) -> bool {
+    board
+        .terrain_at(coord)
+        .is_some_and(|terrain| terrain_passable(terrain, is_boat))
 }
 
 /// Movement points required to step `from` -> `coord` (§5.11, Terrain
 /// Effects Chart): the shared `terrain_chart::land_step_cost` rule -- the
 /// entered terrain (1 along a road link) plus the crossed hexside (Khor +5,
 /// Crest +1, gate/breach +1, §9.233 Zariba end +2). With a game state the
-/// engine prices the step itself (it knows the breaches); the bare map is
-/// the bare-map/no-game fallback. Gunboats pay a flat 1 MP per entered Nile
+/// engine prices the step itself (it knows the breaches); the bare board is
+/// the no-game fallback. Gunboats pay a flat 1 MP per entered Nile
 /// hex (§5.24). Returns 0 if the step is off-map or closed to the mover
 /// (callers should check passability separately).
 pub(crate) fn floor_movement_cost(
-    game_map: &GameMap,
+    board: &BoardInfo,
     from: HexCoord,
     coord: HexCoord,
     is_boat: bool,
     game_state: Option<&omdurman_rules::effects::GameState>,
 ) -> i16 {
     if is_boat {
-        return if coord_passable(game_map, coord, true) {
+        return if coord_passable(board, coord, true) {
             1
         } else {
             0
         };
     }
-    if !coord_passable(game_map, coord, false) {
+    if !coord_passable(board, coord, false) {
         return 0;
     }
     if let Some(gs) = game_state {
@@ -56,13 +52,13 @@ pub(crate) fn floor_movement_cost(
             .filter(|&c| c < i16::MAX)
             .unwrap_or(0);
     }
-    let Some(tile) = game_map.hexes.get(&coord) else {
+    let Some(terrain) = board.terrain_at(coord) else {
         return 0;
     };
     omdurman_rules::terrain_chart::land_step_cost(
-        tile.terrain,
-        game_map.roads.contains(&HexsideRef::new(from, coord)),
-        game_map.hexside_between(from, coord),
+        terrain,
+        board.road_links(from, coord),
+        board.hexside_between(from, coord),
     )
     .unwrap_or(0)
 }
@@ -218,7 +214,7 @@ impl MovementLegCheck {
 /// Whether a wall / Zariba hexside blocks the step `start -> coord` (a
 /// §6.63 breach reopens it, which only the engine state knows).
 pub(crate) fn hexside_blocks_step(
-    game_map: &GameMap,
+    board: &BoardInfo,
     start: HexCoord,
     coord: HexCoord,
     game_state: Option<&crate::GameStateResource>,
@@ -227,7 +223,7 @@ pub(crate) fn hexside_blocks_step(
         Some(gs) => {
             gs.0.hexside_effective_is(start, coord, omdurman_types::HexsideKind::blocks_movement)
         }
-        None => game_map
+        None => board
             .hexside_between(start, coord)
             .is_some_and(omdurman_types::HexsideKind::blocks_movement),
     }
@@ -237,7 +233,7 @@ pub(crate) fn hexside_blocks_step(
 /// variant passes its first unit; the engine re-validates every unit at
 /// commit). `uid` is the mover's rules identity, when one exists.
 pub(crate) fn movement_leg_check(
-    game_map: &GameMap,
+    board: &BoardInfo,
     placed_units: &Query<(Entity, &PlacedUnit)>,
     placed: &PlacedUnit,
     start_coord: HexCoord,
@@ -288,13 +284,13 @@ pub(crate) fn movement_leg_check(
     let passable = match &land_step {
         Some(step) => step.is_ok() || enemy_occupied,
         None => {
-            coord_passable(game_map, coord, placed.is_boat)
-                && !hexside_blocks_step(game_map, start_coord, coord, game_state)
+            coord_passable(board, coord, placed.is_boat)
+                && !hexside_blocks_step(board, start_coord, coord, game_state)
         }
     };
     let cost = if adjacent {
         floor_movement_cost(
-            game_map,
+            board,
             start_coord,
             coord,
             placed.is_boat,
@@ -321,7 +317,7 @@ pub(crate) fn movement_leg_check(
 /// the largest remaining MP of the mover(s). Returns the hexes after `start`,
 /// or `None` if the goal is out of reach.
 pub(crate) fn auto_route(
-    game_map: &GameMap,
+    board: &BoardInfo,
     placed_units: &Query<(Entity, &PlacedUnit)>,
     placed: &PlacedUnit,
     start: HexCoord,
@@ -331,7 +327,7 @@ pub(crate) fn auto_route(
     game_state: Option<&crate::GameStateResource>,
 ) -> Option<Vec<HexCoord>> {
     cheapest_route(
-        game_map,
+        board,
         placed_units,
         placed,
         start,
@@ -348,7 +344,7 @@ pub(crate) fn auto_route(
 /// have 15" a refusal should tell the player. A `gunboat` budget prices the
 /// route under §5.24: the search state is (hex, went upstream yet).
 pub(crate) fn cheapest_route(
-    game_map: &GameMap,
+    board: &BoardInfo,
     placed_units: &Query<(Entity, &PlacedUnit)>,
     placed: &PlacedUnit,
     start: HexCoord,
@@ -385,10 +381,10 @@ pub(crate) fn cheapest_route(
             continue;
         }
         for next in hex.neighbors() {
-            if !game_map.hexes.contains_key(&next) {
+            if board.terrain_at(next).is_none() {
                 continue;
             }
-            let leg = movement_leg_check(game_map, placed_units, placed, hex, next, game_state);
+            let leg = movement_leg_check(board, placed_units, placed, hex, next, game_state);
             if leg.enemy_occupied || !leg.passable || leg.cost <= 0 {
                 continue;
             }
@@ -415,6 +411,7 @@ pub(crate) fn cheapest_route(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use omdurman_types::HexsideRef;
     fn leg(
         enemy_occupied: bool,
         stacking_ok: bool,
@@ -470,27 +467,19 @@ mod tests {
 
     // -- Plot-time cost parity with the engine ------------------------------
 
-    /// A two-hex clear map with an optional hexside annotation between them.
-    fn two_hex_map(hexside: Option<omdurman_types::HexsideKind>) -> GameMap {
-        let mut map = GameMap::default();
+    /// A two-hex clear board with an optional hexside annotation between them.
+    fn two_hex_map(hexside: Option<omdurman_types::HexsideKind>) -> BoardInfo {
+        let mut board = BoardInfo::default();
         for q in 0..=1 {
-            map.hexes.insert(
-                HexCoord::new(q, 0),
-                omdurman_types::HexData {
-                    terrain: Terrain::Clear,
-                    name: None,
-                    setup_letter: None,
-                    named_area: None,
-                },
-            );
+            board.terrain.insert(HexCoord::new(q, 0), Terrain::Clear);
         }
         if let Some(kind) = hexside {
-            map.hexsides.insert(
+            board.hexsides.insert(
                 HexsideRef::new(HexCoord::new(0, 0), HexCoord::new(1, 0)),
                 kind,
             );
         }
-        map
+        board
     }
 
     /// §9.233: crossing a Zariba/trench end hexside costs +2 MP. The plot-time
@@ -523,7 +512,6 @@ mod tests {
         UnitId,
         omdurman_types::SectionName,
     ) {
-        use omdurman_rules::board::BoardInfo;
         use omdurman_rules::effects::GameState;
         use omdurman_rules::{
             GunboatId, GunboatMovement, MovementAllowance, UnitIdentity, UnitMovement, WeaponClass,

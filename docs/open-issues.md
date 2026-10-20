@@ -168,7 +168,6 @@ seat handling).
 
 ## Net and app plumbing
 
-- `GameMap` (hexmap) and `BoardInfo` (rules) duplicate board topology.
 - Private dice: every roll is visible in the event log.
 - Snapshot-request retry never gives up (every 2 s, then every 15 s once
   the bootstrap budget has passed).

@@ -261,8 +261,6 @@ pub(super) fn install_foreign_history(
     if !s.gsp.reviewing() {
         let GameStateParams {
             game_state,
-            game_map,
-            loaded_annotations,
             pending_map_load,
             seats,
             local_setup_ready,
@@ -276,8 +274,6 @@ pub(super) fn install_foreign_history(
             &record,
             None,
             rng,
-            game_map,
-            loaded_annotations,
             &mut game_apply::EventSinks {
                 game_state: &mut game_state.0,
                 seats,

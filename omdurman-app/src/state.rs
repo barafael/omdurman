@@ -8,6 +8,7 @@
 //! crate root via `pub(crate) use` in [`crate::main`].
 
 use bevy::prelude::*;
+use omdurman_rules::board::BoardInfo;
 use omdurman_rules::effects::GameState;
 
 // -- App state enums --------------------------------------------------------
@@ -102,6 +103,14 @@ impl std::ops::DerefMut for GameRng {
 /// Bevy resource wrapper around the rules engine's game state.
 #[derive(Resource)]
 pub struct GameStateResource(pub GameState);
+
+/// The board on screen, as the engine sees it: the game state's
+/// [`BoardInfo`], the one source of the board's terrain, hexsides and roads
+/// (the screen keeps only how to draw it). Without a game state, the empty
+/// board.
+pub(crate) fn board_of(game_state: Option<&GameStateResource>) -> &'static BoardInfo {
+    game_state.map_or(BoardInfo::empty(), |gs| gs.0.board)
+}
 
 // -- The screen that is up ---------------------------------------------------
 

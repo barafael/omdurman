@@ -16,7 +16,7 @@
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
-use omdurman_hexmap::{GameMap, hex_world_pos};
+use omdurman_hexmap::hex_world_pos;
 use omdurman_rules::effects::GameState;
 use omdurman_rules::{Phase, UnitMovement};
 use omdurman_types::{HexCoord, Player, Terrain};
@@ -38,7 +38,9 @@ impl Plugin for HoverTooltipPlugin {
 
 fn draw_hover_tooltip(
     mut contexts: EguiContexts,
-    game_map: Res<GameMap>,
+    // Which board is up, for its hex names (display-only data the engine's
+    // board does not carry).
+    active: Res<crate::ActiveBoard>,
     board: crate::BoardGeometry,
     cameras: Query<(&Camera, &GlobalTransform), With<RtsCamera>>,
     picker: crate::picker::PickerReadState,
@@ -57,10 +59,9 @@ fn draw_hover_tooltip(
     let Some(hex) = hovered.0 else {
         return;
     };
-    let Some(tile) = game_map.hexes.get(&hex) else {
+    let Some(terrain) = crate::board_of(game_state.as_deref()).terrain_at(hex) else {
         return;
     };
-    let terrain = tile.terrain;
     let Ok(ctx) = contexts.ctx_mut() else { return };
     let gs = game_state.as_deref().map(|r| &r.0);
 
@@ -128,7 +129,8 @@ fn draw_hover_tooltip(
                                 .strong()
                                 .size(13.0),
                         );
-                        if let Some(landmark) = landmark_label(&game_map, hex) {
+                        let names = omdurman_rules::board_data::map_data(active.0);
+                        if let Some(landmark) = landmark_label(names, hex) {
                             ui.colored_label(crate::ui::palette::FAINT_INK, landmark);
                         }
 
@@ -227,7 +229,6 @@ fn draw_hover_tooltip(
                                 game_state.as_deref(),
                                 &placed_units,
                                 (unit_id, hex, left),
-                                &game_map,
                                 &movement_path,
                                 &mut route_cache,
                             )
@@ -238,7 +239,6 @@ fn draw_hover_tooltip(
                                         game_state.as_deref(),
                                         &placed_units,
                                         (unit_id, hex, None),
-                                        &game_map,
                                         &movement_path,
                                         &mut route_cache,
                                     )
@@ -260,13 +260,8 @@ fn draw_hover_tooltip(
                                         let cached = !gs_moved
                                             && hint_cache.as_ref().is_some_and(|c| c.key == key);
                                         if !cached {
-                                            let hint = movement_hint(
-                                                gs,
-                                                unit_id,
-                                                hex,
-                                                &game_map,
-                                                &movement_path,
-                                            );
+                                            let hint =
+                                                movement_hint(gs, unit_id, hex, &movement_path);
                                             *hint_cache = Some(HintCache { key, hint });
                                         }
                                         hint_cache.as_ref().and_then(|c| c.hint.clone())
@@ -348,7 +343,6 @@ fn route_hint(
     game_state: Option<&crate::GameStateResource>,
     placed_units: &Query<(Entity, &crate::picker::PlacedUnit)>,
     (unit_id, hex, stack_left): (omdurman_rules::UnitId, HexCoord, Option<(i16, i16)>),
-    game_map: &GameMap,
     movement_path: &crate::picker::MovementPath,
     cache: &mut Option<(RouteKey, Option<String>)>,
 ) -> Option<String> {
@@ -391,7 +385,7 @@ fn route_hint(
         });
         let gunboat = crate::picker::GunboatBudget::of(game_state, placed, movement_path);
         let route = crate::picker::cheapest_route(
-            game_map,
+            gs.board,
             placed_units,
             placed,
             from,
@@ -411,7 +405,7 @@ fn route_hint(
                 slowest - cost
             ),
             None => match crate::picker::cheapest_route(
-                game_map,
+                gs.board,
                 placed_units,
                 placed,
                 from,
@@ -460,10 +454,9 @@ fn terrain_label(t: Terrain) -> String {
 
 /// A short landmark line for known named tiles (the Palace, forts, river
 /// mouths). Returns `None` for ordinary hexes so the card stays small.
-fn landmark_label(game_map: &GameMap, hex: HexCoord) -> Option<String> {
-    game_map
-        .hexes
-        .get(&hex)
+fn landmark_label(map: &omdurman_types::MapData, hex: HexCoord) -> Option<String> {
+    map.tiles
+        .get(&(hex.q, hex.r))
         .and_then(|h| h.name.as_deref())
         .filter(|n| !n.is_empty())
         .map(|n| format!("“{n}”"))
@@ -484,7 +477,6 @@ fn movement_hint(
     gs: &GameState,
     unit_id: omdurman_rules::UnitId,
     hex: HexCoord,
-    game_map: &GameMap,
     movement_path: &crate::picker::MovementPath,
 ) -> Option<String> {
     let unit = gs.find_unit(unit_id)?;
@@ -559,12 +551,11 @@ fn movement_hint(
                 }
                 return Some("Click to plot the cheapest route here (§5.11).".to_string());
             }
-            let tile = game_map.hexes.get(&hex);
             // The step itself, as the engine judges it: for a land unit the
             // Nile, the board edge, walls and the walled city (§5.22, §5.23),
             // the Zariba (§9.233), enemy units and forts (§6.54).
             if is_boat {
-                if !tile.is_some_and(|t| t.terrain.is_nile()) {
+                if !gs.board.is_nile(hex) {
                     return Some(
                         "Impassable: land \u{2014} gunboats stay on the Nile (§5.22).".into(),
                     );
@@ -579,12 +570,9 @@ fn movement_hint(
             }
             // The step price the plot and the engine use (§5.11 Terrain
             // Effects Chart: terrain, road link, crossed hexside).
-            let along_road = !is_boat
-                && game_map
-                    .roads
-                    .contains(&omdurman_types::HexsideRef::new(effective_from, hex));
+            let along_road = !is_boat && gs.board.road_links(effective_from, hex);
             let cost = i32::from(crate::picker::floor_movement_cost(
-                game_map,
+                gs.board,
                 effective_from,
                 hex,
                 is_boat,
@@ -598,8 +586,9 @@ fn movement_hint(
                 .remaining_movement(unit_id)
                 .saturating_sub(movement_path.cost_so_far);
             // Defence modifier at destination (§6.23).
-            let def_mod = tile
-                .map(|t| omdurman_rules::terrain_chart::defense_modifier(t.terrain))
+            let terrain = gs.board.terrain_at(hex);
+            let def_mod = terrain
+                .map(omdurman_rules::terrain_chart::defense_modifier)
                 .unwrap_or(0);
 
             let mut lines = Vec::new();
@@ -611,8 +600,8 @@ fn movement_hint(
                 ));
             } else {
                 let road_note = if along_road {
-                    let base_cost = tile
-                        .and_then(|t| omdurman_rules::terrain_chart::movement_cost(t.terrain))
+                    let base_cost = terrain
+                        .and_then(omdurman_rules::terrain_chart::movement_cost)
                         .map_or(0, |c| c.value());
                     if base_cost > 1 {
                         format!(" (along the road instead of {base_cost})")

@@ -7,8 +7,7 @@
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use omdurman_hexmap::{
-    GameMap, HexLayout, HexOverlay, MapDims, MapPlane, MapTextureCache, apply_map_data_to_plane,
-    load_map_data,
+    HexLayout, HexOverlay, MapDims, MapPlane, MapTextureCache, apply_map_data_to_plane,
 };
 use omdurman_types::{HexCoord, MapData, MapKind};
 
@@ -45,13 +44,13 @@ impl Default for LoadedAnnotations {
     }
 }
 
-/// Which board is currently live in `GameMap`/`HexOverlay`/`MapDims`/
+/// Which board is currently live in `HexOverlay`/`MapDims`/
 /// `HexLayout` (§dual-map). Local to each peer; switching it reloads the
 /// corresponding board via [`PendingMapLoad`].
 #[derive(Resource, Default)]
 pub struct ActiveBoard(pub MapKind);
 
-/// A deferred request to (re)load a board into the live `GameMap`/`HexOverlay`/
+/// A deferred request to (re)load a board into the live `HexOverlay`/
 /// `MapDims`/`HexLayout` and re-texture the map plane. Set by scenario start /
 /// the board reconcilers; consumed by [`apply_map_selection`], which has the
 /// asset/material access those handlers lack (§dual-map).
@@ -83,20 +82,18 @@ fn calibrated_layout(map: &MapData) -> HexLayout {
 }
 
 /// Startup seeding: load both boards from the embedded RON data and load the
-/// default board (Fall-of-Khartoum) into the live map, including the
+/// default board (Fall-of-Khartoum) into the live overlay, including the
 /// calibrated [`HexLayout`], [`MapDims`] and [`ActiveBoard`]. (Binaries that need more at
 /// startup — e.g. the game's sprite-annotation file — wrap this system.)
 pub fn load_annotations(
     mut commands: Commands,
-    mut game_map: ResMut<GameMap>,
     mut overlay: ResMut<HexOverlay>,
     mut loaded: ResMut<LoadedAnnotations>,
 ) {
     let kind = MapKind::FallOfKhartoum;
     *loaded = LoadedAnnotations::from_board_ron();
-    let map = loaded.map(kind).clone();
-    load_map_data(&map, &mut game_map);
-    overlay.params = game_map.overlay.clone();
+    let map = loaded.map(kind);
+    overlay.params = map.overlay.clone();
     commands.insert_resource(default_layout());
     commands.insert_resource(MapDims {
         img_w: map.img_w,
@@ -109,7 +106,7 @@ pub fn load_annotations(
 }
 
 /// Bundle of resources mutated when (re)loading a board into the live
-/// `GameMap` / overlay / layout / texture (§dual-map). Keeps the shared
+/// overlay / layout / texture (§dual-map). Keeps the shared
 /// loading flow under the system-parameter limit; binaries embed this struct
 /// in their own wider context (the game adds `GameStateResource` and the
 /// sprite annotations).
@@ -118,7 +115,6 @@ pub struct MapLoadContext<'w> {
     pub pending: ResMut<'w, PendingMapLoad>,
     pub loaded: Res<'w, LoadedAnnotations>,
     pub active: ResMut<'w, ActiveBoard>,
-    pub game_map: ResMut<'w, GameMap>,
     pub overlay: ResMut<'w, HexOverlay>,
     pub dims: ResMut<'w, MapDims>,
     pub layout: ResMut<'w, HexLayout>,
@@ -134,7 +130,7 @@ pub fn take_pending(ctx: &mut MapLoadContext) -> Option<MapKind> {
     Some(kind)
 }
 
-/// Load `kind` into the live `GameMap`/overlay/layout/dims and re-texture the
+/// Load `kind` into the live overlay/layout/dims and re-texture the
 /// map plane. The shared core of the game's `apply_map_selection`.
 pub fn load_board(
     ctx: &mut MapLoadContext,
@@ -146,8 +142,7 @@ pub fn load_board(
 ) {
     let map = ctx.loaded.map(kind);
 
-    load_map_data(map, &mut ctx.game_map);
-    ctx.overlay.params = ctx.game_map.overlay.clone();
+    ctx.overlay.params = map.overlay.clone();
     *ctx.dims = MapDims {
         img_w: map.img_w,
         img_h: map.img_h,

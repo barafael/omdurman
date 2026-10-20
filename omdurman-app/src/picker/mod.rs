@@ -12,8 +12,9 @@ use bevy::app::Plugin;
 use bevy::ecs::message::MessageWriter;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
-use omdurman_hexmap::{GameMap, HexLayout};
-use omdurman_types::{HexCoord, HexsideRef, Scenario, SectionName, Terrain};
+use omdurman_hexmap::HexLayout;
+use omdurman_rules::board::BoardInfo;
+use omdurman_types::{HexCoord, Scenario, SectionName, Terrain};
 
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap, HashSet};

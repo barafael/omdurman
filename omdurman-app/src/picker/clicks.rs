@@ -22,7 +22,7 @@ struct ClickGeometry {
 /// Bundles the picker-specific resources, queries, and command buffers so
 /// [`handle_picker_clicks`] and [`unit_picker_ui`] stay under the
 /// system-parameter limit.  Resources that are also consumed by *other* systems
-/// (e.g. `HexLayout`, `GameMap`) are included here because they are logically
+/// (e.g. `HexLayout`) are included here because they are logically
 /// part of the picker's map-interaction domain; those systems continue to take
 /// the individual `Res`s.
 #[derive(bevy::ecs::system::SystemParam)]
@@ -32,7 +32,6 @@ pub struct PickerContext<'w, 's> {
     pub movement_path: ResMut<'w, MovementPath>,
     pub layout: Res<'w, HexLayout>,
     pub overlay: Res<'w, HexOverlay>,
-    pub game_map: Res<'w, GameMap>,
     pub placed_units: Query<'w, 's, (Entity, &'static PlacedUnit)>,
     pub commands: Commands<'w, 's>,
     pub meshes: ResMut<'w, Assets<Mesh>>,
@@ -833,11 +832,11 @@ fn place_click(
             check.is_some_and(|r| r.is_ok())
         } else {
             let occupied = ctx.placed_units.iter().any(|(_, u)| u.coord == coord);
-            !occupied && coord_passable(&ctx.game_map, coord, unit.is_boat)
+            !occupied && coord_passable(crate::board_of(game_state), coord, unit.is_boat)
         }
     } else {
         let occupied = ctx.placed_units.iter().any(|(_, u)| u.coord == coord);
-        !occupied && coord_passable(&ctx.game_map, coord, unit.is_boat)
+        !occupied && coord_passable(crate::board_of(game_state), coord, unit.is_boat)
     };
 
     if can_place {
@@ -966,7 +965,6 @@ fn no_route_reason(goal: HexCoord, budget: i16, cheapest: Option<i16>, boat: boo
 /// MP this move has for that route -- a gunboat's upstream allowance once
 /// the route runs upstream (§5.24), else `budget`.
 fn price_unreachable(
-    game_map: &GameMap,
     placed_units: &Query<(Entity, &PlacedUnit)>,
     placed: &PlacedUnit,
     (start, goal): (HexCoord, HexCoord),
@@ -975,7 +973,7 @@ fn price_unreachable(
     game_state: Option<&crate::GameStateResource>,
 ) -> (Option<i16>, i16) {
     let Some((route, cost)) = cheapest_route(
-        game_map,
+        crate::board_of(game_state),
         placed_units,
         placed,
         start,
@@ -1100,7 +1098,7 @@ fn plot_single_route(
     };
     let gunboat = GunboatBudget::of(game_state, placed, &ctx.movement_path);
     let Some(route) = auto_route(
-        &ctx.game_map,
+        crate::board_of(game_state),
         &ctx.placed_units,
         placed,
         start,
@@ -1112,7 +1110,6 @@ fn plot_single_route(
         info!(?start, ?goal, budget, "no legal route to the clicked hex");
         let movers: Vec<_> = placed.unit_id.into_iter().collect();
         let (cheapest, have) = price_unreachable(
-            &ctx.game_map,
             &ctx.placed_units,
             placed,
             (start, goal),
@@ -1210,13 +1207,13 @@ fn single_click(
     // A distant hex -- or a neighbour behind a wall -- plot the cheapest
     // legal route to it, leg by leg (round through a gate).
     if !start_coord.neighbors().contains(&coord)
-        || hexside_blocks_step(&ctx.game_map, start_coord, coord, game_state)
+        || hexside_blocks_step(crate::board_of(game_state), start_coord, coord, game_state)
     {
         return plot_single_route(ctx, plan, source, start_coord, coord, game_state);
     }
 
     let leg = movement_leg_check(
-        &ctx.game_map,
+        crate::board_of(game_state),
         &ctx.placed_units,
         placed,
         start_coord,
@@ -1396,7 +1393,7 @@ fn plot_stack_route(
     };
     let gunboat = GunboatBudget::of(game_state, placed, &ctx.movement_path);
     let Some(route) = auto_route(
-        &ctx.game_map,
+        crate::board_of(game_state),
         &ctx.placed_units,
         placed,
         start,
@@ -1411,7 +1408,6 @@ fn plot_stack_route(
             .filter_map(|&s| ctx.placed_units.get(s).ok().and_then(|(_, p)| p.unit_id))
             .collect();
         let (cheapest, have) = price_unreachable(
-            &ctx.game_map,
             &ctx.placed_units,
             placed,
             (start, goal),
@@ -1476,7 +1472,7 @@ fn stack_click(
     // A distant hex -- or a neighbour behind a wall -- plot the cheapest
     // legal route to it, leg by leg (round through a gate).
     if !start_coord.neighbors().contains(&coord)
-        || hexside_blocks_step(&ctx.game_map, start_coord, coord, game_state)
+        || hexside_blocks_step(crate::board_of(game_state), start_coord, coord, game_state)
     {
         return plot_stack_route(ctx, plan, sources, start_coord, coord, game_state);
     }
@@ -1486,7 +1482,7 @@ fn stack_click(
     // courtesy gate for the common case -- moving a stack into a hex that
     // already pushes past the §5.51 cap).
     let leg = movement_leg_check(
-        &ctx.game_map,
+        crate::board_of(game_state),
         &ctx.placed_units,
         placed,
         start_coord,
@@ -1587,7 +1583,7 @@ pub(crate) fn commit_stack_path(
         let mut prefix: Vec<HexCoord> = Vec::new();
         for &(from, to) in &ctx.movement_path.legs {
             let leg_cost = floor_movement_cost(
-                &ctx.game_map,
+                crate::board_of(game_state),
                 from,
                 to,
                 placed.is_boat,
@@ -1793,7 +1789,7 @@ pub(crate) fn undo_movement_leg(
         _ => false,
     };
     let cost = floor_movement_cost(
-        &picker_ctx.game_map,
+        crate::board_of(game_state.as_deref()),
         from,
         to,
         is_boat,

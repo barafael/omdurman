@@ -40,16 +40,27 @@ pub fn fall_of_khartoum_map_data() -> &'static MapData {
     FOK.get_or_init(|| parse(FOK_RON))
 }
 
+/// A board's saved data: what [`board_info`] is built from, plus what only
+/// the screen needs (the scan, its calibration, hex names, set-up letters).
+pub fn map_data(kind: MapKind) -> &'static MapData {
+    match kind {
+        MapKind::Campaign => campaign_map_data(),
+        MapKind::FallOfKhartoum => fall_of_khartoum_map_data(),
+    }
+}
+
 /// A board's rules topology ([`BoardInfo`]), built once per board and shared:
 /// every `StartGame` (live, replayed or installed) attaches the same board.
+/// It is the one source of the board's terrain, hexsides and roads, for the
+/// engine and the app alike.
 pub fn board_info(kind: MapKind) -> &'static BoardInfo {
     static CAMPAIGN_INFO: OnceLock<BoardInfo> = OnceLock::new();
     static FOK_INFO: OnceLock<BoardInfo> = OnceLock::new();
-    let (cell, map): (_, fn() -> &'static MapData) = match kind {
-        MapKind::Campaign => (&CAMPAIGN_INFO, campaign_map_data),
-        MapKind::FallOfKhartoum => (&FOK_INFO, fall_of_khartoum_map_data),
+    let cell = match kind {
+        MapKind::Campaign => &CAMPAIGN_INFO,
+        MapKind::FallOfKhartoum => &FOK_INFO,
     };
-    cell.get_or_init(|| BoardInfo::from_map_data(map()))
+    cell.get_or_init(|| BoardInfo::from_map_data(map_data(kind)))
 }
 /// Which board a scenario plays on. Both the Campaign game (§9.1) and the
 /// Historical scenario (§9.2) are the Battle of Omdurman fought on the main

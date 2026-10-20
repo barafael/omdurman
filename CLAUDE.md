@@ -131,9 +131,11 @@ Seven workspace crates plus the traceability tooling (two tools and a proc-macro
   bootstrap + map plane. Binaries keep only their small
   local `Plugin` wiring and app-specific hooks (e.g. the game attaches `BoardInfo` to the
   engine state on every board load).
-- **`omdurman-hexmap`** — Bevy plugin (`HexMapPlugin`) for the hex grid: `GameMap`, `HexLayout`,
+- **`omdurman-hexmap`** — Bevy plugin (`HexMapPlugin`) for drawing the hex grid: `HexLayout`,
   `MapDims`, world-space conversion, plus the shared board plane (`MapPlane`, `MapTextureCache`,
-  `HexOverlay`, `apply_map_data_to_plane`, `terrain_overlay_color`) used by the game. `HexLayout` must be inserted manually with calibration data.
+  `HexOverlay`, `apply_map_data_to_plane`) used by the game. `HexLayout` must be inserted manually
+  with calibration data. It holds no board topology: the engine's `BoardInfo` (the game state's
+  `board`, `crate::board_of` in the app) is the one source of terrain, hexsides and roads.
 - **`omdurman-net`** — net glue. Defines `NetMsg`, `GameEvent`, `GameRecord` (event log),
   `InitialGameState`, and `room_id()`. `GameEvent` variants are the *only* messages recorded into
   the canonical event log and replayed for late joiners — adding a variant here automatically

@@ -462,7 +462,6 @@ fn host_app(game_started: bool) -> App {
         .insert_resource(crate::GameStateResource(
             omdurman_rules::effects::GameState::new(omdurman_types::Scenario::Campaign),
         ))
-        .init_resource::<omdurman_hexmap::GameMap>()
         .init_resource::<crate::LoadedAnnotations>()
         .init_resource::<crate::PendingMapLoad>()
         .init_resource::<crate::events::PendingObservations>()

@@ -132,7 +132,6 @@ fn update_dynamic_hexside_bars(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     game_state: Option<Res<GameStateResource>>,
-    game_map: Option<Res<omdurman_hexmap::GameMap>>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     zariba: Res<crate::fx::zariba::ZaribaGrowth>,
@@ -151,8 +150,6 @@ fn update_dynamic_hexside_bars(
     if !gs.is_changed() && !pool.placing && !zariba.is_changed() {
         return;
     }
-    let Some(game_map) = game_map else { return };
-
     // (ends, width, height above the board, colour)
     let mut bars: Vec<(Vec3, Vec3, f32, f32, Color)> = Vec::new();
     for edge in gs.0.board.hexsides.keys() {
@@ -164,7 +161,7 @@ fn update_dynamic_hexside_bars(
         // The printed Zariba is on the map texture either way: in the
         // Campaign mark the sides actually built (§5.3).
         let built_zariba = gs.0.scenario == omdurman_types::Scenario::Campaign && kind.is_zariba();
-        if !built_zariba && game_map.hexsides.get(edge) == Some(&kind) {
+        if !built_zariba && gs.0.board.hexsides.get(edge) == Some(&kind) {
             continue; // unchanged — the authored map texture already shows it
         }
         let (p0, mut p1) = hexside_segment(edge, layout.adjusted_origin(&overlay.params), &overlay);

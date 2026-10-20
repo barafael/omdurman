@@ -5,10 +5,10 @@
 //! up within three hexes of Sheik El Din", "anywhere in the walled city"). Only
 //! a handful of units have a single fixed hex -- chiefly the six Dervish leaders,
 //! which the Historical scenario pins to the lettered set-up hexes A/D/Y/K/S/O
-//! (§9.212). Those letters exist on the campaign board as [`Terrain`] variants,
-//! so we resolve each leader's destination from the loaded [`GameMap`] rather
-//! than hard-coding coordinates -- the placement stays correct if the board is
-//! re-annotated.
+//! (§9.212). Those letters are annotations of the campaign board's data, so
+//! we resolve each leader's destination from the scenario's [`MapData`]
+//! rather than hard-coding coordinates -- the placement stays correct if the
+//! board is re-annotated.
 //!
 //! Everything else (tribal retinues, brigades, gunboats) is left for players to
 //! drag from the picker, near the leaders this anchors. Placements flow through
@@ -17,10 +17,9 @@
 //! `UnitId`s identically -- see [[project_netcode_host_relay]] in memory.
 
 use bevy::prelude::*;
-use omdurman_hexmap::GameMap;
 use omdurman_net::GameEvent;
 use omdurman_rules::scenario_setup::{FixedPlacement, SetupAnchor};
-use omdurman_types::{HexCoord, Scenario, SetupLetter};
+use omdurman_types::{HexCoord, MapData, Scenario, SetupLetter};
 
 pub use omdurman_rules::board_data::map_kind_for_scenario;
 
@@ -29,25 +28,24 @@ pub use omdurman_rules::board_data::map_kind_for_scenario;
 /// §9.212) or a named landmark hex (e.g. the Palace for GORDON, §9.321/§9.346).
 /// The rules crate owns the fixed-placement *data*
 /// ([`FALL_OF_KHARTOUM_SETUP`]); this module resolves the anchors against the
-/// loaded [`GameMap`].
-/// The single hex carrying `setup_letter` on the loaded map, if exactly one does.
+/// board's [`MapData`] (its set-up letters and hex names are annotations the
+/// engine's `BoardInfo` does not carry).
+/// The single hex carrying `setup_letter` on the map, if exactly one does.
 /// The lettered set-up hexes are unique, so "first match" is the intended one;
 /// returns `None` if the letter isn't on the board (e.g. the wrong scenario's
 /// map is loaded).
-fn hex_with_setup_letter(game_map: &GameMap, letter: SetupLetter) -> Option<HexCoord> {
-    game_map
-        .hexes
+fn hex_with_setup_letter(map: &MapData, letter: SetupLetter) -> Option<HexCoord> {
+    map.tiles
         .iter()
         .find(|(_, data)| data.setup_letter == Some(letter))
-        .map(|(coord, _)| *coord)
+        .map(|(&(q, r), _)| HexCoord::new(q, r))
 }
 
-/// The single hex whose name resolves to `location` on the loaded map (e.g. the
+/// The single hex whose name resolves to `location` on the map (e.g. the
 /// Palace), if any. Mirrors how the engine derives `board.locations` from tile
 /// names, so the app and engine agree on where landmarks are.
-fn hex_with_location(game_map: &GameMap, location: omdurman_types::Location) -> Option<HexCoord> {
-    game_map
-        .hexes
+fn hex_with_location(map: &MapData, location: omdurman_types::Location) -> Option<HexCoord> {
+    map.tiles
         .iter()
         .find(|(_, data)| {
             data.name
@@ -55,14 +53,14 @@ fn hex_with_location(game_map: &GameMap, location: omdurman_types::Location) -> 
                 .and_then(omdurman_types::Location::from_tile_name)
                 == Some(location)
         })
-        .map(|(coord, _)| *coord)
+        .map(|(&(q, r), _)| HexCoord::new(q, r))
 }
 
-/// Resolve a placement's anchor to a hex on the loaded map.
-fn resolve_anchor(game_map: &GameMap, anchor: &SetupAnchor) -> Option<HexCoord> {
+/// Resolve a placement's anchor to a hex on the map.
+fn resolve_anchor(map: &MapData, anchor: &SetupAnchor) -> Option<HexCoord> {
     match anchor {
-        SetupAnchor::Letter(letter) => hex_with_setup_letter(game_map, *letter),
-        SetupAnchor::Location(location) => hex_with_location(game_map, *location),
+        SetupAnchor::Letter(letter) => hex_with_setup_letter(map, *letter),
+        SetupAnchor::Location(location) => hex_with_location(map, *location),
     }
 }
 
@@ -74,21 +72,21 @@ pub struct SetupPlan {
     pub unresolved: Vec<&'static str>,
 }
 
-/// Build the fixed-hex placements for `scenario` against the loaded `game_map`.
+/// Build the fixed-hex placements for `scenario` against its board's `map`.
 ///
 /// The Historical scenario pins its six Dervish leaders to lettered hexes
 /// (§9.212); Fall of Khartoum pins GORDON to the Palace (§9.321/§9.346). The
 /// Campaign game leaves all set-up to the players, so it returns an empty plan.
 /// Everything not anchored here (tribal retinues, brigades, gunboats, the
 /// Dervish entry forces) is player-placed.
-pub fn build_setup_plan(scenario: Scenario, game_map: &GameMap) -> SetupPlan {
+pub fn build_setup_plan(scenario: Scenario, map: &MapData) -> SetupPlan {
     // The Campaign game leaves all set-up to the players (no fixed hexes).
     let fixed: &[FixedPlacement] = omdurman_rules::scenario_setup::fixed_placements(scenario);
 
     let mut placements = Vec::new();
     let mut unresolved = Vec::new();
     for fp in fixed {
-        match resolve_anchor(game_map, &fp.anchor) {
+        match resolve_anchor(map, &fp.anchor) {
             Some(coord) => placements.push(GameEvent::PlaceUnit {
                 sprite: omdurman_types::SpriteRef {
                     section_name: fp.section,
@@ -163,17 +161,11 @@ pub(crate) fn start_game_key(record: &omdurman_net::GameRecord) -> Option<StartG
 /// in a new one, whose seqs start again at 0.
 pub(crate) fn auto_trigger_scenario_setup(
     game_state: Res<crate::GameStateResource>,
-    board: (
-        Res<GameMap>,
-        Res<crate::ActiveBoard>,
-        Res<crate::PendingMapLoad>,
-    ),
     net: Res<omdurman_net::NetState>,
     recorder: Res<crate::game_record::GameRecorder>,
     mut pending: ResMut<crate::PendingEdits>,
     mut submitted_for: Local<Option<(Scenario, Option<StartGameKey>)>>,
 ) {
-    let (map, active_map, pending_map) = board;
     // Only the host auto-triggers.
     if !net.is_host {
         return;
@@ -187,23 +179,12 @@ pub(crate) fn auto_trigger_scenario_setup(
     if *submitted_for == Some(game_key) {
         return;
     }
-    // The plan resolves setup letters against the loaded board: wait until
-    // the scenario's own board is the live one, or placements would be
-    // resolved against the previous game's map.
-    if pending_map.0.is_some() || active_map.0 != map_kind_for_scenario(scenario) {
-        return;
-    }
-
-    let plan = build_setup_plan(scenario, &map);
-    if plan.placements.is_empty() {
-        if plan.unresolved.is_empty() {
-            *submitted_for = Some(game_key); // Campaign -- nothing to do
-        }
-        // If unresolved is non-empty, the map hasn't loaded yet (anchors
-        // not found). Retry next frame.
-        return;
-    }
+    let map = omdurman_rules::board_data::map_data(map_kind_for_scenario(scenario));
+    let plan = build_setup_plan(scenario, map);
     *submitted_for = Some(game_key);
+    for missing in &plan.unresolved {
+        warn!(%missing, ?scenario, "no set-up hex on the board for a fixed placement");
+    }
     for ev in plan.placements {
         // A resumed / replayed setup may already hold some of them.
         if !placement_already_on_board(&ev, &game_state.0) {
@@ -242,12 +223,19 @@ mod tests {
         assert_eq!(start_game_key(&record(7)), Some(first));
     }
 
-    fn map_with(letters: &[(i32, i32, SetupLetter)]) -> GameMap {
-        let mut m = GameMap::default();
+    /// A board's data with no tiles: the tests' own annotations only.
+    fn bare_map() -> MapData {
+        let mut m = omdurman_rules::board_data::fall_of_khartoum_map_data().clone();
+        m.tiles.clear();
+        m
+    }
+
+    fn map_with(letters: &[(i32, i32, SetupLetter)]) -> MapData {
+        let mut m = bare_map();
         for &(q, r, l) in letters {
             let mut data = HexData::new(Terrain::Clear, None);
             data.setup_letter = Some(l);
-            m.hexes.insert(HexCoord::new(q, r), data);
+            m.tiles.insert((q, r), data);
         }
         m
     }
@@ -305,11 +293,11 @@ mod tests {
         assert!(plan.unresolved.is_empty());
     }
 
-    fn map_with_named(named: &[(i32, i32, &str)]) -> GameMap {
-        let mut m = GameMap::default();
+    fn map_with_named(named: &[(i32, i32, &str)]) -> MapData {
+        let mut m = bare_map();
         for &(q, r, name) in named {
             let data = HexData::new(Terrain::Clear, Some(name.to_string()));
-            m.hexes.insert(HexCoord::new(q, r), data);
+            m.tiles.insert((q, r), data);
         }
         m
     }
@@ -420,9 +408,7 @@ mod tests {
         );
 
         // The setup plan must land the Dervish fort on the North Fort hex.
-        let mut gm = GameMap::default();
-        omdurman_hexmap::load_map_data(map, &mut gm);
-        let plan = build_setup_plan(Scenario::FallOfKhartoum, &gm);
+        let plan = build_setup_plan(Scenario::FallOfKhartoum, map);
         assert!(plan.unresolved.is_empty());
         let fort = plan
             .placements
