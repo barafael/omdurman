@@ -85,6 +85,8 @@ pub fn playthrough(scenario: Scenario, seed: u64, cfg: PlayConfig, agents: Agent
     // never hang the caller. Well below a full-game action count.
     let mut iterations = 0usize;
     let mut move_memory = crate::move_memory::MoveMemory::new();
+    let mut threat = crate::threat::ThreatCache::default();
+    let threat = &mut threat;
 
     loop {
         // Termination conditions.
@@ -180,7 +182,7 @@ pub fn playthrough(scenario: Scenario, seed: u64, cfg: PlayConfig, agents: Agent
             let chooser = crate::actions::decider(&state).unwrap_or(state.phase_player());
             let candidates = crate::actions::own_decisions(&state, chooser, &candidates);
             if state.phase == Phase::Setup && agents.any_commander() {
-                crate::commanders::pick_setup(&state, &candidates, &agents, &mut rng)
+                crate::commanders::pick_setup(threat, &state, &candidates, &agents, &mut rng)
             } else if agents.is_aggressive(chooser) {
                 crate::aggressive::pick(&state, chooser, &candidates, &mut rng)
             } else if let Some(commander) = agents.commander(chooser) {
@@ -188,6 +190,7 @@ pub fn playthrough(scenario: Scenario, seed: u64, cfg: PlayConfig, agents: Agent
                 // as the app and the arena drive it.
                 let _ = commander;
                 let pick = crate::commanders::pick_validated(
+                    threat,
                     &state,
                     chooser,
                     &candidates,

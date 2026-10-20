@@ -45,6 +45,9 @@ pub struct BotDriver {
     /// Where each unit has stood this movement phase: no step back onto it
     /// (see `omdurman_bot::move_memory`).
     memory: omdurman_bot::move_memory::MoveMemory,
+    /// The bot's threat queries memoized for this game (fire lanes, path
+    /// fields): a fresh game replaces the driver, and the cache with it.
+    threat: omdurman_bot::threat::ThreatCache,
     cooldown: f32,
     /// Submission uid of the last action, until its sequenced echo confirms
     /// it. The engine state the next decision is computed from only reflects
@@ -87,6 +90,7 @@ impl BotDriver {
         Self {
             rng: BotRng::from_seed(seed),
             memory: Default::default(),
+            threat: Default::default(),
             cooldown: 0.0,
             in_flight: None,
             in_flight_secs: 0.0,
@@ -299,7 +303,14 @@ pub fn bot_player_act(
     }
 
     let driver = &mut *driver;
-    let effect = next_ai_action(state, chooser, &ai, &mut driver.rng, &mut driver.memory);
+    let effect = next_ai_action(
+        &mut driver.threat,
+        state,
+        chooser,
+        &ai,
+        &mut driver.rng,
+        &mut driver.memory,
+    );
     // The commanders fall back to `AdvancePhase` when nothing else is legal;
     // if even that is refused, submitting it would only be rejected on the
     // echo, and the AI would pick it again and again. Every other decision
@@ -342,6 +353,7 @@ fn ai_chooser(state: &GameState) -> Option<Player> {
 /// faction, the AI only touches its own units (a human's deployment, ready
 /// latch and re-arrangements are theirs).
 pub(crate) fn next_ai_action(
+    threat: &mut omdurman_bot::threat::ThreatCache,
     state: &GameState,
     chooser: Player,
     ai_factions: &[Player],
@@ -368,13 +380,16 @@ pub(crate) fn next_ai_action(
         .find(|e| matches!(e, GameEffect::DervishDesertion { .. }))
     {
         // Who deserts is the Khalifa's choice (§8.2); the roll stands.
-        return validated(state, commanders::choose_deserters(state, effect.clone()));
+        return validated(
+            state,
+            commanders::choose_deserters(threat, state, effect.clone()),
+        );
     }
 
     if state.phase == Phase::Setup {
-        return commanders::pick_setup_validated(state, &candidates, own_only, rng);
+        return commanders::pick_setup_validated(threat, state, &candidates, own_only, rng);
     }
-    commanders::pick_validated(state, chooser, &candidates, rng, memory)
+    commanders::pick_validated(threat, state, chooser, &candidates, rng, memory)
 }
 
 /// Validate one candidate on a cloned state; fall back to `AdvancePhase`
@@ -453,6 +468,7 @@ mod tests {
         let mut rng = BotRng::from_seed(11);
         let mut memory = omdurman_bot::move_memory::MoveMemory::new();
         let pick = next_ai_action(
+            &mut Default::default(),
             &state,
             Player::AngloEgyptian,
             &[Player::AngloEgyptian],
@@ -564,6 +580,8 @@ mod tests {
 
             let mut steps = 0usize;
             let mut memory = omdurman_bot::move_memory::MoveMemory::new();
+            let mut threat = omdurman_bot::threat::ThreatCache::default();
+            let threat = &mut threat;
             while !state.game_over && state.current_turn.value() <= 12 && steps < 20_000 {
                 steps += 1;
                 // The side to decide: a §7.7 choice of losses may be the
@@ -585,9 +603,16 @@ mod tests {
                 {
                     validated(&state, e.clone())
                 } else if state.phase == Phase::Setup {
-                    commanders::pick_setup_validated(&state, &candidates, None, &mut rng)
+                    commanders::pick_setup_validated(threat, &state, &candidates, None, &mut rng)
                 } else {
-                    commanders::pick_validated(&state, chooser, &candidates, &mut rng, &mut memory)
+                    commanders::pick_validated(
+                        threat,
+                        &state,
+                        chooser,
+                        &candidates,
+                        &mut rng,
+                        &mut memory,
+                    )
                 };
                 apply_effect(&mut state, &effect).unwrap_or_else(|e| {
                     panic!("seed {seed}: the validated pick {effect:?} was rejected: {e}")

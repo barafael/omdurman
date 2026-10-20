@@ -56,9 +56,11 @@ fn main() {
     state.current_turn = GameTurnIndex::new(turn);
     let mut rng = BotRng::from_seed(1);
     let mut memory = omdurman_bot::move_memory::MoveMemory::new();
+    let mut threat = omdurman_bot::threat::ThreatCache::default();
     for _ in 0..2000 {
         let candidates = omdurman_bot::actions::legal_actions(&state, &mut rng);
         let effect = omdurman_bot::commanders::pick_validated(
+            &mut threat,
             &state,
             side,
             &candidates,

@@ -114,6 +114,7 @@ fn exposed_enemy(state: &GameState) -> impl Iterator<Item = &UnitPlacement> {
 /// side of in `reach` movement points (§5.11: the ground counts, a hex of
 /// the Surgham ridge is not a hex of open plain); `u32::MAX` for any.
 fn nearest_within(
+    threat: &mut crate::threat::ThreatCache,
     state: &GameState,
     positions: impl Iterator<Item = HexCoord>,
     from: HexCoord,
@@ -127,7 +128,8 @@ fn nearest_within(
     }
     // The target's own hex costs a step more than its side.
     targets.into_iter().find(|&p| {
-        crate::threat::path_cost(state, from, p).is_some_and(|cost| cost <= reach as i32 + 1)
+        crate::threat::path_cost(threat, state, from, p)
+            .is_some_and(|cost| cost <= reach as i32 + 1)
     })
 }
 
@@ -156,10 +158,14 @@ fn with_his_command(state: &GameState, leader: DervishLeader, from: HexCoord) ->
 
 /// The Khalifa's goal for a Dervish unit (see the module notes); `None`
 /// leaves the commander's own.
-pub(crate) fn khalifa_goal(state: &GameState, unit: &UnitPlacement) -> Option<Goal> {
+pub(crate) fn khalifa_goal(
+    threat: &mut crate::threat::ThreatCache,
+    state: &GameState,
+    unit: &UnitPlacement,
+) -> Option<Goal> {
     match state.scenario {
-        Scenario::Historical => khalifa_historical_goal(state, unit),
-        Scenario::Campaign => khalifa_campaign_goal(state, unit),
+        Scenario::Historical => khalifa_historical_goal(threat, state, unit),
+        Scenario::Campaign => khalifa_campaign_goal(threat, state, unit),
         Scenario::FallOfKhartoum => None,
     }
 }
@@ -174,7 +180,11 @@ const CAMPAIGN_ASSEMBLY: (i32, i32) = (24, 5);
 /// reach of the guns, and attacks at dawn on the 2nd
 /// (`CAMPAIGN_DAWN_TURN`) it attacks. The Khalifa and his Taiasha keep
 /// the Tomb, the guns their own counsel (the commander's goals).
-fn khalifa_campaign_goal(state: &GameState, unit: &UnitPlacement) -> Option<Goal> {
+fn khalifa_campaign_goal(
+    threat: &mut crate::threat::ThreatCache,
+    state: &GameState,
+    unit: &UnitPlacement,
+) -> Option<Goal> {
     if state.current_turn.value() >= CAMPAIGN_DAWN_TURN {
         return None;
     }
@@ -191,6 +201,7 @@ fn khalifa_campaign_goal(state: &GameState, unit: &UnitPlacement) -> Option<Goal
     // An army caught on the plain is attacked wherever it is; the Zariba
     // is not, before dawn.
     let target = nearest_within(
+        threat,
         state,
         exposed_enemy(state).map(|u| u.position),
         unit.position,
@@ -205,7 +216,11 @@ fn khalifa_campaign_goal(state: &GameState, unit: &UnitPlacement) -> Option<Goal
     })
 }
 
-fn khalifa_historical_goal(state: &GameState, unit: &UnitPlacement) -> Option<Goal> {
+fn khalifa_historical_goal(
+    threat: &mut crate::threat::ThreatCache,
+    state: &GameState,
+    unit: &UnitPlacement,
+) -> Option<Goal> {
     let leader = leader_of(&unit.profile.identity)?;
     if let UnitIdentity::DervishLeader(l) = unit.profile.identity {
         return with_his_command(state, l, unit.position).map(Goal::Hex);
@@ -217,8 +232,11 @@ fn khalifa_historical_goal(state: &GameState, unit: &UnitPlacement) -> Option<Go
     // ground in daylight in a single rush, not halfway into the Maxims'
     // reach to wait there a turn (§5.11, §6.22).
     let one_move = movement_allowance(unit);
-    let strike = |reach: u32| {
+    // The cache is an argument, not a capture: the Kerreri arm below asks it
+    // directly while `strike` is alive.
+    let strike = |threat: &mut crate::threat::ThreatCache, reach: u32| {
         nearest_within(
+            threat,
             state,
             exposed_enemy(state).map(|u| u.position),
             unit.position,
@@ -249,16 +267,17 @@ fn khalifa_historical_goal(state: &GameState, unit: &UnitPlacement) -> Option<Go
         (Flag::White, 1) => hold,
         // After the dawn the survivors fall back out of the guns' reach to
         // where they started; the khor's ambush springs on what comes near.
-        (Flag::White, _) => strike(KHOR_REACH)
+        (Flag::White, _) => strike(threat, KHOR_REACH)
             .or_else(|| letter_hex(leader).map(Goal::Hex))
             .unwrap_or(hold),
-        (Flag::Red, _) => strike(one_move)
+        (Flag::Red, _) => strike(threat, one_move)
             .or_else(|| letter_hex(leader).map(Goal::Hex))
             .unwrap_or(hold),
         (Flag::Black, 1) => hold,
-        (Flag::Black, _) => strike(one_move).unwrap_or(hold),
+        (Flag::Black, _) => strike(threat, one_move).unwrap_or(hold),
         // Turn 1: over the Kerreri hills after the mounted troops there.
         (Flag::Green, 1) => nearest_within(
+            threat,
             state,
             exposed_enemy(state)
                 .filter(|u| HISTORICAL_KERRERI_UNITS.contains(&u.id))
@@ -267,9 +286,9 @@ fn khalifa_historical_goal(state: &GameState, unit: &UnitPlacement) -> Option<Go
             u32::MAX,
         )
         .map(Goal::Hex)
-        .or_else(|| strike(one_move))
+        .or_else(|| strike(threat, one_move))
         .unwrap_or(hold),
-        (Flag::Green, _) => strike(one_move).unwrap_or(hold),
+        (Flag::Green, _) => strike(threat, one_move).unwrap_or(hold),
     };
     Some(goal)
 }

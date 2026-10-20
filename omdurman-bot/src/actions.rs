@@ -1680,7 +1680,9 @@ mod melee_reaction_tests {
         let mut rng = BotRng::from_seed(5);
         let offered = legal_actions(&state, &mut rng);
         let mut memory = crate::move_memory::MoveMemory::new();
+        let mut threat = crate::threat::ThreatCache::default();
         let attacker_pick = crate::commanders::pick_validated(
+            &mut threat,
             &state,
             Player::AngloEgyptian,
             &offered,
@@ -1695,6 +1697,7 @@ mod melee_reaction_tests {
             "the attacker picked the defender's decision: {attacker_pick:?}"
         );
         let defender_pick = crate::commanders::pick_validated(
+            &mut threat,
             &state,
             Player::Dervish,
             &offered,
@@ -1780,12 +1783,14 @@ mod campaign_schedule_tests {
             omdurman_rules::OptionalRule::RiverChain,
         ];
         let mut rng = crate::rng::BotRng::from_seed(3);
+        let mut threat = crate::threat::ThreatCache::default();
         for _ in 0..400 {
             if state.setup_ready(Player::Dervish) {
                 break;
             }
             let candidates = legal_actions_deep_setup(&state, &mut rng);
             let effect = crate::commanders::pick_setup_validated(
+                &mut threat,
                 &state,
                 &candidates,
                 Some(Player::Dervish),

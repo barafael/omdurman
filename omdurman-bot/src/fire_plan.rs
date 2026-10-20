@@ -470,10 +470,12 @@ mod tests {
 
         let mut rng = crate::rng::BotRng::from_seed(3);
         let mut memory = crate::move_memory::MoveMemory::default();
+        let mut threat = crate::threat::ThreatCache::default();
         let mut steps: Vec<&'static str> = Vec::new();
         for _ in 0..10 {
             let candidates = crate::actions::legal_actions(&state, &mut rng);
             let pick = crate::commanders::pick_validated(
+                &mut threat,
                 &state,
                 Player::AngloEgyptian,
                 &candidates,
