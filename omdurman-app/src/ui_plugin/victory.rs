@@ -30,14 +30,13 @@ pub(crate) struct VictoryNav<'w> {
 
 pub(crate) fn victory_modal(
     mut contexts: EguiContexts,
-    game_state: Option<Res<crate::GameStateResource>>,
+    state: Res<crate::GameStateResource>,
     report: Option<Res<crate::newspaper::NewspaperReport>>,
     mut telegrams: Option<ResMut<crate::telegram::TelegramLog>>,
     mut keepsakes: Option<ResMut<crate::keepsakes::Keepsakes>>,
     mut modal: ResMut<VictoryModalState>,
     mut nav: VictoryNav,
 ) {
-    let Some(state) = game_state else { return };
     if !state.0.game_over {
         modal.dismissed = false;
         return;

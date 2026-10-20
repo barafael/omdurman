@@ -5,14 +5,13 @@ use super::*;
 
 pub(crate) fn friendlies_transport_ui(
     mut contexts: EguiContexts,
-    game_state: Option<Res<crate::GameStateResource>>,
+    gs: Res<crate::GameStateResource>,
     state: Res<crate::picker::PickerState>,
     placed_units: Query<(Entity, &crate::picker::PlacedUnit)>,
     mut submit: crate::submit::CheckedSubmit,
     peers: crate::peers::Peers,
     mut layout: ResMut<crate::ScreenLayout>,
 ) {
-    let Some(gs) = game_state else { return };
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
     // Eligibility and effect construction live on the rules engine (§5.21);
@@ -98,7 +97,7 @@ pub(crate) struct OptionalRulePlacement {
 /// gate is the `in_movement_phase` run condition; see `ui_phase_state`).
 pub(crate) fn special_actions_ui(
     mut contexts: EguiContexts,
-    game_state: Option<Res<crate::GameStateResource>>,
+    gs: Res<crate::GameStateResource>,
     state: Res<crate::picker::PickerState>,
     placed_units: Query<(Entity, &crate::picker::PlacedUnit)>,
     mut submit: crate::submit::CheckedSubmit,
@@ -107,7 +106,6 @@ pub(crate) fn special_actions_ui(
     mut demolition_sel: ResMut<DemolitionSelection>,
     mut layout: ResMut<crate::ScreenLayout>,
 ) {
-    let Some(gs) = game_state else { return };
     // Any selection shape: a single counter or a whole stack (a brigade is
     // usually moved, and so selected, as one). The demolition is the Royal
     // Engineers' alone, so they stand for the selection when they are in it.
@@ -470,7 +468,7 @@ pub(crate) struct BreachCardMemo {
 /// shows the engine's odds for the batteries chosen.
 pub(crate) fn artillery_breach_ui(
     mut contexts: EguiContexts,
-    game_state: Option<Res<crate::GameStateResource>>,
+    gs: Res<crate::GameStateResource>,
     state: Res<crate::picker::PickerState>,
     placed_units: Query<(Entity, &crate::picker::PlacedUnit)>,
     mut dispatches: ResMut<crate::dispatch::Dispatches>,
@@ -487,7 +485,6 @@ pub(crate) fn artillery_breach_ui(
     // Cleared every frame; a hovered wall button below sets it again.
     aimed.set_if_neq(crate::hexside_layer::HighlightedHexside(None));
 
-    let Some(gs) = game_state else { return };
     if !matches!(
         gs.0.phase,
         omdurman_rules::Phase::OffensiveFire(_) | omdurman_rules::Phase::DefensiveFire(_)
@@ -594,7 +591,7 @@ pub(crate) fn artillery_breach_ui(
                 ));
                 for &partner in &offer.partners {
                     let mut on = joined.contains(&partner);
-                    let name = crate::combat_ui::unit_name(partner, Some(&gs.0));
+                    let name = crate::combat_ui::unit_name(partner, &gs.0);
                     if ui.checkbox(&mut on, name).changed() {
                         if on {
                             joined.push(partner);
@@ -699,14 +696,13 @@ pub(crate) fn artillery_breach_ui(
 /// states. While spectating a replay, it also hosts the "Back to lobby" exit
 pub(crate) fn optional_rule_setup_ui(
     mut contexts: EguiContexts,
-    game_state: Option<Res<crate::GameStateResource>>,
+    gs: Res<crate::GameStateResource>,
     peers: Peers,
     net: Res<NetState>,
     mut placement: ResMut<OptionalRulePlacement>,
     mut submit: crate::submit::CheckedSubmit,
     layout: Res<crate::ScreenLayout>,
 ) {
-    let Some(gs) = game_state else { return };
     if !matches!(gs.0.phase, omdurman_rules::Phase::Setup) {
         placement.placing_mine = false;
         placement.placing_chain = false;

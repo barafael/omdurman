@@ -305,6 +305,6 @@ pub(crate) struct PickerReadState<'w, 's> {
     pub picker_state: Res<'w, PickerState>,
     pub movement_path: Res<'w, MovementPath>,
     pub hovered: Res<'w, crate::HoveredHex>,
-    pub game_state: Option<Res<'w, crate::GameStateResource>>,
+    pub game_state: Res<'w, crate::GameStateResource>,
     pub placed_units: Query<'w, 's, (Entity, &'static PlacedUnit)>,
 }

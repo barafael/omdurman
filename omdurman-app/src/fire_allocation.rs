@@ -370,7 +370,7 @@ fn draw_special_row(
     let names = crate::combat_ui::tally_names(
         firers
             .iter()
-            .map(|&id| crate::combat_ui::unit_name(id, Some(gs)))
+            .map(|&id| crate::combat_ui::unit_name(id, gs))
             .collect(),
     );
     ui.group(|ui| {
@@ -432,7 +432,7 @@ fn draw_allocation_row(
                 let factor = gs.find_unit(shot.unit)?.fire_factor(shot.mount)?.value();
                 Some(format!(
                     "{} ({factor})",
-                    crate::combat_ui::shot_name(shot, Some(gs))
+                    crate::combat_ui::shot_name(shot, gs)
                 ))
             })
             .collect(),

@@ -59,11 +59,11 @@ fn draw_hover_tooltip(
     let Some(hex) = hovered.0 else {
         return;
     };
-    let Some(terrain) = crate::board_of(game_state.as_deref()).terrain_at(hex) else {
+    let Some(terrain) = game_state.0.board.terrain_at(hex) else {
         return;
     };
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    let gs = game_state.as_deref().map(|r| &r.0);
+    let gs = &game_state.0;
 
     // Anchor the tooltip at the hovered tile's projected screen position so it
     // rides the tile rather than the cursor, and pivot it on its LEFT_CENTER
@@ -135,64 +135,62 @@ fn draw_hover_tooltip(
                         }
 
                         // Occupants: which units are in this hex.
-                        if let Some(gs) = gs {
-                            let occupants: Vec<&omdurman_rules::UnitPlacement> =
-                                gs.units.iter().filter(|u| u.position == hex).collect();
-                            if !occupants.is_empty() {
-                                ui.add_space(2.0);
-                                for u in &occupants {
-                                    let owner_mark = match u.profile.identity.owner() {
-                                        Player::AngloEgyptian => "[AE]",
-                                        Player::Dervish => "[D]",
-                                    };
-                                    let label = format!(
-                                        "{owner_mark} {} ({}/{})",
-                                        u.profile.identity.label_in(gs.scenario),
-                                        u.profile.fire.map(|f| f.value()).unwrap_or(0),
-                                        u.profile.melee.map(|m| m.value()).unwrap_or(0),
-                                    );
-                                    let color = if u.state.disrupted {
-                                        crate::ui::palette::INK_DISRUPTED
-                                    } else {
-                                        crate::ui::palette::INK
-                                    };
-                                    ui.colored_label(color, label);
-                                    // What the counter's status pips say.
-                                    let pips: Vec<&str> = crate::render::pips_of(gs, u.id)
-                                        .into_iter()
-                                        .map(crate::render::Pip::meaning)
-                                        .collect();
-                                    if !pips.is_empty() {
-                                        crate::rulebook::refs_rich(
-                                            ui,
-                                            &format!("    {}", pips.join("; ")),
-                                            11.0,
-                                            |t| t.color(crate::ui::palette::FAINT_INK),
-                                        );
-                                    }
-                                }
-                                // §5.54 brigade integrity: when all four
-                                // battalions of an Anglo-Egyptian brigade are
-                                // stacked together they fire with a +1 die
-                                // modifier.
-                                let identities: Vec<_> =
-                                    occupants.iter().map(|u| u.profile.identity).collect();
-                                if matches!(
-                                    omdurman_rules::brigade_integrity(&identities),
-                                    omdurman_rules::BrigadeIntegrity::Integrated(_)
-                                ) {
-                                    ui.colored_label(
-                                        crate::ui::palette::INK_BONUS,
-                                        "Brigade integrity: +1 fire (§5.54).",
+                        let occupants: Vec<&omdurman_rules::UnitPlacement> =
+                            gs.units.iter().filter(|u| u.position == hex).collect();
+                        if !occupants.is_empty() {
+                            ui.add_space(2.0);
+                            for u in &occupants {
+                                let owner_mark = match u.profile.identity.owner() {
+                                    Player::AngloEgyptian => "[AE]",
+                                    Player::Dervish => "[D]",
+                                };
+                                let label = format!(
+                                    "{owner_mark} {} ({}/{})",
+                                    u.profile.identity.label_in(gs.scenario),
+                                    u.profile.fire.map(|f| f.value()).unwrap_or(0),
+                                    u.profile.melee.map(|m| m.value()).unwrap_or(0),
+                                );
+                                let color = if u.state.disrupted {
+                                    crate::ui::palette::INK_DISRUPTED
+                                } else {
+                                    crate::ui::palette::INK
+                                };
+                                ui.colored_label(color, label);
+                                // What the counter's status pips say.
+                                let pips: Vec<&str> = crate::render::pips_of(gs, u.id)
+                                    .into_iter()
+                                    .map(crate::render::Pip::meaning)
+                                    .collect();
+                                if !pips.is_empty() {
+                                    crate::rulebook::refs_rich(
+                                        ui,
+                                        &format!("    {}", pips.join("; ")),
+                                        11.0,
+                                        |t| t.color(crate::ui::palette::FAINT_INK),
                                     );
                                 }
+                            }
+                            // §5.54 brigade integrity: when all four
+                            // battalions of an Anglo-Egyptian brigade are
+                            // stacked together they fire with a +1 die
+                            // modifier.
+                            let identities: Vec<_> =
+                                occupants.iter().map(|u| u.profile.identity).collect();
+                            if matches!(
+                                omdurman_rules::brigade_integrity(&identities),
+                                omdurman_rules::BrigadeIntegrity::Integrated(_)
+                            ) {
+                                ui.colored_label(
+                                    crate::ui::palette::INK_BONUS,
+                                    "Brigade integrity: +1 fire (§5.54).",
+                                );
                             }
                         }
 
                         // Terrain effects card: always show defence modifier
                         // and movement cost so players can read a hex even
                         // without a unit selected (§6.23, §5.11).
-                        let terrain_line = gs.map(|_| {
+                        let terrain_line = {
                             let def_mod = omdurman_rules::terrain_chart::defense_modifier(terrain);
                             let move_cost = omdurman_rules::terrain_chart::movement_cost(terrain)
                                 .map(|c| c.value())
@@ -207,7 +205,7 @@ fn draw_hover_tooltip(
                                 line.push_str("Gunboats only (§5.22).");
                             }
                             line
-                        });
+                        };
                         // Legibility hint when a unit is selected.
                         // A selected stack is priced like its representative
                         // unit at the stack's budget.
@@ -226,7 +224,7 @@ fn draw_hover_tooltip(
                         };
                         let hint = if let Some((unit_id, left)) = stack_pick {
                             route_hint(
-                                game_state.as_deref(),
+                                &game_state,
                                 &placed_units,
                                 (unit_id, hex, left),
                                 &movement_path,
@@ -234,48 +232,44 @@ fn draw_hover_tooltip(
                             )
                         } else {
                             selected_unit_id(&picker, &placed_units).and_then(|(unit_id, _)| {
-                                gs.and_then(|gs| {
-                                    route_hint(
-                                        game_state.as_deref(),
-                                        &placed_units,
-                                        (unit_id, hex, None),
-                                        &movement_path,
-                                        &mut route_cache,
-                                    )
-                                    .or_else(|| {
-                                        // The step / set-up hint: expensive
-                                        // engine checks (a set-up hint deep-
-                                        // clones the state for the deploy
-                                        // probe; a movement hint runs ZOC,
-                                        // step and cost queries), memoized
-                                        // against the engine state.
-                                        let gs_moved =
-                                            game_state.as_ref().is_some_and(|gs| gs.is_changed());
-                                        let key = (
-                                            unit_id,
-                                            hex,
-                                            movement_path.current_end(),
-                                            movement_path.cost_so_far,
-                                        );
-                                        let cached = !gs_moved
-                                            && hint_cache.as_ref().is_some_and(|c| c.key == key);
-                                        if !cached {
-                                            let hint =
-                                                movement_hint(gs, unit_id, hex, &movement_path);
-                                            *hint_cache = Some(HintCache { key, hint });
-                                        }
-                                        hint_cache.as_ref().and_then(|c| c.hint.clone())
-                                    })
+                                route_hint(
+                                    &game_state,
+                                    &placed_units,
+                                    (unit_id, hex, None),
+                                    &movement_path,
+                                    &mut route_cache,
+                                )
+                                .or_else(|| {
+                                    // The step / set-up hint: expensive
+                                    // engine checks (a set-up hint deep-
+                                    // clones the state for the deploy
+                                    // probe; a movement hint runs ZOC,
+                                    // step and cost queries), memoized
+                                    // against the engine state.
+                                    let gs_moved = game_state.is_changed();
+                                    let key = (
+                                        unit_id,
+                                        hex,
+                                        movement_path.current_end(),
+                                        movement_path.cost_so_far,
+                                    );
+                                    let cached = !gs_moved
+                                        && hint_cache.as_ref().is_some_and(|c| c.key == key);
+                                    if !cached {
+                                        let hint = movement_hint(gs, unit_id, hex, &movement_path);
+                                        *hint_cache = Some(HintCache { key, hint });
+                                    }
+                                    hint_cache.as_ref().and_then(|c| c.hint.clone())
                                 })
                             })
                         };
                         main_ref = hint
                             .as_deref()
                             .and_then(first_ref)
-                            .or_else(|| terrain_line.as_deref().and_then(first_ref));
-                        if let Some(line) = terrain_line.filter(|l| !l.is_empty()) {
+                            .or_else(|| first_ref(&terrain_line));
+                        if !terrain_line.is_empty() {
                             ui.add_space(2.0);
-                            crate::rulebook::render_refs_plain(ui, &line, Some(&rulebook));
+                            crate::rulebook::render_refs_plain(ui, &terrain_line, Some(&rulebook));
                         }
                         if let Some(hint) = hint {
                             ui.add_space(2.0);
@@ -340,13 +334,13 @@ fn route_stamp(gs: &omdurman_rules::effects::GameState, mover: omdurman_rules::U
 /// why it is out of reach. Cached per hovered hex: an out-of-reach search
 /// runs over the whole board.
 fn route_hint(
-    game_state: Option<&crate::GameStateResource>,
+    game_state: &crate::GameStateResource,
     placed_units: &Query<(Entity, &crate::picker::PlacedUnit)>,
     (unit_id, hex, stack_left): (omdurman_rules::UnitId, HexCoord, Option<(i16, i16)>),
     movement_path: &crate::picker::MovementPath,
     cache: &mut Option<(RouteKey, Option<String>)>,
 ) -> Option<String> {
-    let gs = &game_state?.0;
+    let gs = &game_state.0;
     if gs.phase != Phase::Movement {
         return None;
     }
@@ -572,11 +566,10 @@ fn movement_hint(
             // Effects Chart: terrain, road link, crossed hexside).
             let along_road = !is_boat && gs.board.road_links(effective_from, hex);
             let cost = i32::from(crate::picker::floor_movement_cost(
-                gs.board,
+                gs,
                 effective_from,
                 hex,
                 is_boat,
-                Some(gs),
             ));
             // Accumulated cost = path cost so far + this step's cost; what is
             // left is the engine's remaining allowance (night halving §8.1,

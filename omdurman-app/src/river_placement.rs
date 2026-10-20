@@ -20,14 +20,13 @@ use omdurman_net::GameEvent;
 /// adjacent hexes); a refused mine or chain hex posts its slip.
 pub(crate) fn handle_optional_rule_click(
     mut clicks: bevy::ecs::message::MessageReader<RiverPlacementClick>,
-    game_state: Option<Res<GameStateResource>>,
+    gs: Res<GameStateResource>,
     mut placement: ResMut<OptionalRulePlacement>,
     mut submit: crate::submit::CheckedSubmit,
 ) {
     let Some(&RiverPlacementClick(hex)) = clicks.read().last() else {
         return;
     };
-    let Some(gs) = game_state else { return };
 
     if placement.placing_mine {
         if submit.submit(

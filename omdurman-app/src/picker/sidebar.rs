@@ -610,7 +610,7 @@ fn picker_cell_is_unit(unit: &PickerUnit) -> bool {
 /// Campaign could never reach its set-up target).
 fn refresh_visibility(
     available: &mut [PickerUnit],
-    state: Option<&omdurman_rules::effects::GameState>,
+    state: &omdurman_rules::effects::GameState,
     local: Option<omdurman_types::Player>,
 ) {
     for unit in available.iter_mut() {
@@ -619,122 +619,114 @@ fn refresh_visibility(
     // -- scenario-based visibility filter --
     // Hide units whose section is not part of the active scenario's order of
     // battle, and hide named gunboats in FoK (§9.321 — only old gunboats).
-    if let Some(state) = state {
-        if let Some(allowed) = state.scenario.sections_for_picker() {
-            for unit in available.iter_mut() {
-                if !allowed.contains(&unit.section_name) {
-                    unit.visible = false;
-                }
-            }
-        }
-        if matches!(state.scenario, Scenario::Historical) {
-            // §9.211/§9.212: GORDON, the Friendlies, Isa Zachneih, the
-            // gunboats and the forts sit this battle out.
-            for unit in available.iter_mut().filter(|u| u.visible) {
-                unit.visible =
-                    unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
-                        .is_some_and(omdurman_rules::effects::historical_counter_in_play);
-            }
-        }
-        if matches!(state.scenario, Scenario::Campaign) {
-            // §9.113: "The GORDON unit is not used in this scenario."
-            for unit in available.iter_mut().filter(|u| u.visible) {
-                unit.visible =
-                    unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
-                        .is_some_and(omdurman_rules::effects::campaign_counter_in_play);
-            }
-        }
-        if matches!(state.scenario, Scenario::FallOfKhartoum) {
-            use omdurman_rules::effects::fok_cap_group;
-            // §9.321/§9.322: the FoK order of battle is exactly the set of
-            // identities covered by `fok_cap_group`. Hide every picker counter
-            // whose identity is *not* in that table -- cavalry, engineers,
-            // Maxims, Dervish leaders, Dervish gunboats, named gunboats, Isa
-            // Zachneih, etc. This subsumes the old named-gunboat filter. The
-            // Ali_Wad_Helu block's Kehena/Degheim "Deghelim" counters resolve
-            // to those tribes (see `unit_profiles::ali_wad_helu`), so they
-            // stay in the order of battle while the block's leader is hidden.
-            for unit in available.iter_mut() {
-                if !unit.visible {
-                    continue;
-                }
-                let in_oob =
-                    unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
-                        .and_then(omdurman_rules::unit_profiles::profile_for_unit)
-                        .is_some_and(|p| fok_cap_group(&p.identity).is_some());
-                if !in_oob {
-                    unit.visible = false;
-                }
-            }
-            // Hide excess counters once the OOB per-group cap is reached
-            // (§9.321/§9.322). E.g. only 2 Hadendowa and 2 old gunboats
-            // exist in FoK even though the sheets carry more counters.
-            // (group, cap, placed_count, kept_count)
-            let mut groups: Vec<(FokCapGroup, usize, usize, usize)> = Vec::new();
-            // Seed every visible counter's group at placed = 0 so caps apply
-            // even before anything is deployed.
-            for unit in available.iter().filter(|u| u.visible) {
-                let Some((g, c)) =
-                    unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
-                        .and_then(omdurman_rules::unit_profiles::profile_for_unit)
-                        .and_then(|p| fok_cap_group(&p.identity))
-                else {
-                    continue;
-                };
-                if !groups.iter().any(|(eg, _, _, _)| *eg == g) {
-                    groups.push((g, c, 0, 0));
-                }
-            }
-            // Eliminated counters used their slot too: a kill must not
-            // reopen the group for a fresh counter.
-            let identities = state.units.iter().map(|u| u.profile.identity).chain(
-                state.eliminated.iter().filter_map(|&id| {
-                    omdurman_rules::unit_profiles::profile_for_unit(id).map(|p| p.identity)
-                }),
-            );
-            for identity in identities {
-                if let Some((g, _)) = fok_cap_group(&identity)
-                    && let Some(entry) = groups.iter_mut().find(|(eg, _, _, _)| *eg == g)
-                {
-                    entry.2 += 1;
-                }
-            }
-            // Iterate once more to hide counters once (placed + kept >= cap).
-            for unit in available.iter_mut() {
-                if !unit.visible {
-                    continue;
-                }
-                let group =
-                    unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
-                        .and_then(omdurman_rules::unit_profiles::profile_for_unit)
-                        .and_then(|p| fok_cap_group(&p.identity).map(|(g, _)| g));
-                let Some(group) = group else { continue };
-                let entry = groups.iter_mut().find(|(eg, _, _, _)| *eg == group);
-                let Some(entry) = entry else { continue };
-                let (_g, cap, placed, kept) = *entry;
-                if placed + kept >= cap {
-                    unit.visible = false;
-                } else {
-                    entry.3 += 1;
-                }
-            }
-        }
-    }
-
-    // -- eliminated and deserted counters --
-    // A destroyed unit never returns to play, nor does a deserter (§8.2);
-    // the engine refuses both (`RuleError::UnitEliminated`,
-    // `RuleError::UnitDeserted`), so keep them out of the tray.
-    if let Some(state) = state {
+    if let Some(allowed) = state.scenario.sections_for_picker() {
         for unit in available.iter_mut() {
-            if unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
-                .is_some_and(|id| state.eliminated.contains(&id) || state.deserted.contains(&id))
-            {
+            if !allowed.contains(&unit.section_name) {
                 unit.visible = false;
             }
         }
     }
-
+    if matches!(state.scenario, Scenario::Historical) {
+        // §9.211/§9.212: GORDON, the Friendlies, Isa Zachneih, the
+        // gunboats and the forts sit this battle out.
+        for unit in available.iter_mut().filter(|u| u.visible) {
+            unit.visible =
+                unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
+                    .is_some_and(omdurman_rules::effects::historical_counter_in_play);
+        }
+    }
+    if matches!(state.scenario, Scenario::Campaign) {
+        // §9.113: "The GORDON unit is not used in this scenario."
+        for unit in available.iter_mut().filter(|u| u.visible) {
+            unit.visible =
+                unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
+                    .is_some_and(omdurman_rules::effects::campaign_counter_in_play);
+        }
+    }
+    if matches!(state.scenario, Scenario::FallOfKhartoum) {
+        use omdurman_rules::effects::fok_cap_group;
+        // §9.321/§9.322: the FoK order of battle is exactly the set of
+        // identities covered by `fok_cap_group`. Hide every picker counter
+        // whose identity is *not* in that table -- cavalry, engineers,
+        // Maxims, Dervish leaders, Dervish gunboats, named gunboats, Isa
+        // Zachneih, etc. This subsumes the old named-gunboat filter. The
+        // Ali_Wad_Helu block's Kehena/Degheim "Deghelim" counters resolve
+        // to those tribes (see `unit_profiles::ali_wad_helu`), so they
+        // stay in the order of battle while the block's leader is hidden.
+        for unit in available.iter_mut() {
+            if !unit.visible {
+                continue;
+            }
+            let in_oob = unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
+                .and_then(omdurman_rules::unit_profiles::profile_for_unit)
+                .is_some_and(|p| fok_cap_group(&p.identity).is_some());
+            if !in_oob {
+                unit.visible = false;
+            }
+        }
+        // Hide excess counters once the OOB per-group cap is reached
+        // (§9.321/§9.322). E.g. only 2 Hadendowa and 2 old gunboats
+        // exist in FoK even though the sheets carry more counters.
+        // (group, cap, placed_count, kept_count)
+        let mut groups: Vec<(FokCapGroup, usize, usize, usize)> = Vec::new();
+        // Seed every visible counter's group at placed = 0 so caps apply
+        // even before anything is deployed.
+        for unit in available.iter().filter(|u| u.visible) {
+            let Some((g, c)) =
+                unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
+                    .and_then(omdurman_rules::unit_profiles::profile_for_unit)
+                    .and_then(|p| fok_cap_group(&p.identity))
+            else {
+                continue;
+            };
+            if !groups.iter().any(|(eg, _, _, _)| *eg == g) {
+                groups.push((g, c, 0, 0));
+            }
+        }
+        // Eliminated counters used their slot too: a kill must not
+        // reopen the group for a fresh counter.
+        let identities = state.units.iter().map(|u| u.profile.identity).chain(
+            state.eliminated.iter().filter_map(|&id| {
+                omdurman_rules::unit_profiles::profile_for_unit(id).map(|p| p.identity)
+            }),
+        );
+        for identity in identities {
+            if let Some((g, _)) = fok_cap_group(&identity)
+                && let Some(entry) = groups.iter_mut().find(|(eg, _, _, _)| *eg == g)
+            {
+                entry.2 += 1;
+            }
+        }
+        // Iterate once more to hide counters once (placed + kept >= cap).
+        for unit in available.iter_mut() {
+            if !unit.visible {
+                continue;
+            }
+            let group = unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
+                .and_then(omdurman_rules::unit_profiles::profile_for_unit)
+                .and_then(|p| fok_cap_group(&p.identity).map(|(g, _)| g));
+            let Some(group) = group else { continue };
+            let entry = groups.iter_mut().find(|(eg, _, _, _)| *eg == group);
+            let Some(entry) = entry else { continue };
+            let (_g, cap, placed, kept) = *entry;
+            if placed + kept >= cap {
+                unit.visible = false;
+            } else {
+                entry.3 += 1;
+            }
+        }
+    }
+    // -- eliminated and deserted counters --
+    // A destroyed unit never returns to play, nor does a deserter (§8.2);
+    // the engine refuses both (`RuleError::UnitEliminated`,
+    // `RuleError::UnitDeserted`), so keep them out of the tray.
+    for unit in available.iter_mut() {
+        if unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
+            .is_some_and(|id| state.eliminated.contains(&id) || state.deserted.contains(&id))
+        {
+            unit.visible = false;
+        }
+    }
     // -- faction filter (bound multiplayer) --
     // In a bound game each side deploys (and brings on reinforcements) only
     // its own counters: hide units whose owner isn't the local player
@@ -742,7 +734,7 @@ fn refresh_visibility(
     // engine's placement checks backstop it. Unbound sessions (no faction
     // binding, `local` is `None`) stay permissive so solo testing can drive
     // both sides.
-    if let (Some(local), Some(_)) = (local, state) {
+    if let Some(local) = local {
         for unit in available.iter_mut() {
             let owner_is_local = omdurman_rules::unit_profiles::section_owner(unit.section_name)
                 .is_some_and(|owner| owner == local);
@@ -759,7 +751,7 @@ pub fn unit_picker_ui(
     mut picker_ctx: PickerContext,
     peers: crate::peers::Peers,
     assets: PickerAssetCtx,
-    game_state: Option<Res<crate::GameStateResource>>,
+    game_state: Res<crate::GameStateResource>,
     mut offer_cache: Local<Option<(usize, Vec<bool>)>>,
 ) {
     let PickerAssetCtx { images } = assets;
@@ -776,13 +768,12 @@ pub fn unit_picker_ui(
     // Nothing to place outside Setup / Movement (or after the battle): skip
     // the per-counter filter passes below, which would otherwise run every
     // frame for a panel that is not shown.
-    if game_state.as_deref().is_some_and(|gs| {
-        gs.0.game_over
-            || !matches!(
-                gs.0.phase,
-                omdurman_rules::Phase::Setup | omdurman_rules::Phase::Movement
-            )
-    }) {
+    if game_state.0.game_over
+        || !matches!(
+            game_state.0.phase,
+            omdurman_rules::Phase::Setup | omdurman_rules::Phase::Movement
+        )
+    {
         // Nothing is placeable: empty the tray's "now" flags (cheaply, once).
         if picker_ctx.picker.available.iter().any(|u| u.offered) {
             for unit in &mut picker_ctx.picker.bypass_change_detection().available {
@@ -803,7 +794,7 @@ pub fn unit_picker_ui(
     // texture loaded), the engine state (scenario OOB, FoK caps,
     // eliminations), or the seat bindings (faction / command scope). An idle
     // setup frame re-derives none of the per-counter profiles.
-    let filter_inputs_moved = game_state.as_ref().is_some_and(|gs| gs.is_changed())
+    let filter_inputs_moved = game_state.is_changed()
         || picker_ctx.picker.is_changed()
         || peers.changed()
         || images.is_changed();
@@ -835,11 +826,7 @@ pub fn unit_picker_ui(
             unit.annotations_loaded = true;
         }
 
-        refresh_visibility(
-            &mut picker.available,
-            game_state.as_deref().map(|gs| &gs.0),
-            peers.local(),
-        );
+        refresh_visibility(&mut picker.available, &game_state.0, peers.local());
 
         // -- placeable now (recomputed, never sticky) --
         // Set-up offers the scenario's set-up force (§9.111/§9.211/§9.321;
@@ -848,45 +835,41 @@ pub fn unit_picker_ui(
         // (§1.1); a Movement phase offers what may enter this turn
         // (§9.112/§9.113). Recomputed when the engine state, the tray or the
         // seats (a command scope, a seat claimed) moved.
-        if let Some(state) = game_state.as_deref() {
-            let key = picker.available.len();
-            if game_state.as_ref().is_some_and(|gs| gs.is_changed())
-                || peers.changed()
-                || offer_cache.as_ref().is_none_or(|(len, _)| *len != key)
-            {
-                let gs = &state.0;
-                let offered: Vec<bool> = picker
-                    .available
-                    .iter()
-                    .map(|unit| {
-                        if !unit.visible {
-                            return false;
+        let key = picker.available.len();
+        if game_state.is_changed()
+            || peers.changed()
+            || offer_cache.as_ref().is_none_or(|(len, _)| *len != key)
+        {
+            let gs = &game_state.0;
+            let offered: Vec<bool> = picker
+                .available
+                .iter()
+                .map(|unit| {
+                    if !unit.visible {
+                        return false;
+                    }
+                    let Some(id) =
+                        unit_id_for_section_pos(unit.section_name, unit.col as u8, unit.row as u8)
+                    else {
+                        return false;
+                    };
+                    match gs.phase {
+                        omdurman_rules::Phase::Setup => {
+                            gs.counter_in_play_at_setup(id)
+                                && (!peers.any_commands()
+                                    || omdurman_rules::unit_profiles::profile_for_unit(id)
+                                        .is_some_and(|p| peers.scope_allows(&p.identity)))
                         }
-                        let Some(id) = unit_id_for_section_pos(
-                            unit.section_name,
-                            unit.col as u8,
-                            unit.row as u8,
-                        ) else {
-                            return false;
-                        };
-                        match gs.phase {
-                            omdurman_rules::Phase::Setup => {
-                                gs.counter_in_play_at_setup(id)
-                                    && (!peers.any_commands()
-                                        || omdurman_rules::unit_profiles::profile_for_unit(id)
-                                            .is_some_and(|p| peers.scope_allows(&p.identity)))
-                            }
-                            omdurman_rules::Phase::Movement => crate::reinforce::enterable(gs, id),
-                            _ => false,
-                        }
-                    })
-                    .collect();
-                *offer_cache = Some((key, offered));
-            }
-            if let Some((_, offered)) = offer_cache.as_ref() {
-                for (unit, &offered) in picker.available.iter_mut().zip(offered) {
-                    unit.offered = offered;
-                }
+                        omdurman_rules::Phase::Movement => crate::reinforce::enterable(gs, id),
+                        _ => false,
+                    }
+                })
+                .collect();
+            *offer_cache = Some((key, offered));
+        }
+        if let Some((_, offered)) = offer_cache.as_ref() {
+            for (unit, &offered) in picker.available.iter_mut().zip(offered) {
+                unit.offered = offered;
             }
         }
     }
@@ -970,20 +953,20 @@ mod tests {
         use omdurman_types::Player;
         let mut tray = full_tray();
         let fok = GameState::new(Scenario::FallOfKhartoum);
-        refresh_visibility(&mut tray, Some(&fok), Some(Player::Dervish));
+        refresh_visibility(&mut tray, &fok, Some(Player::Dervish));
         assert!(
             !is_visible(&tray, UnitId::Taiasha_0_0),
             "not in the FoK OOB"
         );
 
         let campaign = GameState::new(Scenario::Campaign);
-        refresh_visibility(&mut tray, Some(&campaign), Some(Player::Dervish));
+        refresh_visibility(&mut tray, &campaign, Some(Player::Dervish));
         assert!(
             is_visible(&tray, UnitId::Taiasha_0_0),
             "back for the Campaign"
         );
         let mut fresh = full_tray();
-        refresh_visibility(&mut fresh, Some(&campaign), Some(Player::Dervish));
+        refresh_visibility(&mut fresh, &campaign, Some(Player::Dervish));
         let flags = |t: &[PickerUnit]| t.iter().map(|u| u.visible).collect::<Vec<_>>();
         assert_eq!(flags(&tray), flags(&fresh));
     }

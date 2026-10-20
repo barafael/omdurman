@@ -169,9 +169,9 @@ impl Plugin for DispatchPlugin {
 fn queue_observation_dispatches(
     mut reader: MessageReader<events::ObservationEvent>,
     mut dispatches: ResMut<Dispatches>,
-    game_state: Option<Res<crate::GameStateResource>>,
+    game_state: Res<crate::GameStateResource>,
 ) {
-    let gs = game_state.as_deref().map(|r| &r.0);
+    let gs = &game_state.0;
     for ev in reader.read() {
         // Combat results live on the Combat Resolution Card alone: the
         // resolution itself, its casualties ("lost: ..."), and the advance it
@@ -295,7 +295,7 @@ pub(crate) fn draw_slip(
 /// and never reach here).
 fn format_observation(
     obs: &omdurman_rules::effects::Observation,
-    gs: Option<&omdurman_rules::effects::GameState>,
+    gs: &omdurman_rules::effects::GameState,
 ) -> Option<(String, String)> {
     use omdurman_rules::effects::Observation;
 
@@ -313,7 +313,7 @@ fn format_observation(
             // Only the Campaign scores victory points (§9.14): Fall of
             // Khartoum counts Dervish losses (§9.35), the Historical
             // scenario units eliminated per side (§9.24).
-            let no_vp = gs.is_some_and(|g| !g.scenario.keeps_victory_points());
+            let no_vp = !gs.scenario.keeps_victory_points();
             let vp_clause = match vp_source {
                 _ if no_vp => String::new(),
                 Some(src) => {
@@ -450,7 +450,7 @@ fn format_observation(
         } => {
             let target_str = match target {
                 omdurman_rules::DemolitionTarget::Fort(fid) => {
-                    let pos = gs.and_then(|s| s.find_unit(*fid)).map(|u| u.position);
+                    let pos = gs.find_unit(*fid).map(|u| u.position);
                     match pos {
                         Some(p) => format!("fort at ({},{})", p.q, p.r),
                         None => "fort".to_string(),
@@ -552,7 +552,7 @@ mod tests {
                 id: omdurman_rules::UnitId::JaalinI_0_0,
                 by: omdurman_types::Player::Dervish,
             },
-            None,
+            &omdurman_rules::effects::GameState::new(omdurman_types::Scenario::Campaign),
         )
         .expect("a slip");
         assert!(

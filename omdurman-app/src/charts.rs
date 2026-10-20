@@ -61,19 +61,18 @@ impl ChartTab {
         }
     }
 
-    /// Whether this sheet belongs to `scenario` (`None`: no game running --
-    /// every sheet is offered). The campaign turn record (Timing) covers the
+    /// Whether this sheet belongs to `scenario` (before a game starts the
+    /// engine holds a Campaign set-up: every sheet is offered). The campaign turn record (Timing) covers the
     /// Omdurman scenarios, not FALL OF KHARTOUM (its turn track is the §9.33
     /// strip in Game control); the order of appearance (Arrivals) is the
     /// Campaign game's alone (§9.112/§9.113).
-    fn applies_to(self, scenario: Option<omdurman_types::Scenario>) -> bool {
+    fn applies_to(self, scenario: omdurman_types::Scenario) -> bool {
         use omdurman_types::Scenario;
-        match (self, scenario) {
-            (_, None) => true,
-            (ChartTab::Timing, Some(s)) => s != Scenario::FallOfKhartoum,
-            (ChartTab::Arrivals, Some(s)) => s == Scenario::Campaign,
+        match self {
+            ChartTab::Timing => scenario != Scenario::FallOfKhartoum,
+            ChartTab::Arrivals => scenario == Scenario::Campaign,
             // FALL OF KHARTOUM has no howitzers (§9.321: no named gunboats).
-            (ChartTab::Scatter, Some(s)) => s != Scenario::FallOfKhartoum,
+            ChartTab::Scatter => scenario != Scenario::FallOfKhartoum,
             _ => true,
         }
     }
@@ -283,7 +282,7 @@ pub(crate) struct ChartView<'w> {
     /// the sheet — see [`crate::hotkeys::keyboard_free`].
     focus: Res<'w, crate::hotkeys::EguiKeyboardFocus>,
     /// The running game, whose scenario decides which sheets are offered.
-    game_state: Option<Res<'w, crate::GameStateResource>>,
+    game_state: Res<'w, crate::GameStateResource>,
 }
 
 pub(crate) fn chart_sheet_ui(
@@ -299,7 +298,7 @@ pub(crate) fn chart_sheet_ui(
         focus,
         game_state,
     } = view;
-    let scenario = game_state.as_deref().map(|gs| gs.0.scenario);
+    let scenario = game_state.0.scenario;
     let Some(sheet) = sheet.as_mut() else { return };
     // A sheet this scenario doesn't use (the tab left open from another
     // game) falls back to the CRT.
@@ -524,7 +523,7 @@ fn draw_open_sheet(
     sheet: &mut ChartSheet,
     rulebook: &mut crate::rulebook::Rulebook,
     dt: f32,
-    scenario: Option<omdurman_types::Scenario>,
+    scenario: omdurman_types::Scenario,
 ) {
     ui.horizontal(|ui| {
         for tab in ChartTab::ALL.into_iter().filter(|t| t.applies_to(scenario)) {
@@ -618,14 +617,14 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(
-            tabs(Some(Scenario::FallOfKhartoum)),
+            tabs(Scenario::FallOfKhartoum),
             ["CRT", "Terrain", "LOS", "Rulebook"]
         );
         assert_eq!(
-            tabs(Some(Scenario::Historical)),
+            tabs(Scenario::Historical),
             ["CRT", "Terrain", "LOS", "Scattergram", "Timing", "Rulebook"]
         );
-        assert_eq!(tabs(Some(Scenario::Campaign)).len(), 7);
-        assert_eq!(tabs(None).len(), 7);
+        assert_eq!(tabs(Scenario::Campaign).len(), 7);
+        assert_eq!(tabs(Scenario::Campaign).len(), 7);
     }
 }

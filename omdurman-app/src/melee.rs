@@ -146,7 +146,7 @@ pub(crate) fn melee_group_card(
             ));
             for &id in &fighters {
                 let mut on = !choice.held.contains(&id);
-                let name = crate::combat_ui::unit_name(id, Some(&gs.0));
+                let name = crate::combat_ui::unit_name(id, &gs.0);
                 if ui.checkbox(&mut on, name).changed() {
                     toggle_held = Some(id);
                 }
@@ -157,7 +157,7 @@ pub(crate) fn melee_group_card(
                 for &id in &joinable {
                     let mut on = choice.joined.contains(&id);
                     let at = gs.0.find_unit(id).map(|u| u.position);
-                    let name = crate::combat_ui::unit_name(id, Some(&gs.0));
+                    let name = crate::combat_ui::unit_name(id, &gs.0);
                     let label = match at {
                         Some(at) => format!("{name}  {at}"),
                         None => name,

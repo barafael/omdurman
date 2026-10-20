@@ -35,7 +35,7 @@ pub(crate) struct HexMapView<'w, 's> {
 /// system-parameter limit.
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct MovementOverlayCtx<'w> {
-    pub game_state: Option<Res<'w, crate::GameStateResource>>,
+    pub game_state: Res<'w, crate::GameStateResource>,
     pub movement_path: Res<'w, MovementPath>,
 }
 
@@ -72,7 +72,7 @@ pub fn placement_preview_mesh(
     ground: Res<crate::picking::PointerGroundHit>,
     placed_units: Query<&PlacedUnit>,
     existing: Query<Entity, With<PreviewHexRing>>,
-    game_state: Option<Res<crate::GameStateResource>>,
+    game_state: Res<crate::GameStateResource>,
     mut last: Local<Option<PreviewCache>>,
     placed_changed: Query<(), Changed<PlacedUnit>>,
     mut placed_removed: RemovedComponents<PlacedUnit>,
@@ -87,7 +87,7 @@ pub fn placement_preview_mesh(
         overlay,
     } = &draw.hex;
     let PickerPlacementState { picker, mut state } = picker_state;
-    let board = crate::board_of(game_state.as_deref());
+    let board = game_state.0.board;
 
     // Look before borrowing mutably: a `&mut *state` on every frame would
     // mark `PickerState` changed even while nothing is being placed.
@@ -130,22 +130,19 @@ pub fn placement_preview_mesh(
         // Re-evaluated only when the hovered hex, the engine state, or the
         // board's counters moved; a settled cursor does not re-run the
         // deployment check every frame.
-        let verdict_moved = game_state.as_ref().is_some_and(|gs| gs.is_changed())
+        let verdict_moved = game_state.is_changed()
             || !placed_changed.is_empty()
             || placed_removed.read().count() > 0;
         let valid = if last.as_ref().is_some_and(|(hex, _)| *hex == Some(coord)) && !verdict_moved {
             // Unchanged hex, unchanged inputs: keep the last verdict.
             last.map(|(_, valid)| valid).unwrap_or_default()
         } else {
-            match game_state.as_deref() {
-                Some(gs) if matches!(gs.0.phase, omdurman_rules::Phase::Setup) => {
-                    deploy_candidate(&picker, *unit_idx, coord)
-                        .is_some_and(|candidate| gs.0.can_deploy_unit(&candidate).is_ok())
-                }
-                _ => {
-                    let occupied = placed_units.iter().any(|u| u.coord == coord);
-                    !occupied && coord_passable(board, coord, unit.is_boat)
-                }
+            if matches!(game_state.0.phase, omdurman_rules::Phase::Setup) {
+                deploy_candidate(&picker, *unit_idx, coord)
+                    .is_some_and(|candidate| game_state.0.can_deploy_unit(&candidate).is_ok())
+            } else {
+                let occupied = placed_units.iter().any(|u| u.coord == coord);
+                !occupied && coord_passable(board, coord, unit.is_boat)
             }
         };
         target = Some((coord, valid));
@@ -239,7 +236,7 @@ pub(crate) fn movement_path_labels(
     mut contexts: EguiContexts,
     movement_path: Res<MovementPath>,
     view: HexMapView,
-    game_state: Option<Res<crate::GameStateResource>>,
+    game_state: Res<crate::GameStateResource>,
     state: Res<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     mut last: Local<Option<(Vec<(HexCoord, HexCoord)>, bool, Vec<String>)>>,
@@ -267,15 +264,12 @@ pub(crate) fn movement_path_labels(
                 return;
             };
             placed.unit_id.is_some_and(|uid| {
-                game_state
-                    .as_deref()
-                    .and_then(|gs| gs.0.find_unit(uid))
-                    .is_some_and(|unit| {
-                        matches!(
-                            unit.profile.movement,
-                            omdurman_rules::UnitMovement::Gunboat(_)
-                        )
-                    })
+                game_state.0.find_unit(uid).is_some_and(|unit| {
+                    matches!(
+                        unit.profile.movement,
+                        omdurman_rules::UnitMovement::Gunboat(_)
+                    )
+                })
             })
         }
         PickerState::SelectedStack(sel) => {
@@ -286,26 +280,23 @@ pub(crate) fn movement_path_labels(
                 return;
             };
             placed.unit_id.is_some_and(|uid| {
-                game_state
-                    .as_deref()
-                    .and_then(|gs| gs.0.find_unit(uid))
-                    .is_some_and(|unit| {
-                        matches!(
-                            unit.profile.movement,
-                            omdurman_rules::UnitMovement::Gunboat(_)
-                        )
-                    })
+                game_state.0.find_unit(uid).is_some_and(|unit| {
+                    matches!(
+                        unit.profile.movement,
+                        omdurman_rules::UnitMovement::Gunboat(_)
+                    )
+                })
             })
         }
         _ => return,
     };
-    let board = crate::board_of(game_state.as_deref());
+    let board = game_state.0.board;
 
     // Per-leg cost labels are path-static: recomputed only when the plotted
     // legs, the mover kind, or the engine state changed. Each frame then only
     // re-projects the existing texts to screen space (the camera may have
     // moved), instead of re-deriving every leg's terrain cost.
-    let gs_moved = game_state.as_ref().is_some_and(|gs| gs.is_changed());
+    let gs_moved = game_state.is_changed();
     let labels_stale = gs_moved
         || last.as_ref().is_none_or(|(legs, gunboat, _)| {
             *gunboat != is_gunboat || legs.as_slice() != movement_path.legs.as_slice()
@@ -324,13 +315,7 @@ pub(crate) fn movement_path_labels(
                     .terrain_at(to)
                     .map(|_| {
                         // The same step price the plot and the engine use (§5.11).
-                        let cost = floor_movement_cost(
-                            board,
-                            from,
-                            to,
-                            is_gunboat,
-                            game_state.as_deref().map(|gs| &gs.0),
-                        );
+                        let cost = floor_movement_cost(&game_state.0, from, to, is_gunboat);
                         // For gunboats, annotate upstream (↑) / downstream (↓)
                         // direction (§5.24).
                         let dir = if is_gunboat && let Some(dir) = board.step_direction(from, to) {
@@ -427,10 +412,7 @@ pub fn movement_overlay_mesh(
     // allocation (§6.41), and a movement budget over the map would fight the
     // fire target rings; a stale stack selection from a phase change is
     // likewise not an active mover.
-    if game_state
-        .as_ref()
-        .is_some_and(|gs| !matches!(gs.0.phase, omdurman_rules::Phase::Movement))
-    {
+    if !matches!(game_state.0.phase, omdurman_rules::Phase::Movement) {
         let gray: Vec<Entity> = existing_gray.iter().collect();
         let zoc: Vec<Entity> = existing_zoc.iter().collect();
         draw.clear(gray.iter().copied());
@@ -525,8 +507,8 @@ pub fn movement_overlay_mesh(
     // the rings and click-routing agree.
     // A gunboat's search also carries "went upstream yet" (§5.24), priced by
     // the same `GunboatBudget` click-routing uses.
-    let gs_ref = game_state.as_deref();
-    let board = crate::board_of(gs_ref);
+    let gs_ref = &game_state;
+    let board = gs_ref.0.board;
     let gunboat = super::movement::GunboatBudget::of(gs_ref, placed, &movement_path);
     let limit = |up: bool| gunboat.map_or(budget, |g| budget.min(g.left(up)));
     let mut best: HashMap<(HexCoord, bool), i16> = HashMap::from([((start_coord, false), 0)]);
@@ -554,8 +536,7 @@ pub fn movement_overlay_mesh(
             }
             let next_up = up
                 || (gunboat.is_some()
-                    && gs_ref
-                        .is_some_and(|gs| super::movement::step_is_upstream(&gs.0, cur, neighbor)));
+                    && super::movement::step_is_upstream(&gs_ref.0, cur, neighbor));
             let new_cost = cost_so_far + leg.cost;
             let node = (neighbor, next_up);
             if new_cost > limit(next_up) || best.get(&node).is_some_and(|&b| b <= new_cost) {
@@ -631,7 +612,7 @@ type ZoneKey = (
 /// changes, to avoid per-frame entity churn (cf. `movement_overlay_mesh`).
 pub fn deployment_zone_overlay_mesh(
     mut draw: crate::overlay::Overlay,
-    game_state: Option<Res<crate::GameStateResource>>,
+    game_state: Res<crate::GameStateResource>,
     peers: crate::peers::Peers,
     existing: Query<Entity, With<DeploymentZoneRing>>,
     mut last_key: Local<Option<ZoneKey>>,
@@ -649,14 +630,10 @@ pub fn deployment_zone_overlay_mesh(
         layout,
         overlay,
     } = &draw.hex;
-    let in_setup = game_state
-        .as_deref()
-        .is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup));
+    let in_setup = matches!(game_state.0.phase, omdurman_rules::Phase::Setup);
+    let gs = &game_state;
     // A spectator deploys nothing: no zone to outline.
-    let Some(gs) = game_state
-        .as_deref()
-        .filter(|_| in_setup && !peers.is_spectator())
-    else {
+    if !in_setup || peers.is_spectator() {
         // Not in setup: clear any leftover rings and reset the cache.
         if last_key.is_some() {
             let existing: Vec<Entity> = existing.iter().collect();

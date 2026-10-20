@@ -101,11 +101,7 @@ pub(crate) fn loss_choice_ui(
                     continue;
                 };
                 let picked = panel.selected.contains(&id);
-                let label = format!(
-                    "{}  {}",
-                    crate::combat_ui::unit_name(id, Some(gs)),
-                    unit.position
-                );
+                let label = format!("{}  {}", crate::combat_ui::unit_name(id, gs), unit.position);
                 if ui.selectable_label(picked, label).clicked() && panel.submitted.is_none() {
                     if picked {
                         panel.selected.retain(|u| *u != id);

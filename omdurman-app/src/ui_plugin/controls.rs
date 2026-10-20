@@ -696,14 +696,14 @@ fn setup_control_section(
 /// and at game over the newspaper takes its place.
 pub(crate) fn telegram_overlay(
     mut contexts: EguiContexts,
-    game_state: Option<Res<crate::GameStateResource>>,
+    state: Res<crate::GameStateResource>,
     telegram_log: Option<ResMut<crate::telegram::TelegramLog>>,
     keepsakes: Option<(
         ResMut<crate::keepsakes::Keepsakes>,
         Res<crate::game_record::GameRecorder>,
     )>,
 ) {
-    let (Some(state), Some(mut log)) = (game_state, telegram_log) else {
+    let Some(mut log) = telegram_log else {
         return;
     };
     let latest = state.0.turn_summaries.last().map(|s| s.turn.value());

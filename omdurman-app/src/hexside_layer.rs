@@ -131,7 +131,7 @@ fn update_dynamic_hexside_bars(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    game_state: Option<Res<GameStateResource>>,
+    gs: Res<GameStateResource>,
     layout: Res<HexLayout>,
     overlay: Res<HexOverlay>,
     zariba: Res<crate::fx::zariba::ZaribaGrowth>,
@@ -146,7 +146,6 @@ fn update_dynamic_hexside_bars(
         With<HexsideBar>,
     >,
 ) {
-    let Some(gs) = game_state else { return };
     if !gs.is_changed() && !pool.placing && !zariba.is_changed() {
         return;
     }

@@ -96,11 +96,10 @@ impl PressDesk<'_> {
 /// Guests only wait for the host's telegram to arrive. A new host picks up
 /// any turn the old one left unwritten.
 pub(crate) fn generate_telegrams(
-    game_state: Option<Res<crate::GameStateResource>>,
+    state: Res<crate::GameStateResource>,
     mut telegram_log: ResMut<TelegramLog>,
     mut desk: PressDesk,
 ) {
-    let Some(state) = game_state else { return };
     if !desk.writes() {
         return;
     }

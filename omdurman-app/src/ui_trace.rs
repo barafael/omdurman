@@ -40,12 +40,11 @@ pub struct Stamp {
 }
 
 impl Stamp {
-    pub fn of(gs: Option<&crate::GameStateResource>) -> Self {
-        gs.map(|gs| Self {
+    pub fn of(gs: &crate::GameStateResource) -> Self {
+        Self {
             turn: Some(gs.0.current_turn.value()),
             phase: Some(format!("{:?}", gs.0.phase)),
-        })
-        .unwrap_or_default()
+        }
     }
 
     pub const NONE: Self = Self {
@@ -211,7 +210,7 @@ pub fn summarize_selection(
     state: &PickerState,
     placed_units: &Query<(Entity, &PlacedUnit)>,
     picker: Option<&crate::picker::UnitPicker>,
-    game_state: Option<&crate::GameStateResource>,
+    game_state: &crate::GameStateResource,
 ) -> SelectionSummary {
     summarize_selection_with(
         state,
@@ -276,18 +275,15 @@ pub fn summarize_selection_with(
 
 /// Human label for a placed counter: rules identity when known, sprite cell
 /// otherwise.
-pub fn placed_label(placed: &PlacedUnit, game_state: Option<&crate::GameStateResource>) -> String {
+pub fn placed_label(placed: &PlacedUnit, game_state: &crate::GameStateResource) -> String {
     let cell = format!(
         "{} {},{}",
         placed.section_name.display_name(),
         placed.col,
         placed.row
     );
-    let scenario = game_state.map_or(omdurman_types::Scenario::Campaign, |gs| gs.0.scenario);
-    match placed
-        .unit_id
-        .and_then(|uid| game_state.and_then(|gs| gs.0.find_unit(uid)))
-    {
+    let scenario = game_state.0.scenario;
+    match placed.unit_id.and_then(|uid| game_state.0.find_unit(uid)) {
         Some(unit) => unit.profile.identity.label_in(scenario),
         None => cell,
     }
@@ -339,21 +335,16 @@ pub fn diff_path(prev: &MovementPath, next: &MovementPath) -> Vec<PathDiff> {
 /// shape change. Runs after every system that can mutate `PickerState`
 /// (ordering declared in [`UiTracePlugin`]).
 pub fn observe_picker_state(
-    game_state: Option<Res<crate::GameStateResource>>,
+    game_state: Res<crate::GameStateResource>,
     state: Res<PickerState>,
     picker: Option<Res<crate::picker::UnitPicker>>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     mut prev: Local<Option<SelectionSummary>>,
 ) {
-    let current = summarize_selection(
-        &state,
-        &placed_units,
-        picker.as_deref(),
-        game_state.as_deref(),
-    );
+    let current = summarize_selection(&state, &placed_units, picker.as_deref(), &game_state);
     if prev.as_ref() != Some(&current) {
         let from = prev.take().unwrap_or(SelectionSummary::Idle);
-        selection(&from, &current, &Stamp::of(game_state.as_deref()));
+        selection(&from, &current, &Stamp::of(&game_state));
         *prev = Some(current);
     }
 }
@@ -361,12 +352,12 @@ pub fn observe_picker_state(
 /// Watch the pending movement path and emit plot events (removals and
 /// confirms are emitted by their explicit systems with proper reasons).
 pub fn observe_movement_path(
-    game_state: Option<Res<crate::GameStateResource>>,
+    game_state: Res<crate::GameStateResource>,
     path: Res<MovementPath>,
     mut prev: Local<Option<MovementPath>>,
 ) {
     if let Some(previous) = prev.as_ref() {
-        let stamp = Stamp::of(game_state.as_deref());
+        let stamp = Stamp::of(&game_state);
         for diff in diff_path(previous, &path) {
             match diff {
                 PathDiff::Plot { from, to, cost } => path_plot(from, to, cost, &stamp),

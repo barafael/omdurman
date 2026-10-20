@@ -189,7 +189,7 @@ fn drain_combat_observations(
     game_state: Res<GameStateResource>,
     mut dispatches: ResMut<crate::dispatch::Dispatches>,
 ) {
-    let gs = Some(&game_state.0);
+    let gs = &game_state.0;
     for ev in reader.read() {
         let entry = match &ev.observation {
             Observation::FireResolved {
@@ -275,14 +275,14 @@ fn fire_result_label(
     attack: &FireAttack,
     result: omdurman_rules::CombatResult,
     eliminations: &[UnitId],
-    gs: Option<&omdurman_rules::effects::GameState>,
+    gs: &omdurman_rules::effects::GameState,
 ) -> String {
     let label = describe_result(result);
     // A surviving special target is still on the board, so the threshold
     // reads off the state after the shot.
-    let Some(gs) = gs.filter(|_| eliminations.is_empty()) else {
+    if !eliminations.is_empty() {
         return label;
-    };
+    }
     match omdurman_rules::effects::special_target_threshold(gs, attack) {
         Some(needed) => format!("{label} \u{2014} a miss (Eliminate {needed}+ needed)"),
         None => label,
@@ -294,7 +294,7 @@ fn build_fire_card(
     resolution: FireResolution,
     eliminations: &[UnitId],
     paragraphs: &[String],
-    gs: Option<&omdurman_rules::effects::GameState>,
+    gs: &omdurman_rules::effects::GameState,
 ) -> CombatCardEntry {
     let FireResolution {
         roll,
@@ -328,7 +328,7 @@ fn build_fire_card(
     let mut focus: Vec<HexCoord> = attack
         .all_firing_units()
         .iter()
-        .filter_map(|id| gs.and_then(|gs| gs.find_unit(*id)).map(|u| u.position))
+        .filter_map(|id| gs.find_unit(*id).map(|u| u.position))
         .collect();
     focus.push(attack.target_hex);
     focus.dedup();
@@ -354,7 +354,7 @@ fn build_melee_card(
     attacker: &MeleeSide,
     defender: &MeleeSide,
     paragraphs: &[String],
-    gs: Option<&omdurman_rules::effects::GameState>,
+    gs: &omdurman_rules::effects::GameState,
 ) -> CombatCardEntry {
     let attacker_card = CombatSide {
         player: attack.attacker_player,
@@ -466,7 +466,7 @@ fn melee_modifier_lines(modifiers: &[MeleeModifier], total_modifier: i16) -> Vec
 /// Resolve a slice of [`UnitId`]s into a comma-separated list of short unit
 /// names. Units that no longer exist in the game state (eliminated by this
 /// very combat) are named from the static counter roster.
-fn list_units(ids: &[UnitId], gs: Option<&omdurman_rules::effects::GameState>) -> String {
+fn list_units(ids: &[UnitId], gs: &omdurman_rules::effects::GameState) -> String {
     if ids.is_empty() {
         return "—".into();
     }
@@ -475,7 +475,7 @@ fn list_units(ids: &[UnitId], gs: Option<&omdurman_rules::effects::GameState>) -
 
 /// Like [`list_units`] but returns the names separately (repeats counted:
 /// "2× Mulazmin"), for casualty lists where each loss is its own line item.
-fn list_unit_names(ids: &[UnitId], gs: Option<&omdurman_rules::effects::GameState>) -> Vec<String> {
+fn list_unit_names(ids: &[UnitId], gs: &omdurman_rules::effects::GameState) -> Vec<String> {
     crate::combat_ui::tally_names(
         ids.iter()
             .map(|id| crate::combat_ui::unit_name(*id, gs))
@@ -490,7 +490,7 @@ fn impact_note(
     roll: omdurman_rules::DieRoll,
     landed: HexCoord,
     target: HexCoord,
-    gs: Option<&omdurman_rules::effects::GameState>,
+    gs: &omdurman_rules::effects::GameState,
 ) -> String {
     if landed == target {
         return format!("Impact roll {}: on target (§6.64).", roll.value());
@@ -507,8 +507,7 @@ fn impact_note(
     )
 }
 
-fn target_hex_label(hex: HexCoord, gs: Option<&omdurman_rules::effects::GameState>) -> String {
-    let Some(gs) = gs else { return String::new() };
+fn target_hex_label(hex: HexCoord, gs: &omdurman_rules::effects::GameState) -> String {
     gs.board
         .location_at(hex)
         .map(|loc| loc.to_string())
@@ -873,7 +872,7 @@ mod impact_tests {
             omdurman_rules::DieRoll::Four,
             HexCoord::new(24, 10),
             HexCoord::new(23, 10),
-            None,
+            &omdurman_rules::effects::GameState::new(omdurman_types::Scenario::Campaign),
         );
         assert_eq!(
             note,

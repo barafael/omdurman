@@ -225,7 +225,7 @@ pub struct BoardPointer<'w> {
 /// The UI state the mode decision reads.
 #[derive(SystemParam)]
 pub struct ClickUiState<'w, 's> {
-    game_state: Option<Res<'w, GameStateResource>>,
+    game_state: Res<'w, GameStateResource>,
     picker: Res<'w, PickerState>,
     placed_units: Query<'w, 's, (Entity, &'static PlacedUnit)>,
     peers: crate::peers::Peers<'w, 's>,
@@ -240,15 +240,7 @@ impl ClickUiState<'_, '_> {
             .as_ref()
             .is_some_and(|r| r.placing_mine || r.placing_chain);
         let may_act_dervish = self.peers.may_act(Player::Dervish);
-        let Some(gs) = self.game_state.as_deref() else {
-            return ClickCtx {
-                placing,
-                river_placement_armed,
-                may_act_dervish,
-                ..Default::default()
-            };
-        };
-        let gs = &gs.0;
+        let gs = &self.game_state.0;
         let phase = UiPhaseState::derive(gs);
         let combat = matches!(
             phase,
@@ -320,7 +312,7 @@ pub fn route_board_clicks(pointer: BoardPointer, ui: ClickUiState, mut out: Boar
     let origin = pointer.layout.adjusted_origin(&pointer.overlay.params);
     let hex = hit_to_hex(hit, origin, &pointer.overlay.params);
 
-    let game_state = ui.game_state.as_deref();
+    let game_state = &*ui.game_state;
     // UI trace: every board press, with what stood under the cursor, so
     // click-through and rejected clicks are observable whichever mode (if
     // any) takes the click.

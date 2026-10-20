@@ -114,11 +114,11 @@ use omdurman_board_ui::camera::camera_control;
 /// Mirror the replicated rules state's time of day into the shared resource
 /// the night shading reads (§night tint).
 fn sync_board_day_night(
-    game_state: Option<Res<crate::GameStateResource>>,
+    game_state: Res<crate::GameStateResource>,
     mut day_night: ResMut<BoardDayNight>,
 ) {
     // Written only when it changes: the night shading keys on it.
-    let now = game_state.as_deref().map(|gs| gs.0.day_night);
+    let now = Some(game_state.0.day_night);
     if day_night.0 != now {
         day_night.0 = now;
     }

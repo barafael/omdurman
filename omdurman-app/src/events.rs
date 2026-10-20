@@ -24,20 +24,13 @@ pub struct LocalAction {
 pub fn forward_local_actions(
     mut reader: MessageReader<LocalAction>,
     mut submit: crate::submit::CheckedSubmit,
-    game_state: Option<Res<crate::GameStateResource>>,
+    game_state: Res<crate::GameStateResource>,
 ) {
     for action in reader.read() {
         info!("forward_local_actions: bridging LocalAction to PendingEdits");
         // Pre-validated against the engine: a refused placement / move shows
         // an "Order Refused" slip instead of vanishing silently on the echo.
-        match game_state.as_deref() {
-            Some(gs) => {
-                submit.submit(&gs.0, action.event.clone());
-            }
-            None => {
-                submit.pending.submit_game(action.event.clone());
-            }
-        }
+        submit.submit(&game_state.0, action.event.clone());
     }
 }
 

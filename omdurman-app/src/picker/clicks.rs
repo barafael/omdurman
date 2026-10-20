@@ -46,7 +46,7 @@ pub struct PickerContext<'w, 's> {
 pub fn handle_picker_clicks(
     mut clicks: MessageReader<PickerClick>,
     mut picker_ctx: PickerContext,
-    game_state: Option<Res<crate::GameStateResource>>,
+    game_state: Res<crate::GameStateResource>,
     peers: crate::peers::Peers,
     time: Res<Time>,
     // A refused click: the engine's reason to the feed, a flash on the hex.
@@ -54,7 +54,7 @@ pub fn handle_picker_clicks(
     mut fx: MessageWriter<crate::fx::FxRequest>,
     mut last_click: Local<Option<(f64, HexCoord)>>,
 ) {
-    let game_state = game_state.as_deref();
+    let game_state = &game_state;
     let now = time.elapsed_secs_f64();
     for &click in clicks.read() {
         let refusal = picker_click(
@@ -84,18 +84,18 @@ fn picker_click(
         released,
     }: PickerClick,
     picker_ctx: &mut PickerContext,
-    game_state: Option<&crate::GameStateResource>,
+    game_state: &crate::GameStateResource,
     peers: &crate::peers::Peers,
     now: f64,
     last_click: &mut Option<(f64, HexCoord)>,
 ) -> Option<String> {
-    // §turn-order: a unit may only be moved on its owner's turn. When a game is
-    // live, gate interactive movement on the local player being the rules
-    // engine's active player (the Idle arm / move path below). Placement
-    // during set-up is not gated. With no game state (editor) there is no gate.
+    // §turn-order: a unit may only be moved on its owner's turn: gate
+    // interactive movement on the local player being the rules engine's
+    // active player (the Idle arm / move path below). Placement during
+    // set-up is not gated.
     // (The click router already drops clicks outside the seat's phase unless
     // a counter is in hand; this stays as the picker's own backstop.)
-    let may_move = game_state.is_none_or(|gs| peers.may_act_now(&gs.0));
+    let may_move = peers.may_act_now(&game_state.0);
 
     // In bound multiplayer a player may only pick up their own faction's units;
     // an unbound session / single-seat (no faction bindings) may move
@@ -131,7 +131,7 @@ fn picker_click(
     // (`Placing`) so the player can still stack onto an occupied hex.
     if pressed
         && !matches!(*picker_ctx.state, PickerState::Placing { .. })
-        && game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup))
+        && (matches!(game_state.0.phase, omdurman_rules::Phase::Setup))
     {
         // Pick the specific counter under the cursor (a stack fans out, so the
         // nearest-by-rendered-position is the right one, not just the first).
@@ -198,12 +198,10 @@ fn picker_click(
         && may_move
         && !matches!(&*picker_ctx.state, PickerState::Placing { .. })
     {
-        match game_state.map(|gs| gs.0.phase) {
-            Some(
-                omdurman_rules::Phase::OffensiveFire(_)
-                | omdurman_rules::Phase::DefensiveFire(_)
-                | omdurman_rules::Phase::Melee,
-            ) => {
+        match game_state.0.phase {
+            omdurman_rules::Phase::OffensiveFire(_)
+            | omdurman_rules::Phase::DefensiveFire(_)
+            | omdurman_rules::Phase::Melee => {
                 select_combat_tile(
                     &mut picker_ctx.state,
                     &mut picker_ctx.commands,
@@ -216,7 +214,7 @@ fn picker_click(
             }
             // Movement and Setup keep the group-move stack selection (a
             // double-click elsewhere is a no-op).
-            Some(omdurman_rules::Phase::Movement) | Some(omdurman_rules::Phase::Setup) | None => {
+            omdurman_rules::Phase::Movement | omdurman_rules::Phase::Setup => {
                 handle_stack_double_click(
                     &mut picker_ctx.state,
                     &mut picker_ctx.commands,
@@ -261,9 +259,8 @@ fn picker_click(
         // other action.
         ActiveSelection::Placing { .. }
             if pressed
-                && game_state.is_some_and(|gs| {
-                    !matches!(gs.0.phase, omdurman_rules::Phase::Setup) && !peers.may_act_now(&gs.0)
-                }) =>
+                && (!matches!(game_state.0.phase, omdurman_rules::Phase::Setup)
+                    && !peers.may_act_now(&game_state.0)) =>
         {
             return Some(if peers.paused() {
                 "The game is paused until the absent player returns.".to_string()
@@ -300,7 +297,7 @@ fn picker_click(
             start_coord,
             remaining_mp,
             forced_stop,
-        } if game_state.is_none_or(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Movement)) => {
+        } if (matches!(game_state.0.phase, omdurman_rules::Phase::Movement)) => {
             let mut plan = SingleRoute {
                 remaining_mp,
                 forced_stop,
@@ -373,8 +370,7 @@ fn picker_click(
             }
         }
         ActiveSelection::Stack(sel)
-            if game_state
-                .is_none_or(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Movement)) =>
+            if (matches!(game_state.0.phase, omdurman_rules::Phase::Movement)) =>
         {
             // Group move: the whole stack follows one plotted path. Legs charge
             // only the units that can afford them; slower units are dropped at
@@ -483,7 +479,7 @@ fn select_single_unit(
     commands: &mut Commands,
     placed_units: &Query<(Entity, &PlacedUnit)>,
     coord: HexCoord,
-    game_state: Option<&crate::GameStateResource>,
+    game_state: &crate::GameStateResource,
     restrict_to: Option<omdurman_types::Player>,
     peers: &crate::peers::Peers,
     click: &ClickGeometry,
@@ -505,9 +501,10 @@ fn select_single_unit(
     // the two counters share the hex -- in the Movement phase a click that
     // lands on the passenger takes the gunboat (the disembarkation is
     // offered on its own card, whichever is selected).
-    let (entity, placed) = game_state
-        .filter(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Movement))
-        .and_then(|gs| gs.0.find_unit(placed.unit_id?)?.state.loaded_on)
+    let (entity, placed) = matches!(game_state.0.phase, omdurman_rules::Phase::Movement)
+        .then_some(placed.unit_id)
+        .flatten()
+        .and_then(|uid| game_state.0.find_unit(uid)?.state.loaded_on)
         .and_then(|carrier| {
             placed_units
                 .iter()
@@ -558,7 +555,7 @@ fn handle_stack_double_click(
     commands: &mut Commands,
     placed_units: &Query<(Entity, &PlacedUnit)>,
     coord: HexCoord,
-    game_state: Option<&crate::GameStateResource>,
+    game_state: &crate::GameStateResource,
     restrict_to: Option<omdurman_types::Player>,
     peers: &crate::peers::Peers,
     movement_path: &mut MovementPath,
@@ -654,17 +651,15 @@ fn select_combat_tile(
     state: &mut PickerState,
     commands: &mut Commands,
     placed_units: &Query<(Entity, &PlacedUnit)>,
-    game_state: Option<&crate::GameStateResource>,
+    game_state: &crate::GameStateResource,
     coord: HexCoord,
     restrict_to: Option<omdurman_types::Player>,
     peers: &crate::peers::Peers,
 ) -> bool {
-    let in_fire = game_state.is_some_and(|gs| {
-        matches!(
-            gs.0.phase,
-            omdurman_rules::Phase::OffensiveFire(_) | omdurman_rules::Phase::DefensiveFire(_)
-        )
-    });
+    let in_fire = matches!(
+        game_state.0.phase,
+        omdurman_rules::Phase::OffensiveFire(_) | omdurman_rules::Phase::DefensiveFire(_)
+    );
     let mut sources: Vec<Entity> = placed_units
         .iter()
         .filter(|(_, u)| u.coord == coord && !u.disrupted)
@@ -682,15 +677,13 @@ fn select_combat_tile(
             // Only counters that can act in this phase join the tile: firing
             // units in a fire sub-phase, melee-capable units in Melee.
             u.unit_id.is_some_and(|uid| {
-                game_state
-                    .and_then(|gs| gs.0.find_unit(uid))
-                    .is_some_and(|unit| {
-                        if in_fire {
-                            unit.profile.fire.is_some()
-                        } else {
-                            unit.profile.kind.may_melee_attack()
-                        }
-                    })
+                game_state.0.find_unit(uid).is_some_and(|unit| {
+                    if in_fire {
+                        unit.profile.fire.is_some()
+                    } else {
+                        unit.profile.kind.may_melee_attack()
+                    }
+                })
             })
         })
         .map(|(e, _)| e)
@@ -746,10 +739,9 @@ fn clear_selection(state: &mut PickerState, commands: &mut Commands) {
 pub(crate) fn reset_selection_on_phase_change(
     mut state: ResMut<PickerState>,
     mut commands: Commands,
-    game_state: Option<Res<crate::GameStateResource>>,
+    gs: Res<crate::GameStateResource>,
     mut last_phase: Local<Option<omdurman_rules::Phase>>,
 ) {
-    let Some(gs) = game_state else { return };
     if *last_phase != Some(gs.0.phase) {
         clear_selection(&mut state, &mut commands);
         *last_phase = Some(gs.0.phase);
@@ -787,7 +779,7 @@ fn place_click(
     unit_idx: usize,
     drag_drop: bool,
     coord: HexCoord,
-    game_state: Option<&crate::GameStateResource>,
+    game_state: &crate::GameStateResource,
 ) -> Result<Option<GameEvent>, String> {
     if released && !drag_drop {
         *ctx.state = PickerState::Placing {
@@ -808,7 +800,7 @@ fn place_click(
     // (phase + deployment zone + full stacking, §9.2/§9.3/§5.51-5.53), so
     // the preview ring and the click can never disagree with what the
     // engine will accept on the sequenced echo (barring a race between
-    // peers). The editor / unbound non-setup path has no engine state to
+    // peers). Outside Setup and Movement there is no engine predicate to
     // consult, so it falls back to passable-and-vacant.
     //
     // Movement-phase placement is *reinforcement entry* (§9.112/§9.113
@@ -817,26 +809,21 @@ fn place_click(
     // The engine's refusal, if any: reported to the player (the unit stays
     // in hand) instead of silently dropping the selection.
     let mut refusal = None;
-    let can_place = if let Some(gs) = game_state {
-        let candidate = deploy_candidate(&ctx.picker, unit_idx, coord);
-        let engine_check = match gs.0.phase {
-            omdurman_rules::Phase::Setup => Some(candidate.map(|c| gs.0.can_deploy_unit(&c))),
-            omdurman_rules::Phase::Movement => {
-                Some(candidate.map(|c| gs.0.can_place_single_reinforcement(&c)))
-            }
-            _ => None,
-        };
-        if let Some(check) = engine_check {
-            // No candidate (unresolvable sprite): not placeable, no reason.
-            refusal = check.as_ref().and_then(|r| r.clone().err());
-            check.is_some_and(|r| r.is_ok())
-        } else {
-            let occupied = ctx.placed_units.iter().any(|(_, u)| u.coord == coord);
-            !occupied && coord_passable(crate::board_of(game_state), coord, unit.is_boat)
+    let candidate = deploy_candidate(&ctx.picker, unit_idx, coord);
+    let engine_check = match game_state.0.phase {
+        omdurman_rules::Phase::Setup => Some(candidate.map(|c| game_state.0.can_deploy_unit(&c))),
+        omdurman_rules::Phase::Movement => {
+            Some(candidate.map(|c| game_state.0.can_place_single_reinforcement(&c)))
         }
+        _ => None,
+    };
+    let can_place = if let Some(check) = engine_check {
+        // No candidate (unresolvable sprite): not placeable, no reason.
+        refusal = check.as_ref().and_then(|r| r.clone().err());
+        check.is_some_and(|r| r.is_ok())
     } else {
         let occupied = ctx.placed_units.iter().any(|(_, u)| u.coord == coord);
-        !occupied && coord_passable(crate::board_of(game_state), coord, unit.is_boat)
+        !occupied && coord_passable(game_state.0.board, coord, unit.is_boat)
     };
 
     if can_place {
@@ -970,10 +957,10 @@ fn price_unreachable(
     (start, goal): (HexCoord, HexCoord),
     budget: i16,
     gunboat: Option<GunboatBudget>,
-    game_state: Option<&crate::GameStateResource>,
+    game_state: &crate::GameStateResource,
 ) -> (Option<i16>, i16) {
     let Some((route, cost)) = cheapest_route(
-        crate::board_of(game_state),
+        game_state.0.board,
         placed_units,
         placed,
         start,
@@ -984,17 +971,17 @@ fn price_unreachable(
     ) else {
         return (None, budget);
     };
-    let have = match (gunboat, game_state) {
-        (Some(gunboat), Some(gs)) => {
+    let have = match gunboat {
+        Some(gunboat) => {
             let mut from = start;
             let upstream = route.iter().any(|&hex| {
-                let up = step_is_upstream(&gs.0, from, hex);
+                let up = step_is_upstream(&game_state.0, from, hex);
                 from = hex;
                 up
             });
             budget.min(gunboat.left(upstream))
         }
-        _ => budget,
+        None => budget,
     };
     (Some(cost), have)
 }
@@ -1004,7 +991,7 @@ fn price_unreachable(
 /// his command, a full hex) the route finder never even tries it -- say so,
 /// rather than blaming terrain and zones of control.
 fn unroutable_reason(
-    gs: Option<&omdurman_rules::effects::GameState>,
+    gs: &omdurman_rules::effects::GameState,
     movers: &[omdurman_rules::UnitId],
     goal: HexCoord,
     budget: i16,
@@ -1013,23 +1000,19 @@ fn unroutable_reason(
     // A unit that may not move at all this turn (a mine or chain stop, a
     // loading gunboat, a ZOC stop...) has no route anywhere: say which rule
     // holds it, not that its movement points ran out.
-    let blocked = gs.and_then(|gs| {
-        movers
-            .iter()
-            .find_map(|&id| gs.movement_blocker(id).map(|why| (id, why)))
-    });
+    let blocked = movers
+        .iter()
+        .find_map(|&id| gs.movement_blocker(id).map(|why| (id, why)));
     if let Some((id, why)) = blocked {
         let name = crate::combat_ui::unit_name(id, gs);
         return format!("{name} cannot move this turn: {why}.");
     }
     // The goal is no ground this unit can stand on: gunboats keep to the
     // Nile, land units off it (§5.22).
-    let wrong_ground = gs.and_then(|gs| {
-        movers.iter().find_map(|&id| {
-            let mover = gs.find_unit(id)?;
-            let is_boat = mover.profile.kind.is_boat();
-            (!gs.on_deployable_terrain(goal, is_boat)).then_some(is_boat)
-        })
+    let wrong_ground = movers.iter().find_map(|&id| {
+        let mover = gs.find_unit(id)?;
+        let is_boat = mover.profile.kind.is_boat();
+        (!gs.on_deployable_terrain(goal, is_boat)).then_some(is_boat)
     });
     if let Some(is_boat) = wrong_ground {
         return if is_boat {
@@ -1038,22 +1021,18 @@ fn unroutable_reason(
             format!("{goal} is the Nile: only gunboats move on the river (§5.22).")
         };
     }
-    let stacking_refusal = gs.and_then(|gs| {
-        movers.iter().find_map(|&id| {
-            let mover = gs.find_unit(id)?;
-            gs.check_stacking(mover, goal).err()
-        })
+    let stacking_refusal = movers.iter().find_map(|&id| {
+        let mover = gs.find_unit(id)?;
+        gs.check_stacking(mover, goal).err()
     });
     match stacking_refusal {
         Some(error) => format!("Cannot end a move on {goal}: {error}."),
         // Nothing reaches the goal at any price, and it lies against a city
         // wall: the wall is what stands in the way.
         None if cheapest.is_none()
-            && gs.is_some_and(|gs| {
-                goal.neighbors().iter().any(|&n| {
-                    gs.hexside_effective_is(goal, n, |k| k == omdurman_types::HexsideKind::Wall)
-                })
-            }) =>
+            && (goal.neighbors().iter().any(|&n| {
+                gs.hexside_effective_is(goal, n, |k| k == omdurman_types::HexsideKind::Wall)
+            })) =>
         {
             format!(
                 "No route to {goal}: the city wall is in the way. Units cross it only at a \
@@ -1061,12 +1040,10 @@ fn unroutable_reason(
             )
         }
         None => {
-            let boat = gs.is_some_and(|gs| {
-                movers
-                    .iter()
-                    .filter_map(|&id| gs.find_unit(id))
-                    .any(|u| u.profile.kind.is_boat())
-            });
+            let boat = movers
+                .iter()
+                .filter_map(|&id| gs.find_unit(id))
+                .any(|u| u.profile.kind.is_boat());
             no_route_reason(goal, budget, cheapest, boat)
         }
     }
@@ -1086,7 +1063,7 @@ fn plot_single_route(
     source: Entity,
     start: HexCoord,
     goal: HexCoord,
-    game_state: Option<&crate::GameStateResource>,
+    game_state: &crate::GameStateResource,
 ) -> Result<(), String> {
     let Ok((_, placed)) = ctx.placed_units.get(source) else {
         return Ok(());
@@ -1098,7 +1075,7 @@ fn plot_single_route(
     };
     let gunboat = GunboatBudget::of(game_state, placed, &ctx.movement_path);
     let Some(route) = auto_route(
-        crate::board_of(game_state),
+        game_state.0.board,
         &ctx.placed_units,
         placed,
         start,
@@ -1118,7 +1095,7 @@ fn plot_single_route(
             game_state,
         );
         return Err(unroutable_reason(
-            game_state.map(|gs| &gs.0),
+            &game_state.0,
             &movers,
             goal,
             have,
@@ -1159,7 +1136,7 @@ fn single_click(
     source: Entity,
     start_coord: HexCoord,
     coord: HexCoord,
-    game_state: Option<&crate::GameStateResource>,
+    game_state: &crate::GameStateResource,
 ) -> Result<(), String> {
     if !released {
         return Ok(());
@@ -1174,16 +1151,16 @@ fn single_click(
     // During Setup, `Selected` is focus-only (the player hits Del to return
     // the counter to the picker). There's no movement during deployment, so
     // don't build path legs -- bail without changing state.
-    if game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup)) {
+    if matches!(game_state.0.phase, omdurman_rules::Phase::Setup) {
         return Ok(());
     }
     // §9.345 (FALL OF KHARTOUM): a gunboat lying on one Nile mouth
     // crosses to the other off the board, as a move of its own -- the
     // engine takes it as the single step of a move, so it is only
     // offered before any other leg is plotted, and ends the move.
-    if let (Some(gs), Some(uid)) = (game_state, placed.unit_id)
+    if let Some(uid) = placed.unit_id
         && placed.is_boat
-        && gs.0.is_nile_mouth_crossing(start_coord, coord)
+        && game_state.0.is_nile_mouth_crossing(start_coord, coord)
     {
         if !ctx.movement_path.legs.is_empty() {
             return Err(format!(
@@ -1192,7 +1169,9 @@ fn single_click(
             ));
         }
         let cost = omdurman_rules::effects::NILE_MOUTH_CROSSING_MP;
-        gs.0.can_move_gunboat(uid, coord, &[coord], MovementPoints::new(cost))
+        game_state
+            .0
+            .can_move_gunboat(uid, coord, &[coord], MovementPoints::new(cost))
             .map_err(|error| format!("Cannot cross to {coord} (§9.345): {error}"))?;
         ctx.movement_path.legs.push((start_coord, coord));
         ctx.movement_path.cost_so_far += cost;
@@ -1207,13 +1186,13 @@ fn single_click(
     // A distant hex -- or a neighbour behind a wall -- plot the cheapest
     // legal route to it, leg by leg (round through a gate).
     if !start_coord.neighbors().contains(&coord)
-        || hexside_blocks_step(crate::board_of(game_state), start_coord, coord, game_state)
+        || hexside_blocks_step(&game_state.0, start_coord, coord)
     {
         return plot_single_route(ctx, plan, source, start_coord, coord, game_state);
     }
 
     let leg = movement_leg_check(
-        crate::board_of(game_state),
+        game_state.0.board,
         &ctx.placed_units,
         placed,
         start_coord,
@@ -1284,7 +1263,7 @@ fn single_click(
 pub(crate) fn commit_single_path(
     ctx: &mut PickerContext,
     source: Entity,
-    game_state: Option<&crate::GameStateResource>,
+    game_state: &crate::GameStateResource,
 ) -> Result<Option<GameEvent>, String> {
     if ctx.movement_path.legs.is_empty() {
         return Ok(None);
@@ -1305,9 +1284,9 @@ pub(crate) fn commit_single_path(
     // and keep the selection so the player can route on past the hex, undo
     // a leg, or cancel — instead of committing a move the engine would
     // reject on echo (animate then snap back).
-    if let (Some(uid), Some(gs)) = (placed.unit_id, game_state)
-        && let Some(mover) = gs.0.find_unit(uid)
-        && let Err(error) = gs.0.check_stacking(mover, final_dest)
+    if let Some(uid) = placed.unit_id
+        && let Some(mover) = game_state.0.find_unit(uid)
+        && let Err(error) = game_state.0.check_stacking(mover, final_dest)
     {
         warn!(
             section_name = %placed.section_name,
@@ -1365,7 +1344,7 @@ fn plot_stack_route(
     sources: &[Entity],
     start: HexCoord,
     goal: HexCoord,
-    game_state: Option<&crate::GameStateResource>,
+    game_state: &crate::GameStateResource,
 ) -> Result<(), String> {
     let Some(Ok((_, placed))) = sources.first().map(|&s| ctx.placed_units.get(s)) else {
         return Ok(());
@@ -1374,17 +1353,15 @@ fn plot_stack_route(
     // the representative unit let a four-stack be routed onto a hex
     // holding two, and the commit then moved two and silently left the
     // rest behind.
-    if let Some(gs) = game_state {
-        let movers: Vec<_> = sources
-            .iter()
-            .filter_map(|&s| ctx.placed_units.get(s).ok().and_then(|(_, p)| p.unit_id))
-            .collect();
-        if let Err(error) = gs.0.check_group_stacking(&movers, goal) {
-            return Err(format!(
-                "The stack cannot end its move on {goal} together: {error}. Move fewer \
-                 units, or pick another hex."
-            ));
-        }
+    let movers: Vec<_> = sources
+        .iter()
+        .filter_map(|&s| ctx.placed_units.get(s).ok().and_then(|(_, p)| p.unit_id))
+        .collect();
+    if let Err(error) = game_state.0.check_group_stacking(&movers, goal) {
+        return Err(format!(
+            "The stack cannot end its move on {goal} together: {error}. Move fewer \
+             units, or pick another hex."
+        ));
     }
     let budget = if plan.forced_stop {
         0
@@ -1393,7 +1370,7 @@ fn plot_stack_route(
     };
     let gunboat = GunboatBudget::of(game_state, placed, &ctx.movement_path);
     let Some(route) = auto_route(
-        crate::board_of(game_state),
+        game_state.0.board,
         &ctx.placed_units,
         placed,
         start,
@@ -1416,7 +1393,7 @@ fn plot_stack_route(
             game_state,
         );
         return Err(unroutable_reason(
-            game_state.map(|gs| &gs.0),
+            &game_state.0,
             &movers,
             goal,
             have,
@@ -1452,7 +1429,7 @@ fn stack_click(
     sources: &[Entity],
     start_coord: HexCoord,
     coord: HexCoord,
-    game_state: Option<&crate::GameStateResource>,
+    game_state: &crate::GameStateResource,
 ) -> Result<(), String> {
     if !released {
         return Ok(());
@@ -1466,13 +1443,13 @@ fn stack_click(
     };
     // No movement during Setup (the stack selection itself is movement
     // phase only, but a stale state could outlive a phase change).
-    if game_state.is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup)) {
+    if matches!(game_state.0.phase, omdurman_rules::Phase::Setup) {
         return Ok(());
     }
     // A distant hex -- or a neighbour behind a wall -- plot the cheapest
     // legal route to it, leg by leg (round through a gate).
     if !start_coord.neighbors().contains(&coord)
-        || hexside_blocks_step(crate::board_of(game_state), start_coord, coord, game_state)
+        || hexside_blocks_step(&game_state.0, start_coord, coord)
     {
         return plot_stack_route(ctx, plan, sources, start_coord, coord, game_state);
     }
@@ -1482,7 +1459,7 @@ fn stack_click(
     // courtesy gate for the common case -- moving a stack into a hex that
     // already pushes past the §5.51 cap).
     let leg = movement_leg_check(
-        crate::board_of(game_state),
+        game_state.0.board,
         &ctx.placed_units,
         placed,
         start_coord,
@@ -1563,7 +1540,7 @@ pub(crate) fn commit_stack_path(
     ctx: &mut PickerContext,
     initial_mp: &[i16],
     sources: &[Entity],
-    game_state: Option<&crate::GameStateResource>,
+    game_state: &crate::GameStateResource,
 ) -> Vec<GameEvent> {
     if ctx.movement_path.legs.is_empty() {
         return Vec::new();
@@ -1582,13 +1559,7 @@ pub(crate) fn commit_stack_path(
         let mut cum = 0i16;
         let mut prefix: Vec<HexCoord> = Vec::new();
         for &(from, to) in &ctx.movement_path.legs {
-            let leg_cost = floor_movement_cost(
-                crate::board_of(game_state),
-                from,
-                to,
-                placed.is_boat,
-                game_state.map(|gs| &gs.0),
-            );
+            let leg_cost = floor_movement_cost(&game_state.0, from, to, placed.is_boat);
             if cum + leg_cost > remaining {
                 break;
             }
@@ -1605,11 +1576,9 @@ pub(crate) fn commit_stack_path(
         // unit's event on echo anyway; the player can route it on past the
         // hex or cancel). Only the *stop* is checked — intermediate
         // pass-through legs never bind.
-        let stacking_ok = match (placed.unit_id, game_state) {
-            (Some(uid), Some(gs)) if let Some(mover) = gs.0.find_unit(uid) => {
-                gs.0.check_stacking(mover, to).is_ok()
-            }
-            _ => true,
+        let stacking_ok = match placed.unit_id.and_then(|uid| game_state.0.find_unit(uid)) {
+            Some(mover) => game_state.0.check_stacking(mover, to).is_ok(),
+            None => true,
         };
         if !stacking_ok {
             warn!(
@@ -1681,7 +1650,7 @@ fn commanded(reader: &mut MessageReader<PickerCommand>, want: PickerCommand) -> 
 pub(crate) fn confirm_movement_path(
     mut commands_in: MessageReader<PickerCommand>,
     mut picker_ctx: PickerContext,
-    game_state: Option<Res<crate::GameStateResource>>,
+    game_state: Res<crate::GameStateResource>,
     peers: crate::peers::Peers,
     mut dispatches: Option<ResMut<crate::dispatch::Dispatches>>,
 ) {
@@ -1692,20 +1661,17 @@ pub(crate) fn confirm_movement_path(
         return;
     }
     // Must be the owning player's turn.
-    if game_state
-        .as_deref()
-        .is_some_and(|gs| !peers.may_act_now(&gs.0))
-    {
+    if !peers.may_act_now(&game_state.0) {
         return;
     }
     crate::ui_trace::path_confirmed(
         picker_ctx.movement_path.legs.len(),
         picker_ctx.movement_path.cost_so_far,
-        &crate::ui_trace::Stamp::of(game_state.as_deref()),
+        &crate::ui_trace::Stamp::of(&game_state),
     );
     match ActiveSelection::snapshot(&picker_ctx.state) {
         ActiveSelection::Single { source, .. } => {
-            match commit_single_path(&mut picker_ctx, source, game_state.as_deref()) {
+            match commit_single_path(&mut picker_ctx, source, &game_state) {
                 Ok(Some(event)) => {
                     picker_ctx
                         .action_writer
@@ -1722,12 +1688,9 @@ pub(crate) fn confirm_movement_path(
             }
         }
         ActiveSelection::Stack(sel) => {
-            for event in commit_stack_path(
-                &mut picker_ctx,
-                &sel.initial_mp,
-                &sel.sources,
-                game_state.as_deref(),
-            ) {
+            for event in
+                commit_stack_path(&mut picker_ctx, &sel.initial_mp, &sel.sources, &game_state)
+            {
                 picker_ctx
                     .action_writer
                     .write(events::LocalAction { event });
@@ -1747,7 +1710,7 @@ pub(crate) fn confirm_movement_path(
 pub(crate) fn undo_movement_leg(
     mut commands_in: MessageReader<PickerCommand>,
     mut picker_ctx: PickerContext,
-    game_state: Option<Res<crate::GameStateResource>>,
+    game_state: Res<crate::GameStateResource>,
     peers: crate::peers::Peers,
 ) {
     if !commanded(&mut commands_in, PickerCommand::UndoStep) {
@@ -1757,15 +1720,12 @@ pub(crate) fn undo_movement_leg(
         return;
     }
     // Only the owning player may act.
-    if game_state
-        .as_deref()
-        .is_some_and(|gs| !peers.may_act_now(&gs.0))
-    {
+    if !peers.may_act_now(&game_state.0) {
         return;
     }
     crate::ui_trace::path_undone(
         picker_ctx.movement_path.legs.len() - 1,
-        &crate::ui_trace::Stamp::of(game_state.as_deref()),
+        &crate::ui_trace::Stamp::of(&game_state),
     );
     // Pop the last leg and refund its cost. The stored `(from, to)` pair is
     // exactly the leg that was charged, so recomputing with it matches what
@@ -1788,13 +1748,7 @@ pub(crate) fn undo_movement_leg(
             .is_some_and(|(_, p)| p.is_boat),
         _ => false,
     };
-    let cost = floor_movement_cost(
-        crate::board_of(game_state.as_deref()),
-        from,
-        to,
-        is_boat,
-        game_state.as_deref().map(|gs| &gs.0),
-    );
+    let cost = floor_movement_cost(&game_state.0, from, to, is_boat);
     picker_ctx.movement_path.cost_so_far -= cost;
     match ActiveSelection::snapshot(&picker_ctx.state) {
         // Single unit: step the planned position back to the leg's `from`,
@@ -1848,7 +1802,7 @@ pub(crate) fn undo_movement_leg(
 pub(crate) fn select_stack_member(
     mut commands_in: MessageReader<PickerCommand>,
     mut picker_ctx: PickerContext,
-    game_state: Option<Res<crate::GameStateResource>>,
+    game_state: Res<crate::GameStateResource>,
 ) {
     let Some(member) = commands_in
         .read()
@@ -1864,7 +1818,7 @@ pub(crate) fn select_stack_member(
         return;
     };
     let coord = placed.coord;
-    let remaining_mp = unit_remaining_mp(game_state.as_deref(), placed);
+    let remaining_mp = unit_remaining_mp(&game_state, placed);
     let previous: Vec<Entity> = picker_ctx.state.sources().to_vec();
     for entity in previous {
         if entity != member {
@@ -1889,7 +1843,7 @@ pub(crate) fn select_stack_member(
 pub(crate) fn delete_selected_unit(
     mut commands_in: MessageReader<PickerCommand>,
     mut picker_ctx: PickerContext,
-    game_state: Option<Res<crate::GameStateResource>>,
+    game_state: Res<crate::GameStateResource>,
     peers: crate::peers::Peers,
     mut submit: crate::submit::CheckedSubmit,
 ) {
@@ -1902,14 +1856,11 @@ pub(crate) fn delete_selected_unit(
     };
     // Only during Setup (the placement phase). Units placed in a prior phase
     // (e.g. once play has begun) may not be removed.
-    let Some(gs) = game_state.as_deref() else {
-        return;
-    };
-    if !matches!(gs.0.phase, omdurman_rules::Phase::Setup) {
+    if !matches!(game_state.0.phase, omdurman_rules::Phase::Setup) {
         return;
     }
     // The side deploying now (set-up is sequential, §9.111/§9.211/§9.321).
-    if !peers.may_act_now(&gs.0) {
+    if !peers.may_act_now(&game_state.0) {
         return;
     }
     let Ok((_, placed)) = picker_ctx.placed_units.get(*source) else {
@@ -1917,7 +1868,7 @@ pub(crate) fn delete_selected_unit(
     };
     crate::ui_trace::button("remove unit (Del)");
     let submitted = submit.submit(
-        &gs.0,
+        &game_state.0,
         GameEvent::RemoveUnit {
             sprite: omdurman_types::SpriteRef {
                 section_name: placed.section_name,
@@ -1967,13 +1918,12 @@ pub fn cancel_placement(
 /// dedicated event, so the reset also fires correctly on replay and snapshot
 /// convergence, where no local "end turn" click occurs.
 pub fn clear_paths_on_turn_change(
-    game_state: Option<Res<crate::GameStateResource>>,
+    gs: Res<crate::GameStateResource>,
     mut paths: ResMut<UnitPaths>,
     mut movement_path: ResMut<MovementPath>,
     mut last_active: Local<Option<omdurman_types::Player>>,
 ) {
-    let stamp = crate::ui_trace::Stamp::of(game_state.as_deref());
-    let Some(gs) = game_state else { return };
+    let stamp = crate::ui_trace::Stamp::of(&gs);
     let active = gs.0.active_player;
     if *last_active != Some(active) {
         if last_active.is_some() {
@@ -2019,6 +1969,9 @@ mod tests {
         world.init_resource::<crate::seats::Seats>();
         world.insert_resource(crate::seats::LocalPlayerKey(omdurman_net::PlayerKey(1)));
         world.init_resource::<crate::seats::SeatPresence>();
+        world.insert_resource(crate::GameStateResource(
+            omdurman_rules::effects::GameState::new(omdurman_types::Scenario::Campaign),
+        ));
         world.insert_resource(MovementPath {
             legs: vec![(first, HexCoord::new(12, 21))],
             cost_so_far: 3,
@@ -2030,13 +1983,14 @@ mod tests {
                       mut commands: Commands,
                       placed: Query<(Entity, &PlacedUnit)>,
                       peers: crate::peers::Peers,
+                      game_state: Res<crate::GameStateResource>,
                       mut path: ResMut<MovementPath>| {
                     handle_stack_double_click(
                         &mut state,
                         &mut commands,
                         &placed,
                         second,
-                        None,
+                        &game_state,
                         None,
                         &peers,
                         &mut path,
@@ -2075,7 +2029,7 @@ mod tests {
             state: Default::default(),
         });
         gs.gunboats_stopped_this_turn.push(boat);
-        let reason = unroutable_reason(Some(&gs), &[boat], HexCoord::new(34, 9), 12, Some(3));
+        let reason = unroutable_reason(&gs, &[boat], HexCoord::new(34, 9), 12, Some(3));
         assert!(reason.contains("cannot move this turn"), "{reason}");
         assert!(reason.contains("§10.12"), "{reason}");
         assert!(!reason.contains("§5.24"), "{reason}");
@@ -2102,12 +2056,12 @@ mod tests {
                 state: Default::default(),
             });
         }
-        let reason = unroutable_reason(Some(&gs), &[UnitId::AliWadHelu_0_0], goal, 14, None);
+        let reason = unroutable_reason(&gs, &[UnitId::AliWadHelu_0_0], goal, 14, None);
         assert!(reason.contains("§5.53"), "{reason}");
         assert!(!reason.starts_with("No route"), "{reason}");
         // An empty goal keeps the routing explanation.
         let reason = unroutable_reason(
-            Some(&gs),
+            &gs,
             &[UnitId::AliWadHelu_0_0],
             HexCoord::new(9, 9),
             14,
@@ -2116,7 +2070,7 @@ mod tests {
         assert!(reason.starts_with("No route"), "{reason}");
         // A route that exists at some price says what it costs.
         let reason = unroutable_reason(
-            Some(&gs),
+            &gs,
             &[UnitId::AliWadHelu_0_0],
             HexCoord::new(9, 9),
             14,

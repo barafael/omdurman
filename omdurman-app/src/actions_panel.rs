@@ -122,7 +122,7 @@ fn next_step(
     let picker = &*rail.picker_state;
     let placed_units = &rail.placed_units;
     let movement_path = &*rail.movement_path;
-    let state_moved = rail.game_state.as_ref().is_some_and(|gs| gs.is_changed());
+    let state_moved = rail.game_state.is_changed();
     let local_may_act = panel.peers.may_act_now(&state.0);
     let spectator = panel.peers.is_spectator();
     let rulebook = &*panel.rulebook;
@@ -733,7 +733,7 @@ pub(crate) fn unit_status_lines(
     if let Some(boat) = unit.state.loaded_on {
         lines.push(format!(
             "aboard {} (§5.21).",
-            crate::combat_ui::unit_name(boat, Some(gs))
+            crate::combat_ui::unit_name(boat, gs)
         ));
     }
     if unit.state.engines_lost {

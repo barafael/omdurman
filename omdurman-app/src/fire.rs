@@ -885,7 +885,7 @@ pub fn fire_combat_preview_ui(
                     unit: c.unit,
                     mount: c.mount,
                 },
-                Some(&gs.0),
+                &gs.0,
             );
             Some(if c.factor == printed {
                 format!("{name}: {}", c.factor)

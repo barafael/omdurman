@@ -24,43 +24,30 @@ pub(crate) fn coord_passable(board: &BoardInfo, coord: HexCoord, is_boat: bool) 
 /// Movement points required to step `from` -> `coord` (§5.11, Terrain
 /// Effects Chart): the shared `terrain_chart::land_step_cost` rule -- the
 /// entered terrain (1 along a road link) plus the crossed hexside (Khor +5,
-/// Crest +1, gate/breach +1, §9.233 Zariba end +2). With a game state the
-/// engine prices the step itself (it knows the breaches); the bare board is
-/// the no-game fallback. Gunboats pay a flat 1 MP per entered Nile
+/// Crest +1, gate/breach +1, §9.233 Zariba end +2), priced by the engine
+/// (it knows the breaches). Gunboats pay a flat 1 MP per entered Nile
 /// hex (§5.24). Returns 0 if the step is off-map or closed to the mover
 /// (callers should check passability separately).
 pub(crate) fn floor_movement_cost(
-    board: &BoardInfo,
+    gs: &omdurman_rules::effects::GameState,
     from: HexCoord,
     coord: HexCoord,
     is_boat: bool,
-    game_state: Option<&omdurman_rules::effects::GameState>,
 ) -> i16 {
     if is_boat {
-        return if coord_passable(board, coord, true) {
+        return if coord_passable(gs.board, coord, true) {
             1
         } else {
             0
         };
     }
-    if !coord_passable(board, coord, false) {
+    if !coord_passable(gs.board, coord, false) {
         return 0;
     }
-    if let Some(gs) = game_state {
-        return i16::try_from(gs.land_step_cost(from, coord))
-            .ok()
-            .filter(|&c| c < i16::MAX)
-            .unwrap_or(0);
-    }
-    let Some(terrain) = board.terrain_at(coord) else {
-        return 0;
-    };
-    omdurman_rules::terrain_chart::land_step_cost(
-        terrain,
-        board.road_links(from, coord),
-        board.hexside_between(from, coord),
-    )
-    .unwrap_or(0)
+    i16::try_from(gs.land_step_cost(from, coord))
+        .ok()
+        .filter(|&c| c < i16::MAX)
+        .unwrap_or(0)
 }
 
 /// §5.24: a gunboat's whole turn is capped at the upstream allowance once any
@@ -71,20 +58,17 @@ pub(crate) fn floor_movement_cost(
 /// the allowance that binds once this leg is on the path. Land movers always pass (their scalar
 /// budget already matches the engine's cumulative check).
 pub(crate) fn gunboat_cap_ok(
-    game_state: Option<&crate::GameStateResource>,
+    game_state: &crate::GameStateResource,
     placed: &PlacedUnit,
     movement_path: &MovementPath,
     from: HexCoord,
     to: HexCoord,
     leg_cost: i16,
 ) -> bool {
-    let (Some(gs), Some(budget)) = (
-        game_state,
-        GunboatBudget::of(game_state, placed, movement_path),
-    ) else {
+    let Some(budget) = GunboatBudget::of(game_state, placed, movement_path) else {
         return true;
     };
-    if !budget.upstream_already && !step_is_upstream(&gs.0, from, to) {
+    if !budget.upstream_already && !step_is_upstream(&game_state.0, from, to) {
         // Pure-downstream route: the downstream allowance binds, and
         // `remaining_mp` already encodes it.
         return true;
@@ -106,14 +90,13 @@ pub(crate) struct GunboatBudget {
 }
 
 impl GunboatBudget {
-    /// `None` for a land mover (its scalar budget is exact) or with no
-    /// engine state.
+    /// `None` for a land mover (its scalar budget is exact).
     pub(crate) fn of(
-        game_state: Option<&crate::GameStateResource>,
+        game_state: &crate::GameStateResource,
         placed: &PlacedUnit,
         movement_path: &MovementPath,
     ) -> Option<Self> {
-        let gs = &game_state?.0;
+        let gs = &game_state.0;
         let uid = placed.unit_id?;
         let unit = gs.find_unit(uid)?;
         // The night-halved allowances (§8.1).
@@ -151,20 +134,17 @@ pub(crate) fn step_is_upstream(
 
 /// Remaining movement points for a placed unit this turn, from the rules
 /// engine: full (night-adjusted) allowance minus what the unit already spent
-/// (§5.11/§5.12). Units with no rules identity, or in a session with no game
-/// state (editor), are treated as unconstrained (99). This is the budget the
+/// (§5.11/§5.12). Units with no rules identity are treated as unconstrained
+/// (99). This is the budget the
 /// picker plots movement against for both single and stack selection.
-pub(crate) fn unit_remaining_mp(
-    game_state: Option<&crate::GameStateResource>,
-    placed: &PlacedUnit,
-) -> i16 {
+pub(crate) fn unit_remaining_mp(game_state: &crate::GameStateResource, placed: &PlacedUnit) -> i16 {
     // The engine's figure: night halving (§8.1, gunboats included), the
     // sticky upstream cap (§5.24 -- before it, a plan may run the full
     // downstream allowance), and nothing at all for a unit that may not
     // move now (§5.43, §9.346, ...).
-    match (placed.unit_id, game_state) {
-        (Some(uid), Some(gs)) => gs.0.remaining_movement(uid),
-        _ => 99,
+    match placed.unit_id {
+        Some(uid) => game_state.0.remaining_movement(uid),
+        None => 99,
     }
 }
 
@@ -181,8 +161,8 @@ pub(crate) struct MovementLegCheck {
     /// leader-command rules). Deliberately NOT a leg blocker: a path may pass
     /// *through* a friendly hex even when a stop there would exceed the cap
     /// (§5.51 — the stacking limit applies at the end of the move). The commit
-    /// gate re-checks it against the plotted final destination. `true` when
-    /// there is no engine state to consult.
+    /// gate re-checks it against the plotted final destination. `true` for a
+    /// counter without a rules identity.
     pub(crate) stacking_ok: bool,
     /// §5.43: this leg's destination is in an enemy ZOC, so the builder must
     /// force a stop (no further legs this turn). A unit that *began* in a ZOC
@@ -214,19 +194,11 @@ impl MovementLegCheck {
 /// Whether a wall / Zariba hexside blocks the step `start -> coord` (a
 /// §6.63 breach reopens it, which only the engine state knows).
 pub(crate) fn hexside_blocks_step(
-    board: &BoardInfo,
+    gs: &omdurman_rules::effects::GameState,
     start: HexCoord,
     coord: HexCoord,
-    game_state: Option<&crate::GameStateResource>,
 ) -> bool {
-    match game_state {
-        Some(gs) => {
-            gs.0.hexside_effective_is(start, coord, omdurman_types::HexsideKind::blocks_movement)
-        }
-        None => board
-            .hexside_between(start, coord)
-            .is_some_and(omdurman_types::HexsideKind::blocks_movement),
-    }
+    gs.hexside_effective_is(start, coord, omdurman_types::HexsideKind::blocks_movement)
 }
 
 /// Compute the shared leg facts for a mover represented by `placed` (the stack
@@ -238,19 +210,17 @@ pub(crate) fn movement_leg_check(
     placed: &PlacedUnit,
     start_coord: HexCoord,
     coord: HexCoord,
-    game_state: Option<&crate::GameStateResource>,
+    game_state: &crate::GameStateResource,
 ) -> MovementLegCheck {
     let mover_owner = omdurman_rules::unit_profiles::section_owner(placed.section_name);
-    let mover = placed
-        .unit_id
-        .zip(game_state)
-        .and_then(|(uid, gs)| gs.0.find_unit(uid).map(|m| (gs, m)));
+    let gs = &game_state.0;
+    let mover = placed.unit_id.and_then(|uid| gs.find_unit(uid));
     // A land step, with a game: the engine's own per-step check (§5.22 the
     // Nile, the board edge, §5.23 walls and who may enter the walled city,
     // §9.233 the Zariba, enemy-held hexes -- a lone Anglo-Egyptian leader
     // excepted, whom a Dervish unit overruns, §6.51).
     let land_step = match mover {
-        Some((gs, m)) if !placed.is_boat => Some(gs.0.check_land_step(m, start_coord, coord)),
+        Some(m) if !placed.is_boat => Some(gs.check_land_step(m, start_coord, coord)),
         _ => None,
     };
     let enemy_occupied = match &land_step {
@@ -272,11 +242,11 @@ pub(crate) fn movement_leg_check(
                 })
         }
     };
-    // With no engine state (editor session), defer to commit-time validation.
+    // A counter without a rules identity: defer to commit-time validation.
     let (stacking_ok, entering_enemy_zoc) = match mover {
-        Some((gs, m)) => (
-            gs.0.check_stacking(m, coord).is_ok(),
-            gs.0.hex_in_enemy_zoc(coord, m.profile.identity.owner(), m.profile.kind),
+        Some(m) => (
+            gs.check_stacking(m, coord).is_ok(),
+            gs.hex_in_enemy_zoc(coord, m.profile.identity.owner(), m.profile.kind),
         ),
         None => (true, false),
     };
@@ -285,17 +255,11 @@ pub(crate) fn movement_leg_check(
         Some(step) => step.is_ok() || enemy_occupied,
         None => {
             coord_passable(board, coord, placed.is_boat)
-                && !hexside_blocks_step(board, start_coord, coord, game_state)
+                && !hexside_blocks_step(&game_state.0, start_coord, coord)
         }
     };
     let cost = if adjacent {
-        floor_movement_cost(
-            board,
-            start_coord,
-            coord,
-            placed.is_boat,
-            game_state.map(|gs| &gs.0),
-        )
+        floor_movement_cost(&game_state.0, start_coord, coord, placed.is_boat)
     } else {
         0
     };
@@ -324,7 +288,7 @@ pub(crate) fn auto_route(
     goal: HexCoord,
     budget: i16,
     gunboat: Option<GunboatBudget>,
-    game_state: Option<&crate::GameStateResource>,
+    game_state: &crate::GameStateResource,
 ) -> Option<Vec<HexCoord>> {
     cheapest_route(
         board,
@@ -351,12 +315,12 @@ pub(crate) fn cheapest_route(
     goal: HexCoord,
     budget: i16,
     gunboat: Option<GunboatBudget>,
-    game_state: Option<&crate::GameStateResource>,
+    game_state: &crate::GameStateResource,
 ) -> Option<(Vec<HexCoord>, i16)> {
     use std::cmp::Reverse;
     use std::collections::{BinaryHeap, HashMap};
     type Node = (HexCoord, bool);
-    let gs = game_state.map(|gs| &gs.0);
+    let gs = &game_state.0;
     let limit = |up: bool| gunboat.map_or(budget, |g| budget.min(g.left(up)));
     let start_node: Node = (start, false);
     let mut best: HashMap<Node, i16> = HashMap::from([(start_node, 0)]);
@@ -393,8 +357,7 @@ pub(crate) fn cheapest_route(
             if (next != goal && leg.entering_enemy_zoc) || (next == goal && !leg.stacking_ok) {
                 continue;
             }
-            let next_up =
-                up || (gunboat.is_some() && gs.is_some_and(|gs| step_is_upstream(gs, hex, next)));
+            let next_up = up || (gunboat.is_some() && (step_is_upstream(gs, hex, next)));
             let total = cost.saturating_add(leg.cost);
             let node = (next, next_up);
             if total > limit(next_up) || best.get(&node).is_some_and(|&b| b <= total) {
@@ -468,6 +431,13 @@ mod tests {
     // -- Plot-time cost parity with the engine ------------------------------
 
     /// A two-hex clear board with an optional hexside annotation between them.
+    /// A campaign engine state on `board`.
+    fn on_board(board: BoardInfo) -> omdurman_rules::effects::GameState {
+        let mut gs = omdurman_rules::effects::GameState::new(omdurman_types::Scenario::Campaign);
+        gs.board = board.leak();
+        gs
+    }
+
     fn two_hex_map(hexside: Option<omdurman_types::HexsideKind>) -> BoardInfo {
         let mut board = BoardInfo::default();
         for q in 0..=1 {
@@ -491,18 +461,22 @@ mod tests {
     fn trench_end_crossing_costs_two_extra_mp() {
         let a = HexCoord::new(0, 0);
         let b = HexCoord::new(1, 0);
-        let map = two_hex_map(Some(omdurman_types::HexsideKind::ZaribaTrenchEnd));
+        let mut map = on_board(two_hex_map(Some(
+            omdurman_types::HexsideKind::ZaribaTrenchEnd,
+        )));
+        // In the Campaign a Zariba side binds once built (§5.3).
+        map.zariba_hexsides.push(HexsideRef::new(a, b));
         assert_eq!(
-            floor_movement_cost(&map, a, b, false, None),
+            floor_movement_cost(&map, a, b, false),
             3,
             "clear (1) + trench-end surcharge (2)"
         );
         // The reverse crossing pays the surcharge too (the end hexside is
         // bidirectional).
-        assert_eq!(floor_movement_cost(&map, b, a, false, None), 3);
+        assert_eq!(floor_movement_cost(&map, b, a, false), 3);
         // An ordinary hexside crossing has no surcharge.
-        let plain = two_hex_map(None);
-        assert_eq!(floor_movement_cost(&plain, a, b, false, None), 1);
+        let plain = on_board(two_hex_map(None));
+        assert_eq!(floor_movement_cost(&plain, a, b, false), 1);
     }
 
     /// A campaign state with one Dervish gunboat (upstream 10 / downstream 16)
@@ -584,7 +558,7 @@ mod tests {
         let (mut gs, id, section) = gunboat_state();
         let placed = boat_placement(HexCoord::new(3, 0), section, Some(id));
         let empty = MovementPath::default();
-        let budget = GunboatBudget::of(Some(&gs), &placed, &empty).expect("a gunboat");
+        let budget = GunboatBudget::of(&gs, &placed, &empty).expect("a gunboat");
         assert_eq!(budget.left(false), 16);
         assert_eq!(budget.left(true), 10);
 
@@ -594,12 +568,12 @@ mod tests {
             .legs
             .push((HexCoord::new(3, 0), HexCoord::new(2, 0)));
         pending.cost_so_far = 1;
-        let budget = GunboatBudget::of(Some(&gs), &placed, &pending).expect("a gunboat");
+        let budget = GunboatBudget::of(&gs, &placed, &pending).expect("a gunboat");
         assert_eq!(budget.left(false), 9);
 
         // Sticky: an upstream move earlier this turn binds the cap too.
         gs.0.gunboats_upstream_this_turn.push(id);
-        let budget = GunboatBudget::of(Some(&gs), &placed, &empty).expect("a gunboat");
+        let budget = GunboatBudget::of(&gs, &placed, &empty).expect("a gunboat");
         assert_eq!(budget.left(false), 10);
 
         // Land movers keep their scalar budget.
@@ -608,7 +582,7 @@ mod tests {
             unit_id: None,
             ..placed
         };
-        assert!(GunboatBudget::of(Some(&gs), &land, &empty).is_none());
+        assert!(GunboatBudget::of(&gs, &land, &empty).is_none());
     }
 
     /// §5.24: the §5.24 sticky upstream cap and the whole-path upstream
@@ -627,7 +601,7 @@ mod tests {
         // A purely-downstream leg passes: the downstream allowance binds.
         let empty = MovementPath::default();
         assert!(gunboat_cap_ok(
-            Some(&gs),
+            &gs,
             &placed,
             &empty,
             HexCoord::new(3, 0),
@@ -645,7 +619,7 @@ mod tests {
         }
         pending.cost_so_far = 8;
         assert!(gunboat_cap_ok(
-            Some(&gs),
+            &gs,
             &placed,
             &pending,
             HexCoord::new(11, 0),
@@ -655,7 +629,7 @@ mod tests {
         pending.legs.push((HexCoord::new(11, 0), downstream(11)));
         pending.cost_so_far = 9;
         assert!(gunboat_cap_ok(
-            Some(&gs),
+            &gs,
             &placed,
             &pending,
             HexCoord::new(12, 0),
@@ -665,7 +639,7 @@ mod tests {
         pending.legs.push((HexCoord::new(12, 0), downstream(12)));
         pending.cost_so_far = 10;
         assert!(!gunboat_cap_ok(
-            Some(&gs),
+            &gs,
             &placed,
             &pending,
             HexCoord::new(13, 0),
@@ -678,7 +652,7 @@ mod tests {
         gs.0.gunboats_upstream_this_turn.push(id);
         let fresh = MovementPath::default();
         assert!(gunboat_cap_ok(
-            Some(&gs),
+            &gs,
             &placed,
             &fresh,
             HexCoord::new(3, 0),
@@ -686,7 +660,7 @@ mod tests {
             9
         ));
         assert!(!gunboat_cap_ok(
-            Some(&gs),
+            &gs,
             &placed,
             &fresh,
             HexCoord::new(3, 0),
@@ -703,8 +677,8 @@ mod tests {
     fn remaining_mp_respects_the_sticky_upstream_cap() {
         let (mut gs, id, section) = gunboat_state();
         let placed = boat_placement(HexCoord::new(3, 0), section, Some(id));
-        assert_eq!(unit_remaining_mp(Some(&gs), &placed), 16);
+        assert_eq!(unit_remaining_mp(&gs, &placed), 16);
         gs.0.gunboats_upstream_this_turn.push(id);
-        assert_eq!(unit_remaining_mp(Some(&gs), &placed), 10);
+        assert_eq!(unit_remaining_mp(&gs, &placed), 10);
     }
 }

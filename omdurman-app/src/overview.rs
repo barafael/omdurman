@@ -15,7 +15,7 @@ pub struct RailPicker<'w, 's> {
     pub picker_state: ResMut<'w, PickerState>,
     pub tray: ResMut<'w, UnitPicker>,
     pub movement_path: Res<'w, MovementPath>,
-    pub game_state: Option<Res<'w, GameStateResource>>,
+    pub game_state: Res<'w, GameStateResource>,
     pub placed_units: Query<'w, 's, (Entity, &'static PlacedUnit)>,
 }
 
@@ -45,9 +45,9 @@ pub fn unit_overview_ui(
     // counters came or went -- not every frame (a sort plus a name lookup
     // per counter).
     let counters = rail.placed_units.iter().count();
-    let stale = unit_list.as_ref().is_none_or(|cache| {
-        cache.counters != counters || rail.game_state.as_ref().is_some_and(|gs| gs.is_changed())
-    });
+    let stale = unit_list
+        .as_ref()
+        .is_none_or(|cache| cache.counters != counters || rail.game_state.is_changed());
     if stale {
         let mut units: Vec<_> = rail.placed_units.iter().map(|(_, p)| p).collect();
         units.sort_by_key(|u| (u.section_name.display_name(), u.col, u.row));
@@ -59,17 +59,14 @@ pub fn unit_overview_ui(
                 Some(omdurman_types::Player::Dervish) => 1,
                 None => 2,
             };
-            let label = placed_unit_identity(placed, rail.game_state.as_deref());
+            let label = placed_unit_identity(placed, &rail.game_state);
             let entry = groups.entry((side, label)).or_default();
             entry.0 += 1;
             entry.1 += usize::from(placed.disrupted);
         }
         // The units off the board for good: the casualties, and the Dervish
         // deserters of the first night (§8.2), listed apart.
-        let scenario = rail
-            .game_state
-            .as_deref()
-            .map_or(omdurman_types::Scenario::Campaign, |gs| gs.0.scenario);
+        let scenario = rail.game_state.0.scenario;
         let off_board = |ids: &[omdurman_rules::UnitId]| {
             let mut gone: std::collections::BTreeMap<(u8, String), usize> =
                 std::collections::BTreeMap::new();
@@ -87,10 +84,8 @@ pub fn unit_overview_ui(
             }
             gone
         };
-        let (eliminated, deserted) = match rail.game_state.as_deref() {
-            Some(gs) => (off_board(&gs.0.eliminated), off_board(&gs.0.deserted)),
-            None => Default::default(),
-        };
+        let eliminated = off_board(&rail.game_state.0.eliminated);
+        let deserted = off_board(&rail.game_state.0.deserted);
         *unit_list = Some(UnitListCache {
             counters,
             groups,
@@ -119,11 +114,9 @@ pub fn unit_overview_ui(
                     egui::ScrollArea::vertical()
                         .id_salt("command_rail_scroll")
                         .show(ui, |ui| {
-                            if *app_state.get() == crate::AppState::InGame
-                                && let Some(state) = rail.game_state.as_deref()
-                            {
-                                let state_moved =
-                                    rail.game_state.as_ref().is_some_and(|gs| gs.is_changed());
+                            if *app_state.get() == crate::AppState::InGame {
+                                let state = &rail.game_state;
+                                let state_moved = rail.game_state.is_changed();
                                 crate::ui_plugin::game_control_section(
                                     ui,
                                     state,
@@ -161,7 +154,7 @@ pub fn unit_overview_ui(
                                                 .color(crate::ui::palette::RAIL_DIM),
                                         );
                                     }
-                                    let stamp = crate::ui_trace::Stamp::of(Some(state));
+                                    let stamp = crate::ui_trace::Stamp::of(state);
                                     // The tray's flags are rewritten every frame by
                                     // `unit_picker_ui` around change detection; only a pick
                                     // marks the hand changed.
@@ -388,24 +381,8 @@ fn off_board_section(
     });
 }
 
-fn placed_unit_identity(placed: &PlacedUnit, game_state: Option<&GameStateResource>) -> String {
-    let Some(gs) = game_state else {
-        return format!(
-            "{} ({}x{})",
-            placed.section_name.display_name(),
-            placed.col,
-            placed.row
-        );
-    };
-    let Some(uid) = placed.unit_id else {
-        return format!(
-            "{} ({}x{})",
-            placed.section_name.display_name(),
-            placed.col,
-            placed.row
-        );
-    };
-    let Some(unit) = gs.0.find_unit(uid) else {
+fn placed_unit_identity(placed: &PlacedUnit, gs: &GameStateResource) -> String {
+    let Some(unit) = placed.unit_id.and_then(|uid| gs.0.find_unit(uid)) else {
         return format!(
             "{} ({}x{})",
             placed.section_name.display_name(),

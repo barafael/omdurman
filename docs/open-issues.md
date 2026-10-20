@@ -172,7 +172,6 @@ seat handling).
 - Snapshot-request retry never gives up (every 2 s, then every 15 s once
   the bootstrap budget has passed).
 - Broadcast retention is all-or-nothing.
-- 23 systems still take `Option<Res<GameStateResource>>`.
 
 ## Verification
 

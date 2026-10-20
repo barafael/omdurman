@@ -132,7 +132,7 @@ fn write_hex_probe(
     board: ProbeBoard,
     cams: Query<(&Camera, &GlobalTransform), With<crate::camera::RtsCamera>>,
     window: Query<&Window, With<bevy::window::PrimaryWindow>>,
-    game_state: Option<Res<crate::GameStateResource>>,
+    game_state: Res<crate::GameStateResource>,
 ) {
     let now = time.elapsed_secs_f64();
     if now - *last < 0.5 {
@@ -148,7 +148,7 @@ fn write_hex_probe(
     else {
         return;
     };
-    let board = crate::board_of(game_state.as_deref());
+    let board = game_state.0.board;
     let origin = layout.adjusted_origin(&overlay.params);
     // Physical pixels, as the screenshot and the input tools address them
     // (viewport coordinates are logical: off by the DPI scale otherwise).
@@ -172,37 +172,35 @@ fn write_hex_probe(
     // `U owner q r disrupted id kind` line per unit. The default engine state
     // before any `StartGame` reads like a game in set-up, so that case says
     // `started=false`: an AI doing nothing then waits for a game, not hung.
-    if let Some(gs) = game_state {
-        let gs = &gs.0;
-        let mut state = format!(
-            "T turn={:?} phase={:?} active={:?}{}{}\n",
-            gs.current_turn,
-            gs.phase,
-            gs.player_to_act().unwrap_or(gs.phase_player()),
-            if gs.game_over {
-                format!(" game_over result={:?}", gs.game_result)
-            } else {
-                String::new()
-            },
-            if turn.is_some_and(|turn| turn.game_started) {
-                ""
-            } else {
-                " started=false"
-            }
-        );
-        for u in &gs.units {
-            state.push_str(&format!(
-                "U {:?} {} {} {} {:?} {:?}\n",
-                u.profile.identity.owner(),
-                u.position.q,
-                u.position.r,
-                u.state.disrupted,
-                u.id,
-                u.profile.identity,
-            ));
+    let gs = &game_state.0;
+    let mut state = format!(
+        "T turn={:?} phase={:?} active={:?}{}{}\n",
+        gs.current_turn,
+        gs.phase,
+        gs.player_to_act().unwrap_or(gs.phase_player()),
+        if gs.game_over {
+            format!(" game_over result={:?}", gs.game_result)
+        } else {
+            String::new()
+        },
+        if turn.is_some_and(|turn| turn.game_started) {
+            ""
+        } else {
+            " started=false"
         }
-        let _ = std::fs::write(format!("{}.state", path.0), state);
+    );
+    for u in &gs.units {
+        state.push_str(&format!(
+            "U {:?} {} {} {} {:?} {:?}\n",
+            u.profile.identity.owner(),
+            u.position.q,
+            u.position.r,
+            u.state.disrupted,
+            u.id,
+            u.profile.identity,
+        ));
     }
+    let _ = std::fs::write(format!("{}.state", path.0), state);
 }
 
 /// Serve a `<probe>.shot` screenshot request (see [`HexProbePlugin`]).

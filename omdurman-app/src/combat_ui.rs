@@ -66,10 +66,10 @@ pub(crate) fn describe_result(result: CombatResult) -> String {
 /// (dispatch slips, combat-card casualty lists).
 pub(crate) fn unit_name(
     id: omdurman_rules::UnitId,
-    gs: Option<&omdurman_rules::effects::GameState>,
+    gs: &omdurman_rules::effects::GameState,
 ) -> String {
-    let scenario = gs.map_or(omdurman_types::Scenario::Campaign, |s| s.scenario);
-    gs.and_then(|s| s.find_unit(id))
+    let scenario = gs.scenario;
+    gs.find_unit(id)
         .map(|u| u.profile.identity.label_in(scenario))
         .or_else(|| {
             omdurman_rules::unit_profiles::profile_for_unit(id)
@@ -102,7 +102,7 @@ pub(crate) fn tally_names(names: Vec<String>) -> Vec<String> {
 
 pub(crate) fn shot_name(
     shot: omdurman_rules::Shot,
-    gs: Option<&omdurman_rules::effects::GameState>,
+    gs: &omdurman_rules::effects::GameState,
 ) -> String {
     let name = unit_name(shot.unit, gs);
     match shot.mount {

@@ -19,11 +19,10 @@ pub struct NewspaperReport {
 /// Compose (or recompose, should a telegram arrive late) the front page of
 /// a finished game; clear it when the shown game is not over.
 pub(crate) fn compose_newspaper(
-    game_state: Option<Res<crate::GameStateResource>>,
+    state: Res<crate::GameStateResource>,
     press: Res<crate::telegram::TelegramLog>,
     mut report: ResMut<NewspaperReport>,
 ) {
-    let Some(state) = game_state else { return };
     if !state.0.game_over {
         if report.page.is_some() {
             *report = NewspaperReport::default();
