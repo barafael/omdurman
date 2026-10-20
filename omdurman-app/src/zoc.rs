@@ -36,26 +36,24 @@ pub struct ZocOverlay {
 /// shows *both* sides' zones: yellow rings for ZOC projected by the Dervish,
 /// blue rings for ZOC projected by the Anglo-Egyptians.
 pub fn zoc_overlay_mesh(
-    mut commands: Commands,
-    hex: crate::HexRender,
+    mut draw: crate::overlay::Overlay,
     toggle: Res<ZocOverlay>,
     game_state: Res<GameStateResource>,
     peers: Peers,
     app_state: Res<State<crate::AppState>>,
     existing: Query<Entity, With<ZocRing>>,
     mut last_zoc: Local<Option<HashSet<HexCoord>>>,
-    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
     mut last_view: Local<Option<(bool, Option<Player>)>>,
 ) {
-    if generation.invalidates(&mut seen_generation) {
+    if draw.stale() {
         *last_zoc = None;
     }
-    let assets = &hex.assets;
+    let assets = &draw.hex.assets;
     let existing: Vec<Entity> = existing.iter().collect();
 
     if !toggle.visible {
         if !existing.is_empty() {
-            crate::ui::despawn_all(&mut commands, &existing);
+            draw.clear(existing.iter().copied());
             *last_zoc = None;
         }
         return;
@@ -64,7 +62,7 @@ pub fn zoc_overlay_mesh(
     let gs = game_state;
     if matches!(gs.0.phase, Phase::Setup) {
         if !existing.is_empty() {
-            crate::ui::despawn_all(&mut commands, &existing);
+            draw.clear(existing.iter().copied());
             *last_zoc = None;
         }
         return;
@@ -106,19 +104,18 @@ pub fn zoc_overlay_mesh(
         return;
     }
 
-    let rings = crate::overlay::ring_batch(&mut commands, &hex, existing);
+    draw.clear(existing);
     // Inset inside the hex edge, each side on its own ring: drawn on the
     // edge at the movement / fire / melee rings' height, the overlay fought
     // them (and, spectating, the other side's ring) for the same pixels and
     // flickered between the two colours.
     for (hex, material, nth) in spawns {
-        rings.ring(
-            &mut commands,
+        draw.ring(
             ZocRing,
             hex,
             1.47 - 0.01 * nth,
             0.9 - 0.08 * nth,
-            &material,
+            material.clone(),
         );
     }
 

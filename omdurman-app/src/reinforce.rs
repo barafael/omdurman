@@ -134,16 +134,14 @@ pub fn arrival_allowance(gs: &GameState) -> Option<String> {
 /// still enter. The rings are rebuilt only when the set changes (or the
 /// overlays were cleared).
 pub fn reinforce_entry_overlay_mesh(
-    mut commands: Commands,
-    hex: crate::HexRender,
+    mut draw: crate::overlay::Overlay,
     game_state: Res<GameStateResource>,
     peers: Peers,
     picker: (Res<UnitPicker>, Res<crate::picker::PickerState>),
     existing: Query<Entity, With<ReinforceEntryRing>>,
     mut last: Local<Option<Vec<HexCoord>>>,
-    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
-    if generation.invalidates(&mut seen_generation) {
+    if draw.stale() {
         *last = None;
     }
     let (picker, picker_state) = picker;
@@ -168,15 +166,14 @@ pub fn reinforce_entry_overlay_mesh(
     if last.as_ref() == Some(&targets) {
         return;
     }
-    let rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    draw.clear(existing.iter());
     for &target in &targets {
-        rings.ring(
-            &mut commands,
+        draw.ring(
             ReinforceEntryRing,
             target,
             1.4,
             1.0,
-            &hex.assets.green,
+            draw.hex.assets.green.clone(),
         );
     }
     *last = Some(targets);

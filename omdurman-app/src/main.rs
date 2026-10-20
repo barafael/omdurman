@@ -74,7 +74,7 @@ pub(crate) use board_state::{ActiveBoard, LoadedAnnotations, PendingMapLoad};
 pub(crate) use layout::ScreenLayout;
 pub(crate) use lobby::{LobbyScenario, LobbyTab, LocalFaction, LocalOptionalRule, LocalSpectator};
 pub(crate) use net_plugin::{PendingEdits, PendingIncoming, TurnState};
-pub(crate) use params::{BoardGeometry, DirectionArrowCtx, GameStateParams, HexRender};
+pub(crate) use params::{BoardGeometry, GameStateParams, HexRender};
 pub(crate) use render::{HoveredHex, HoveredUnit};
 pub(crate) use scenario_setup::map_kind_for_scenario;
 pub(crate) use settings::ReconnectRoom;

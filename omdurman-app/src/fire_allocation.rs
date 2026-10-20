@@ -721,15 +721,13 @@ fn allocation_arrow_key(
 /// Runs in the fire `GameSet`; exit the fire phase and they vanish with the
 /// rest of the gameplay overlays.
 pub fn fire_allocation_arrows(
-    mut commands: Commands,
-    render: crate::DirectionArrowCtx,
+    mut draw: crate::overlay::Overlay,
     existing: Query<Entity, With<AllocationArrow>>,
     allocation: Res<FireAllocationState>,
     gs: Option<Res<GameStateResource>>,
     mut last: Local<Option<Vec<(HexCoord, HexCoord)>>>,
-    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
-    let invalidated = generation.invalidates(&mut seen_generation);
+    let invalidated = draw.stale();
     if invalidated {
         // The overlays were cleared: forget what we last drew, so the arrows
         // come back instead of being taken for still there.
@@ -745,12 +743,12 @@ pub fn fire_allocation_arrows(
         return;
     }
     let existing: Vec<Entity> = existing.iter().collect();
-    crate::ui::despawn_all(&mut commands, &existing);
+    draw.clear(existing.iter().copied());
     for &(from, to) in &key {
         // The shared arrow mesh (tail at the firer, head at the target) --
         // not the hex-ring mesh, which stretched into a double-pointed
         // hexagon and read as fire in both directions.
-        crate::combat_ui::direction_arrow(&mut commands, &render, from, to, AllocationArrow);
+        draw.arrow(from, to, AllocationArrow);
     }
     *last = Some(key);
 }

@@ -105,15 +105,6 @@ pub(crate) struct BoardGeometry<'w> {
     pub overlay: Res<'w, HexOverlay>,
 }
 
-/// Bundle of the movement-arrow mesh/material assets with the hex-render
-/// resources, used by the fire/melee direction-arrow systems to stay under
-/// Bevy's system-parameter limit.
-#[derive(bevy::ecs::system::SystemParam)]
-pub(crate) struct DirectionArrowCtx<'w> {
-    pub arrow_assets: Res<'w, crate::render::MovementArrowAssets>,
-    pub hex: HexRender<'w>,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

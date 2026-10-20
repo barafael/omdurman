@@ -106,8 +106,7 @@ pub struct RetreatTargetRing;
 type RetreatOverlayKey = (UnitId, Vec<HexCoord>, Option<[HexCoord; 3]>);
 
 pub fn retreat_overlay_mesh(
-    mut commands: Commands,
-    arrows: crate::DirectionArrowCtx,
+    mut draw: crate::overlay::Overlay,
     hovered: Res<crate::HoveredHex>,
     selection: RetreatSelection,
     game_state: Option<Res<GameStateResource>>,
@@ -115,9 +114,8 @@ pub fn retreat_overlay_mesh(
     existing: Query<Entity, With<RetreatTargetRing>>,
     mut last: Local<Option<RetreatOverlayKey>>,
     placed_changed: Query<(), Changed<PlacedUnit>>,
-    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
-    let invalidated = generation.invalidates(&mut seen_generation);
+    let invalidated = draw.stale();
     if invalidated {
         // The overlays were cleared (`clear_gameplay_overlays`): forget what
         // we last drew so the "unchanged" checks below rebuild the rings
@@ -150,8 +148,7 @@ pub fn retreat_overlay_mesh(
         // Nothing to highlight: clear any rings left over (once, not every
         // frame).
         if last.is_some() {
-            let old: Vec<Entity> = existing.iter().collect();
-            crate::ui::despawn_all(&mut commands, &old);
+            draw.clear(existing.iter());
             *last = None;
         }
         return;
@@ -169,20 +166,19 @@ pub fn retreat_overlay_mesh(
     if last.as_ref() == Some(&key) {
         return;
     }
-    let rings = crate::overlay::ring_batch(&mut commands, &arrows.hex, existing.iter());
+    draw.clear(existing.iter());
     for target in &key.1 {
-        rings.ring(
-            &mut commands,
+        draw.ring(
             RetreatTargetRing,
             *target,
             1.5,
             1.0,
-            &arrows.hex.assets.orange,
+            draw.hex.assets.orange.clone(),
         );
     }
     if let Some([from, mid, to]) = path {
         for (a, b) in [(from, mid), (mid, to)] {
-            crate::combat_ui::direction_arrow(&mut commands, &arrows, a, b, RetreatTargetRing);
+            draw.arrow(a, b, RetreatTargetRing);
         }
     }
     *last = Some(key);

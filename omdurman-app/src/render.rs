@@ -249,7 +249,7 @@ type CounterPips = Vec<(Entity, Vec<Pip>)>;
 /// it through the stack layout. Rebuilt only when what they show changed
 /// (or the overlays were cleared, see [`crate::picker::OverlayGeneration`]).
 pub fn update_acted_markers(
-    mut commands: Commands,
+    mut draw: crate::overlay::Overlay,
     game_state: Res<crate::GameStateResource>,
     counters: Query<(Entity, &crate::picker::PlacedUnit)>,
     existing: Query<Entity, With<ActedMarker>>,
@@ -258,9 +258,8 @@ pub fn update_acted_markers(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut assets: Local<Option<PipAssets>>,
     mut last: Local<Option<CounterPips>>,
-    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
-    if generation.invalidates(&mut seen_generation) {
+    if draw.stale() {
         *last = None;
     }
     let gs = &game_state.0;
@@ -276,7 +275,7 @@ pub fn update_acted_markers(
         return;
     }
     let existing: Vec<Entity> = existing.iter().collect();
-    crate::ui::despawn_all(&mut commands, &existing);
+    draw.clear(existing.iter().copied());
 
     let sprite = overlay.params.hex_size * crate::picker::SPRITE_HEX_FRACTION;
     let pip = sprite * 0.16;
@@ -304,7 +303,7 @@ pub fn update_acted_markers(
             // plane (local +Y is the counter's top), a hair above it.
             let x = sprite * 0.5 - pip * (0.7 + 1.15 * i as f32);
             let y = sprite * 0.5 - pip * 0.7;
-            commands.entity(*counter).with_child((
+            draw.commands.entity(*counter).with_child((
                 ActedMarker,
                 Mesh3d(mesh.clone()),
                 MeshMaterial3d(material.clone()),
@@ -327,16 +326,14 @@ pub struct NileFlowArrow;
 /// upstream, on the boat's smaller upstream allowance. Built when a boat is
 /// selected, cleared when it is not.
 pub fn nile_flow_arrows(
-    mut commands: Commands,
-    arrows: crate::DirectionArrowCtx,
+    mut draw: crate::overlay::Overlay,
     picker: Res<crate::picker::PickerState>,
     placed_units: Query<(Entity, &crate::picker::PlacedUnit)>,
     game_state: Res<crate::GameStateResource>,
     existing: Query<Entity, With<NileFlowArrow>>,
     mut shown: Local<bool>,
-    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
-    if generation.invalidates(&mut seen_generation) || arrows.hex.geometry_changed() {
+    if draw.stale() {
         *shown = false;
     }
     let gs = &game_state.0;
@@ -346,22 +343,20 @@ pub fn nile_flow_arrows(
     if boat == *shown {
         return;
     }
-    let old: Vec<Entity> = existing.iter().collect();
-    crate::ui::despawn_all(&mut commands, &old);
+    draw.clear(existing.iter());
     *shown = boat;
     if !boat {
         return;
     }
-    let hex = &arrows.hex;
-    let origin = hex.layout.adjusted_origin(&hex.overlay.params);
-    let size = hex.overlay.params.hex_size;
+    let origin = draw.hex.layout.adjusted_origin(&draw.hex.overlay.params);
+    let size = draw.hex.overlay.params.hex_size;
     for (&at, _) in gs.board.terrain.iter() {
         let Some(flow) = gs.board.flow_at(at) else {
             continue;
         };
         let toward = at.neighbors()[flow as usize];
-        let from = hex_world_pos(at, origin, &hex.overlay.params);
-        let to = hex_world_pos(toward, origin, &hex.overlay.params);
+        let from = hex_world_pos(at, origin, &draw.hex.overlay.params);
+        let to = hex_world_pos(toward, origin, &draw.hex.overlay.params);
         let delta = Vec3::new(to.x - from.x, 0.0, to.z - from.z);
         let len = delta.length();
         if len < f32::EPSILON {
@@ -371,10 +366,10 @@ pub fn nile_flow_arrows(
         // A short arrow across the hex's middle, pointing down the current.
         let draw_len = len * 0.45;
         let tail = from - dir * (draw_len * 0.5);
-        commands.spawn((
+        draw.commands.spawn((
             NileFlowArrow,
-            Mesh3d(arrows.arrow_assets.mesh.clone()),
-            MeshMaterial3d(arrows.arrow_assets.dim.clone()),
+            Mesh3d(draw.arrow_assets.mesh.clone()),
+            MeshMaterial3d(draw.arrow_assets.dim.clone()),
             Transform::from_xyz(tail.x, 0.6, tail.z)
                 .with_rotation(Quat::from_rotation_arc(Vec3::Z, dir))
                 .with_scale(Vec3::new(size * 0.3, 1.0, draw_len)),
@@ -400,15 +395,13 @@ pub struct RoadBar;
 /// terrain) -- the board data drawn over the printed map, so the two can be
 /// read together. Rebuilt when toggled or on a board load.
 pub fn road_overlay(
-    mut commands: Commands,
-    hex: crate::HexRender,
+    mut draw: crate::overlay::Overlay,
     toggle: Res<RoadOverlay>,
     game_state: Res<crate::GameStateResource>,
     existing: Query<Entity, With<RoadBar>>,
     mut shown: Local<Option<usize>>,
-    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
-    if generation.invalidates(&mut seen_generation) || hex.geometry_changed() {
+    if draw.stale() {
         *shown = None;
     }
     let roads = &game_state.0.board.roads;
@@ -416,24 +409,24 @@ pub fn road_overlay(
     if *shown == want && !toggle.is_changed() {
         return;
     }
-    let bars = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    draw.clear(existing.iter());
     *shown = want;
     if want.is_none() {
         return;
     }
-    let origin = bars.origin();
-    let size = bars.size();
+    let origin = draw.origin();
+    let size = draw.size();
     for road in roads {
-        let a = hex_world_pos(road.a, origin, &hex.overlay.params);
-        let b = hex_world_pos(road.b, origin, &hex.overlay.params);
+        let a = hex_world_pos(road.a, origin, &draw.hex.overlay.params);
+        let b = hex_world_pos(road.b, origin, &draw.hex.overlay.params);
         let mid = (a + b) * 0.5;
         let len = a.distance(b).max(0.001);
         let dir = (b - a) / len;
         let angle = (-dir.z).atan2(dir.x);
-        commands.spawn((
+        draw.commands.spawn((
             RoadBar,
-            Mesh3d(hex.assets.unit_square.clone()),
-            MeshMaterial3d(hex.assets.blue.clone()),
+            Mesh3d(draw.hex.assets.unit_square.clone()),
+            MeshMaterial3d(draw.hex.assets.blue.clone()),
             Transform::from_translation(Vec3::new(mid.x, 1.3, mid.z))
                 .with_rotation(Quat::from_rotation_y(angle) * Quat::from_rotation_x(-PI / 2.0))
                 .with_scale(Vec3::new(len, size * 0.07, 1.0)),
@@ -454,15 +447,13 @@ pub struct MahdisTombMarker;
 /// Campaign only -- the Tomb is on no other map. Rebuilt only when the
 /// holder changes (or the overlays were cleared).
 pub fn mahdis_tomb_marker(
-    mut commands: Commands,
-    hex: crate::HexRender,
+    mut draw: crate::overlay::Overlay,
     game_state: Res<crate::GameStateResource>,
     existing: Query<Entity, With<MahdisTombMarker>>,
     mut last: Local<Option<Option<(HexCoord, omdurman_types::Player)>>>,
-    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
     // A board loaded since: the ring was placed on the old calibration.
-    if generation.invalidates(&mut seen_generation) || hex.geometry_changed() {
+    if draw.stale() {
         *last = None;
     }
     if last.is_some() && !game_state.is_changed() {
@@ -481,13 +472,13 @@ pub fn mahdis_tomb_marker(
     if last.as_ref() == Some(&shown) {
         return;
     }
-    let rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    draw.clear(existing.iter());
     if let Some((tomb, holder)) = shown {
         let material = match holder {
-            omdurman_types::Player::AngloEgyptian => &hex.assets.blue,
-            omdurman_types::Player::Dervish => &hex.assets.orange,
+            omdurman_types::Player::AngloEgyptian => &draw.hex.assets.blue,
+            omdurman_types::Player::Dervish => &draw.hex.assets.orange,
         };
-        rings.ring(&mut commands, MahdisTombMarker, tomb, 1.45, 1.05, material);
+        draw.ring(MahdisTombMarker, tomb, 1.45, 1.05, material.clone());
     }
     *last = Some(shown);
 }
@@ -754,6 +745,7 @@ mod tomb_marker_tests {
         let mut gs = omdurman_rules::effects::GameState::new(omdurman_types::Scenario::Campaign);
         gs.board = omdurman_rules::board_data::board_info(omdurman_types::MapKind::Campaign);
         app.insert_resource(HexRingAssets::default())
+            .init_resource::<MovementArrowAssets>()
             .insert_resource(omdurman_board_ui::board_store::default_layout())
             .insert_resource(HexOverlay::default())
             .insert_resource(crate::GameStateResource(gs))
@@ -794,6 +786,7 @@ mod flow_arrow_tests {
             .filter(|h| gs.board.flow_at(**h).is_some())
             .count();
         app.insert_resource(HexRingAssets::default())
+            .init_resource::<MovementArrowAssets>()
             .insert_resource(MovementArrowAssets::default())
             .insert_resource(omdurman_board_ui::board_store::default_layout())
             .insert_resource(HexOverlay::default())

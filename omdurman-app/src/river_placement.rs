@@ -102,17 +102,15 @@ pub(crate) fn roll_for_struck_mine(
 /// found -- the mines their gunboats struck (§10.12) and the chained hexes
 /// they ran onto (§10.22).
 pub(crate) fn mine_chain_overlay_mesh(
-    mut commands: Commands,
-    hex: crate::HexRender,
+    mut draw: crate::overlay::Overlay,
     game_state: Res<GameStateResource>,
     peers: crate::peers::Peers,
     existing: Query<Entity, With<MineChainMarker>>,
     mut last: Local<Option<MineChainKey>>,
-    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
     // Rebuilt only when what is shown changes (or the overlays were
     // cleared), not every frame.
-    if generation.invalidates(&mut seen_generation) {
+    if draw.stale() {
         *last = None;
     }
     let gs = game_state;
@@ -142,29 +140,27 @@ pub(crate) fn mine_chain_overlay_mesh(
     if last.as_ref() == Some(&key) {
         return;
     }
-    let rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    draw.clear(existing.iter());
 
     // Mines: compact red rings on their Nile hexes.
     for &mine in &key.mines {
-        rings.ring(
-            &mut commands,
+        draw.ring(
             MineChainMarker,
             mine,
             0.7,
             0.35,
-            &hex.assets.red,
+            draw.hex.assets.red.clone(),
         );
     }
     // Chain: a grey ring on each known chained hex, and -- for the seat that
     // knows the whole line -- grey bars spanning consecutive hexes.
     for &chained in &key.chain {
-        rings.ring(
-            &mut commands,
+        draw.ring(
             MineChainMarker,
             chained,
             0.7,
             0.35,
-            &hex.assets.gray,
+            draw.hex.assets.gray.clone(),
         );
     }
     let chain = if key.whole {
@@ -173,9 +169,9 @@ pub(crate) fn mine_chain_overlay_mesh(
         Vec::new()
     };
     *last = Some(key);
-    let origin = rings.origin();
-    let size = rings.size();
-    let params = rings.params();
+    let origin = draw.origin();
+    let size = draw.size();
+    let params = draw.params();
     let bars: Vec<_> = chain
         .windows(2)
         .map(|pair| {
@@ -189,10 +185,10 @@ pub(crate) fn mine_chain_overlay_mesh(
         })
         .collect();
     for (mid, len, angle) in bars {
-        commands.spawn((
+        draw.commands.spawn((
             MineChainMarker,
-            Mesh3d(hex.assets.unit_square.clone()),
-            MeshMaterial3d(hex.assets.gray.clone()),
+            Mesh3d(draw.hex.assets.unit_square.clone()),
+            MeshMaterial3d(draw.hex.assets.gray.clone()),
             Transform::from_translation(Vec3::new(mid.x, 0.7, mid.z))
                 .with_rotation(
                     Quat::from_rotation_y(angle)
@@ -231,15 +227,13 @@ pub(crate) struct RiverBandMarker;
 /// plotted so far -- and the hexes already plotted in grey. Rebuilt only
 /// when the placement or the board's mines change.
 pub(crate) fn river_placement_band(
-    mut commands: Commands,
-    hex: crate::HexRender,
+    mut draw: crate::overlay::Overlay,
     game_state: Res<GameStateResource>,
     placement: Res<OptionalRulePlacement>,
     existing: Query<Entity, With<RiverBandMarker>>,
     mut last: Local<Option<RiverBandKey>>,
-    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
-    if generation.invalidates(&mut seen_generation) {
+    if draw.stale() {
         *last = None;
     }
     let gs = &game_state.0;
@@ -252,7 +246,7 @@ pub(crate) fn river_placement_band(
     if last.as_ref() == Some(&key) {
         return;
     }
-    let rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    draw.clear(existing.iter());
     if placement.placing_mine || placement.placing_chain {
         let mut nile: Vec<omdurman_types::HexCoord> = gs
             .board
@@ -271,25 +265,17 @@ pub(crate) fn river_placement_band(
                 !placement.chain_hexes.contains(&h) && gs.can_plot_chain(&line).is_ok()
             };
             if legal {
-                rings.ring(
-                    &mut commands,
+                draw.ring(
                     RiverBandMarker,
                     h,
                     0.65,
                     0.9,
-                    &hex.assets.light_green,
+                    draw.hex.assets.light_green.clone(),
                 );
             }
         }
         for &h in &placement.chain_hexes {
-            rings.ring(
-                &mut commands,
-                RiverBandMarker,
-                h,
-                0.7,
-                0.6,
-                &hex.assets.gray,
-            );
+            draw.ring(RiverBandMarker, h, 0.7, 0.6, draw.hex.assets.gray.clone());
         }
     }
     *last = Some(key);

@@ -238,17 +238,15 @@ pub struct MeleeTargetRing;
 type MeleeOverlayCache = (UnitId, Vec<HexCoord>);
 
 pub fn melee_target_overlay_mesh(
-    mut commands: Commands,
-    hex: crate::HexRender,
+    mut draw: crate::overlay::Overlay,
     state: Res<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
     existing: Query<Entity, With<MeleeTargetRing>>,
     mut last: Local<Option<MeleeOverlayCache>>,
     placed_changed: Query<(), Changed<PlacedUnit>>,
-    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
-    let invalidated = generation.invalidates(&mut seen_generation);
+    let invalidated = draw.stale();
     if invalidated {
         // The overlays were cleared (`clear_gameplay_overlays`): forget what
         // we last drew so the "unchanged" checks below rebuild the rings
@@ -280,8 +278,7 @@ pub fn melee_target_overlay_mesh(
         // Nothing to highlight: clear any rings left over from a selection
         // that can no longer melee (once, not every frame).
         if last.is_some() {
-            let old: Vec<Entity> = existing.iter().collect();
-            crate::ui::despawn_all(&mut commands, &old);
+            draw.clear(existing.iter());
             *last = None;
         }
         return;
@@ -290,28 +287,32 @@ pub fn melee_target_overlay_mesh(
     if last.as_ref() == Some(&drawn) {
         return;
     }
-    let rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    draw.clear(existing.iter());
     for &target in &drawn.1 {
-        rings.ring(
-            &mut commands,
+        draw.ring(
             MeleeTargetRing,
             target,
             1.5,
             1.0,
-            &hex.assets.orange,
+            draw.hex.assets.orange.clone(),
         );
     }
-    let origin = rings.origin();
+    let origin = draw.origin();
     for (edge, open) in sides {
-        let transform =
-            crate::hexside_layer::hexside_bar_transform(&edge, origin, &hex.overlay, 0.14, 1.6);
-        commands.spawn((
+        let transform = crate::hexside_layer::hexside_bar_transform(
+            &edge,
+            origin,
+            &draw.hex.overlay,
+            0.14,
+            1.6,
+        );
+        draw.commands.spawn((
             MeleeTargetRing,
-            Mesh3d(hex.assets.unit_square.clone()),
+            Mesh3d(draw.hex.assets.unit_square.clone()),
             MeshMaterial3d(if open {
-                hex.assets.green.clone()
+                draw.hex.assets.green.clone()
             } else {
-                hex.assets.red.clone()
+                draw.hex.assets.red.clone()
             }),
             transform,
             Visibility::Visible,
@@ -614,8 +615,7 @@ pub(crate) struct MeleeDirectionArrow;
 /// Rebuilt only when the arrow's endpoints change (selection, hover, engine
 /// state, or the overlays were cleared) -- not every frame.
 pub fn melee_direction_arrow(
-    mut commands: Commands,
-    render: crate::DirectionArrowCtx,
+    mut draw: crate::overlay::Overlay,
     state: Res<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
@@ -623,9 +623,8 @@ pub fn melee_direction_arrow(
     existing: Query<Entity, With<MeleeDirectionArrow>>,
     mut last: Local<Option<Option<(HexCoord, HexCoord)>>>,
     placed_changed: Query<(), Changed<PlacedUnit>>,
-    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
-    let invalidated = generation.invalidates(&mut seen_generation);
+    let invalidated = draw.stale();
     if invalidated {
         // The overlays were cleared (`clear_gameplay_overlays`): forget the
         // arrow we last drew so the "unchanged" check below respawns it
@@ -653,11 +652,10 @@ pub fn melee_direction_arrow(
     if *last == Some(arrow) {
         return; // unchanged: leave the drawn arrow in place
     }
-    let old: Vec<Entity> = existing.iter().collect();
-    crate::ui::despawn_all(&mut commands, &old);
+    draw.clear(existing.iter());
     *last = Some(arrow);
     if let Some((from, to)) = arrow {
-        crate::combat_ui::direction_arrow(&mut commands, &render, from, to, MeleeDirectionArrow);
+        draw.arrow(from, to, MeleeDirectionArrow);
     }
 }
 
@@ -960,17 +958,15 @@ pub(crate) struct AdvanceTargetRing;
 /// only when the selection or the engine state changed (or the overlays were
 /// cleared) -- not every frame.
 pub fn advance_target_overlay_mesh(
-    mut commands: Commands,
-    hex: crate::HexRender,
+    mut draw: crate::overlay::Overlay,
     state: Res<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
     existing: Query<Entity, With<AdvanceTargetRing>>,
     mut last: Local<Option<Vec<HexCoord>>>,
     placed_changed: Query<(), Changed<PlacedUnit>>,
-    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
-    let invalidated = generation.invalidates(&mut seen_generation);
+    let invalidated = draw.stale();
     if invalidated {
         // The overlays were cleared (`clear_gameplay_overlays`): forget what
         // we last drew so the "unchanged" checks below rebuild the rings
@@ -1009,8 +1005,7 @@ pub fn advance_target_overlay_mesh(
         // Nothing to highlight (no selection / wrong phase): clear any rings
         // left over, once.
         if last.is_some() {
-            let old: Vec<Entity> = existing.iter().collect();
-            crate::ui::despawn_all(&mut commands, &old);
+            draw.clear(existing.iter());
             *last = None;
         }
         return;
@@ -1019,15 +1014,14 @@ pub fn advance_target_overlay_mesh(
     if last.as_ref() == Some(&drawn) {
         return;
     }
-    let rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    draw.clear(existing.iter());
     for &target in &drawn {
-        rings.ring(
-            &mut commands,
+        draw.ring(
             AdvanceTargetRing,
             target,
             1.5,
             1.0,
-            &hex.assets.light_green,
+            draw.hex.assets.light_green.clone(),
         );
     }
     *last = Some(drawn);
@@ -1145,6 +1139,7 @@ mod tests {
             .insert_resource(HexOverlay::default())
             .insert_resource(omdurman_board_ui::board_store::default_layout())
             .insert_resource(hex_ring_assets())
+            .init_resource::<crate::render::MovementArrowAssets>()
             .insert_resource(GameStateResource(gs))
             .insert_resource(OverlayGeneration::default())
             .add_systems(Update, advance_target_overlay_mesh);

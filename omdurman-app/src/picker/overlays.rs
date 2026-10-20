@@ -70,8 +70,7 @@ pub(crate) struct PreviewHexRing;
 type PreviewCache = (Option<HexCoord>, bool);
 
 pub fn placement_preview_mesh(
-    mut commands: Commands,
-    hex: crate::HexRender,
+    mut draw: crate::overlay::Overlay,
     picker_state: PickerPlacementState,
     ground: Res<crate::picking::PointerGroundHit>,
     placed_units: Query<&PlacedUnit>,
@@ -80,23 +79,21 @@ pub fn placement_preview_mesh(
     mut last: Local<Option<PreviewCache>>,
     placed_changed: Query<(), Changed<PlacedUnit>>,
     mut placed_removed: RemovedComponents<PlacedUnit>,
-    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
     // A board load moves every hex (see `deployment_zone_overlay_mesh`).
-    let geometry_changed = hex.geometry_changed();
+    if draw.stale() {
+        *last = None;
+    }
     let crate::HexRender {
         assets,
         layout,
         overlay,
-    } = hex;
+    } = &draw.hex;
     let PickerPlacementState {
         picker,
         mut state,
         game_map,
     } = picker_state;
-    if generation.invalidates(&mut seen_generation) || geometry_changed {
-        *last = None;
-    }
 
     // Look before borrowing mutably: a `&mut *state` on every frame would
     // mark `PickerState` changed even while nothing is being placed.
@@ -104,8 +101,7 @@ pub fn placement_preview_mesh(
         // Despawn the preview ring if one is out; a settled idle frame
         // commands nothing.
         if existing.iter().next().is_some() {
-            let old: Vec<Entity> = existing.iter().collect();
-            crate::ui::despawn_all(&mut commands, &old);
+            draw.clear(existing.iter());
         }
         *last = None;
         return;
@@ -165,8 +161,7 @@ pub fn placement_preview_mesh(
         *preview_hex = None;
         // Despawn the preview ring if one is out.
         if existing.iter().next().is_some() {
-            let old: Vec<Entity> = existing.iter().collect();
-            crate::ui::despawn_all(&mut commands, &old);
+            draw.clear(existing.iter());
         }
         *last = None;
         return;
@@ -178,15 +173,14 @@ pub fn placement_preview_mesh(
     let hex_changed = !last.as_ref().is_some_and(|(hex, _)| *hex == Some(coord));
     if hex_changed {
         // The preview moved to another hex: replace the ring.
-        let old: Vec<Entity> = existing.iter().collect();
-        crate::ui::despawn_all(&mut commands, &old);
-        spawn_preview_ring(&mut commands, &assets, &overlay, origin, coord, material);
+        crate::ui::despawn_all(&mut draw.commands, &existing.iter().collect::<Vec<_>>());
+        spawn_preview_ring(&mut draw.commands, assets, overlay, origin, coord, material);
     } else if last.map(|(_, last_valid)| last_valid) != Some(valid)
         && let Some(entity) = existing.iter().next()
     {
         // Same hex, verdict flipped: recolour the ring in place instead of
         // despawning and respawning it every frame.
-        commands
+        draw.commands
             .entity(entity)
             .insert(MeshMaterial3d(material.clone()));
     }
@@ -415,18 +409,16 @@ pub(crate) enum MovementOverlayKey {
 }
 
 pub fn movement_overlay_mesh(
-    mut commands: Commands,
-    hex: crate::HexRender,
+    mut draw: crate::overlay::Overlay,
     view: MovementOverlayCtx,
     selection: PickerReadSelection,
     existing: MovementRingQueries,
     mut last_key: Local<Option<MovementOverlayKey>>,
-    (generation, mut seen_generation): (Res<OverlayGeneration>, Local<u32>),
 ) {
     // A board load moves every hex: rebuild even though the key is the same.
     // (The rings were cached while the default board's calibration was still
     // live and stayed misplaced for the whole set-up.)
-    if generation.invalidates(&mut seen_generation) || hex.geometry_changed() {
+    if draw.stale() {
         *last_key = None;
     }
     let MovementOverlayCtx {
@@ -453,8 +445,8 @@ pub fn movement_overlay_mesh(
     {
         let gray: Vec<Entity> = existing_gray.iter().collect();
         let zoc: Vec<Entity> = existing_zoc.iter().collect();
-        crate::ui::despawn_all(&mut commands, &gray);
-        crate::ui::despawn_all(&mut commands, &zoc);
+        draw.clear(gray.iter().copied());
+        draw.clear(zoc.iter().copied());
         *last_key = None;
         return;
     }
@@ -517,8 +509,8 @@ pub fn movement_overlay_mesh(
         // No selection: clear any leftover rings and reset the cache.
         let gray: Vec<Entity> = existing_gray.iter().collect();
         let zoc: Vec<Entity> = existing_zoc.iter().collect();
-        crate::ui::despawn_all(&mut commands, &gray);
-        crate::ui::despawn_all(&mut commands, &zoc);
+        draw.clear(gray.iter().copied());
+        draw.clear(zoc.iter().copied());
         *last_key = None;
         return;
     };
@@ -531,11 +523,7 @@ pub fn movement_overlay_mesh(
     }
 
     // Selection or remaining MP changed: rebuild from scratch.
-    let rings = crate::overlay::ring_batch(
-        &mut commands,
-        &hex,
-        existing_gray.iter().chain(existing_zoc.iter()),
-    );
+    draw.clear(existing_gray.iter().chain(existing_zoc.iter()));
 
     let Ok((_, placed)) = placed_units.get(source) else {
         return;
@@ -602,25 +590,23 @@ pub fn movement_overlay_mesh(
     for &reached in reached.iter().filter(|&&h| h != start_coord) {
         if stops.contains(&reached) {
             // Yellow: a terminus inside an enemy ZOC.
-            rings.ring(
-                &mut commands,
+            draw.ring(
                 MovementZocRing,
                 reached,
                 1.5,
                 1.0,
-                &hex.assets.yellow,
+                draw.hex.assets.yellow.clone(),
             );
             zoc_spawned += 1;
         } else {
             // One colour for every reachable hex: a second (light green) for
             // the adjacent ones read as a different kind of move.
-            rings.ring(
-                &mut commands,
+            draw.ring(
                 MovementRangeRing,
                 reached,
                 1.5,
                 1.0,
-                &hex.assets.reach,
+                draw.hex.assets.reach.clone(),
             );
             gray_spawned += 1;
         }
@@ -655,26 +641,24 @@ type ZoneKey = (
 /// automatically once play leaves Setup. Rebuilt only when the phase/faction key
 /// changes, to avoid per-frame entity churn (cf. `movement_overlay_mesh`).
 pub fn deployment_zone_overlay_mesh(
-    mut commands: Commands,
-    hex: crate::HexRender,
+    mut draw: crate::overlay::Overlay,
     game_state: Option<Res<crate::GameStateResource>>,
     peers: crate::peers::Peers,
     existing: Query<Entity, With<DeploymentZoneRing>>,
     mut last_key: Local<Option<ZoneKey>>,
-    (generation, mut seen_generation): (Res<OverlayGeneration>, Local<u32>),
     (picker_state, tray): (Res<PickerState>, Res<UnitPicker>),
 ) {
     // A board load moves every hex: rebuild even though the key is the same.
     // (The rings were cached while the default board's calibration was still
     // live and stayed misplaced for the whole set-up.)
-    if generation.invalidates(&mut seen_generation) || hex.geometry_changed() {
+    if draw.stale() {
         *last_key = None;
     }
     let crate::HexRender {
         assets,
         layout,
         overlay,
-    } = hex;
+    } = &draw.hex;
     let in_setup = game_state
         .as_deref()
         .is_some_and(|gs| matches!(gs.0.phase, omdurman_rules::Phase::Setup));
@@ -686,7 +670,7 @@ pub fn deployment_zone_overlay_mesh(
         // Not in setup: clear any leftover rings and reset the cache.
         if last_key.is_some() {
             let existing: Vec<Entity> = existing.iter().collect();
-            crate::ui::despawn_all(&mut commands, &existing);
+            draw.clear(existing.iter().copied());
             *last_key = None;
         }
         return;
@@ -736,7 +720,7 @@ pub fn deployment_zone_overlay_mesh(
         return; // unchanged -- leave the rings in place
     }
     let existing: Vec<Entity> = existing.iter().collect();
-    crate::ui::despawn_all(&mut commands, &existing);
+    crate::ui::despawn_all(&mut draw.commands, &existing);
     *last_key = Some(key);
 
     let origin = layout.adjusted_origin(&overlay.params);
@@ -796,7 +780,7 @@ pub fn deployment_zone_overlay_mesh(
             let cut_off = reachable
                 .as_ref()
                 .is_some_and(|region| !region.contains(coord) && !gs.0.board.is_nile(*coord));
-            commands.spawn((
+            draw.commands.spawn((
                 DeploymentZoneRing,
                 Mesh3d(assets.mesh.clone()),
                 MeshMaterial3d(if cut_off {
@@ -821,26 +805,23 @@ pub(crate) struct SelectionRing;
 /// `PickerState::Selected { source }` / `SelectedStack` so it tracks
 /// click / undo / delete. Rebuilt only when the focused entity set changes.
 pub fn selection_outline_mesh(
-    mut commands: Commands,
-    hex: crate::HexRender,
+    mut draw: crate::overlay::Overlay,
     state: Res<PickerState>,
     placed_units: Query<&PlacedUnit>,
     existing: Query<Entity, With<SelectionRing>>,
     mut last_sources: Local<Option<Vec<Entity>>>,
-    (generation, mut seen_generation): (Res<OverlayGeneration>, Local<u32>),
 ) {
-    if generation.invalidates(&mut seen_generation) {
+    if draw.stale() {
         *last_sources = None;
     }
     let crate::HexRender {
         assets, overlay, ..
-    } = hex;
+    } = &draw.hex;
     let sources = state.sources();
     if last_sources.as_deref() == Some(sources) {
         return;
     }
-    let old: Vec<Entity> = existing.iter().collect();
-    crate::ui::despawn_all(&mut commands, &old);
+    crate::ui::despawn_all(&mut draw.commands, &existing.iter().collect::<Vec<_>>());
     *last_sources = Some(sources.to_vec());
     let Some(&first) = sources.first() else {
         return;
@@ -866,7 +847,7 @@ pub fn selection_outline_mesh(
     // up, eliminated -- would leave its ring orphaned at the world origin.
     // The system runs after the sprite reconcile, so its despawns show.)
     for entity in sources.iter().filter(|e| placed_units.contains(**e)) {
-        commands.entity(*entity).with_children(|parent| {
+        draw.commands.entity(*entity).with_children(|parent| {
             parent.spawn((
                 SelectionRing,
                 Mesh3d(assets.unit_square.clone()),
@@ -941,28 +922,25 @@ pub(crate) fn update_hovered_unit(
 /// selection outline already marks it). Rebuilt only when the hovered entity
 /// changes.
 pub fn hover_outline_mesh(
-    mut commands: Commands,
-    hex: crate::HexRender,
+    mut draw: crate::overlay::Overlay,
     hovered: Res<crate::HoveredUnit>,
     state: Res<PickerState>,
     existing: Query<Entity, With<HoverRing>>,
     (mut last, placed_units): (Local<Option<Entity>>, Query<(), With<PlacedUnit>>),
-    (generation, mut seen_generation): (Res<OverlayGeneration>, Local<u32>),
 ) {
-    if generation.invalidates(&mut seen_generation) {
+    if draw.stale() {
         *last = None;
     }
     let crate::HexRender {
         assets, overlay, ..
-    } = hex;
+    } = &draw.hex;
     // Don't show the hover square on an already-selected unit (a stack
     // selection marks all of them).
     let target = hovered.0.filter(|e| !state.sources().contains(e));
     if *last == target {
         return;
     }
-    let old: Vec<Entity> = existing.iter().collect();
-    crate::ui::despawn_all(&mut commands, &old);
+    crate::ui::despawn_all(&mut draw.commands, &existing.iter().collect::<Vec<_>>());
     *last = target;
     // (Only a counter still on the board -- see `selection_outline_mesh`.)
     let Some(entity) = target.filter(|e| placed_units.contains(*e)) else {
@@ -970,7 +948,7 @@ pub fn hover_outline_mesh(
     };
     let sprite_size = overlay.params.hex_size * SPRITE_HEX_FRACTION;
     let outline_size = sprite_size * 1.18;
-    commands.entity(entity).with_children(|parent| {
+    draw.commands.entity(entity).with_children(|parent| {
         parent.spawn((
             HoverRing,
             Mesh3d(assets.unit_square.clone()),

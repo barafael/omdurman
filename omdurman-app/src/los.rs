@@ -68,16 +68,14 @@ pub fn pin_los_origin(
 /// (the blocked hexes' labels name it). Rebuilt when either end or the
 /// game changes.
 pub fn los_ray(
-    mut commands: Commands,
-    hex: crate::HexRender,
+    mut draw: crate::overlay::Overlay,
     toggle: Res<LosOverlay>,
     hovered: Res<crate::render::HoveredHex>,
     game_state: Option<Res<GameStateResource>>,
     existing: Query<Entity, With<LosRayBar>>,
     mut last: Local<Option<(HexCoord, HexCoord)>>,
-    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
-    if generation.invalidates(&mut seen_generation) {
+    if draw.stale() {
         *last = None;
     }
     let ends = toggle
@@ -89,16 +87,16 @@ pub fn los_ray(
     if ends == *last && !moved {
         return;
     }
-    let bars = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    draw.clear(existing.iter());
     *last = ends;
     let (Some((from, to)), Some(gs)) = (ends, game_state.as_deref()) else {
         return;
     };
     let gs = &gs.0;
     let segments = los_segments(gs, from, to);
-    let origin = bars.origin();
-    let params = &hex.overlay.params;
-    let size = bars.size();
+    let origin = draw.origin();
+    let params = &draw.hex.overlay.params;
+    let size = draw.size();
     for ((a, b), clear) in segments {
         let pa = hex_world_pos(a, origin, params);
         let pb = hex_world_pos(b, origin, params);
@@ -106,13 +104,13 @@ pub fn los_ray(
         let len = pa.distance(pb).max(0.001);
         let dir = (pb - pa) / len;
         let angle = (-dir.z).atan2(dir.x);
-        commands.spawn((
+        draw.commands.spawn((
             LosRayBar,
-            Mesh3d(hex.assets.unit_square.clone()),
+            Mesh3d(draw.hex.assets.unit_square.clone()),
             MeshMaterial3d(if clear {
-                hex.assets.green.clone()
+                draw.hex.assets.green.clone()
             } else {
-                hex.assets.red.clone()
+                draw.hex.assets.red.clone()
             }),
             Transform::from_translation(Vec3::new(mid.x, 1.7, mid.z))
                 .with_rotation(
@@ -245,21 +243,19 @@ pub fn update_los_analysis(
 /// Spawn green/red rings for LOS from the analysis origin. Rebuilt only when
 /// the origin hex changes.
 pub fn los_overlay_mesh(
-    mut commands: Commands,
-    hex: crate::HexRender,
+    mut draw: crate::overlay::Overlay,
     analysis: Res<LosAnalysis>,
     existing: Query<Entity, With<LosRing>>,
     mut last: Local<Option<HexCoord>>,
-    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
-    if generation.invalidates(&mut seen_generation) {
+    if draw.stale() {
         *last = None;
     }
     let existing: Vec<Entity> = existing.iter().collect();
 
     let Some(from) = analysis.from else {
         if !existing.is_empty() {
-            crate::ui::despawn_all(&mut commands, &existing);
+            draw.clear(existing.iter().copied());
             *last = None;
         }
         return;
@@ -267,29 +263,27 @@ pub fn los_overlay_mesh(
     if *last == Some(from) && !analysis.is_changed() {
         return;
     }
-    crate::ui::despawn_all(&mut commands, &existing);
+    draw.clear(existing.iter().copied());
 
     // Just under the movement-path arrows (1.45): at their height the two
     // shared depth wherever an arrow crossed a ring and flickered.
-    let rings = crate::overlay::ring_batch(&mut commands, &hex, existing);
+    draw.clear(existing);
     for target in &analysis.clear {
-        rings.ring(
-            &mut commands,
+        draw.ring(
             LosRing,
             *target,
             1.43,
             1.0,
-            &hex.assets.light_green,
+            draw.hex.assets.light_green.clone(),
         );
     }
     for (target, _) in &analysis.blocked {
-        rings.ring(
-            &mut commands,
+        draw.ring(
             LosRing,
             *target,
             1.43,
             1.0,
-            &hex.assets.marker_red,
+            draw.hex.assets.marker_red.clone(),
         );
     }
     *last = Some(from);

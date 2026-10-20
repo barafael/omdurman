@@ -458,8 +458,7 @@ pub(crate) struct FireTargetRing;
 type FireOverlayCache = (Vec<(UnitId, FireKind)>, Vec<HexCoord>);
 
 pub fn fire_target_overlay_mesh(
-    mut commands: Commands,
-    hex: crate::HexRender,
+    mut draw: crate::overlay::Overlay,
     state: Res<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
@@ -467,11 +466,10 @@ pub fn fire_target_overlay_mesh(
     mut cache: ResMut<FireTargetCache>,
     mut last: Local<Option<FireOverlayCache>>,
     placed_changed: Query<(), Changed<PlacedUnit>>,
-    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
     peers: crate::peers::Peers,
     allocation: Res<crate::fire_allocation::FireAllocationState>,
 ) {
-    let invalidated = generation.invalidates(&mut seen_generation);
+    let invalidated = draw.stale();
     if invalidated {
         // The overlays were cleared (`clear_gameplay_overlays`): forget what
         // we last drew so the "unchanged" checks below rebuild the rings
@@ -519,8 +517,7 @@ pub fn fire_target_overlay_mesh(
         // Nothing to highlight: clear any rings left over from a selection
         // that no longer fires (once, not every frame).
         if last.is_some() {
-            let old: Vec<Entity> = existing.iter().collect();
-            crate::ui::despawn_all(&mut commands, &old);
+            draw.clear(existing.iter());
             *last = None;
         }
         return;
@@ -541,33 +538,26 @@ pub fn fire_target_overlay_mesh(
     // only -- the hexes this selection could reach but for that rule get a
     // small grey inner ring, so they do not read as out of range.
     let artillery_only = artillery_only_hexes(&gs.0, &kinds);
-    let rings = crate::overlay::ring_batch(&mut commands, &hex, existing.iter());
+    draw.clear(existing.iter());
     for (&target, band) in targets.iter().zip(bands) {
         // Firers to pick (no kinds) are green; a target is coloured by the
         // best range band any weapon of the selection reaches it in (§6.22).
         let material = if kinds.is_empty() {
-            &hex.assets.green
+            &draw.hex.assets.green
         } else {
             match band {
-                omdurman_rules::RangeBand::Tripled => &hex.assets.red,
-                omdurman_rules::RangeBand::Doubled => &hex.assets.orange,
-                omdurman_rules::RangeBand::Normal => &hex.assets.yellow,
+                omdurman_rules::RangeBand::Tripled => &draw.hex.assets.red,
+                omdurman_rules::RangeBand::Doubled => &draw.hex.assets.orange,
+                omdurman_rules::RangeBand::Normal => &draw.hex.assets.yellow,
                 omdurman_rules::RangeBand::Halved | omdurman_rules::RangeBand::OutOfRange => {
-                    &hex.assets.gray
+                    &draw.hex.assets.gray
                 }
             }
         };
-        rings.ring(&mut commands, FireTargetRing, target, 1.5, 1.0, material);
+        draw.ring(FireTargetRing, target, 1.5, 1.0, material.clone());
     }
     for at in artillery_only {
-        rings.ring(
-            &mut commands,
-            FireTargetRing,
-            at,
-            1.5,
-            0.6,
-            &hex.assets.gray,
-        );
+        draw.ring(FireTargetRing, at, 1.5, 0.6, draw.hex.assets.gray.clone());
     }
     *last = Some((kinds, targets));
 }
@@ -637,8 +627,7 @@ pub(crate) struct FireDirectionArrow;
 /// further shots until the player dismisses the tile or executes the
 /// allocations.
 pub fn fire_direction_arrow(
-    mut commands: Commands,
-    render: crate::DirectionArrowCtx,
+    mut draw: crate::overlay::Overlay,
     state: Res<PickerState>,
     placed_units: Query<(Entity, &PlacedUnit)>,
     game_state: Option<Res<GameStateResource>>,
@@ -646,10 +635,9 @@ pub fn fire_direction_arrow(
     peers: Peers,
     mut last: Local<Option<Option<(HexCoord, HexCoord)>>>,
     placed_changed: Query<(), Changed<PlacedUnit>>,
-    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
     let FireArrowTarget { hovered, existing } = target;
-    let invalidated = generation.invalidates(&mut seen_generation);
+    let invalidated = draw.stale();
     if invalidated {
         // The overlays were cleared (`clear_gameplay_overlays`): forget the
         // arrow we last drew so the "unchanged" check below respawns it
@@ -684,11 +672,10 @@ pub fn fire_direction_arrow(
     if *last == Some(arrow) {
         return; // unchanged: leave the drawn arrow in place
     }
-    let old: Vec<Entity> = existing.iter().collect();
-    crate::ui::despawn_all(&mut commands, &old);
+    draw.clear(existing.iter());
     *last = Some(arrow);
     if let Some((from, to)) = arrow {
-        crate::combat_ui::direction_arrow(&mut commands, &render, from, to, FireDirectionArrow);
+        draw.arrow(from, to, FireDirectionArrow);
     }
 }
 
@@ -1266,16 +1253,14 @@ pub fn fire_combat_preview_ui(
 /// `turn_events` at the end of the player turn, so the markers clear with
 /// the phase.
 pub fn howitzer_impact_markers(
-    mut commands: Commands,
-    arrows: crate::DirectionArrowCtx,
+    mut draw: crate::overlay::Overlay,
     game_state: Res<GameStateResource>,
     existing: Query<Entity, With<HowitzerImpactMarker>>,
     mut last: Local<Option<Vec<(HexCoord, HexCoord)>>>,
-    (generation, mut seen_generation): (Res<crate::picker::OverlayGeneration>, Local<u32>),
 ) {
     // Rebuilt only when the impacts change (the engine state moved) or the
     // overlays were cleared -- not every frame.
-    if generation.invalidates(&mut seen_generation) {
+    if draw.stale() {
         *last = None;
     }
     if last.is_some() && !game_state.is_changed() {
@@ -1299,27 +1284,20 @@ pub fn howitzer_impact_markers(
     if last.as_ref() == Some(&impacts) {
         return;
     }
-    let rings = crate::overlay::ring_batch(&mut commands, &arrows.hex, existing.iter());
+    draw.clear(existing.iter());
     for &(_, impact) in &impacts {
-        rings.ring(
-            &mut commands,
+        draw.ring(
             HowitzerImpactMarker,
             impact,
             1.3,
             1.0,
-            &arrows.hex.assets.fire_arrow,
+            draw.hex.assets.fire_arrow.clone(),
         );
     }
     // §6.64: a scattered shell's way from the hex it was aimed at.
     for &(aimed, impact) in &impacts {
         if aimed != impact {
-            crate::combat_ui::direction_arrow(
-                &mut commands,
-                &arrows,
-                aimed,
-                impact,
-                HowitzerImpactMarker,
-            );
+            draw.arrow(aimed, impact, HowitzerImpactMarker);
         }
     }
     *last = Some(impacts);
