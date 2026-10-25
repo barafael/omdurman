@@ -122,7 +122,7 @@ only those.
 | Path | What it is |
 |---|---|
 | `pod.yaml` | The pod for `podman kube play`; `peer.yaml` and `volumes.yaml` are a peer's container and volumes, put in once per peer |
-| `matchbox/Containerfile` | The signalling server, at the fork's revision `Cargo.lock` resolves (`xtask/src/pins.rs` checks it) |
+| `matchbox/Containerfile` | The signalling server, at the fork's revision `Cargo.lock` resolves (`xtask/src/pins.rs` checks it); also the deployed one's image (`matchbox/fly.toml`: `fly deploy` from there) |
 | `peer/Containerfile` | A peer: the game, Xvnc, lavapipe |
 | `tools/` | `with-display`, the peers' entrypoint |
 | `../xtask` | `cargo testbox` itself: the pod, the harness client, the phases' checks |

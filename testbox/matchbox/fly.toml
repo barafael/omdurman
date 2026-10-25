@@ -1,0 +1,20 @@
+# The deployed signalling server, omdurman-matchbox on fly.io (wss://omdurman-matchbox.fly.dev):
+# the same image as the testbox's (Containerfile here, at the fork revision Cargo.lock resolves).
+# Deploy from this directory: `fly deploy`.
+app = "omdurman-matchbox"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Containerfile"
+
+[http_service]
+  internal_port = 3536
+  force_https = true
+  # Stops when idle: a signalling server restart mid-game is survived (the fork's
+  # robustness fixes), new peers wake it.
+  auto_stop_machines = true
+  auto_start_machines = true
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
