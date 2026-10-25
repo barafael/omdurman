@@ -1149,6 +1149,9 @@ impl Participant {
 fn run_scenario(params: Params) -> Report {
     let started = Instant::now();
     init_tracing();
+    // A `MatchboxSocket` runs its message loop on Bevy's IO task pool, which an app's
+    // `TaskPoolPlugin` sets up; the participants are no apps.
+    bevy::tasks::IoTaskPool::get_or_init(bevy::tasks::TaskPool::new);
     let room = format!(
         "itest-{}-p{}e{}l{}r{}",
         SystemTime::now()

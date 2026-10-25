@@ -1,6 +1,10 @@
 # The deployed signalling server, omdurman-matchbox on fly.io (wss://omdurman-matchbox.fly.dev):
 # the same image as the testbox's (Containerfile here, at the fork revision Cargo.lock resolves).
-# Deploy from this directory: `fly deploy`.
+# Deploy from this directory: `fly deploy --ha=false`.
+#
+# ONE machine: the server keeps its rooms in memory, so peers that Fly's proxy sends to different
+# machines sit in different rooms and never meet. `fly scale count 1` if a second appears (fly
+# launch/deploy makes two by default).
 app = "omdurman-matchbox"
 primary_region = "fra"
 
