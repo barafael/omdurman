@@ -2,7 +2,7 @@
 # The signalling server the peers meet on: matchbox_server from the barafael/matchbox fork, at the
 # revision the workspace's Cargo.lock resolves (a test in xtask/src/pins.rs keeps the two in step).
 FROM mirror.gcr.io/library/rust:1-trixie@sha256:931c2c0531a8b143e044f0f3914dfe802f15bb3d1955f0b657e9359327ac2ffc AS build
-ARG MATCHBOX_REV=27b5e50254ee8d113bbbec964185c562c3c2bee8
+ARG MATCHBOX_REV=0c4019f2036deb223200eae069cd61a2142709a0
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     cargo install --locked --root /out \

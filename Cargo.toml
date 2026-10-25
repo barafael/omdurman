@@ -118,5 +118,8 @@ strip = "debuginfo"
 # silently ending every in-progress session (a socket with no peer still ends,
 # so a lone player learns the server is gone); peers whose WebRTC connection
 # fails are reported Disconnected (after ~30 s) even when the signaling server
-# can no longer report them; and the socket no longer aborts the process at
-# exit with Bevy's single-threaded task pool.
+# can no longer report them; the socket no longer aborts the process at
+# exit with Bevy's single-threaded task pool; and the full-mesh signaling
+# server tells two peers that join a room at the same moment of each other
+# (it read and joined the room under separate locks, so both could miss the
+# other and never connect).
