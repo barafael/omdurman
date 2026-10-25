@@ -260,9 +260,11 @@ The system is a deterministic event-sourced engine over a peer-to-peer mesh:
 
 ## Multiplayer test box
 
-`testbox/` (README there) plays the game between 2-3 peers in one Podman pod on an internal
+`testbox/` (README there) plays the game between 2-5 peers in one Podman pod on an internal
 network, meeting on a matchbox server of the box's own; `cargo testbox` (the `xtask` package)
-brings it up and runs its phases (`core`, `rejoin`, `failover`, `signalling`):
+brings it up and runs its phases: `core`, `rejoin`, `failover`, `signalling`; with several
+players a side, `team` (each playing the whole side), `team-mixed`, and `shared`,
+`shared-rejoin`, `shared-failover` (each commanding part of it, §1.1):
 
 ```sh
 cargo testbox down --wipe && cargo testbox up --peers 2 && cargo testbox test core
@@ -272,7 +274,7 @@ cargo testbox run --rounds 2            # every phase on a fresh box, twice, sum
 The peers are driven through the game's agent harness (`omdurman-app/src/agent.rs`, protocol in
 `omdurman-harness`), armed only by `OMDURMAN_AGENT_SOCKET`: snapshots of the net layer, lobby and
 game, and lobby actions plus `autoplay` (the local seat played by the AI's commander through the
-human submission path). A new lobby control or `Seat` shape may need the harness's actions kept
+human submission path, within the seat's command). A new lobby control or `Seat` shape may need the harness's actions kept
 in step.
 
 ## Empirical net-reliability harness

@@ -182,7 +182,7 @@ pub(crate) struct RosterEntry {
     pub(crate) name: String,
     color: egui::Color32,
     pub(crate) pick: Option<Player>,
-    command: Option<omdurman_types::CommandScope>,
+    pub(crate) command: Option<omdurman_types::CommandScope>,
     pub(crate) spectating: bool,
     pub(crate) is_host: bool,
 }

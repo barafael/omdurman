@@ -6,10 +6,11 @@
 //! installs, seat rebinding, healing) over real data channels -- not for the internet's NATs and
 //! TURN, nor for the deployed fly.io server.
 
+use std::collections::BTreeSet;
 use std::time::Duration;
 
-use omdurman_harness::{Action, LISTENING, Snapshot};
-use omdurman_types::{Player, Scenario};
+use omdurman_harness::{Action, LISTENING, SeatRow, Snapshot};
+use omdurman_types::{BrigadeId, CommandScope, DervishTribe, Player, Scenario};
 
 use crate::Result;
 use crate::checks::Checks;
@@ -28,24 +29,85 @@ const ORDERS: usize = 40;
 /// The scenario the phases play: the shortest turns.
 const SCENARIO: Scenario = Scenario::FallOfKhartoum;
 
-/// A seat a phase gives a peer: a faction, or none (a spectator).
-type Side = Option<Player>;
+/// A peer's place in a phase: its faction, none for a spectator, and its command within it
+/// (rulebook §1.1), none for the whole faction.
+#[derive(Clone)]
+struct Role {
+    side: Option<Player>,
+    command: Option<CommandScope>,
+}
+
+/// A player of the whole of `faction`.
+fn player(faction: Player) -> Role {
+    Role {
+        side: Some(faction),
+        command: None,
+    }
+}
+
+fn spectator() -> Role {
+    Role {
+        side: None,
+        command: None,
+    }
+}
+
+/// A Dervish player commanding `tribes`.
+fn tribes(tribes: &[DervishTribe]) -> Role {
+    Role {
+        side: Some(Player::Dervish),
+        command: Some(CommandScope::Tribes(tribes.iter().copied().collect())),
+    }
+}
+
+/// An Anglo-Egyptian player commanding `brigades`.
+fn brigades(brigades: &[BrigadeId]) -> Role {
+    Role {
+        side: Some(Player::AngloEgyptian),
+        command: Some(CommandScope::Brigades(
+            brigades.iter().copied().collect::<BTreeSet<_>>(),
+        )),
+    }
+}
+
+/// An Anglo-Egyptian player commanding the communal units only (`Army`).
+fn army() -> Role {
+    Role {
+        side: Some(Player::AngloEgyptian),
+        command: Some(CommandScope::Army),
+    }
+}
+
+/// Fall of Khartoum's tribes (§9.322): the Mulazmin, and the rest.
+const MULAZMIN: [DervishTribe; 1] = [DervishTribe::Mulazmin];
+const OTHER_TRIBES: [DervishTribe; 3] = [
+    DervishTribe::Hadendowa,
+    DervishTribe::Kehena,
+    DervishTribe::Degheim,
+];
+const BRITISH: [BrigadeId; 2] = [BrigadeId::british(1), BrigadeId::british(2)];
+const EGYPTIAN: [BrigadeId; 4] = [
+    BrigadeId::egyptian(1),
+    BrigadeId::egyptian(2),
+    BrigadeId::egyptian(3),
+    BrigadeId::egyptian(4),
+];
 
 /// Two players.
 pub fn core(checks: &mut Checks, pod: &Pod) -> Result<()> {
-    let sides = [Some(Player::AngloEgyptian), Some(Player::Dervish)];
-    meet(checks, pod, sides.len())?;
-    started(checks, &sides)?;
-    played(checks, &sides, "both sides play")?;
+    let roles = [player(Player::AngloEgyptian), player(Player::Dervish)];
+    meet(checks, pod, roles.len())?;
+    started(checks, &roles)?;
+    played(checks, &roles, "both sides play")?;
     converged(checks)
 }
 
 /// Two players; the guest's game restarts mid-battle and takes its seat back.
 pub fn rejoin(checks: &mut Checks, pod: &Pod) -> Result<()> {
-    let sides = [Some(Player::AngloEgyptian), Some(Player::Dervish)];
-    meet(checks, pod, sides.len())?;
-    started(checks, &sides)?;
-    played(checks, &sides, "both sides play")?;
+    let roles = [player(Player::AngloEgyptian), player(Player::Dervish)];
+    meet(checks, pod, roles.len())?;
+    started(checks, &roles)?;
+    played(checks, &roles, "both sides play")?;
     checks.require("a guest whose game restarts gets its seat back", |peers| {
         let guest = host_index(peers)? ^ 1;
         let before = peers[guest].snapshot()?.net.record_len;
@@ -53,23 +115,314 @@ pub fn rejoin(checks: &mut Checks, pod: &Pod) -> Result<()> {
         peers[guest] = restart(pod, name)?;
         peers[guest].wait_for("its seat and the history", PATIENCE, |snapshot| {
             (snapshot.game.started
-                && snapshot.game.seated == sides[guest]
+                && snapshot.game.seated == roles[guest].side
                 && snapshot.net.record_len >= before
                 && !snapshot.game.paused)
                 .then_some(())
         })
     })?;
-    played(checks, &sides, "play goes on after the rejoin")?;
+    played(checks, &roles, "play goes on after the rejoin")?;
     converged(checks)
+}
+
+/// Four players, two a side, each commanding part of it (rulebook §1.1): the British and the
+/// Egyptian brigades, the Mulazmin and the other tribes. Each orders its own command, the side's
+/// communal units being anyone's.
+pub fn shared(checks: &mut Checks, pod: &Pod) -> Result<()> {
+    let roles = [
+        brigades(&BRITISH),
+        brigades(&EGYPTIAN),
+        tribes(&MULAZMIN),
+        tribes(&OTHER_TRIBES),
+    ];
+    meet(checks, pod, roles.len())?;
+    started(checks, &roles)?;
+    played(checks, &roles, "both sides deploy")?;
+    played(checks, &roles, "both sides fight")?;
+    own_commands(checks, &roles)?;
+    converged(checks)
+}
+
+/// Four players, two a side; one Anglo-Egyptian commands every brigade, the other only the
+/// communal units. A Dervish commander's game leaves mid-battle: the game pauses for everyone
+/// until it is back, to its seat and its command.
+pub fn shared_rejoin(checks: &mut Checks, pod: &Pod) -> Result<()> {
+    let every_brigade: Vec<BrigadeId> = BRITISH.iter().chain(&EGYPTIAN).copied().collect();
+    let roles = [
+        brigades(&every_brigade),
+        army(),
+        tribes(&MULAZMIN),
+        tribes(&OTHER_TRIBES),
+    ];
+    meet(checks, pod, roles.len())?;
+    started(checks, &roles)?;
+    played(checks, &roles, "both sides deploy")?;
+    let gone = checks.require(
+        "a commander leaves; the game pauses for everyone",
+        |peers| {
+            let host = host_index(peers)?;
+            let gone = (0..roles.len())
+                .find(|&index| index != host && roles[index].side == Some(Player::Dervish))
+                .ok_or("no Dervish guest")?;
+            pod.stop(peers[gone].peer)?;
+            let mut rest: Vec<&mut Harness> = peers
+                .iter_mut()
+                .enumerate()
+                .filter_map(|(index, peer)| (index != gone).then_some(peer))
+                .collect();
+            let count = rest.len();
+            wait_all(&mut rest, "the others paused", PATIENCE, |snapshots| {
+                (agreed_host(snapshots, count).is_some()
+                    && snapshots.iter().all(|snapshot| snapshot.game.paused))
+                .then_some(())
+            })?;
+            Ok(gone)
+        },
+    )?;
+    checks.require(
+        "it comes back to its seat and command; the pause lifts",
+        |peers| {
+            let name = peers[gone].peer;
+            pod.start(name)?;
+            peers[gone] = connect_when_listening(pod, name, Some(now().saturating_sub(1)))?;
+            let mut all: Vec<&mut Harness> = peers.iter_mut().collect();
+            wait_all(
+                &mut all,
+                "every peer back, the game going on",
+                PATIENCE,
+                |snapshots| {
+                    (agreed_host(snapshots, roles.len()).is_some()
+                        && seats_agree(snapshots, &roles).is_ok()
+                        && snapshots
+                            .iter()
+                            .all(|snapshot| snapshot.game.started && !snapshot.game.paused))
+                    .then_some(())
+                },
+            )
+        },
+    )?;
+    played(checks, &roles, "play goes on after the return")?;
+    own_commands(checks, &roles)?;
+    converged(checks)
+}
+
+/// Five players: three Dervish (the Mulazmin, the Hadendowa, the Kehena and Degheim) and two
+/// Anglo-Egyptian (1B, 2B and 1E; 2E to 4E). The host leaves mid-battle: the others elect a new
+/// one and pause for its seat; it comes back to its seat and command.
+pub fn shared_failover(checks: &mut Checks, pod: &Pod) -> Result<()> {
+    let roles = [
+        brigades(&[BRITISH[0], BRITISH[1], EGYPTIAN[0]]),
+        brigades(&EGYPTIAN[1..]),
+        tribes(&MULAZMIN),
+        tribes(&OTHER_TRIBES[..1]),
+        tribes(&OTHER_TRIBES[1..]),
+    ];
+    meet(checks, pod, roles.len())?;
+    started(checks, &roles)?;
+    played(checks, &roles, "every side deploys")?;
+    let host = checks.require(
+        "the host leaves; the others elect a new one and pause",
+        |peers| {
+            let host = host_index(peers)?;
+            pod.stop(peers[host].peer)?;
+            let mut rest: Vec<&mut Harness> = peers
+                .iter_mut()
+                .enumerate()
+                .filter_map(|(index, peer)| (index != host).then_some(peer))
+                .collect();
+            let count = rest.len();
+            wait_all(
+                &mut rest,
+                "a new host, the game paused for the old one's seat",
+                PATIENCE,
+                |snapshots| {
+                    (agreed_host(snapshots, count).is_some()
+                        && snapshots.iter().all(|snapshot| snapshot.game.paused))
+                    .then_some(())
+                },
+            )?;
+            Ok(host)
+        },
+    )?;
+    checks.require("the old host comes back to its seat and command", |peers| {
+        let name = peers[host].peer;
+        pod.start(name)?;
+        peers[host] = connect_when_listening(pod, name, Some(now().saturating_sub(1)))?;
+        let mut all: Vec<&mut Harness> = peers.iter_mut().collect();
+        wait_all(
+            &mut all,
+            "every peer back, the game going on",
+            PATIENCE,
+            |snapshots| {
+                (agreed_host(snapshots, roles.len()).is_some()
+                    && seats_agree(snapshots, &roles).is_ok()
+                    && snapshots
+                        .iter()
+                        .all(|snapshot| snapshot.game.started && !snapshot.game.paused))
+                .then_some(())
+            },
+        )
+    })?;
+    played(checks, &roles, "play goes on under the new host")?;
+    own_commands(checks, &roles)?;
+    converged(checks)
+}
+
+/// Four players, two a side, every one of them playing the whole of its side, as two players who
+/// pick the same faction and no command do: each may order any of the side's units. Both sides
+/// deploy and fight; a Dervish player's game leaves mid-battle, the game pauses for everyone, and
+/// it comes back to its seat.
+pub fn team(checks: &mut Checks, pod: &Pod) -> Result<()> {
+    let roles = [
+        player(Player::AngloEgyptian),
+        player(Player::AngloEgyptian),
+        player(Player::Dervish),
+        player(Player::Dervish),
+    ];
+    meet(checks, pod, roles.len())?;
+    started(checks, &roles)?;
+    played(checks, &roles, "both sides deploy")?;
+    played(checks, &roles, "both sides fight")?;
+    every_player_ordered(checks, &roles)?;
+    let gone = checks.require("a player leaves; the game pauses for everyone", |peers| {
+        let host = host_index(peers)?;
+        let gone = (0..roles.len())
+            .find(|&index| index != host && roles[index].side == Some(Player::Dervish))
+            .ok_or("no Dervish guest")?;
+        pod.stop(peers[gone].peer)?;
+        let mut rest: Vec<&mut Harness> = peers
+            .iter_mut()
+            .enumerate()
+            .filter_map(|(index, peer)| (index != gone).then_some(peer))
+            .collect();
+        let count = rest.len();
+        wait_all(&mut rest, "the others paused", PATIENCE, |snapshots| {
+            (agreed_host(snapshots, count).is_some()
+                && snapshots.iter().all(|snapshot| snapshot.game.paused))
+            .then_some(())
+        })?;
+        Ok(gone)
+    })?;
+    checks.require("it comes back to its seat; the pause lifts", |peers| {
+        let name = peers[gone].peer;
+        pod.start(name)?;
+        peers[gone] = connect_when_listening(pod, name, Some(now().saturating_sub(1)))?;
+        let mut all: Vec<&mut Harness> = peers.iter_mut().collect();
+        wait_all(
+            &mut all,
+            "every peer back, the game going on",
+            PATIENCE,
+            |snapshots| {
+                (agreed_host(snapshots, roles.len()).is_some()
+                    && seats_agree(snapshots, &roles).is_ok()
+                    && snapshots
+                        .iter()
+                        .all(|snapshot| snapshot.game.started && !snapshot.game.paused))
+                .then_some(())
+            },
+        )
+    })?;
+    played(checks, &roles, "play goes on after the return")?;
+    converged(checks)
+}
+
+/// Five players: three Anglo-Egyptian -- two playing the whole side, one commanding the British
+/// brigades -- and two Dervish, one playing the whole side, one commanding the Mulazmin. A
+/// whole-side player orders every unit no teammate's command claims (rulebook §1.1).
+pub fn team_mixed(checks: &mut Checks, pod: &Pod) -> Result<()> {
+    let roles = [
+        player(Player::AngloEgyptian),
+        player(Player::AngloEgyptian),
+        brigades(&BRITISH),
+        player(Player::Dervish),
+        tribes(&MULAZMIN),
+    ];
+    meet(checks, pod, roles.len())?;
+    started(checks, &roles)?;
+    played(checks, &roles, "both sides deploy")?;
+    played(checks, &roles, "both sides fight")?;
+    every_player_ordered(checks, &roles)?;
+    own_commands(checks, &roles)?;
+    converged(checks)
+}
+
+/// Every seated player has given orders: no teammate was left out of its side's play.
+fn every_player_ordered(checks: &mut Checks, roles: &[Role]) -> Result<()> {
+    checks.require("every player has given orders", |peers| {
+        let mut idle = Vec::new();
+        for (peer, role) in peers.iter_mut().zip(roles) {
+            let autoplayed = peer.snapshot()?.autoplayed;
+            if role.side.is_some() && autoplayed.orders == 0 {
+                idle.push(peer.peer);
+            }
+        }
+        if idle.is_empty() {
+            Ok(())
+        } else {
+            Err(format!("no orders from {}", idle.join(", ")))
+        }
+    })
+}
+
+/// Every commander has ordered units of its own command (not only the side's communal ones):
+/// its autoplay kept to it, and its teammates left it to it.
+fn own_commands(checks: &mut Checks, roles: &[Role]) -> Result<()> {
+    checks.require("every commander has ordered its own command", |peers| {
+        let mut idle = Vec::new();
+        for (peer, role) in peers.iter_mut().zip(roles) {
+            let claims = role
+                .command
+                .as_ref()
+                .is_some_and(|command| !command.claims_nothing());
+            let autoplayed = peer.snapshot()?.autoplayed;
+            if claims && autoplayed.own_command == 0 {
+                idle.push(format!("{} ({:?})", peer.peer, autoplayed));
+            }
+        }
+        if idle.is_empty() {
+            Ok(())
+        } else {
+            Err(format!("no order to its own command: {}", idle.join(", ")))
+        }
+    })
+}
+
+/// Every peer's seat table holds each player's seat: its faction, its command.
+fn seats_agree(snapshots: &[Snapshot], roles: &[Role]) -> Result<()> {
+    let expected: Vec<SeatRow> = snapshots
+        .iter()
+        .zip(roles)
+        .filter_map(|(snapshot, role)| {
+            Some(SeatRow {
+                faction: role.side?,
+                holder: snapshot.lobby.key.clone(),
+                scope: role.command.clone(),
+            })
+        })
+        .collect();
+    for snapshot in snapshots {
+        if snapshot.game.seats.len() != expected.len()
+            || expected
+                .iter()
+                .any(|seat| !snapshot.game.seats.contains(seat))
+        {
+            return Err(format!("seats {:?}, not {expected:?}", snapshot.game.seats));
+        }
+    }
+    Ok(())
 }
 
 /// Two players and a spectator; the host leaves mid-battle, the others elect another (and pause
 /// for the old host's seat, if it held one), and the old host comes back.
 pub fn failover(checks: &mut Checks, pod: &Pod) -> Result<()> {
-    let sides = [Some(Player::AngloEgyptian), Some(Player::Dervish), None];
-    meet(checks, pod, sides.len())?;
-    started(checks, &sides)?;
-    played(checks, &sides, "both sides play")?;
+    let roles = [
+        player(Player::AngloEgyptian),
+        player(Player::Dervish),
+        spectator(),
+    ];
+    meet(checks, pod, roles.len())?;
+    started(checks, &roles)?;
+    played(checks, &roles, "both sides play")?;
     let host = checks.require("the host leaves; the others elect a new one", |peers| {
         let host = host_index(peers)?;
         pod.stop(peers[host].peer)?;
@@ -79,7 +432,7 @@ pub fn failover(checks: &mut Checks, pod: &Pod) -> Result<()> {
             .filter_map(|(index, peer)| (index != host).then_some(peer))
             .collect();
         // The game waits for an absent seat holder; a spectator host leaves no seat empty.
-        let seated = sides[host].is_some();
+        let seated = roles[host].side.is_some();
         let waiting_for = if seated {
             "a new host, the game paused for the old one's seat"
         } else {
@@ -106,8 +459,8 @@ pub fn failover(checks: &mut Checks, pod: &Pod) -> Result<()> {
                 "every peer back, the game going on",
                 PATIENCE,
                 |snapshots| {
-                    (agreed_host(snapshots, sides.len()).is_some()
-                        && snapshots[host].game.seated == sides[host]
+                    (agreed_host(snapshots, roles.len()).is_some()
+                        && snapshots[host].game.seated == roles[host].side
                         && snapshots
                             .iter()
                             .all(|snapshot| snapshot.game.started && !snapshot.game.paused))
@@ -116,18 +469,18 @@ pub fn failover(checks: &mut Checks, pod: &Pod) -> Result<()> {
             )
         },
     )?;
-    played(checks, &sides, "play goes on under the new host")?;
+    played(checks, &roles, "play goes on under the new host")?;
     converged(checks)
 }
 
 /// Two players; the signalling server goes down mid-battle and comes back.
 pub fn signalling(checks: &mut Checks, pod: &Pod) -> Result<()> {
-    let sides = [Some(Player::AngloEgyptian), Some(Player::Dervish)];
-    meet(checks, pod, sides.len())?;
-    started(checks, &sides)?;
-    played(checks, &sides, "both sides play")?;
+    let roles = [player(Player::AngloEgyptian), player(Player::Dervish)];
+    meet(checks, pod, roles.len())?;
+    started(checks, &roles)?;
+    played(checks, &roles, "both sides play")?;
     checks.require("the signalling server goes down", |_| pod.stop(MATCHBOX))?;
-    played(checks, &sides, "play goes on without the signalling server")?;
+    played(checks, &roles, "play goes on without the signalling server")?;
     checks.require("the signalling server comes back", |peers| {
         let since = now().saturating_sub(1);
         pod.start(MATCHBOX)?;
@@ -137,11 +490,11 @@ pub fn signalling(checks: &mut Checks, pod: &Pod) -> Result<()> {
             &mut all,
             "every peer still seeing the others",
             PATIENCE,
-            |snapshots| agreed_host(snapshots, sides.len()),
+            |snapshots| agreed_host(snapshots, roles.len()),
         )
         .map(drop)
     })?;
-    played(checks, &sides, "play goes on after the server's return")?;
+    played(checks, &roles, "play goes on after the server's return")?;
     converged(checks)
 }
 
@@ -177,15 +530,21 @@ fn meet(checks: &mut Checks, pod: &Pod, peers: usize) -> Result<()> {
     })
 }
 
-/// The peers pick `sides` in the lobby, and the host starts a battle every peer joins.
-fn started(checks: &mut Checks, sides: &[Side]) -> Result<()> {
+/// The peers take their `roles` in the lobby, and the host starts a battle every peer joins, its
+/// seat table theirs.
+fn started(checks: &mut Checks, roles: &[Role]) -> Result<()> {
     checks.require("the host starts a battle every peer joins", |peers| {
-        for (peer, side) in peers.iter_mut().zip(sides) {
-            match side {
+        for (peer, role) in peers.iter_mut().zip(roles) {
+            match role.side {
                 Some(faction) => peer.act(Action::PickFaction {
-                    faction: Some(*faction),
+                    faction: Some(faction),
                 })?,
                 None => peer.act(Action::Spectate { on: true })?,
+            }
+            if role.command.is_some() {
+                peer.act(Action::PickCommand {
+                    scope: role.command.clone(),
+                })?;
             }
         }
         let mut all: Vec<&mut Harness> = peers.iter_mut().collect();
@@ -197,13 +556,14 @@ fn started(checks: &mut Checks, sides: &[Side]) -> Result<()> {
                 snapshots
                     .iter()
                     .all(|snapshot| {
-                        snapshot.lobby.roster.len() == sides.len()
+                        snapshot.lobby.roster.len() == roles.len()
                             && snapshot.lobby.roster.iter().all(|row| {
                                 row.key.is_some()
-                                    && snapshots.iter().zip(sides).any(|(owner, side)| {
+                                    && snapshots.iter().zip(roles).any(|(owner, role)| {
                                         owner.lobby.key == row.key.clone().unwrap_or_default()
-                                            && row.faction == *side
-                                            && row.spectating == side.is_none()
+                                            && row.faction == role.side
+                                            && row.command == role.command
+                                            && row.spectating == role.side.is_none()
                                     })
                             })
                     })
@@ -213,24 +573,19 @@ fn started(checks: &mut Checks, sides: &[Side]) -> Result<()> {
         let host = host_index(peers)?;
         peers[host].act(Action::PickScenario { scenario: SCENARIO })?;
         peers[host].act(Action::StartBattle)?;
-        let players = sides.iter().flatten().count();
         let mut all: Vec<&mut Harness> = peers.iter_mut().collect();
         wait_all(
             &mut all,
-            "the battle on every peer",
+            "the battle and its seats on every peer",
             PATIENCE,
             |snapshots| {
-                snapshots
-                    .iter()
-                    .zip(sides)
-                    .all(|(snapshot, side)| {
-                        snapshot.game.started
-                            && snapshot.game.scenario == SCENARIO
-                            && snapshot.game.seats.len() == players
-                            && snapshot.game.seated == *side
-                            && snapshot.screen.as_deref() == Some("Board")
-                    })
-                    .then_some(())
+                (snapshots.iter().zip(roles).all(|(snapshot, role)| {
+                    snapshot.game.started
+                        && snapshot.game.scenario == SCENARIO
+                        && snapshot.game.seated == role.side
+                        && snapshot.screen.as_deref() == Some("Board")
+                }) && seats_agree(snapshots, roles).is_ok())
+                .then_some(())
             },
         )
     })
@@ -238,7 +593,7 @@ fn started(checks: &mut Checks, sides: &[Side]) -> Result<()> {
 
 /// Every seated peer autoplays until [`ORDERS`] more events are in every record, both sides have
 /// been to act and set-up is over (or the game is over), then stops.
-fn played(checks: &mut Checks, sides: &[Side], name: &str) -> Result<()> {
+fn played(checks: &mut Checks, roles: &[Role], name: &str) -> Result<()> {
     checks.require(&format!("{name}: {ORDERS} orders"), |peers| {
         let mut all: Vec<&mut Harness> = peers.iter_mut().collect();
         let start = wait_all(&mut all, "the records", PATIENCE, |snapshots| {
@@ -247,8 +602,8 @@ fn played(checks: &mut Checks, sides: &[Side], name: &str) -> Result<()> {
                 .map(|snapshot| snapshot.net.record_len)
                 .max()
         })?;
-        for (peer, side) in all.iter_mut().zip(sides) {
-            if side.is_some() {
+        for (peer, role) in all.iter_mut().zip(roles) {
+            if role.side.is_some() {
                 peer.act(Action::Autoplay { on: true })?;
             }
         }
@@ -272,8 +627,8 @@ fn played(checks: &mut Checks, sides: &[Side], name: &str) -> Result<()> {
                 })
                 .then_some(())
         });
-        for (peer, side) in all.iter_mut().zip(sides) {
-            if side.is_some() {
+        for (peer, role) in all.iter_mut().zip(roles) {
+            if role.side.is_some() {
                 peer.act(Action::Autoplay { on: false })?;
             }
         }

@@ -19,11 +19,14 @@ use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use omdurman_bot::actions::engine_accepts;
 use omdurman_harness::{
-    Acted, Action, Call, GameSnapshot, LobbySnapshot, NetSnapshot, Outcome, Pong, Reply, Request,
-    RosterRow, SeatRow, Snapshot,
+    Acted, Action, Autoplayed, Call, GameSnapshot, LobbySnapshot, NetSnapshot, Outcome, Pong,
+    Reply, Request, RosterRow, SeatRow, Snapshot,
 };
-use omdurman_net::{Ephemeral, GameEvent, NetMsg, NetState, SeatHolder};
-use omdurman_rules::effects::GameEffect;
+use omdurman_net::{Ephemeral, GameEvent, NetMsg, NetState, Seat, SeatHolder};
+use omdurman_rules::effects::{GameEffect, GameState};
+use omdurman_rules::unit_profiles::command_owns_unit;
+use omdurman_rules::{FriendliesAction, UnitIdentity};
+use omdurman_types::{CommandScope, Player};
 
 use crate::bot_player::BotDriver;
 use crate::lobby::{self, LobbyContext};
@@ -150,11 +153,21 @@ struct Autoplay {
     /// state it makes (as `BotDriver::in_flight`).
     in_flight: Option<u64>,
     cooldown: f32,
+    /// The last applied seq seen, and the seconds since it last changed: how
+    /// long the side has been quiet.
+    seen_seq: Option<u32>,
+    quiet: f32,
+    tally: Autoplayed,
 }
 
 /// Seconds between autoplayed orders: brisk, but the peers' boards still
 /// show each.
 const AUTOPLAY_COOLDOWN_SECS: f32 = 0.2;
+
+/// How long a seat that shares its side waits, with nothing left to order,
+/// for the game to go quiet before it ends the phase: its teammates' orders
+/// apply at least this often while they still have some.
+const AUTOPLAY_QUIET_SECS: f32 = 3.0;
 
 /// What the harness reads beyond the lobby's own resources.
 #[derive(bevy::ecs::system::SystemParam)]
@@ -188,7 +201,7 @@ fn serve_agent(
                     version: env!("CARGO_PKG_VERSION").to_string(),
                 }),
             ),
-            Call::Snapshot => reply_line(id, Ok(snapshot(&view, &lobby, autoplay.on))),
+            Call::Snapshot => reply_line(id, Ok(snapshot(&view, &lobby, &autoplay))),
             Call::Act { action } => reply_line(id, act(action, &view, &mut lobby, &mut autoplay)),
             Call::Screenshot { path } => {
                 commands
@@ -223,6 +236,22 @@ fn act(
                 .pending
                 .outgoing_broadcast
                 .push(NetMsg::Ephemeral(Ephemeral::FactionChoice(faction)));
+            // Tribes and brigades belong to one side.
+            clear_command(lobby);
+        }
+        Action::PickCommand { scope } => {
+            let faction = lobby
+                .local_faction
+                .0
+                .ok_or("no faction picked: no command to pick")?;
+            if let Some(scope) = &scope {
+                check_command(faction, scope, &roster(view, lobby), view)?;
+            }
+            lobby.local_command.0 = scope.clone();
+            lobby
+                .pending
+                .outgoing_broadcast
+                .push(NetMsg::Ephemeral(Ephemeral::CommandChoice(scope)));
         }
         Action::Spectate { on } => {
             lobby.local_spectator.0 = on;
@@ -232,6 +261,9 @@ fn act(
                     .pending
                     .outgoing_broadcast
                     .push(NetMsg::Ephemeral(Ephemeral::FactionChoice(None)));
+            }
+            if on {
+                clear_command(lobby);
             }
             lobby
                 .pending
@@ -268,18 +300,58 @@ fn act(
             lobby.pending.submit_game(start);
         }
         Action::Autoplay { on } => {
-            if on {
-                let seat = crate::seats::seat_of(&view.seats.seats.0, lobby.local_key.0)
-                    .map(|(_, seat)| seat)
-                    .ok_or("no seat to play")?;
-                if seat.scope.is_some() {
-                    return Err("autoplay plays whole-faction seats only".into());
-                }
+            if on && crate::seats::seat_of(&view.seats.seats.0, lobby.local_key.0).is_none() {
+                return Err("no seat to play".into());
             }
             autoplay.on = on;
         }
     }
     Ok(Acted {})
+}
+
+/// Drops the local command pick, as the lobby does when the faction changes.
+fn clear_command(lobby: &mut LobbyContext) {
+    if lobby.local_command.0.take().is_some() {
+        lobby
+            .pending
+            .outgoing_broadcast
+            .push(NetMsg::Ephemeral(Ephemeral::CommandChoice(None)));
+    }
+}
+
+/// Whether `faction`'s player may pick `scope`, as the lobby's command
+/// editor offers it (rulebook §1.1): the faction's own kind of command
+/// (tribes or brigades), none of it another player's.
+fn check_command(
+    faction: Player,
+    scope: &CommandScope,
+    roster: &[lobby::RosterEntry],
+    view: &AgentView,
+) -> Result<(), String> {
+    let kind_fits = match scope {
+        CommandScope::Army => true,
+        CommandScope::Tribes(_) => faction == Player::Dervish,
+        CommandScope::Brigades(_) => faction == Player::AngloEgyptian,
+    };
+    if !kind_fits {
+        return Err(format!("{scope} is no command of the {faction:?}"));
+    }
+    let me = view.net.my_id();
+    let taken = roster
+        .iter()
+        .filter(|row| Some(row.peer) != me)
+        .filter_map(|row| row.command.as_ref())
+        .any(|theirs| match (scope, theirs) {
+            (CommandScope::Tribes(mine), CommandScope::Tribes(theirs)) => !mine.is_disjoint(theirs),
+            (CommandScope::Brigades(mine), CommandScope::Brigades(theirs)) => {
+                !mine.is_disjoint(theirs)
+            }
+            _ => false,
+        });
+    if taken {
+        return Err(format!("another player commands some of {scope}"));
+    }
+    Ok(())
 }
 
 fn roster(view: &AgentView, lobby: &LobbyContext) -> Vec<lobby::RosterEntry> {
@@ -294,7 +366,7 @@ fn roster(view: &AgentView, lobby: &LobbyContext) -> Vec<lobby::RosterEntry> {
     )
 }
 
-fn snapshot(view: &AgentView, lobby: &LobbyContext, autoplay: bool) -> Snapshot {
+fn snapshot(view: &AgentView, lobby: &LobbyContext, autoplay: &Autoplay) -> Snapshot {
     let net = &view.net;
     let events = lobby
         .recorder
@@ -333,6 +405,7 @@ fn snapshot(view: &AgentView, lobby: &LobbyContext, autoplay: bool) -> Snapshot 
             name: view.local.name.clone(),
             key: lobby.local_key.0.0.to_string(),
             faction: lobby.local_faction.0,
+            command: lobby.local_command.0.clone(),
             spectating: lobby.local_spectator.0,
             scenario: lobby.settings.scenario.0,
             roster: roster(view, lobby)
@@ -342,6 +415,7 @@ fn snapshot(view: &AgentView, lobby: &LobbyContext, autoplay: bool) -> Snapshot 
                     key: row.key.map(|key| key.0.to_string()),
                     name: row.name,
                     faction: row.pick,
+                    command: row.command,
                     spectating: row.spectating,
                     is_host: row.is_host,
                 })
@@ -370,10 +444,12 @@ fn snapshot(view: &AgentView, lobby: &LobbyContext, autoplay: bool) -> Snapshot 
                         SeatHolder::Ai => "ai".to_string(),
                         SeatHolder::Human(key) => key.0.to_string(),
                     },
+                    scope: seat.scope.clone(),
                 })
                 .collect(),
         },
-        autoplay,
+        autoplay: autoplay.on,
+        autoplayed: autoplay.tally.clone(),
     }
 }
 
@@ -392,16 +468,33 @@ fn digest<T: serde::Serialize>(items: impl Iterator<Item = T>) -> String {
 /// The local seat's orders while [`Autoplay`] is on: the AI commander's
 /// decision for the side to act, when that is ours and we may act, submitted
 /// as a human's orders are ([`PendingEdits::submit_game`]), one at a time.
+///
+/// A seat that shares its side plays as a teammate does (rulebook §1.1): it
+/// orders the units its command allows ([`within_command`]), readies its
+/// set-up as the Ready button does -- the side's `ConfirmSetupReady` once
+/// every teammate has readied too -- and, with nothing left to order, ends the
+/// phase once the side has gone quiet. Every End Phase is stamped with its
+/// phase, so teammates ending it together end it once.
 fn autoplay_act(
     time: Res<Time>,
     mut autoplay: ResMut<Autoplay>,
+    net: Res<NetState>,
     peers: crate::peers::Peers,
+    seats: Res<crate::seats::Seats>,
+    key: Res<crate::seats::LocalPlayerKey>,
     live: crate::timeline::LiveGame,
     mut pending: ResMut<PendingEdits>,
+    mut setup_ready: ResMut<crate::peers::LocalSetupReady>,
     mut activity: ResMut<crate::activity::Activity>,
 ) {
     if !autoplay.on {
         return;
+    }
+    if autoplay.seen_seq == net.last_applied_seq {
+        autoplay.quiet += time.delta_secs();
+    } else {
+        autoplay.seen_seq = net.last_applied_seq;
+        autoplay.quiet = 0.0;
     }
     let state = live.state();
     if state.game_over || state.board.terrain.is_empty() {
@@ -425,11 +518,120 @@ fn autoplay_act(
         return;
     }
     autoplay.cooldown = AUTOPLAY_COOLDOWN_SECS;
-    let effect = autoplay.driver.decide(state, side, &[side]);
-    // As the AI: an `AdvancePhase` fallback the engine refuses would only be
-    // rejected on the echo.
-    if effect == GameEffect::AdvancePhase && !engine_accepts(state, &effect) {
+    let (seats, key) = (&seats.0, key.0);
+    let keep = |effect: &GameEffect| within_command(state, seats, key, effect);
+    let mut effect = autoplay.driver.decide(state, side, &[side], &keep);
+    let shared = peers.faction_size(side) > 1;
+    match effect {
+        GameEffect::AdvancePhase => {
+            // Nothing left to order: a teammate may still have orders.
+            if shared && autoplay.quiet < AUTOPLAY_QUIET_SECS {
+                return;
+            }
+            effect = crate::ui_plugin::end_phase_effect(state);
+            autoplay.tally.phase_ends += 1;
+        }
+        GameEffect::ConfirmSetupReady { player } if peers.any_commands() => {
+            if !setup_ready.0 {
+                setup_ready.0 = true;
+                pending
+                    .outgoing_broadcast
+                    .push(NetMsg::Ephemeral(Ephemeral::SetupReady(true)));
+            }
+            if !peers.faction_others_ready(player) {
+                return;
+            }
+        }
+        _ => {}
+    }
+    // As the AI: an End Phase the engine refuses would only be rejected on
+    // the echo; an order outside the command is not ours to give.
+    if !engine_accepts(state, &effect) || !keep(&effect) {
         return;
     }
+    autoplay.tally.orders += 1;
+    let scope = crate::seats::seat_of(seats, key).and_then(|(_, seat)| seat.scope.as_ref());
+    if scope.is_some_and(|scope| {
+        ordered_units(state, &effect)
+            .iter()
+            .any(|identity| command_owns_unit(scope, identity))
+    }) {
+        autoplay.tally.own_command += 1;
+    }
     autoplay.in_flight = Some(pending.submit_game(GameEvent::Effect(effect)));
+}
+
+/// Whether `key`'s seat may give `effect` under its command (rulebook §1.1):
+/// every unit the order commands is its own or the side's communal pool
+/// ([`crate::seats::scope_allows`], the gate the board's input sites apply).
+/// Fire the side has allocated is the side's to resolve, whoever allocated
+/// it (as the Fire button resolves a teammate's allocation).
+fn within_command(
+    state: &GameState,
+    seats: &[Seat],
+    key: omdurman_net::PlayerKey,
+    effect: &GameEffect,
+) -> bool {
+    let allocated = omdurman_bot::fire_plan::order_of(effect).is_some_and(|order| {
+        state
+            .fire_allocation
+            .iter()
+            .any(|fire| !fire.resolved && fire.order == order)
+    });
+    allocated
+        || ordered_units(state, effect)
+            .iter()
+            .all(|identity| crate::seats::scope_allows(seats, key, identity))
+}
+
+/// The units `effect` gives orders to, by identity; none for the side's own
+/// decisions (ending a phase, readying, taking losses, declining a retreat,
+/// resolving a melee, the desertion and mine rolls, mines and the chain).
+fn ordered_units(state: &GameState, effect: &GameEffect) -> Vec<UnitIdentity> {
+    let ids = match effect {
+        GameEffect::MoveUnit { unit_id, .. }
+        | GameEffect::RetreatBeforeMelee { unit_id, .. }
+        | GameEffect::AdvanceAfterCombat { unit_id, .. }
+        | GameEffect::Demolition { unit_id, .. }
+        | GameEffect::RemoveDeployedUnit { unit_id, .. } => vec![*unit_id],
+        GameEffect::FireCombat { attack, .. } | GameEffect::HowitzerFire { attack, .. } => {
+            attack.firers.clone()
+        }
+        GameEffect::AllocateFire { orders } => orders
+            .iter()
+            .flat_map(|order| order.shots())
+            .map(|shot| shot.unit)
+            .collect(),
+        GameEffect::DeclareMelee { attack, .. } => attack.attackers.clone(),
+        GameEffect::ConstructZariba { unit_ids, .. } => unit_ids.clone(),
+        GameEffect::SinkChain { firers, .. } | GameEffect::ArtilleryBreachWall { firers, .. } => {
+            firers.clone()
+        }
+        GameEffect::FriendliesTransport(
+            FriendliesAction::Load { unit, gunboat }
+            | FriendliesAction::Disembark { unit, gunboat, .. },
+        ) => vec![*unit, *gunboat],
+        GameEffect::DeployUnit(placement) => return vec![placement.profile.identity],
+        GameEffect::PlaceReinforcements(placements) => {
+            return placements
+                .iter()
+                .map(|placement| placement.profile.identity)
+                .collect();
+        }
+        GameEffect::AdvancePhase
+        | GameEffect::AdvancePhaseFrom { .. }
+        | GameEffect::TakeLosses { .. }
+        | GameEffect::ResolveMelee
+        | GameEffect::DeclineRetreatBeforeMelee
+        | GameEffect::DervishDesertion { .. }
+        | GameEffect::RollDesertion { .. }
+        | GameEffect::RiverMine { .. }
+        | GameEffect::PlaceMine { .. }
+        | GameEffect::PlaceChain { .. }
+        | GameEffect::ConfirmSetupReady { .. } => Vec::new(),
+    };
+    ids.iter()
+        .filter_map(|id| state.find_unit(*id))
+        .map(|unit| unit.profile.identity)
+        .collect()
 }

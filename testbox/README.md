@@ -28,7 +28,7 @@ flowchart LR
         matchbox["matchbox_server<br/>ws://127.0.0.1:3536"]
         a["peer-a<br/>the game on Xvnc"]
         b["peer-b"]
-        c["peer-c<br/>(failover)"]
+        c["peer-c ... peer-e<br/>(failover, shared)"]
     end
     xtask -- "agent harness" --- run
     run --- a
@@ -56,9 +56,9 @@ one JSON request per line. A `snapshot` reads what the peer holds -- the screen,
 id, the host, the peers it sees, the last applied seq, the record's length and a digest of its
 events, its unconfirmed submissions), the lobby's roster and the game (turn, phase, seats, pause,
 a digest of every unit). An `act` does what a player does, by the road the button takes: pick a
-faction, spectate, pick the scenario, start the battle -- or `autoplay`, which plays the local seat
-with the in-game AI's commander through the same submission path as a human's orders. A
-`screenshot` writes the window as drawn.
+faction and a command within it, spectate, pick the scenario, start the battle -- or `autoplay`,
+which plays the local seat with the in-game AI's commander through the same submission path as a
+human's orders. A `screenshot` writes the window as drawn.
 
 ## What the host needs
 
@@ -85,6 +85,17 @@ cargo testbox test core
 | `rejoin` | 2 | as `core`, then the guest's game restarts mid-battle: it takes its seat back from the history (its key), the pause lifts, play goes on, and the peers agree |
 | `failover` | 3 | two players and a spectator; the host leaves mid-battle: the others elect a new host, and pause for the absent seat if the old host held one (the host is the lowest peer id, so it may be the spectator); the old host comes back, to its seat; play goes on under the new host, and the peers agree |
 | `signalling` | 2 | the signalling server goes down mid-battle: play goes on over the data channels; it comes back; play goes on, and the peers agree |
+| `shared` | 4 | two players a side, each commanding part of it (rulebook §1.1): 1B+2B and 1E-4E, the Mulazmin and the other tribes. Every peer's seat table carries the commands; both sides deploy and fight; every commander ordered units of its own command; the peers agree |
+| `shared-rejoin` | 4 | as `shared`, one Anglo-Egyptian commanding every brigade and the other only the communal units (`Army`); a Dervish commander's game leaves mid-battle: everyone pauses; it comes back to its seat and command, and play goes on |
+| `shared-failover` | 5 | three Dervish commanders (Mulazmin; Hadendowa; Kehena and Degheim) and two Anglo-Egyptian (1B, 2B, 1E; 2E-4E); the host leaves mid-battle: the others elect a new one and pause; it comes back to its seat and command, and play goes on |
+| `team` | 4 | two players a side, each playing the whole of it (the same faction picked, no command): any of them orders any of the side's units. Both sides deploy and fight; every player gave orders; a Dervish player leaves, everyone pauses, it comes back to its seat; play goes on, and the peers agree |
+| `team-mixed` | 5 | three Anglo-Egyptian (two whole-side players, one commanding 1B and 2B) and two Dervish (one whole-side, one commanding the Mulazmin); every player gave orders, every commander to its own command; the peers agree |
+
+In the shared and team phases each player's `autoplay` plays as a teammate does: it orders the units its
+command allows and the side's communal ones (leaders, artillery, gunboats, unclaimed tribes and
+brigades), readies its set-up as the Ready button does (the side's confirmation goes out once
+every teammate has readied), and with nothing left to order ends the phase once the side has gone
+quiet -- an End Phase stamped with its phase, so teammates ending it together end it once.
 
 Each check prints `check <what>: passed` or `failed: <why>`, a failure with each peer's gist
 (screen, peers, host, seq, record, game). `test` fails if any did; last, it checks that no peer's

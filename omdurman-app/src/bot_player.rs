@@ -335,23 +335,26 @@ pub fn bot_player_act(
 }
 
 impl BotDriver {
-    /// One decision for `chooser` playing `factions`, on this driver's dice
-    /// and memories: the agent harness's autoplay of a human seat
-    /// (`crate::agent`) decides as the AI does.
+    /// One decision for `chooser` playing `factions` among the candidates
+    /// `keep` keeps, on this driver's dice and memories: the agent harness's
+    /// autoplay of a human seat (`crate::agent`) decides as the AI does,
+    /// within its seat's command.
     #[cfg(unix)]
     pub(crate) fn decide(
         &mut self,
         state: &GameState,
         chooser: Player,
         factions: &[Player],
+        keep: &dyn Fn(&GameEffect) -> bool,
     ) -> GameEffect {
-        next_ai_action(
+        next_ai_action_among(
             &mut self.threat,
             state,
             chooser,
             factions,
             &mut self.rng,
             &mut self.memory,
+            keep,
         )
     }
 }
@@ -382,6 +385,19 @@ pub(crate) fn next_ai_action(
     rng: &mut BotRng,
     memory: &mut omdurman_bot::move_memory::MoveMemory,
 ) -> GameEffect {
+    next_ai_action_among(threat, state, chooser, ai_factions, rng, memory, &|_| true)
+}
+
+/// [`next_ai_action`] among the candidates `keep` keeps.
+fn next_ai_action_among(
+    threat: &mut omdurman_bot::threat::ThreatCache,
+    state: &GameState,
+    chooser: Player,
+    ai_factions: &[Player],
+    rng: &mut BotRng,
+    memory: &mut omdurman_bot::move_memory::MoveMemory,
+    keep: &dyn Fn(&GameEffect) -> bool,
+) -> GameEffect {
     let both_ai = ai_factions.len() == 2;
     let own_only = if state.phase == Phase::Setup && !both_ai {
         Some(chooser)
@@ -389,11 +405,12 @@ pub(crate) fn next_ai_action(
         None
     };
 
-    let candidates = if state.phase == Phase::Setup {
+    let mut candidates = if state.phase == Phase::Setup {
         omdurman_bot::actions::legal_actions_deep_setup(state, rng)
     } else {
         omdurman_bot::actions::legal_actions(state, rng)
     };
+    candidates.retain(|effect| keep(effect));
 
     // §8.2: the once-per-game desertion roll is mandatory — take it before
     // any other action (the in-game counterpart of the playthrough rule).

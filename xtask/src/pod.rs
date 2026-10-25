@@ -19,7 +19,7 @@ pub const VIEW: &str = "target/testbox-view";
 const PEERS: &str = "# @PEERS@";
 const VOLUMES: &str = "# @VOLUMES@";
 /// The peers by name, in the order `up --peers` takes them.
-pub const PEER_NAMES: [&str; 3] = ["peer-a", "peer-b", "peer-c"];
+pub const PEER_NAMES: [&str; 5] = ["peer-a", "peer-b", "peer-c", "peer-d", "peer-e"];
 
 /// An image pod.yaml runs, built from the repository before it plays.
 struct Image {

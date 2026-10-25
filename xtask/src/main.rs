@@ -35,7 +35,7 @@ struct Cli {
 enum Command {
     /// Builds the images and plays the pod.
     Up {
-        /// How many peers (at most 3).
+        /// How many peers (at most 5).
         #[arg(long, default_value_t = 2)]
         peers: usize,
     },
@@ -70,7 +70,7 @@ enum Command {
     },
     /// Prints containers' logs.
     Logs {
-        /// The containers' names: `matchbox`, `peer-a`, `peer-b`, `peer-c`.
+        /// The containers' names: `matchbox`, `peer-a`, `peer-b`, ...
         services: Vec<String>,
     },
 }
@@ -82,14 +82,26 @@ enum Phase {
     Rejoin,
     Failover,
     Signalling,
+    /// Two players a side, each commanding part of it.
+    Shared,
+    SharedRejoin,
+    SharedFailover,
+    /// Two players a side, each playing the whole of it.
+    Team,
+    TeamMixed,
 }
 
 impl Phase {
-    const ALL: [Phase; 4] = [
+    const ALL: [Phase; 9] = [
         Phase::Core,
         Phase::Rejoin,
         Phase::Failover,
         Phase::Signalling,
+        Phase::Shared,
+        Phase::SharedRejoin,
+        Phase::SharedFailover,
+        Phase::Team,
+        Phase::TeamMixed,
     ];
 
     fn name(self) -> String {
@@ -103,6 +115,8 @@ impl Phase {
         match self {
             Phase::Core | Phase::Rejoin | Phase::Signalling => 2,
             Phase::Failover => 3,
+            Phase::Shared | Phase::SharedRejoin | Phase::Team => 4,
+            Phase::SharedFailover | Phase::TeamMixed => 5,
         }
     }
 }
@@ -225,5 +239,10 @@ fn test(pod: &pod::Pod, repo: &Path, phase: Phase, record: &str, screenshots: bo
         Phase::Rejoin => phases::rejoin(checks, pod),
         Phase::Failover => phases::failover(checks, pod),
         Phase::Signalling => phases::signalling(checks, pod),
+        Phase::Shared => phases::shared(checks, pod),
+        Phase::SharedRejoin => phases::shared_rejoin(checks, pod),
+        Phase::SharedFailover => phases::shared_failover(checks, pod),
+        Phase::Team => phases::team(checks, pod),
+        Phase::TeamMixed => phases::team_mixed(checks, pod),
     })
 }

@@ -6,7 +6,7 @@
 //! as the lobby's buttons and the in-game AI. It listens only when `OMDURMAN_AGENT_SOCKET` names
 //! a socket path.
 
-use omdurman_types::{Player, Scenario};
+use omdurman_types::{CommandScope, Player, Scenario};
 use serde::{Deserialize, Serialize};
 
 /// What the game logs once its harness listens, which its clients wait for.
@@ -88,6 +88,9 @@ pub struct Acted {}
 pub enum Action {
     /// The lobby's faction pick; none is undecided.
     PickFaction { faction: Option<Player> },
+    /// The lobby's command pick (rulebook §1.1): the tribes or brigades of the faction this
+    /// player commands, `Army` its communal units only; none is the whole faction.
+    PickCommand { scope: Option<CommandScope> },
     /// The lobby's Spectate toggle.
     Spectate { on: bool },
     /// The host's scenario pick.
@@ -95,7 +98,9 @@ pub enum Action {
     /// The host's Start Battle: refused unless the lobby is ready, or while a battle is fought.
     StartBattle,
     /// The local player's seat played by the in-game AI's commander, through the same submission
-    /// path as a human's orders; only whole-faction seats.
+    /// path as a human's orders. A seat that shares its faction plays its own command only: the
+    /// units its scope allows, its set-up readied as the Ready button readies it, and a phase
+    /// ended once the side has gone quiet.
     Autoplay { on: bool },
 }
 
@@ -110,6 +115,17 @@ pub struct Snapshot {
     pub lobby: LobbySnapshot,
     pub game: GameSnapshot,
     pub autoplay: bool,
+    pub autoplayed: Autoplayed,
+}
+
+/// What autoplay submitted since the game started.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Autoplayed {
+    pub orders: u32,
+    /// Orders to units the local seat's scope claims (not the faction's communal ones).
+    pub own_command: u32,
+    /// End Phase requests.
+    pub phase_ends: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -136,6 +152,8 @@ pub struct LobbySnapshot {
     /// This player's stable key.
     pub key: String,
     pub faction: Option<Player>,
+    /// The command pick; none is the whole faction.
+    pub command: Option<CommandScope>,
     pub spectating: bool,
     pub scenario: Scenario,
     pub roster: Vec<RosterRow>,
@@ -148,6 +166,7 @@ pub struct RosterRow {
     pub key: Option<String>,
     pub name: String,
     pub faction: Option<Player>,
+    pub command: Option<CommandScope>,
     pub spectating: bool,
     pub is_host: bool,
 }
@@ -178,6 +197,8 @@ pub struct SeatRow {
     pub faction: Player,
     /// `ai`, or the human holder's key.
     pub holder: String,
+    /// The seat's command (rulebook §1.1); none is the whole faction.
+    pub scope: Option<CommandScope>,
 }
 
 #[cfg(test)]
