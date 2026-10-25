@@ -19,11 +19,29 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 /// Bring up a local full-mesh signalling server on an ephemeral port, then
 /// open two WebRTC sockets against it and poll until both report the other as
 /// `PeerState::Connected`.
+///
+/// B joins the room only once the server has added A to it: the full-mesh
+/// server tells a room's peers of a newcomer from a copy of the room taken
+/// before the newcomer is added, so two peers joining at the same moment can
+/// each miss the other and never connect (a race in `FullMeshState::add_peer`
+/// of matchbox_signaling, not what this test is about).
 #[tokio::test(flavor = "multi_thread")]
 async fn two_peers_connect_via_local_signalling() {
-    // -- local signalling server --
+    // RUST_LOG=matchbox_socket=debug,matchbox_signaling=debug shows a failure's handshake.
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_test_writer()
+        .try_init();
+    let deadline = tokio::time::Instant::now() + CONNECT_TIMEOUT;
+
+    // -- local signalling server; says when it has added a peer to its room --
+    let (joined, mut joins) = futures::channel::mpsc::unbounded();
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    let mut server = SignalingServer::full_mesh_builder(addr).build();
+    let mut server = SignalingServer::full_mesh_builder(addr)
+        .on_peer_connected(move |peer| {
+            let _ = joined.unbounded_send(peer);
+        })
+        .build();
     server.bind().expect("bind signalling server");
     let bound = server.local_addr().expect("local_addr");
     let url = format!("ws://{bound}/test-room?next=2");
@@ -44,7 +62,15 @@ async fn two_peers_connect_via_local_signalling() {
     let loop_b = loop_b.fuse();
     futures::pin_mut!(loop_a, loop_b);
 
-    let deadline = tokio::time::Instant::now() + CONNECT_TIMEOUT;
+    // A's loop alone first (B's does nothing until polled), until A is in the room.
+    futures::select! {
+        _ = futures::FutureExt::fuse(&mut loop_a) => panic!("socket A message loop ended"),
+        _ = futures::StreamExt::next(&mut joins).fuse() => {}
+        _ = tokio::time::sleep_until(deadline).fuse() => {
+            panic!("A did not join the room within {CONNECT_TIMEOUT:?}")
+        }
+    }
+
     let mut a_connected = false;
     let mut b_connected = false;
 
