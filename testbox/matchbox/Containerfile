@@ -1,0 +1,18 @@
+# Base images from mirror.gcr.io, Google's mirror of Docker Hub (no pull rate limit), pinned by digest.
+# The signalling server the peers meet on: matchbox_server from the barafael/matchbox fork, at the
+# revision the workspace's Cargo.lock resolves (a test in xtask/src/pins.rs keeps the two in step).
+FROM mirror.gcr.io/library/rust:1-trixie@sha256:931c2c0531a8b143e044f0f3914dfe802f15bb3d1955f0b657e9359327ac2ffc AS build
+ARG MATCHBOX_REV=27b5e50254ee8d113bbbec964185c562c3c2bee8
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo install --locked --root /out \
+        --git https://github.com/barafael/matchbox.git --rev "$MATCHBOX_REV" matchbox_server
+
+FROM mirror.gcr.io/library/debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad
+# tini as PID 1: matchbox_server has no handler for SIGTERM, which PID 1 otherwise ignores, so
+# `podman stop` (the `signalling` phase, `down`) would wait out its 10 s before killing it.
+RUN apt-get update && apt-get install -y --no-install-recommends tini \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /out/bin/matchbox_server /usr/local/bin/matchbox_server
+ENV RUST_LOG=info
+ENTRYPOINT ["tini", "--", "matchbox_server"]

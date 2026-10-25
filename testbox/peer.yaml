@@ -1,0 +1,20 @@
+      # A peer: the game from the working tree (testbox/peer/Containerfile), in the lobby of the
+      # room `testbox`, its harness on /run/omdurman/agent.sock (the host's
+      # target/testbox-run/@PEER@/) and its display on /run/view/vnc (target/testbox-view/@PEER@/).
+      {
+        name: "@PEER@",
+        image: "localhost/omdurman-testbox-peer",
+        env: [
+          { name: "OMDURMAN_AGENT_SOCKET", value: "/run/omdurman/agent.sock" },
+          { name: "OMDURMAN_START_MODE", value: "lobby" },
+          # A player key of its own, kept across restarts in the container's home.
+          { name: "OMDURMAN_PLAYER_SLOT", value: "@SLOT@" },
+          { name: "XDG_RUNTIME_DIR", value: "/run/omdurman" },
+          { name: "RUST_LOG", value: "info,wgpu=error,naga=warn,webrtc=warn,webrtc_ice=warn" },
+        ],
+        securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] } },
+        volumeMounts: [
+          { name: "run-@PEER@", mountPath: "/run/omdurman" },
+          { name: "view-@PEER@", mountPath: "/run/view" },
+        ],
+      },

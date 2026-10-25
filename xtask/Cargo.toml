@@ -1,0 +1,14 @@
+[package]
+name = "xtask"
+description = "`cargo testbox`: the multiplayer test box (testbox/README.md)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+omdurman-harness = { path = "../omdurman-harness" }
+omdurman-types = { path = "../omdurman-types" }
+clap = { version = "4", features = ["derive"] }
+serde = { workspace = true }
+serde_json = { workspace = true }

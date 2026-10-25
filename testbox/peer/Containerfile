@@ -1,0 +1,60 @@
+# Base images from mirror.gcr.io, Google's mirror of Docker Hub (no pull rate limit), pinned by digest.
+#
+# A peer: the game from the working tree, built as `cargo run -p omdurman-app` builds it (the dev
+# profile, Bevy linked dynamically), with the agent harness listening (OMDURMAN_AGENT_SOCKET) and
+# the box's own signalling server baked in (MATCHBOX_SERVER). It runs on Xvnc
+# (testbox/tools `with-display`), rendering through Mesa's software Vulkan driver, lavapipe:
+# no GPU in the box. The build context is the repository; .containerignore leaves out build
+# output, histories and .git.
+FROM mirror.gcr.io/library/rust:1-trixie@sha256:931c2c0531a8b143e044f0f3914dfe802f15bb3d1955f0b657e9359327ac2ffc AS build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libudev-dev libwayland-dev libxkbcommon-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY . .
+# The toolchain rust-toolchain.toml pins, and the crates, with network; then the build without:
+# its build scripts reach nothing, and see nothing of the host but this copy of the tree.
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    rustup toolchain install \
+    && cargo fetch --locked --target x86_64-unknown-linux-gnu \
+    && cargo fetch --locked --manifest-path testbox/tools/Cargo.toml
+# With the shared libraries it names: Bevy's dylib (`dynamic_linking`) and the toolchain's std.
+RUN --network=none \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/src/target \
+    MATCHBOX_SERVER=ws://127.0.0.1:3536 cargo build --offline --locked -p omdurman-app \
+    && mkdir -p /out/bin /out/lib \
+    && cp target/debug/omdurman /out/bin/ \
+    && for lib in $(readelf -d target/debug/omdurman | sed -n 's/.*Shared library: \[\(lib\(bevy_dylib\|std\)-[^]]*\)\].*/\1/p'); do \
+           cp "target/debug/deps/$lib" /out/lib/ 2>/dev/null \
+           || cp "$(rustc --print target-libdir)/$lib" /out/lib/; \
+       done
+RUN --network=none \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/src/testbox/tools/target \
+    cargo build --offline --locked --release --manifest-path testbox/tools/Cargo.toml \
+        --bin with-display \
+    && cp testbox/tools/target/release/with-display /out/bin/
+
+FROM mirror.gcr.io/library/debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad
+# Xvnc for the display; Vulkan through lavapipe; what winit and Bevy open at run time.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        tigervnc-standalone-server \
+        mesa-vulkan-drivers libvulkan1 \
+        libx11-6 libx11-xcb1 libxcursor1 libxi6 libxrandr2 libxkbcommon0 libxkbcommon-x11-0 \
+        libudev1 libwayland-client0 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /out/lib/ /usr/local/lib/
+RUN ldconfig
+COPY --from=build /out/bin/ /usr/local/bin/
+COPY omdurman-app/assets /opt/omdurman/assets
+ENV BEVY_ASSET_ROOT=/opt/omdurman
+# The game writes its histories (games/) and keeps its player key (.config/) here.
+RUN mkdir -p /home/omdurman
+WORKDIR /home/omdurman
+ENV HOME=/home/omdurman
+# The room is the game's first argument.
+ENTRYPOINT ["with-display", "/run/view/vnc", "1280x800", "--", "omdurman", "testbox"]

@@ -1,0 +1,13 @@
+[package]
+name = "omdurman-harness"
+description = "The agent harness's protocol: what the game shows, as data, and what it can be told to do"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+omdurman-types = { path = "../omdurman-types" }
+serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

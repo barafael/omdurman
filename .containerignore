@@ -1,0 +1,15 @@
+# Container builds that take the repository as their context (testbox/*/Containerfile) need the
+# sources, not build output, histories or the scans' raw material.
+target
+testbox/tools/target
+.git
+.claude/worktrees
+games
+dist
+*.png
+*.zip
+newspaper-reference
+Boardgame - Remember_Gordon/Box
+Boardgame - Remember_Gordon/Manual/Elements
+Boardgame - Remember_Gordon/tables/txt-backup
+.env

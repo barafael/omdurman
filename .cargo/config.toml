@@ -1,2 +1,6 @@
 [target.wasm32-unknown-unknown]
 rustflags = ["--cfg", "getrandom_backend=\"wasm_js\""]
+
+[alias]
+# The multiplayer test box's commands, as an xtask: nothing to install beyond cargo and Podman.
+testbox = "run --quiet -p xtask --"

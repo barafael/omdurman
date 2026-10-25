@@ -334,6 +334,28 @@ pub fn bot_player_act(
     activity.keep_running();
 }
 
+impl BotDriver {
+    /// One decision for `chooser` playing `factions`, on this driver's dice
+    /// and memories: the agent harness's autoplay of a human seat
+    /// (`crate::agent`) decides as the AI does.
+    #[cfg(unix)]
+    pub(crate) fn decide(
+        &mut self,
+        state: &GameState,
+        chooser: Player,
+        factions: &[Player],
+    ) -> GameEffect {
+        next_ai_action(
+            &mut self.threat,
+            state,
+            chooser,
+            factions,
+            &mut self.rng,
+            &mut self.memory,
+        )
+    }
+}
+
 /// The side whose decision the AI would make now: the Dervish player's roll
 /// for a mine a British gunboat struck (§10.12); the defender of a declared
 /// melee while its retreat is open -- it reacts before the attacker resolves

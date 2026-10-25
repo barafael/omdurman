@@ -1,0 +1,2 @@
+      { name: "run-@PEER@", hostPath: { path: "@REPO@/target/testbox-run/@PEER@", type: "Directory" } },
+      { name: "view-@PEER@", hostPath: { path: "@REPO@/target/testbox-view/@PEER@", type: "Directory" } },

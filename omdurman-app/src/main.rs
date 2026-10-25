@@ -2,6 +2,8 @@
 
 mod actions_panel;
 mod activity;
+#[cfg(unix)]
+mod agent;
 mod board_click;
 mod board_state;
 mod bot_player;
@@ -111,6 +113,9 @@ fn main() {
             }),
     );
     add_game(&mut app, room);
+    // Off unless `OMDURMAN_AGENT_SOCKET` names a socket (the testbox's peers).
+    #[cfg(unix)]
+    app.add_plugins(agent::AgentPlugin);
     app.run();
 }
 

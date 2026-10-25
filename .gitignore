@@ -36,3 +36,6 @@ todo.md
 
 # Claude Code agent worktrees (nested checkouts)
 /.claude/worktrees/
+
+# The testbox tools' own workspace (testbox/tools)
+/testbox/tools/target/

@@ -1,0 +1,33 @@
+# The box as one pod for `podman kube play`. KYAML style: flow mappings, quoted strings.
+# `cargo testbox up` fills in @REPO@ (hostPath must be absolute), puts a copy of testbox/peer.yaml
+# per peer in place of the @PEERS@ line and their volumes in place of @VOLUMES@, and attaches the
+# pod to an `--internal` network: no egress, so no STUN server and no fly.io signalling server
+# either -- the peers meet on the box's own and connect over their host candidates.
+#
+# One pod: every container shares localhost, so the peers reach the signalling server at
+# ws://127.0.0.1:3536 (baked into the peer image) and each other's WebRTC endpoints on the pod's
+# address. No container publishes a port.
+{
+  apiVersion: "v1",
+  kind: "Pod",
+  metadata: {
+    name: "omdurman-testbox",
+  },
+  spec: {
+    # A container `cargo testbox` stops (a peer leaving, the server going down) stays stopped
+    # until it is started again.
+    restartPolicy: "Always",
+    containers: [
+      # matchbox_server from the barafael/matchbox fork (testbox/matchbox/Containerfile).
+      {
+        name: "matchbox",
+        image: "localhost/omdurman-testbox-matchbox",
+        securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] } },
+      },
+      # @PEERS@
+    ],
+    volumes: [
+      # @VOLUMES@
+    ],
+  },
+}

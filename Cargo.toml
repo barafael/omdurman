@@ -9,6 +9,8 @@ members = [
     "omdurman-rules",
     "omdurman-app",
     "omdurman-bot",
+    "omdurman-harness",
+    "xtask",
     "tools/traceability-typst",
     "tools/traceability-lsp",
     "traceability-macro",

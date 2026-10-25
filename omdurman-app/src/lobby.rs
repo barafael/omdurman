@@ -175,21 +175,21 @@ const FACTIONS: [(Player, &str); 2] = [
 /// One row of the lobby roster. Remote fields (name/colour/pick/command/
 /// spectating) come from the peer entity components; the local row is
 /// synthesized from the local settings + pick resources.
-struct RosterEntry {
-    peer: PeerId,
+pub(crate) struct RosterEntry {
+    pub(crate) peer: PeerId,
     /// The peer's stable player key; `None` until its `PlayerInfo` arrived.
-    key: Option<PlayerKey>,
-    name: String,
+    pub(crate) key: Option<PlayerKey>,
+    pub(crate) name: String,
     color: egui::Color32,
-    pick: Option<Player>,
+    pub(crate) pick: Option<Player>,
     command: Option<omdurman_types::CommandScope>,
-    spectating: bool,
-    is_host: bool,
+    pub(crate) spectating: bool,
+    pub(crate) is_host: bool,
 }
 
 /// Build the roster (in canonical peer order) from the peer entities, merging
 /// the local player's live resources in for its own row.
-fn build_roster(
+pub(crate) fn build_roster(
     net: &NetState,
     local: &LocalPlayerSettings,
     local_faction: &LocalFaction,
@@ -771,12 +771,7 @@ fn setup_tab(
                 .iter()
                 .any(|e| !e.spectating && e.pick == Some(faction))
         };
-        let effective_ai: Vec<Player> = local_ai
-            .0
-            .iter()
-            .copied()
-            .filter(|f| !human_picked(*f))
-            .collect();
+        let effective_ai = effective_ai(roster, &local_ai.0);
 
         // AI commander rows in the roster (every peer sees the host's
         // committed list via StartGame once started; in the lobby guests
@@ -937,11 +932,12 @@ fn setup_tab(
                     omdurman_types::Scenario::Campaign => requested_optional_rules,
                     _ => Vec::new(),
                 };
-                pending.submit_game(GameEvent::StartGame {
-                    seats: collect_seats(roster, &effective_ai),
-                    scenario: lobby_scenario.0,
+                pending.submit_game(start_game(
+                    roster,
+                    &effective_ai,
+                    lobby_scenario.0,
                     optional_rules,
-                });
+                ));
             }
             if !ready {
                 ui.label(
@@ -1099,7 +1095,7 @@ fn game_meta_label(game: &crate::game_record::SavedGame) -> egui::RichText {
 /// faction, and both factions must be represented — by a human pick or by an
 /// AI-commander commitment (the host's unclaimed-faction toggles). Multiple
 /// players may share a faction (§1.1).
-fn all_players_ready_with_ai(roster: &[RosterEntry], ai: &[Player]) -> bool {
+pub(crate) fn all_players_ready_with_ai(roster: &[RosterEntry], ai: &[Player]) -> bool {
     let mut ae = false;
     let mut dervish = false;
     for entry in roster {
@@ -1122,6 +1118,36 @@ fn all_players_ready_with_ai(roster: &[RosterEntry], ai: &[Player]) -> bool {
         }
     }
     ae && dervish
+}
+
+/// The host's AI-commander picks that still stand: a human pick of the
+/// faction overrides its toggle.
+pub(crate) fn effective_ai(roster: &[RosterEntry], local_ai: &[Player]) -> Vec<Player> {
+    let human_picked = |faction: Player| {
+        roster
+            .iter()
+            .any(|e| !e.spectating && e.pick == Some(faction))
+    };
+    local_ai
+        .iter()
+        .copied()
+        .filter(|f| !human_picked(*f))
+        .collect()
+}
+
+/// The `StartGame` a Start Battle submits: the seats of `roster` and the
+/// standing AI commanders, for `scenario`.
+pub(crate) fn start_game(
+    roster: &[RosterEntry],
+    effective_ai: &[Player],
+    scenario: Scenario,
+    optional_rules: Vec<omdurman_rules::OptionalRule>,
+) -> GameEvent {
+    GameEvent::StartGame {
+        seats: collect_seats(roster, effective_ai),
+        scenario,
+        optional_rules,
+    }
 }
 
 /// Build the seat table for `StartGame`: one seat per non-spectating

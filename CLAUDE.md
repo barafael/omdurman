@@ -89,7 +89,8 @@ The signalling server URL is bakeable via the `MATCHBOX_SERVER` env var at build
 
 ## Workspace layout
 
-Seven workspace crates plus the traceability tooling (two tools and a proc-macro), all sharing `edition = "2024"`:
+Eight workspace crates plus the traceability tooling (two tools and a proc-macro) and the
+testbox's `xtask`, all sharing `edition = "2024"`:
 
 - **`omdurman-types`** — leaf crate, no Bevy. Pure serde types shared by everything else (`HexCoord`,
   `SectionName` (+ `SHEET_ORDER`, the canonical counter-sheet section order used by the picker), `MapData`, hexside/Nile/overlay types, `Faction`, `Brigade`),
@@ -145,6 +146,8 @@ Seven workspace crates plus the traceability tooling (two tools and a proc-macro
   camera, networking glue, and the event-viewer debug overlay. Entry point:
   `omdurman-app/src/main.rs`.
 - **`omdurman-bot`** — bot / strategy advisor over the rules engine.
+- **`omdurman-harness`** — the agent harness's JSON-lines protocol (serde types), shared by the
+  app (`src/agent.rs`) and `xtask` (`cargo testbox`, see "Multiplayer test box").
 - **`tools/traceability-typst`** (and `tools/traceability-lsp`) — regenerates the traceability
   PDF / serves live traceability diagnostics.
 
@@ -254,6 +257,23 @@ The system is a deterministic event-sourced engine over a peer-to-peer mesh:
   mixed builds fail to decode; that is accepted.) A `GameEffect` change still needs the sampled
   engine checks' `EFFECT_KINDS` / `any_effect` / `kind_of` (`omdurman-rules/src/effects/sampled.rs`) kept in
   step.
+
+## Multiplayer test box
+
+`testbox/` (README there) plays the game between 2-3 peers in one Podman pod on an internal
+network, meeting on a matchbox server of the box's own; `cargo testbox` (the `xtask` package)
+brings it up and runs its phases (`core`, `rejoin`, `failover`, `signalling`):
+
+```sh
+cargo testbox down --wipe && cargo testbox up --peers 2 && cargo testbox test core
+cargo testbox run --rounds 2            # every phase on a fresh box, twice, summed up
+```
+
+The peers are driven through the game's agent harness (`omdurman-app/src/agent.rs`, protocol in
+`omdurman-harness`), armed only by `OMDURMAN_AGENT_SOCKET`: snapshots of the net layer, lobby and
+game, and lobby actions plus `autoplay` (the local seat played by the AI's commander through the
+human submission path). A new lobby control or `Seat` shape may need the harness's actions kept
+in step.
 
 ## Empirical net-reliability harness
 
