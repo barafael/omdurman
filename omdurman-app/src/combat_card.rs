@@ -271,7 +271,7 @@ fn drain_combat_observations(
 /// The table's result, and -- when it was not enough against a fort or a
 /// gunboat (§6.61/§6.62: a destroying result or nothing) -- that it missed:
 /// a bare "Disrupt" on a fort that stands undisrupted read as a bug.
-fn fire_result_label(
+pub(crate) fn fire_result_label(
     attack: &FireAttack,
     result: omdurman_rules::CombatResult,
     eliminations: &[UnitId],
@@ -430,7 +430,7 @@ fn build_melee_card(
 /// from `state.board` at resolution time). The terrain line is the difference
 /// between the engine's reported `total_modifier` and the sum of the
 /// caller-supplied modifiers.
-fn fire_modifier_lines(attack: &FireAttack, total_modifier: i16) -> Vec<ModifierLine> {
+pub(crate) fn fire_modifier_lines(attack: &FireAttack, total_modifier: i16) -> Vec<ModifierLine> {
     let mut out: Vec<ModifierLine> = attack
         .modifiers
         .iter()
@@ -447,7 +447,10 @@ fn fire_modifier_lines(attack: &FireAttack, total_modifier: i16) -> Vec<Modifier
     out
 }
 
-fn melee_modifier_lines(modifiers: &[MeleeModifier], total_modifier: i16) -> Vec<ModifierLine> {
+pub(crate) fn melee_modifier_lines(
+    modifiers: &[MeleeModifier],
+    total_modifier: i16,
+) -> Vec<ModifierLine> {
     let mut out: Vec<ModifierLine> = modifiers
         .iter()
         .map(|m| describe_melee_modifier(*m))
@@ -475,7 +478,10 @@ fn list_units(ids: &[UnitId], gs: &omdurman_rules::effects::GameState) -> String
 
 /// Like [`list_units`] but returns the names separately (repeats counted:
 /// "2× Mulazmin"), for casualty lists where each loss is its own line item.
-fn list_unit_names(ids: &[UnitId], gs: &omdurman_rules::effects::GameState) -> Vec<String> {
+pub(crate) fn list_unit_names(
+    ids: &[UnitId],
+    gs: &omdurman_rules::effects::GameState,
+) -> Vec<String> {
     crate::combat_ui::tally_names(
         ids.iter()
             .map(|id| crate::combat_ui::unit_name(*id, gs))
@@ -507,7 +513,7 @@ fn impact_note(
     )
 }
 
-fn target_hex_label(hex: HexCoord, gs: &omdurman_rules::effects::GameState) -> String {
+pub(crate) fn target_hex_label(hex: HexCoord, gs: &omdurman_rules::effects::GameState) -> String {
     gs.board
         .location_at(hex)
         .map(|loc| loc.to_string())

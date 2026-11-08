@@ -45,6 +45,9 @@ pub(crate) struct GameStateParams<'w> {
     /// (never written by a rebuild). Optional: headless harnesses run the
     /// receive path without the effects plugin.
     pub live_applied: Option<ResMut<'w, crate::fx::LiveApplied>>,
+    /// The dice each *live* event threw, for the board's die (never written
+    /// by a rebuild; optional for the same reason as `live_applied`).
+    pub live_dice: Option<ResMut<'w, crate::fx::dice::LiveDice>>,
     /// Present while the board shows a review on top of this session: the
     /// board's resources above hold the reviewed position then, so the
     /// receive path leaves them alone and `timeline::catch_up_live_stash`

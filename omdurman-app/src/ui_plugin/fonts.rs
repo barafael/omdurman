@@ -29,6 +29,9 @@ pub(crate) mod faces {
         include_bytes!("../../../assets/fonts/OldStandard-Bold.ttf");
     pub(crate) const OLD_STANDARD_ITALIC: &[u8] =
         include_bytes!("../../../assets/fonts/OldStandard-Italic.ttf");
+    /// OPTIMaseltov: the numerals on the die (`fx::dice`).
+    pub(crate) const OPTIMASELTOV: &[u8] =
+        include_bytes!("../../../assets/fonts/OPTIMaseltov/OPTIMaseltov.otf");
 }
 
 #[derive(Resource, Default)]
@@ -101,6 +104,12 @@ pub(crate) fn setup_egui_fonts(mut contexts: EguiContexts, mut installed: ResMut
             "OldStandard-Italic",
             "OldStandardItalic",
             faces::OLD_STANDARD_ITALIC,
+        ),
+        // The die's numerals (`fx::dice`).
+        (
+            "OPTIMaseltov",
+            crate::fx::dice::DIE_FONT,
+            faces::OPTIMASELTOV,
         ),
     ] {
         ctx.add_font(FontInsert::new(

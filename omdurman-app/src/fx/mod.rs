@@ -19,7 +19,9 @@
 //! * the combat card under the pointer rings its hexes ([`pointers`]);
 //! * a short note says when it becomes your move ([`banner`]);
 //! * newly built Zariba hexsides are laid along their length, one after
-//!   another ([`zariba`]).
+//!   another ([`zariba`]);
+//! * every die the game rolls tumbles onto the board, seen from above, and
+//!   rests on its number ([`dice`]).
 //!
 //! All of it is presentation only: the engine state is final before anything
 //! starts, and nothing here gates input, submissions or the apply path. The
@@ -42,6 +44,7 @@ use omdurman_types::{HexCoord, HexsideRef};
 pub mod announce;
 pub mod banner;
 pub mod counters;
+pub mod dice;
 pub mod orders;
 pub mod pointers;
 pub mod review;
@@ -284,6 +287,8 @@ impl Plugin for FxPlugin {
             .init_resource::<pointers::Sightings>()
             .init_resource::<CardFocus>()
             .init_resource::<zariba::ZaribaGrowth>()
+            .init_resource::<dice::LiveDice>()
+            .init_resource::<dice::DiceTray>()
             .add_message::<FxRequest>()
             .add_systems(Startup, transient::spawn_fx_assets)
             .add_systems(
@@ -315,6 +320,7 @@ impl Plugin for FxPlugin {
                         .run_if(crate::on_board),
                     transient::animate_transients.after(transient::spawn_fx),
                     zariba::grow_zariba.after(announce::announce_live_changes),
+                    dice::take_live_dice.after(crate::net_socket::handle_socket),
                 ),
             )
             .add_systems(
@@ -340,11 +346,16 @@ impl Plugin for FxPlugin {
                         .after(crate::ui_plugin::LeftRailSet)
                         .after(crate::charts::chart_sheet_ui)
                         .run_if(in_state(crate::Screen::Board)),
+                    dice::dice_tray_ui
+                        .after(crate::ui_plugin::mode_toolbar_ui)
+                        .after(crate::ui_plugin::LeftRailSet)
+                        .after(crate::charts::chart_sheet_ui)
+                        .run_if(in_state(crate::Screen::Board)),
                 ),
             )
             .add_systems(
                 OnExit(crate::AppMode::Game),
-                transient::clear_effects_on_exit,
+                (transient::clear_effects_on_exit, dice::clear_tray),
             );
     }
 }

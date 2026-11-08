@@ -152,9 +152,17 @@ fn apply_to_board(gsp: &mut GameStateParams, ev: &GameEvent) {
             live.0.push(change);
         }
     }
-    gsp.pending_observations
-        .0
-        .extend(gsp.game_state.0.drain_observations());
+    let observations = gsp.game_state.0.drain_observations();
+    // The dice it threw and what they decided, for the board's die: read
+    // off the effect and the observations its apply just made.
+    if accepted
+        && let GameEvent::Effect(effect) = ev
+        && let Some(dice) = gsp.live_dice.as_mut()
+        && let Some(throw) = crate::fx::dice::throw_of(effect, &observations, &gsp.game_state.0)
+    {
+        dice.0.push(throw);
+    }
+    gsp.pending_observations.0.extend(observations);
 }
 
 /// What [`handle_socket`] remembers between frames: what it has already
