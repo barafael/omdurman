@@ -9,6 +9,28 @@
 use bevy::prelude::*;
 use bevy_egui::egui;
 
+/// The rulebook archive (`Boardgame - Remember_Gordon/Manual/surrealdb/web`),
+/// published next to the game: every manual section as a page with the rules
+/// drawn from it, what it cites and is cited by, what it leaves open and the
+/// questions asked about it. Built from the same manual, so its section numbers
+/// are this tab's. `OMDURMAN_ARCHIVE_URL` overrides it at build time.
+pub const ARCHIVE_URL: &str = match option_env!("OMDURMAN_ARCHIVE_URL") {
+    Some(url) => url,
+    None => "https://barafael.github.io/omdurman/archive/",
+};
+
+/// The archive's page for manual section `number` (`"6.63"`).
+pub fn archive_url(number: &str) -> String {
+    format!("{ARCHIVE_URL}#/rules/{number}")
+}
+
+/// A link into the archive, opened in a new tab: on the web a same-tab link
+/// would navigate away from the game.
+fn archive_link(ui: &mut egui::Ui, text: egui::RichText, url: String, hover: String) {
+    ui.add(egui::Hyperlink::from_label_and_url(text, url).open_in_new_tab(true))
+        .on_hover_text(hover);
+}
+
 /// The manual, embedded at build time so it ships with the binary and the wasm
 /// bundle without a separate fetch.
 const MANUAL_MD: &str =
@@ -384,6 +406,14 @@ pub fn draw_rulebook(ui: &mut egui::Ui, rulebook: &mut Rulebook, dt: f32) -> Opt
                     .hint_text("search…")
                     .desired_width(f32::INFINITY),
             );
+            archive_link(
+                ui,
+                egui::RichText::new("Rulebook archive ↗").size(12.0),
+                ARCHIVE_URL.to_string(),
+                "The rules as a queryable graph, in your browser: armies, scenarios, \
+                 open questions, and 748 questions answered from the manual"
+                    .to_string(),
+            );
             ui.separator();
             let needle = rulebook.search.to_lowercase();
             let shown = rulebook.search_matches(&needle);
@@ -445,7 +475,21 @@ pub fn draw_rulebook(ui: &mut egui::Ui, rulebook: &mut Rulebook, dt: f32) -> Opt
                             _ => 14.0,
                         })
                         .strong();
-                    ui.label(heading)
+                    ui.horizontal(|ui| {
+                        let title = ui.label(heading);
+                        archive_link(
+                            ui,
+                            egui::RichText::new("archive ↗").size(11.0),
+                            archive_url(&sec.number),
+                            format!(
+                                "§{} in the rulebook archive: the rules drawn from it, \
+                                 its references, what it leaves open",
+                                sec.number
+                            ),
+                        );
+                        title
+                    })
+                    .inner
                 };
 
                 // Deep-link / index scroll target: scroll this heading into view
@@ -562,6 +606,13 @@ mod tests {
         assert!(section_title("6.63").is_some_and(|t| t.starts_with("Only artillery may fire")));
         assert!(section_title("9.346").is_some());
         assert!(section_title("99.9").is_none());
+    }
+
+    // Each heading links to the archive's page of the same section.
+    #[test]
+    fn archive_links_name_the_section() {
+        assert_eq!(archive_url("6.63"), format!("{ARCHIVE_URL}#/rules/6.63"));
+        assert!(ARCHIVE_URL.ends_with('/'));
     }
 
     #[test]
