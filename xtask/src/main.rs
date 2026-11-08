@@ -11,6 +11,7 @@ mod pins;
 #[cfg(unix)]
 mod pod;
 
+#[cfg(unix)]
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -91,6 +92,8 @@ enum Phase {
     TeamMixed,
 }
 
+// Only the box (Unix) runs phases; on other platforms `run_command` refuses up front.
+#[cfg(unix)]
 impl Phase {
     const ALL: [Phase; 9] = [
         Phase::Core,
@@ -131,6 +134,7 @@ fn main() -> ExitCode {
     }
 }
 
+#[cfg(unix)]
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
