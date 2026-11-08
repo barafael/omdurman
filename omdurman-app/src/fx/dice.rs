@@ -1,5 +1,6 @@
 //! The die: every d10 the game rolls tumbles onto the board, seen from above,
-//! comes to rest showing what it rolled, and a slip under it says what the
+//! comes to rest showing what it rolled (its numerals are sprites cut from
+//! the OPTIMaseltov typeface), and a slip under it says what the
 //! roll does -- the factors and column it was read on, the modifiers, where a
 //! shell landed, the result and who it costs.
 //!
@@ -43,9 +44,82 @@ const DIE_SPACING: f32 = 92.0;
 /// The slip's distance from the board's bottom edge, and its width.
 const SLIP_MARGIN: f32 = 28.0;
 const SLIP_WIDTH: f32 = 440.0;
-/// The egui font family of the numerals (OPTIMaseltov, registered by
-/// `ui_plugin::fonts::setup_egui_fonts`).
-pub const DIE_FONT: &str = "DieNumerals";
+/// Height of a face's numeral on the die, in die radii (a two-digit face is
+/// narrowed to [`NUMERAL_MAX_WIDTH`]).
+const NUMERAL_HEIGHT: f32 = 0.66;
+const NUMERAL_MAX_WIDTH: f32 = 0.9;
+
+/// The ten faces' numerals, white on clear (tinted in ink when drawn): cut
+/// from the OPTIMaseltov typeface, the numbers 1 to 10 alone.
+const FACE_SPRITES: [&[u8]; 10] = [
+    include_bytes!("../../assets/sprites/dice/1.webp"),
+    include_bytes!("../../assets/sprites/dice/2.webp"),
+    include_bytes!("../../assets/sprites/dice/3.webp"),
+    include_bytes!("../../assets/sprites/dice/4.webp"),
+    include_bytes!("../../assets/sprites/dice/5.webp"),
+    include_bytes!("../../assets/sprites/dice/6.webp"),
+    include_bytes!("../../assets/sprites/dice/7.webp"),
+    include_bytes!("../../assets/sprites/dice/8.webp"),
+    include_bytes!("../../assets/sprites/dice/9.webp"),
+    include_bytes!("../../assets/sprites/dice/10.webp"),
+];
+
+/// A face sprite decoded for egui.
+fn decode_face(bytes: &[u8]) -> Option<egui::ColorImage> {
+    use bevy::asset::RenderAssetUsages;
+    use bevy::image::{CompressedImageFormats, ImageSampler, ImageType};
+    let image = Image::from_buffer(
+        bytes,
+        ImageType::Extension("webp"),
+        CompressedImageFormats::NONE,
+        true,
+        ImageSampler::Default,
+        RenderAssetUsages::MAIN_WORLD,
+    )
+    .ok()?;
+    let (w, h) = (image.width() as usize, image.height() as usize);
+    let data = image.data.as_ref()?;
+    if w == 0 || h == 0 || data.len() != w * h * 4 {
+        return None;
+    }
+    let pixels = data
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|&[r, g, b, a]| egui::Color32::from_rgba_unmultiplied(r, g, b, a))
+        .collect();
+    Some(egui::ColorImage {
+        size: [w, h],
+        pixels,
+        source_size: egui::vec2(w as f32, h as f32),
+    })
+}
+
+/// The face textures, uploaded to egui on the first throw.
+#[derive(Resource, Default)]
+pub struct DieFaces(Option<Vec<egui::TextureHandle>>);
+
+impl DieFaces {
+    fn get(&mut self, ctx: &egui::Context) -> &[egui::TextureHandle] {
+        self.0.get_or_insert_with(|| {
+            FACE_SPRITES
+                .iter()
+                .enumerate()
+                .filter_map(|(i, bytes)| {
+                    let image = decode_face(bytes);
+                    if image.is_none() {
+                        warn!("die face {} did not decode", i + 1);
+                    }
+                    Some(ctx.load_texture(
+                        format!("die_face_{}", i + 1),
+                        image?,
+                        egui::TextureOptions::LINEAR,
+                    ))
+                })
+                .collect()
+        })
+    }
+}
 
 /// One die of a throw: what it decides, and what it shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -506,6 +580,7 @@ pub(super) fn dice_tray_ui(
     time: Res<Time>,
     settings: Res<MotionSettings>,
     layout: Res<crate::ScreenLayout>,
+    mut faces: ResMut<DieFaces>,
 ) {
     let Some(on_tray) = tray.0.as_ref() else {
         return;
@@ -547,6 +622,7 @@ pub(super) fn dice_tray_ui(
         });
     let dice_y = slip.response.rect.top() - 22.0 - DIE_RADIUS - 8.0;
 
+    let faces = faces.get(ctx);
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Foreground,
         egui::Id::new("dice_tray"),
@@ -564,7 +640,15 @@ pub(super) fn dice_tray_ui(
         } else {
             Pose::resting(roll.value, seed)
         };
-        draw_die(&painter, rest, &pose, settle_pulse(since - roll_secs), fade);
+        let face = faces.get(usize::from(pose.face).wrapping_sub(1));
+        draw_die(
+            &painter,
+            rest,
+            &pose,
+            face,
+            settle_pulse(since - roll_secs),
+            fade,
+        );
         if pose.at_rest {
             let alpha = ((since - roll_secs) / 0.25).clamp(0.0, 1.0) * fade;
             draw_die_label(
@@ -725,7 +809,14 @@ fn settle_pulse(since_rest: f32) -> f32 {
 
 /// The d10 from above: a pentagonal trapezohedron lying on a face shows its
 /// top face as a kite, flanked by the slanted faces around it.
-fn draw_die(painter: &egui::Painter, rest: egui::Pos2, pose: &Pose, settle: f32, alpha: f32) {
+fn draw_die(
+    painter: &egui::Painter,
+    rest: egui::Pos2,
+    pose: &Pose,
+    face: Option<&egui::TextureHandle>,
+    settle: f32,
+    alpha: f32,
+) {
     let scale = DIE_RADIUS * (1.0 + 0.32 * pose.height + 0.08 * settle);
     let centre = rest + pose.offset;
     let (sin, cos) = pose.angle.sin_cos();
@@ -781,17 +872,32 @@ fn draw_die(painter: &egui::Painter, rest: egui::Pos2, pose: &Pose, settle: f32,
     ));
 
     // The number, turned with the die (and squashed with it mid-tumble).
-    let size = if pose.face >= 10 { 0.72 } else { 0.92 } * scale;
-    let galley = painter.layout_no_wrap(
-        pose.face.to_string(),
-        egui::FontId::new(size, egui::FontFamily::Name(DIE_FONT.into())),
-        a(ink),
-    );
-    // Sit the glyphs' centre on the kite's centre (a little above the die's).
-    let anchor = place(0.0, -0.08);
-    let half = galley.size() * 0.5;
-    let pos = anchor - egui::vec2(half.x * cos - half.y * sin, half.x * sin + half.y * cos);
-    painter.add(egui::epaint::TextShape::new(pos, galley, a(ink)).with_angle(pose.angle));
+    // A quad on the kite's centre (a little above the die's), its corners
+    // placed like the die's own, so it turns and foreshortens with it.
+    if let Some(face) = face {
+        let [w, h] = face.size().map(|px| px as f32);
+        let mut half = egui::vec2(NUMERAL_HEIGHT * w / h, NUMERAL_HEIGHT) * 0.5;
+        if half.x * 2.0 > NUMERAL_MAX_WIDTH {
+            half *= NUMERAL_MAX_WIDTH / (half.x * 2.0);
+        }
+        let (cx, cy) = (0.0, -0.08);
+        let mut mesh = egui::Mesh::with_texture(face.id());
+        let tint = a(ink);
+        for (x, y, u, v) in [
+            (cx - half.x, cy - half.y, 0.0, 0.0),
+            (cx + half.x, cy - half.y, 1.0, 0.0),
+            (cx + half.x, cy + half.y, 1.0, 1.0),
+            (cx - half.x, cy + half.y, 0.0, 1.0),
+        ] {
+            mesh.vertices.push(egui::epaint::Vertex {
+                pos: place(x, y),
+                uv: egui::pos2(u, v),
+                color: tint,
+            });
+        }
+        mesh.indices.extend([0, 1, 2, 0, 2, 3]);
+        painter.add(egui::Shape::mesh(mesh));
+    }
     // A six and a nine are told apart by the bar under them.
     if matches!(pose.face, 6 | 9) {
         painter.line_segment(
@@ -804,6 +910,25 @@ fn draw_die(painter: &egui::Painter, rest: egui::Pos2, pose: &Pose, settle: f32,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_face_sprite_decodes_white_on_clear() {
+        for (i, bytes) in FACE_SPRITES.iter().enumerate() {
+            let image = decode_face(bytes).unwrap_or_else(|| panic!("face {} decodes", i + 1));
+            let [w, h] = image.size;
+            assert!(w > 0 && h > 0, "face {}", i + 1);
+            // Tinted when drawn: every inked pixel is white, and some are.
+            let inked: Vec<_> = image.pixels.iter().filter(|p| p.a() > 0).collect();
+            assert!(!inked.is_empty(), "face {} is blank", i + 1);
+            assert!(
+                inked
+                    .iter()
+                    .all(|p| p.r() == p.a() && p.g() == p.a() && p.b() == p.a()),
+                "face {} is not white",
+                i + 1
+            );
+        }
+    }
 
     #[test]
     fn a_tumble_ends_on_its_roll_and_at_rest() {

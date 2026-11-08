@@ -289,6 +289,7 @@ impl Plugin for FxPlugin {
             .init_resource::<zariba::ZaribaGrowth>()
             .init_resource::<dice::LiveDice>()
             .init_resource::<dice::DiceTray>()
+            .init_resource::<dice::DieFaces>()
             .add_message::<FxRequest>()
             .add_systems(Startup, transient::spawn_fx_assets)
             .add_systems(
