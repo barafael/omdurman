@@ -1,0 +1,18 @@
+[package]
+name = "rgapp"
+description = "REMEMBER GORDON! — an Omdurman archive (Leptos, client-side)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+leptos = { version = "0.8.22", features = ["csr"] }
+rgcore = { workspace = true, features = ["web"] }
+serde.workspace = true
+serde_json.workspace = true
+wasm-bindgen.workspace = true
+js-sys.workspace = true
+console_error_panic_hook = "0.1"
+futures = "0.3"
+web-sys = { workspace = true, features = ["Worker", "MessageEvent", "Window", "Location", "History", "Document", "Element", "HtmlElement", "Storage", "KeyboardEvent", "HtmlTextAreaElement", "DomStringMap", "ScrollIntoViewOptions", "ScrollBehavior"] }

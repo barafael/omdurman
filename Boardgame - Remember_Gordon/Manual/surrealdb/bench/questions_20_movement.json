@@ -1,0 +1,2426 @@
+[
+ {
+  "id": "s3_dervish_seat",
+  "section": "3",
+  "kind": "player",
+  "text": "Which side of the table do I sit on as the Dervish?",
+  "query": "RETURN faction:dervish.seat;",
+  "expect": "west edge",
+  "match": "exact",
+  "answer": "The Dervish player sits next to the west edge of the map (§3).",
+  "about": [
+   "faction:dervish",
+   "location:west_edge"
+  ]
+ },
+ {
+  "id": "s3_punch_all_counters",
+  "section": "3",
+  "kind": "player",
+  "text": "Do I need to punch every counter to play Fall of Khartoum?",
+  "query": "RETURN string::contains(rule:r3_preparation.statement, 'punch out only the counters needed');",
+  "expect": true,
+  "match": "exact",
+  "answer": "No. Select a scenario and punch out only the counters needed to play it; the rest can be punched, sorted and stored later (§3).",
+  "about": [
+   "rule:r3_preparation",
+   "component:counter_sheet"
+  ]
+ },
+ {
+  "id": "s3_home_edge",
+  "section": "3",
+  "kind": "player",
+  "text": "Which direction is my 'home' edge?",
+  "query": "RETURN [faction:dervish.seat, faction:anglo_egyptian.seat];",
+  "expect": [
+   "west edge",
+   "east edge"
+  ],
+  "match": "exact",
+  "answer": "The Dervish player sits at the west edge and the Anglo-Egyptian player opposite him at the east edge (§3).",
+  "about": [
+   "faction:dervish",
+   "faction:anglo_egyptian",
+   "rule:r3_seating"
+  ],
+  "note": "§3 only says where the players sit. It defines no 'home edge'; where units enter is set by each scenario (§9)."
+ },
+ {
+  "id": "s5_11_cavalry_how_far",
+  "section": "5.11",
+  "kind": "player",
+  "text": "How far can this cavalry move?",
+  "query": "RETURN unit:lancers_21.move;",
+  "expect": 15,
+  "match": "exact",
+  "answer": "Up to its printed movement allowance, 15 for the 21 Lancers, paying the terrain cost of each hex it enters (§5.11, §2.3).",
+  "about": [
+   "unit:lancers_21",
+   "rule:r5_11_allowance"
+  ]
+ },
+ {
+  "id": "s5_11_hut_cost",
+  "section": "5.11",
+  "kind": "player",
+  "text": "What does it cost to move into a hut hex?",
+  "query": "RETURN [terrain:hut.move_cost, open_question:range_cells.kind];",
+  "expect": [
+   null,
+   "gap"
+  ],
+  "match": "exact",
+  "answer": "Look it up on the Terrain Effects Chart (§5.11). The cost is printed on the mapsheet, not in the rules text, so the corpus does not have it.",
+  "about": [
+   "terrain:hut",
+   "component:terrain_effects_chart",
+   "open_question:range_cells"
+  ],
+  "note": "Terrain Effects Chart cells are not in the manual text. The query shows that no cost is recorded and that the missing chart is logged as an open gap."
+ },
+ {
+  "id": "s5_12_move_every_unit",
+  "section": "5.12",
+  "kind": "player",
+  "text": "Do I have to move every unit?",
+  "query": "RETURN rule:r5_12_optional_movement.kind;",
+  "expect": "permission",
+  "match": "exact",
+  "answer": "No. You may move as many or as few of your units as you like each movement phase (§5.12).",
+  "about": [
+   "rule:r5_12_optional_movement",
+   "action:move"
+  ]
+ },
+ {
+  "id": "s5_12_leave_artillery",
+  "section": "5.12",
+  "kind": "player",
+  "text": "Can I just leave the artillery where it is?",
+  "query": "SELECT VALUE kind FROM rule WHERE section = section:`5.12`;",
+  "expect": [
+   "permission"
+  ],
+  "match": "exact",
+  "answer": "Yes. Moving is optional for every unit (§5.12).",
+  "about": [
+   "rule:r5_12_optional_movement",
+   "unit:battery_32"
+  ]
+ },
+ {
+  "id": "s5_12_what_stops",
+  "section": "5.12",
+  "kind": "player",
+  "text": "What stops me moving further?",
+  "query": "SELECT VALUE section.num FROM rule WHERE actions CONTAINS action:move AND kind IN ['limit', 'obligation'] AND string::starts_with(section.num, '5');",
+  "expect": [
+   "5.11",
+   "5.26",
+   "5.43"
+  ],
+  "match": "set",
+  "answer": "Your movement allowance, the terrain costs you pay from hex to hex (§5.11), and enemy zones of control, which stop you on entry (§5.12, §5.26, §5.43).",
+  "about": [
+   "rule:r5_12_optional_movement",
+   "rule:r5_11_allowance",
+   "rule:r5_26_stop_in_zoc"
+  ]
+ },
+ {
+  "id": "s5_13_double_move",
+  "section": "5.13",
+  "kind": "player",
+  "text": "My unit sat still last turn. Can it move double this turn?",
+  "query": "RETURN action:accumulate_mp<-governs<-rule.kind;",
+  "expect": [
+   "prohibition"
+  ],
+  "match": "exact",
+  "answer": "No. Movement points may never be accumulated from turn to turn (§5.13).",
+  "about": [
+   "action:accumulate_mp",
+   "rule:r5_13_no_accumulation"
+  ]
+ },
+ {
+  "id": "s5_13_leader_give_mp",
+  "section": "5.13",
+  "kind": "player",
+  "text": "Can my leader give his leftover MP to the infantry he's with?",
+  "query": "RETURN action:transfer_mp<-governs<-rule.kind;",
+  "expect": [
+   "prohibition"
+  ],
+  "match": "exact",
+  "answer": "No. Unused movement points may not be transferred to other units (§5.13).",
+  "about": [
+   "action:transfer_mp",
+   "rule:r5_13_no_transfer",
+   "unit:kitchener"
+  ]
+ },
+ {
+  "id": "s5_13_keep_leftover",
+  "section": "5.13",
+  "kind": "player",
+  "text": "I have 2 MP left and the next hex costs 3. Do I keep the 2?",
+  "query": "RETURN string::contains(rule:r5_13_unused_lost.statement, 'are lost');",
+  "expect": true,
+  "match": "exact",
+  "answer": "No. You cannot pay for the hex, and the unused 2 MP are lost at the end of the turn (§5.11, §5.13).",
+  "about": [
+   "rule:r5_13_unused_lost",
+   "rule:r5_11_allowance"
+  ]
+ },
+ {
+  "id": "s5_21_lancers_ferry",
+  "section": "5.21",
+  "kind": "player",
+  "text": "Can my gunboat carry the Lancers across the river?",
+  "query": "RETURN fn::allowed(unit:lancers_21, action:load);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Gunboats may not carry land units. The only exception is the Friendlies ferry of §5.21.",
+  "about": [
+   "unit:lancers_21",
+   "action:load",
+   "rule:r5_21_no_naval_transport"
+  ],
+  "note": "See needs_movement.md: the corpus has a load capability only for the Friendlies, so fn::allowed returns NONE ('unstated') for every other land unit."
+ },
+ {
+  "id": "s5_21_friendlies_when",
+  "section": "5.21",
+  "kind": "player",
+  "text": "When can the Friendlies cross?",
+  "query": "RETURN rule:r5_21_friendlies_ferry.params.precondition;",
+  "expect": "Isa Zachneih eliminated",
+  "match": "exact",
+  "answer": "Only after the Dervish east bank unit, Isa Zachneih, has been eliminated (§5.21).",
+  "about": [
+   "rule:r5_21_friendlies_ferry",
+   "unit:isa_zachneih",
+   "unit_class:friendlies"
+  ]
+ },
+ {
+  "id": "s5_21_ferry_turns",
+  "section": "5.21",
+  "kind": "player",
+  "text": "How many turns does the ferry take?",
+  "query": "RETURN rule:r5_21_friendlies_ferry.params.turns;",
+  "expect": 3,
+  "match": "exact",
+  "answer": "Three Anglo-Egyptian turns: load, sail to a Nile hex next to the west bank, disembark (§5.21 a–c).",
+  "about": [
+   "rule:r5_21_friendlies_ferry",
+   "action:naval_transport"
+  ]
+ },
+ {
+  "id": "s5_21_disembark_move",
+  "section": "5.21",
+  "kind": "player",
+  "text": "Can the Friendlies move on the turn they get off the boat?",
+  "query": "RETURN string::contains(rule:r5_21_friendlies_ferry.params.steps[2].text, 'disembark and move normally');",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. On the third turn they disembark and move normally, paying the normal terrain cost for the first hex they enter (§5.21c).",
+  "about": [
+   "rule:r5_21_friendlies_ferry",
+   "action:disembark"
+  ]
+ },
+ {
+  "id": "s5_21_gunboat_moves_unloading",
+  "section": "5.21",
+  "kind": "player",
+  "text": "Does the gunboat have to stay put while unloading?",
+  "query": "RETURN string::contains(rule:r5_21_friendlies_ferry.params.steps[2].text, 'the gunboat may also move normally');",
+  "expect": true,
+  "match": "exact",
+  "answer": "No. The gunboat may also move normally on the turn the Friendlies disembark (§5.21c).",
+  "about": [
+   "rule:r5_21_friendlies_ferry",
+   "unit_class:gunboat"
+  ]
+ },
+ {
+  "id": "s5_21_loaded_stack_exception",
+  "section": "5.21",
+  "kind": "player",
+  "text": "Is the loaded gunboat breaking the 'gunboats stack alone' rule?",
+  "query": "RETURN rule:r5_21_friendlies_ferry->exception_to->rule CONTAINS rule:r5_51_gunboats_alone;",
+  "expect": true,
+  "match": "exact",
+  "answer": "No. A Friendlies unit loading onto (stacking with) a gunboat is the stated exception to 'gunboats may not stack with any other unit' (§5.51, §5.21).",
+  "about": [
+   "rule:r5_21_friendlies_ferry",
+   "rule:r5_51_gunboats_alone"
+  ]
+ },
+ {
+  "id": "s5_21_why_bother",
+  "section": "5.21",
+  "kind": "player",
+  "text": "Why would I bother ferrying the Friendlies?",
+  "query": "RETURN [vp_award:d_friendlies_east.points, vp_award:d_friendlies_west.points];",
+  "expect": [
+   1,
+   3
+  ],
+  "match": "exact",
+  "answer": "It adds Friendlies strength on the west bank. The cost: each Friendlies unit eliminated on the west bank gives the Dervish 3 VP instead of 1 on the east bank (§9.14, citing §5.21).",
+  "about": [
+   "vp_award:d_friendlies_east",
+   "vp_award:d_friendlies_west",
+   "unit_class:friendlies"
+  ]
+ },
+ {
+  "id": "s5_22_infantry_island",
+  "section": "5.22",
+  "kind": "player",
+  "text": "Can infantry wade onto an island hex across the Nile?",
+  "query": "RETURN fn::may_enter(unit:egyptian_battalion_sample, terrain:nile_river).allowed;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Land units may never enter a Nile River hex (§5.22). The only exception is the Friendlies ferried by gunboat (§5.21).",
+  "about": [
+   "terrain:nile_river",
+   "unit:egyptian_battalion_sample",
+   "rule:r5_22_land_units_no_nile"
+  ]
+ },
+ {
+  "id": "s5_22_besides_gunboats",
+  "section": "5.22",
+  "kind": "player",
+  "text": "Can anything besides gunboats go into the river?",
+  "query": "SELECT VALUE in FROM entry WHERE out = terrain:nile_river AND allowed = true;",
+  "expect": [
+   "unit_class:gunboat"
+  ],
+  "match": "set",
+  "answer": "No. Only gunboats may enter and move along Nile River hexes. The sole exception is Friendlies carried aboard a gunboat under §5.21 (§5.22).",
+  "about": [
+   "terrain:nile_river",
+   "unit_class:gunboat",
+   "rule:r5_22_land_units_no_nile"
+  ]
+ },
+ {
+  "id": "s5_23_baggara_fall_back",
+  "section": "5.23",
+  "kind": "player",
+  "text": "Can my Baggara fall back into the walled city?",
+  "query": "RETURN fn::may_enter(tribe:baggara, location:walled_city).allowed;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Of the Dervish units, only the Khalifa, the three artillery units and the Taiasha may enter the walled city (§5.23).",
+  "about": [
+   "tribe:baggara",
+   "location:walled_city",
+   "rule:r5_23_walled_city_dervish"
+  ]
+ },
+ {
+  "id": "s5_23_khalifa_leave",
+  "section": "5.23",
+  "kind": "player",
+  "text": "Can the Khalifa leave the city?",
+  "query": "RETURN location:walled_city.entry_only_through;",
+  "expect": [
+   "terrain:gate",
+   "terrain:breach"
+  ],
+  "match": "set",
+  "answer": "Yes. Units may enter and exit the walled city, but only through a gate or breach hexside (§5.23).",
+  "about": [
+   "unit:khalifa_abdullah",
+   "location:walled_city",
+   "rule:r5_23_gate_or_breach"
+  ]
+ },
+ {
+  "id": "s5_23_highlanders_wall",
+  "section": "5.23",
+  "kind": "player",
+  "text": "Can my Highlanders climb the wall?",
+  "query": "RETURN [fn::may_enter(unit_class:british_infantry, location:walled_city).allowed, location:walled_city.entry_only_through CONTAINS terrain:wall];",
+  "expect": [
+   true,
+   false
+  ],
+  "match": "exact",
+  "answer": "No. British infantry may enter the walled city, but only through a gate or breach hexside, never across a wall hexside (§5.23).",
+  "about": [
+   "unit_class:british_infantry",
+   "terrain:wall",
+   "rule:r5_23_gate_or_breach"
+  ]
+ },
+ {
+  "id": "s5_23_friendlies_storm",
+  "section": "5.23",
+  "kind": "player",
+  "text": "Can the Friendlies help storm the city?",
+  "query": "RETURN fn::may_enter(unit_class:friendlies, location:walled_city).allowed;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Gunboats and Friendlies are the two Anglo-Egyptian unit types that may not enter the walled city (§5.23, §6.52).",
+  "about": [
+   "unit_class:friendlies",
+   "location:walled_city",
+   "rule:r5_23_walled_city_ae"
+  ]
+ },
+ {
+  "id": "s5_23_dervish_garrison",
+  "section": "5.23",
+  "kind": "player",
+  "text": "Which Dervish units can garrison the inner city?",
+  "query": "SELECT VALUE in FROM entry WHERE out = location:walled_city AND allowed = true AND in.faction = faction:dervish;",
+  "expect": [
+   "unit:khalifa_abdullah",
+   "unit_class:d_artillery",
+   "tribe:taiasha"
+  ],
+  "match": "set",
+  "answer": "Only the Khalifa, the three Dervish artillery units and the Taiasha units, the Khalifa's bodyguard (§5.23).",
+  "about": [
+   "location:walled_city",
+   "unit:khalifa_abdullah",
+   "tribe:taiasha",
+   "unit_class:d_artillery"
+  ]
+ },
+ {
+  "id": "s5_24_which_way_upstream",
+  "section": "5.24",
+  "kind": "player",
+  "text": "Which way is upstream?",
+  "query": "RETURN terrain:nile_river.current_shown_by;",
+  "expect": "arrows in the Nile",
+  "match": "exact",
+  "answer": "Upstream is against the current. The arrows printed in the Nile show the direction of the current (§5.24).",
+  "about": [
+   "terrain:nile_river",
+   "action:move_upstream"
+  ]
+ },
+ {
+  "id": "s5_24_downstream_then_back",
+  "section": "5.24",
+  "kind": "player",
+  "text": "My gunboat went 10 hexes downstream. Can it come back 2 upstream?",
+  "query": "RETURN 10 + 2 <= fn::gunboat_ma(unit:old_gunboat, true);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Once a gunboat moves even one hex upstream, its upstream allowance (10 for an old gunboat) caps its whole move for the turn, and 10 + 2 = 12 is over it (§5.24).",
+  "about": [
+   "unit:old_gunboat",
+   "rule:r5_24_upstream_cap"
+  ],
+  "note": "Part B's bracket ('Yes, if the total stays within 10') is confusing: 10 down plus 2 up totals 12, which exceeds the cap of 10."
+ },
+ {
+  "id": "s5_24_one_hex_upstream_cap",
+  "section": "5.24",
+  "kind": "player",
+  "text": "If I move one hex upstream, can I still use the 16?",
+  "query": "RETURN fn::gunboat_ma(unit:old_gunboat, true);",
+  "expect": 10,
+  "match": "exact",
+  "answer": "No. One upstream hex makes the upstream allowance (10) the maximum for that turn (§5.24).",
+  "about": [
+   "unit:old_gunboat",
+   "rule:r5_24_upstream_cap",
+   "action:move_upstream"
+  ]
+ },
+ {
+  "id": "s5_24_fifteen_downstream",
+  "section": "5.24",
+  "kind": "player",
+  "text": "Can I go 15 downstream and then stop?",
+  "query": "RETURN 15 <= fn::gunboat_ma(unit:old_gunboat, false);",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Moving only downstream, an old gunboat may use up to 16; units never have to spend their full allowance (§5.24, §5.11).",
+  "about": [
+   "unit:old_gunboat",
+   "action:move_downstream"
+  ]
+ },
+ {
+  "id": "s5_25_reposition_fort",
+  "section": "5.25",
+  "kind": "player",
+  "text": "Can I reposition my fort?",
+  "query": "RETURN fn::allowed(unit:fort, action:move);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Dervish forts may not move in any way once placed (§5.25).",
+  "about": [
+   "unit:fort",
+   "rule:r5_25_forts_immobile"
+  ]
+ },
+ {
+  "id": "s5_26_keep_going",
+  "section": "5.26",
+  "kind": "player",
+  "text": "I moved next to an enemy unit. Can I keep going?",
+  "query": "RETURN state:in_enemy_zoc->prohibits->action CONTAINS action:move;",
+  "expect": true,
+  "match": "exact",
+  "answer": "No. A unit must stop immediately when it enters an enemy zone of control (§5.26, §5.43).",
+  "about": [
+   "state:in_enemy_zoc",
+   "rule:r5_26_stop_in_zoc"
+  ]
+ },
+ {
+  "id": "s5_3_build_anywhere",
+  "section": "5.3",
+  "kind": "player",
+  "text": "Can I build a zariba anywhere I like?",
+  "query": "RETURN rule:r5_3_zariba_construction.params.positions;",
+  "expect": "only as displayed on the mapsheet",
+  "match": "exact",
+  "answer": "No. Zariba hexsides may only be built in the positions printed on the mapsheet (§5.3).",
+  "about": [
+   "rule:r5_3_zariba_construction",
+   "location:zariba"
+  ]
+ },
+ {
+  "id": "s5_3_which_units_build",
+  "section": "5.3",
+  "kind": "player",
+  "text": "Which units can build it?",
+  "query": "SELECT VALUE in FROM capability WHERE out = action:construct_zariba AND allowed = true;",
+  "expect": [
+   "unit_class:british_infantry",
+   "unit_class:egyptian_infantry",
+   "unit_class:sudanese_infantry"
+  ],
+  "match": "set",
+  "answer": "Anglo-Egyptian infantry units: British, Egyptian and Sudanese battalions. Cavalry, artillery and Maxims cannot (§5.3).",
+  "about": [
+   "action:construct_zariba",
+   "rule:r5_3_zariba_construction",
+   "unit_class:ae_infantry"
+  ],
+  "note": "Whether the Royal Engineers or the Friendlies count as 'Anglo-Egyptian infantry' is not settled; see the open questions s5_3_op_engineers_build and s5_3_op_friendlies_build."
+ },
+ {
+  "id": "s5_3_how_long",
+  "section": "5.3",
+  "kind": "player",
+  "text": "How long does it take?",
+  "query": "RETURN rule:r5_3_zariba_construction.params.duration;",
+  "expect": "one Anglo-Egyptian player turn (begin and end adjacent)",
+  "match": "exact",
+  "answer": "One full Anglo-Egyptian player turn: the unit must begin and end that player turn adjacent to the hexsides (§5.3).",
+  "about": [
+   "rule:r5_3_zariba_construction",
+   "action:construct_zariba"
+  ]
+ },
+ {
+  "id": "s5_3_builders_shoot_back",
+  "section": "5.3",
+  "kind": "player",
+  "text": "Can my builders still shoot back on the Dervish turn?",
+  "query": "RETURN state:constructing_zariba->prohibits->action;",
+  "expect": [
+   "action:offensive_fire",
+   "action:melee_attack"
+  ],
+  "match": "set",
+  "answer": "The ban names only offensive fire and melee attack during the turn of construction. Defensive fire is not mentioned, so the manual does not settle it (§5.3).",
+  "about": [
+   "state:constructing_zariba",
+   "rule:r5_3_constructor_restrictions",
+   "open_question:builder_defensive_fire"
+  ]
+ },
+ {
+  "id": "s5_3_one_battalion_whole",
+  "section": "5.3",
+  "kind": "player",
+  "text": "Does one battalion build the whole Zariba?",
+  "query": "RETURN rule:r5_3_zariba_construction.params.builds;",
+  "expect": "all Zariba hexsides to which it is adjacent",
+  "match": "exact",
+  "answer": "No. It builds only the Zariba hexsides it is adjacent to (§5.3).",
+  "about": [
+   "rule:r5_3_zariba_construction",
+   "terrain:zariba_hexside"
+  ]
+ },
+ {
+  "id": "s5_3_which_side",
+  "section": "5.3",
+  "kind": "player",
+  "text": "Which side do I have to be on?",
+  "query": "RETURN rule:r5_3_zariba_construction.params.side;",
+  "expect": "Nile side",
+  "match": "exact",
+  "answer": "The Nile side of the Zariba hexsides (§5.3).",
+  "about": [
+   "rule:r5_3_zariba_construction",
+   "location:nile"
+  ]
+ },
+ {
+  "id": "s5_3_remember_builders",
+  "section": "5.3",
+  "kind": "player",
+  "text": "How do we remember who's building?",
+  "query": "RETURN state:constructing_zariba.marked_by.name;",
+  "expect": "blank counter",
+  "match": "exact",
+  "answer": "Mark constructing units with a blank counter (§5.3).",
+  "about": [
+   "marker:blank",
+   "state:constructing_zariba"
+  ]
+ },
+ {
+  "id": "s5_41_kitchener_pin",
+  "section": "5.41",
+  "kind": "player",
+  "text": "Does Kitchener alone pin enemy spearmen?",
+  "query": "RETURN fn::allowed(unit:kitchener, action:exert_zoc);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Anglo-Egyptian leaders are the one kind of unit with no zone of control (§5.41).",
+  "about": [
+   "unit:kitchener",
+   "action:exert_zoc",
+   "rule:r5_41_who_exerts"
+  ]
+ },
+ {
+  "id": "s5_41_gunboat_bank",
+  "section": "5.41",
+  "kind": "player",
+  "text": "Does a gunboat stop infantry walking along the bank?",
+  "query": "RETURN fn::can(unit:old_gunboat, action:exert_zoc).condition;",
+  "expect": "only against enemy gunboats",
+  "match": "exact",
+  "answer": "No. Gunboats exert a ZOC only against enemy gunboats (§5.41), and no ZOC extends out of a Nile hex anyway (§5.44).",
+  "about": [
+   "unit:old_gunboat",
+   "rule:r5_41_gunboat_zoc"
+  ]
+ },
+ {
+  "id": "s5_41_disrupted_walk_past",
+  "section": "5.41",
+  "kind": "player",
+  "text": "My battalion got disrupted. Can the enemy walk past it?",
+  "query": "RETURN state:disrupted->prohibits->action CONTAINS action:exert_zoc;",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Disrupted units have no ZOC (§5.41).",
+  "about": [
+   "state:disrupted",
+   "rule:r5_41_disrupted_no_zoc"
+  ]
+ },
+ {
+  "id": "s5_41_dervish_leader_zoc",
+  "section": "5.41",
+  "kind": "player",
+  "text": "Do Dervish leaders have a ZOC?",
+  "query": "RETURN fn::allowed(unit:yakub, action:exert_zoc);",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Every unit except Anglo-Egyptian leaders exerts a ZOC, Dervish leaders included (§5.41).",
+  "about": [
+   "unit:yakub",
+   "unit_class:d_leader",
+   "action:exert_zoc"
+  ]
+ },
+ {
+  "id": "s5_41_forts_zoc",
+  "section": "5.41",
+  "kind": "player",
+  "text": "Do forts have a ZOC?",
+  "query": "RETURN [fn::allowed(unit:fort, action:exert_zoc), fn::can(unit:fort, action:exert_zoc).condition];",
+  "expect": [
+   true,
+   "even if unoccupied"
+  ],
+  "match": "exact",
+  "answer": "Yes, even when unoccupied (§5.41, §5.44, §6.54).",
+  "about": [
+   "unit:fort",
+   "rule:r6_54_fort_zoc"
+  ]
+ },
+ {
+  "id": "s5_42_zoc_extra_cost",
+  "section": "5.42",
+  "kind": "player",
+  "text": "Does entering or leaving a ZOC cost extra?",
+  "query": "RETURN rule:r5_42_no_mp_cost.params.mp_cost;",
+  "expect": 0,
+  "match": "exact",
+  "answer": "No. Entering or leaving an enemy ZOC costs no movement points (§5.42).",
+  "about": [
+   "rule:r5_42_no_mp_cost"
+  ]
+ },
+ {
+  "id": "s5_43_leave_next_turn",
+  "section": "5.43",
+  "kind": "player",
+  "text": "I'm stuck next to the enemy. Can I leave next turn?",
+  "query": "SELECT VALUE kind FROM rule WHERE actions CONTAINS action:withdraw_from_zoc AND section = section:`5.43`;",
+  "expect": [
+   "permission"
+  ],
+  "match": "exact",
+  "answer": "Yes. In your next movement phase you may withdraw (§5.43).",
+  "about": [
+   "action:withdraw_from_zoc",
+   "rule:r5_43_next_turn"
+  ]
+ },
+ {
+  "id": "s5_43_zoc_to_zoc",
+  "section": "5.43",
+  "kind": "player",
+  "text": "Can I slide from one enemy's ZOC directly into another's?",
+  "query": "RETURN action:move_zoc_to_zoc<-governs<-rule.kind;",
+  "expect": [
+   "permission"
+  ],
+  "match": "exact",
+  "answer": "Yes, in your next movement phase. You must then stop again in the new ZOC (§5.43).",
+  "about": [
+   "action:move_zoc_to_zoc",
+   "rule:r5_43_next_turn"
+  ]
+ },
+ {
+  "id": "s5_43_two_zoc_hexes",
+  "section": "5.43",
+  "kind": "player",
+  "text": "Can I move through two ZOC hexes in one turn?",
+  "query": "RETURN rule:r5_43_stop.kind;",
+  "expect": "obligation",
+  "match": "exact",
+  "answer": "No. You must stop in the first enemy ZOC you enter and may move no further that turn (§5.43).",
+  "about": [
+   "rule:r5_43_stop",
+   "state:in_enemy_zoc"
+  ]
+ },
+ {
+  "id": "s5_44_across_khor",
+  "section": "5.44",
+  "kind": "player",
+  "text": "Does the enemy across the khor stop my movement?",
+  "query": "RETURN fn::zoc_extends(terrain:khor, 'into');",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. ZOCs do not extend across a khor (§5.44).",
+  "about": [
+   "terrain:khor",
+   "zoc_boundary:khor"
+  ]
+ },
+ {
+  "id": "s5_44_leave_fort",
+  "section": "5.44",
+  "kind": "player",
+  "text": "My Dervish unit is in a fort. Does the British unit next to it stop me leaving?",
+  "query": "RETURN fn::zoc_extends(terrain:fort_hex, 'into');",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. ZOCs do not extend into a fort, so the unit inside is not in the enemy ZOC (§5.44).",
+  "about": [
+   "terrain:fort_hex",
+   "zoc_boundary:fort"
+  ]
+ },
+ {
+  "id": "s5_44_empty_enemy_fort",
+  "section": "5.44",
+  "kind": "player",
+  "text": "My unit is next to an empty enemy fort. Am I in its ZOC?",
+  "query": "RETURN fn::zoc_extends(terrain:fort_hex, 'out_of');",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. ZOCs extend out of a fort even if it is unoccupied (§5.44, §6.54).",
+  "about": [
+   "terrain:fort_hex",
+   "zoc_boundary:fort",
+   "unit:fort"
+  ]
+ },
+ {
+  "id": "s5_44_taiasha_behind_wall",
+  "section": "5.44",
+  "kind": "player",
+  "text": "Do the Taiasha behind the wall pin my troops outside?",
+  "query": "RETURN fn::zoc_extends(terrain:wall, 'out_of');",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. ZOCs extend from a walled city hex into an adjacent hex outside the city across a wall hexside (§5.44).",
+  "about": [
+   "terrain:wall",
+   "zoc_boundary:wall",
+   "tribe:taiasha"
+  ]
+ },
+ {
+  "id": "s5_44_pin_defenders",
+  "section": "5.44",
+  "kind": "player",
+  "text": "Do my troops outside pin the defenders inside the wall?",
+  "query": "RETURN [fn::zoc_extends(terrain:wall, 'into'), fn::zoc_extends(terrain:breach, 'into')];",
+  "expect": [
+   false,
+   true
+  ],
+  "match": "exact",
+  "answer": "No, not across a wall hexside. Across a breach hexside, ZOCs extend both ways (§5.44).",
+  "about": [
+   "zoc_boundary:wall",
+   "zoc_boundary:breach"
+  ]
+ },
+ {
+  "id": "s5_44_hut_pinned",
+  "section": "5.44",
+  "kind": "player",
+  "text": "Can units in a hut village be pinned?",
+  "query": "RETURN [fn::zoc_extends(terrain:hut, 'into'), fn::zoc_extends(terrain:hut, 'out_of')];",
+  "expect": [
+   false,
+   true
+  ],
+  "match": "exact",
+  "answer": "No, but they pin others. ZOCs extend out of a hut hex but not into it (§5.44).",
+  "about": [
+   "terrain:hut",
+   "zoc_boundary:hut"
+  ]
+ },
+ {
+  "id": "s5_44_zariba_locked",
+  "section": "5.44",
+  "kind": "player",
+  "text": "Can troops inside the Zariba be ZOC-locked from outside?",
+  "query": "RETURN fn::zoc_extends(terrain:zariba_hexside, 'into');",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. ZOCs extend out of the Zariba across a Zariba hexside but not into it: in the historical scenario, and in the campaign game once it is built (§5.44).",
+  "about": [
+   "terrain:zariba_hexside",
+   "zoc_boundary:zariba"
+  ]
+ },
+ {
+  "id": "s5_44_gunboat_riverbank",
+  "section": "5.44",
+  "kind": "player",
+  "text": "Does a gunboat ZOC the riverbank?",
+  "query": "RETURN fn::zoc_extends(terrain:nile_river, 'out_of');",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. ZOCs do not extend out of a Nile River hex; a gunboat's ZOC acts only against enemy gunboats (§5.44, §5.41).",
+  "about": [
+   "terrain:nile_river",
+   "zoc_boundary:nile",
+   "unit_class:gunboat"
+  ]
+ },
+ {
+  "id": "s5_51_battalions_per_hex",
+  "section": "5.51",
+  "kind": "player",
+  "text": "How many battalions can I put in a hex?",
+  "query": "RETURN constant:stacking_limit.value;",
+  "expect": 4,
+  "match": "exact",
+  "answer": "Four. No more than four units may occupy a hex; leaders and gunboats are the exceptions (§5.51).",
+  "about": [
+   "constant:stacking_limit",
+   "rule:r5_51_limit"
+  ]
+ },
+ {
+  "id": "s5_51_kitchener_counts",
+  "section": "5.51",
+  "kind": "player",
+  "text": "Does Kitchener count toward the 4?",
+  "query": "LET $s = fn::stack_check([unit:egyptian_battalion_sample, unit:egyptian_battalion_sample, unit:egyptian_battalion_sample, unit:egyptian_battalion_sample, unit:kitchener]); RETURN [$s.legal, $s.counted_units];",
+  "expect": [
+   true,
+   4
+  ],
+  "match": "exact",
+  "answer": "No. All leaders are free stacking, on top of the four-unit limit (§5.51).",
+  "about": [
+   "unit:kitchener",
+   "rule:r5_51_leaders_free"
+  ]
+ },
+ {
+  "id": "s5_51_two_gunboats",
+  "section": "5.51",
+  "kind": "player",
+  "text": "Can two gunboats share a hex?",
+  "query": "RETURN fn::stack_check([unit:old_gunboat, unit:sultan]).legal;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Gunboats may not stack with any other unit, other gunboats included (§5.51).",
+  "about": [
+   "unit:old_gunboat",
+   "unit:sultan",
+   "rule:r5_51_gunboats_alone"
+  ]
+ },
+ {
+  "id": "s5_51_pass_through_full",
+  "section": "5.51",
+  "kind": "player",
+  "text": "Can my column pass through an already-full hex?",
+  "query": "RETURN rule:r5_51_when.params.applies;",
+  "expect": [
+   "end of the movement phase",
+   "during combat"
+  ],
+  "match": "set",
+  "answer": "Yes. You may move through friendly units at no extra cost; the stacking limit applies only at the end of the movement phase and during combat (§5.51).",
+  "about": [
+   "rule:r5_51_when",
+   "rule:r5_51_move_through"
+  ]
+ },
+ {
+  "id": "s5_51_advance_overstack",
+  "section": "5.51",
+  "kind": "player",
+  "text": "Can an advance after combat overstack?",
+  "query": "RETURN rule:r5_51_when.params.applies CONTAINS 'during combat';",
+  "expect": true,
+  "match": "exact",
+  "answer": "No. The stacking limit applies during combat, and §7.6 has the Dervish advance only 'up to the stacking limit' (§5.51, §7.6).",
+  "about": [
+   "rule:r5_51_when",
+   "action:advance_after_combat"
+  ]
+ },
+ {
+  "id": "s5_52_mulazmin_jehadia",
+  "section": "5.52",
+  "kind": "player",
+  "text": "Can Mulazmin and Jehadia stack? They're both green.",
+  "query": "RETURN fn::stack_check([tribe:mulazmin, tribe:jehadia]).legal;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Units of different Dervish tribes may not stack together, even if they are the same color (§5.52).",
+  "about": [
+   "tribe:mulazmin",
+   "tribe:jehadia",
+   "rule:r5_52_tribes_apart"
+  ]
+ },
+ {
+  "id": "s5_52_baggara_jaalin",
+  "section": "5.52",
+  "kind": "player",
+  "text": "Can I stack Baggara with Jaalin?",
+  "query": "RETURN fn::stack_check([tribe:baggara, tribe:jaalin]).legal;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. They are different tribes (§5.52).",
+  "about": [
+   "tribe:baggara",
+   "tribe:jaalin",
+   "rule:r5_52_tribes_apart"
+  ]
+ },
+ {
+  "id": "s5_53_osman_baggara",
+  "section": "5.53",
+  "kind": "player",
+  "text": "Can Osman Digna join a stack of Baggara?",
+  "query": "RETURN fn::stack_check([unit:osman_digna, tribe:baggara, tribe:baggara]).legal;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. A Dervish leader may stack only with units of his own command; Osman Digna's are the Hadendowa (§5.53, §9.112).",
+  "about": [
+   "unit:osman_digna",
+   "tribe:baggara",
+   "command_group:osman_digna"
+  ]
+ },
+ {
+  "id": "s5_53_sheik_alone",
+  "section": "5.53",
+  "kind": "player",
+  "text": "Can Sheik El Din stand alone?",
+  "query": "RETURN [rule:r5_53_leaders_optional.kind, fn::stack_check([unit:sheik_el_din]).legal];",
+  "expect": [
+   "permission",
+   true
+  ],
+  "match": "exact",
+  "answer": "Yes. Leader units are not required to stack (§5.53).",
+  "about": [
+   "unit:sheik_el_din",
+   "rule:r5_53_leaders_optional"
+  ]
+ },
+ {
+  "id": "s5_53_sheik_jehadia",
+  "section": "5.53",
+  "kind": "player",
+  "text": "Can Sheik El Din stack with Jehadia?",
+  "query": "RETURN fn::stack_check([unit:sheik_el_din, tribe:jehadia, tribe:jehadia]).legal;",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. The Jehadia belong to his (green) command, together with the Mulazmin (§5.53).",
+  "about": [
+   "unit:sheik_el_din",
+   "tribe:jehadia",
+   "command_group:sheik_el_din"
+  ]
+ },
+ {
+  "id": "s5_54_3e_meaning",
+  "section": "5.54",
+  "kind": "player",
+  "text": "What does '3E' on my counter mean?",
+  "query": "SELECT VALUE name FROM ONLY formation WHERE designation = '3E' LIMIT 1;",
+  "expect": "3rd Egyptian Brigade",
+  "match": "exact",
+  "answer": "It is the brigade designation: 3rd Egyptian Brigade (§5.54).",
+  "about": [
+   "formation:brigade_3e"
+  ]
+ },
+ {
+  "id": "s5_54_keep_together_bonus",
+  "section": "5.54",
+  "kind": "player",
+  "text": "Do I get a bonus for keeping the brigade together?",
+  "query": "RETURN modifier:brigade_integrity.value;",
+  "expect": 1,
+  "match": "exact",
+  "answer": "Yes. A stack with brigade integrity gets +1 on its fire combat die roll if all four fire at the same hex (§5.54).",
+  "about": [
+   "modifier:brigade_integrity",
+   "state:brigade_integrity"
+  ]
+ },
+ {
+  "id": "s5_54_three_survivors",
+  "section": "5.54",
+  "kind": "player",
+  "text": "If one battalion was eliminated, do the three survivors still get it?",
+  "query": "RETURN 3 >= constant:brigade_battalions.value;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Brigade integrity requires all four infantry battalions of the brigade in the same hex (§5.54).",
+  "about": [
+   "constant:brigade_battalions",
+   "state:brigade_integrity"
+  ]
+ },
+ {
+  "id": "s5_54_split_fire",
+  "section": "5.54",
+  "kind": "player",
+  "text": "If I split fire between two hexes, do I lose it?",
+  "query": "RETURN string::contains(modifier:brigade_integrity.condition, 'same enemy-occupied hex');",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. The +1 applies only if all four battalions fire at the same enemy-occupied hex (§5.54, §6.15).",
+  "about": [
+   "modifier:brigade_integrity",
+   "rule:r5_54_brigade_integrity"
+  ]
+ },
+ {
+  "id": "s5_54_mix_brigades",
+  "section": "5.54",
+  "kind": "player",
+  "text": "Can I mix battalions from two brigades to get the bonus?",
+  "query": "RETURN string::contains(state:brigade_integrity.definition, 'all four infantry battalions belonging to any Anglo-Egyptian infantry brigade');",
+  "expect": true,
+  "match": "exact",
+  "answer": "No. All four battalions must belong to the same brigade (§5.54).",
+  "about": [
+   "state:brigade_integrity",
+   "formation:brigade_2b"
+  ]
+ },
+ {
+  "id": "s5_54_total_drm",
+  "section": "5.54",
+  "kind": "player",
+  "text": "What's my total die modifier with integrity?",
+  "query": "RETURN fn::fire_drm({firer: faction:anglo_egyptian, direct: true, integrity: true});",
+  "expect": 2,
+  "match": "exact",
+  "answer": "+2: the normal +1 Anglo-Egyptian direct fire bonus plus +1 for brigade integrity, before terrain (§5.54, §6.24).",
+  "about": [
+   "modifier:brigade_integrity",
+   "modifier:ae_direct_fire"
+  ]
+ },
+ {
+  "id": "s5_54_defensive_fire",
+  "section": "5.54",
+  "kind": "player",
+  "text": "Does it apply on defensive fire?",
+  "query": "RETURN string::contains(rule:r5_54_brigade_integrity.statement, 'combat phase');",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Integrity counts 'in any combat phase', defensive fire included (§5.54).",
+  "about": [
+   "rule:r5_54_brigade_integrity",
+   "action:defensive_fire"
+  ]
+ },
+ {
+  "id": "s5_11_mv_kitchener_ma",
+  "section": "5.11",
+  "kind": "basic",
+  "text": "What is Kitchener's movement allowance?",
+  "query": "RETURN unit:kitchener.move;",
+  "expect": 15,
+  "match": "exact",
+  "answer": "15, printed on his counter (0·0·15) (§5.11, §2.3).",
+  "about": [
+   "unit:kitchener",
+   "rule:r5_11_allowance"
+  ]
+ },
+ {
+  "id": "s5_11_mv_maxim_ma",
+  "section": "5.11",
+  "kind": "basic",
+  "text": "How far can the Maxim battery move?",
+  "query": "RETURN unit:maxim_battery.move;",
+  "expect": 12,
+  "match": "exact",
+  "answer": "Its printed movement allowance is 12 (Maxim Batt. 6·1·12) (§5.11, §2.3).",
+  "about": [
+   "unit:maxim_battery",
+   "rule:r5_11_allowance"
+  ]
+ },
+ {
+  "id": "s5_11_mv_battery32_ma",
+  "section": "5.11",
+  "kind": "basic",
+  "text": "What is the 32 Battery's movement allowance?",
+  "query": "RETURN unit:battery_32.move;",
+  "expect": 7,
+  "match": "exact",
+  "answer": "7 (32 Battery 10·1·7) (§5.11, §2.3).",
+  "about": [
+   "unit:battery_32",
+   "rule:r5_11_allowance"
+  ]
+ },
+ {
+  "id": "s5_11_mv_engineers_ma",
+  "section": "5.11",
+  "kind": "basic",
+  "text": "What is the Royal Engineers' movement allowance?",
+  "query": "RETURN unit:royal_engineers.move;",
+  "expect": 8,
+  "match": "exact",
+  "answer": "8 (Royal Eng. 5-3-8) (§5.11, §6.53).",
+  "about": [
+   "unit:royal_engineers",
+   "rule:r5_11_allowance"
+  ]
+ },
+ {
+  "id": "s5_11_mv_egyptian_battalion_ma",
+  "section": "5.11",
+  "kind": "basic",
+  "text": "How far can an Egyptian infantry battalion move?",
+  "query": "RETURN unit:egyptian_battalion_sample.move;",
+  "expect": 8,
+  "match": "exact",
+  "answer": "The sample Egyptian battalion has movement allowance 8 (9·5·8) (§5.11, §2.3).",
+  "about": [
+   "unit:egyptian_battalion_sample",
+   "rule:r5_11_allowance"
+  ]
+ },
+ {
+  "id": "s5_11_mv_danagla_ma",
+  "section": "5.11",
+  "kind": "basic",
+  "text": "What is a Danagla camel unit's movement allowance?",
+  "query": "RETURN unit:danagla_sample.move;",
+  "expect": 12,
+  "match": "exact",
+  "answer": "12 (Danagla 4-6-12) (§5.11, §2.3).",
+  "about": [
+   "unit:danagla_sample",
+   "rule:r5_11_allowance"
+  ]
+ },
+ {
+  "id": "s5_24_mv_sultan_upstream",
+  "section": "5.24",
+  "kind": "basic",
+  "text": "What is the Sultan's movement allowance moving upstream?",
+  "query": "RETURN fn::gunboat_ma(unit:sultan, true);",
+  "expect": 12,
+  "match": "exact",
+  "answer": "12, the smaller number of its 12/18 movement allowance (§5.24).",
+  "about": [
+   "unit:sultan",
+   "action:move_upstream"
+  ]
+ },
+ {
+  "id": "s5_24_mv_sultan_downstream",
+  "section": "5.24",
+  "kind": "basic",
+  "text": "What is the Sultan's movement allowance moving only downstream?",
+  "query": "RETURN fn::gunboat_ma(unit:sultan, false);",
+  "expect": 18,
+  "match": "exact",
+  "answer": "18, the larger number of its 12/18 movement allowance (§5.24).",
+  "about": [
+   "unit:sultan",
+   "action:move_downstream"
+  ]
+ },
+ {
+  "id": "s5_24_mv_old_gunboat_downstream",
+  "section": "5.24",
+  "kind": "basic",
+  "text": "How far can an old gunboat move with the current?",
+  "query": "RETURN fn::gunboat_ma(unit:old_gunboat, false);",
+  "expect": 16,
+  "match": "exact",
+  "answer": "16 hexes, as long as it moves no hex upstream that turn (§5.24).",
+  "about": [
+   "unit:old_gunboat",
+   "action:move_downstream"
+  ]
+ },
+ {
+  "id": "s5_24_mv_mixed_ten",
+  "section": "5.24",
+  "kind": "basic",
+  "text": "Can an old gunboat move 6 hexes downstream and 4 back upstream in one turn?",
+  "query": "RETURN 6 + 4 <= fn::gunboat_ma(unit:old_gunboat, true);",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Gunboats may combine both directions; with any upstream movement the total may not exceed the upstream allowance of 10 (§5.24).",
+  "about": [
+   "unit:old_gunboat",
+   "rule:r5_24_upstream_cap"
+  ]
+ },
+ {
+  "id": "s8_1_mv_lancers_night",
+  "section": "8.1",
+  "kind": "basic",
+  "text": "What is the Lancers' movement allowance at night?",
+  "query": "RETURN fn::night_ma(unit:lancers_21.faction, unit:lancers_21.move);",
+  "expect": 7,
+  "match": "exact",
+  "answer": "7. All Anglo-Egyptian movement allowances are halved at night, rounded down (15 → 7) (§8.1).",
+  "about": [
+   "unit:lancers_21",
+   "rule:r8_1_ae_movement_halved",
+   "state:night"
+  ]
+ },
+ {
+  "id": "s8_1_mv_dervish_camel_night",
+  "section": "8.1",
+  "kind": "basic",
+  "text": "Do Dervish units move less at night?",
+  "query": "RETURN fn::night_ma(unit:danagla_sample.faction, unit:danagla_sample.move);",
+  "expect": 12,
+  "match": "exact",
+  "answer": "No. Only Anglo-Egyptian movement allowances are halved at night; a Danagla camel unit still moves 12 (§8.1).",
+  "about": [
+   "unit:danagla_sample",
+   "rule:r8_1_ae_movement_halved"
+  ]
+ },
+ {
+  "id": "s8_1_mv_egyptian_battalion_night",
+  "section": "8.1",
+  "kind": "basic",
+  "text": "How far can an Egyptian battalion move on a night turn?",
+  "query": "RETURN fn::night_ma(unit:egyptian_battalion_sample.faction, unit:egyptian_battalion_sample.move);",
+  "expect": 4,
+  "match": "exact",
+  "answer": "4: half of its 8 (§8.1).",
+  "about": [
+   "unit:egyptian_battalion_sample",
+   "rule:r8_1_ae_movement_halved"
+  ]
+ },
+ {
+  "id": "s8_1_mv_kitchener_night",
+  "section": "8.1",
+  "kind": "basic",
+  "text": "What is Kitchener's movement allowance at night?",
+  "query": "RETURN fn::night_ma(unit:kitchener.faction, unit:kitchener.move);",
+  "expect": 7,
+  "match": "exact",
+  "answer": "7: half of 15, rounded down (§8.1).",
+  "about": [
+   "unit:kitchener",
+   "rule:r8_1_ae_movement_halved"
+  ]
+ },
+ {
+  "id": "s8_1_mv_gunboat_upstream_night",
+  "section": "8.1",
+  "kind": "basic",
+  "text": "How far can an old gunboat move upstream on a night turn?",
+  "query": "RETURN fn::night_ma(unit:old_gunboat.faction, fn::gunboat_ma(unit:old_gunboat, true));",
+  "expect": 5,
+  "match": "exact",
+  "answer": "5. Gunboats are Anglo-Egyptian units, so their allowance is halved too: 10 upstream becomes 5 (§8.1, §5.24).",
+  "about": [
+   "unit:old_gunboat",
+   "rule:r8_1_ae_movement_halved"
+  ]
+ },
+ {
+  "id": "s5_51_mv_gunboat_with_infantry",
+  "section": "5.51",
+  "kind": "basic",
+  "text": "Can a gunboat stack with infantry?",
+  "query": "RETURN fn::stack_check([unit:old_gunboat, unit:egyptian_battalion_sample]).legal;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Gunboats may not stack with any other unit. The only exception is the Friendlies ferry (§5.51, §5.21).",
+  "about": [
+   "unit:old_gunboat",
+   "rule:r5_51_gunboats_alone"
+  ]
+ },
+ {
+  "id": "s5_51_mv_gunboat_with_leader",
+  "section": "5.51",
+  "kind": "basic",
+  "text": "Can Kitchener ride along on a gunboat?",
+  "query": "RETURN fn::stack_check([unit:sultan, unit:kitchener]).legal;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Leaders are free stacking, but gunboats may not stack with any other unit (§5.51, §5.21).",
+  "about": [
+   "unit:sultan",
+   "unit:kitchener",
+   "rule:r5_51_gunboats_alone"
+  ]
+ },
+ {
+  "id": "s5_51_mv_move_through_cost",
+  "section": "5.51",
+  "kind": "basic",
+  "text": "What does it cost in movement points to move through my own units?",
+  "query": "RETURN rule:r5_51_move_through.params.mp_cost;",
+  "expect": 0,
+  "match": "exact",
+  "answer": "Nothing extra. You may move through friendly units at no additional movement point cost (§5.51).",
+  "about": [
+   "rule:r5_51_move_through",
+   "action:move_through_friendly"
+  ]
+ },
+ {
+  "id": "s5_51_mv_five_battalions",
+  "section": "5.51",
+  "kind": "basic",
+  "text": "May I end my move with five infantry battalions in one hex?",
+  "query": "RETURN fn::stack_check([unit:egyptian_battalion_sample, unit:egyptian_battalion_sample, unit:egyptian_battalion_sample, unit:egyptian_battalion_sample, unit:egyptian_battalion_sample]).legal;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. No more than four units may occupy a hex at the end of the movement phase (§5.51).",
+  "about": [
+   "constant:stacking_limit",
+   "rule:r5_51_limit"
+  ]
+ },
+ {
+  "id": "s5_51_mv_dervish_leader_free",
+  "section": "5.51",
+  "kind": "basic",
+  "text": "Can Osman Digna join a full stack of four Hadendowa?",
+  "query": "LET $s = fn::stack_check([unit:osman_digna, tribe:hadendowa, tribe:hadendowa, tribe:hadendowa, tribe:hadendowa]); RETURN [$s.legal, $s.counted_units];",
+  "expect": [
+   true,
+   4
+  ],
+  "match": "exact",
+  "answer": "Yes. Leaders stack free on top of the four-unit limit, and the Hadendowa are his command (§5.51, §5.53, §6.51).",
+  "about": [
+   "unit:osman_digna",
+   "tribe:hadendowa",
+   "rule:r5_51_leaders_free"
+  ]
+ },
+ {
+  "id": "s5_22_mv_cavalry_nile",
+  "section": "5.22",
+  "kind": "basic",
+  "text": "Can my cavalry ford the Nile?",
+  "query": "RETURN fn::may_enter(unit:lancers_21, terrain:nile_river).allowed;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Land units may never enter a Nile River hex (§5.22).",
+  "about": [
+   "unit:lancers_21",
+   "terrain:nile_river"
+  ]
+ },
+ {
+  "id": "s5_22_mv_dervish_gunboat_nile",
+  "section": "5.22",
+  "kind": "basic",
+  "text": "Can a Dervish gunboat move along the Nile?",
+  "query": "RETURN fn::may_enter(unit:dervish_gunboat, terrain:nile_river).allowed;",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Gunboats, Dervish or Anglo-Egyptian, are the units that may enter and move along Nile River hexes (§5.22).",
+  "about": [
+   "unit:dervish_gunboat",
+   "terrain:nile_river"
+  ]
+ },
+ {
+  "id": "s5_23_mv_breach_entry",
+  "section": "5.23",
+  "kind": "basic",
+  "text": "Can my units enter the walled city through a breach?",
+  "query": "RETURN location:walled_city.entry_only_through CONTAINS terrain:breach;",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Units enter or exit the walled city through a gate or breach hexside (§5.23).",
+  "about": [
+   "location:walled_city",
+   "terrain:breach"
+  ]
+ },
+ {
+  "id": "s5_23_mv_dervish_artillery_city",
+  "section": "5.23",
+  "kind": "basic",
+  "text": "Can Dervish artillery enter the walled city?",
+  "query": "RETURN fn::may_enter(unit:dervish_artillery, location:walled_city).allowed;",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. The three Dervish artillery units are among the few Dervish units allowed in (§5.23).",
+  "about": [
+   "unit:dervish_artillery",
+   "location:walled_city"
+  ]
+ },
+ {
+  "id": "s5_23_mv_taiasha_city",
+  "section": "5.23",
+  "kind": "basic",
+  "text": "Can the Taiasha enter the walled city?",
+  "query": "RETURN fn::may_enter(tribe:taiasha, location:walled_city).allowed;",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. The Taiasha are the Khalifa's bodyguard and may enter (§5.23).",
+  "about": [
+   "tribe:taiasha",
+   "location:walled_city"
+  ]
+ },
+ {
+  "id": "s5_23_mv_osman_city",
+  "section": "5.23",
+  "kind": "basic",
+  "text": "Can Osman Digna enter the walled city?",
+  "query": "RETURN fn::may_enter(unit:osman_digna, location:walled_city).allowed;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. The Khalifa is the only Dervish leader allowed in (§5.23).",
+  "about": [
+   "unit:osman_digna",
+   "location:walled_city"
+  ]
+ },
+ {
+  "id": "s5_23_mv_jehadia_city",
+  "section": "5.23",
+  "kind": "basic",
+  "text": "Can Jehadia units enter the walled city?",
+  "query": "RETURN fn::may_enter(tribe:jehadia, location:walled_city).allowed;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Only the Khalifa, the Dervish artillery and the Taiasha may (§5.23).",
+  "about": [
+   "tribe:jehadia",
+   "location:walled_city"
+  ]
+ },
+ {
+  "id": "s5_23_mv_maxim_city",
+  "section": "5.23",
+  "kind": "basic",
+  "text": "Can the Maxim battery enter the walled city?",
+  "query": "RETURN fn::may_enter(unit:maxim_battery, location:walled_city).allowed;",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Any Anglo-Egyptian unit that can get there may enter, except gunboats and Friendlies, through a gate or breach (§5.23).",
+  "about": [
+   "unit:maxim_battery",
+   "location:walled_city"
+  ]
+ },
+ {
+  "id": "s5_23_mv_kitchener_city",
+  "section": "5.23",
+  "kind": "basic",
+  "text": "Can Kitchener enter the walled city?",
+  "query": "RETURN fn::may_enter(unit:kitchener, location:walled_city).allowed;",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Anglo-Egyptian leaders are not excluded; like every unit they must use a gate or breach hexside (§5.23). This is how a British leader reaches the Mahdi's Tomb (§9.14).",
+  "about": [
+   "unit:kitchener",
+   "location:walled_city"
+  ]
+ },
+ {
+  "id": "s5_23_mv_gunboat_city",
+  "section": "5.23",
+  "kind": "basic",
+  "text": "Can a gunboat enter the walled city?",
+  "query": "RETURN fn::may_enter(unit:sultan, location:walled_city).allowed;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Gunboats are excluded from the walled city (§5.23).",
+  "about": [
+   "unit:sultan",
+   "location:walled_city"
+  ]
+ },
+ {
+  "id": "s5_41_mv_zoc_hexes",
+  "section": "5.41",
+  "kind": "basic",
+  "text": "Into how many hexes does a unit's zone of control extend?",
+  "query": "RETURN rule:r5_41_who_exerts.params.hexes;",
+  "expect": 6,
+  "match": "exact",
+  "answer": "Into its six adjacent hexes (§5.41).",
+  "about": [
+   "rule:r5_41_who_exerts",
+   "action:exert_zoc"
+  ]
+ },
+ {
+  "id": "s5_41_mv_engineers_zoc",
+  "section": "5.41",
+  "kind": "basic",
+  "text": "Do the Royal Engineers exert a zone of control?",
+  "query": "RETURN fn::allowed(unit:royal_engineers, action:exert_zoc);",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Every unit except Anglo-Egyptian leaders does (§5.41).",
+  "about": [
+   "unit:royal_engineers",
+   "action:exert_zoc"
+  ]
+ },
+ {
+  "id": "s5_41_mv_artillery_zoc",
+  "section": "5.41",
+  "kind": "basic",
+  "text": "Does my artillery battery have a zone of control?",
+  "query": "RETURN fn::allowed(unit:battery_32, action:exert_zoc);",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Only Anglo-Egyptian leaders lack one (§5.41).",
+  "about": [
+   "unit:battery_32",
+   "action:exert_zoc"
+  ]
+ },
+ {
+  "id": "s5_41_mv_gunboat_vs_gunboat",
+  "section": "5.41",
+  "kind": "basic",
+  "text": "Does a Dervish gunboat exert a ZOC against my gunboats?",
+  "query": "RETURN [fn::allowed(unit:dervish_gunboat, action:exert_zoc), fn::can(unit:dervish_gunboat, action:exert_zoc).condition];",
+  "expect": [
+   true,
+   "only against enemy gunboats"
+  ],
+  "match": "exact",
+  "answer": "Yes. Gunboats exert a ZOC, but only against enemy gunboats (§5.41).",
+  "about": [
+   "unit:dervish_gunboat",
+   "rule:r5_41_gunboat_zoc"
+  ]
+ },
+ {
+  "id": "s5_44_mv_breach_into",
+  "section": "5.44",
+  "kind": "basic",
+  "text": "Does a ZOC extend through a breach into the walled city?",
+  "query": "RETURN fn::zoc_extends(terrain:breach, 'into');",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. ZOCs extend both ways across a breach hexside (§5.44).",
+  "about": [
+   "terrain:breach",
+   "zoc_boundary:breach"
+  ]
+ },
+ {
+  "id": "s5_44_mv_gate_into",
+  "section": "5.44",
+  "kind": "basic",
+  "text": "Does my ZOC extend into the walled city through a gate?",
+  "query": "RETURN fn::zoc_extends(terrain:gate, 'into');",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. ZOCs extend out of a walled city hex across a gate hexside, but not into it (§5.44).",
+  "about": [
+   "terrain:gate",
+   "zoc_boundary:gate"
+  ]
+ },
+ {
+  "id": "s5_44_mv_gate_out",
+  "section": "5.44",
+  "kind": "basic",
+  "text": "Do units inside the walled city exert a ZOC out through a gate?",
+  "query": "RETURN fn::zoc_extends(terrain:gate, 'out_of');",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. ZOCs extend out of (but not into) a walled city hex across a gate hexside (§5.44).",
+  "about": [
+   "terrain:gate",
+   "zoc_boundary:gate"
+  ]
+ },
+ {
+  "id": "s5_44_mv_building_into",
+  "section": "5.44",
+  "kind": "basic",
+  "text": "Can an enemy ZOC reach my units in a building hex?",
+  "query": "RETURN fn::zoc_extends(terrain:building, 'into');",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. ZOCs extend out of, but not into, a hut or building hex (§5.44).",
+  "about": [
+   "terrain:building",
+   "zoc_boundary:building"
+  ]
+ },
+ {
+  "id": "s5_44_mv_nile_into",
+  "section": "5.44",
+  "kind": "basic",
+  "text": "Do my riverbank troops exert a ZOC into the Nile against gunboats?",
+  "query": "RETURN fn::zoc_extends(terrain:nile_river, 'into');",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. ZOCs do not extend into or out of a Nile River hex; only gunboats exert ZOCs on gunboats (§5.44, §5.41).",
+  "about": [
+   "terrain:nile_river",
+   "zoc_boundary:nile"
+  ]
+ },
+ {
+  "id": "s5_44_mv_khor_both",
+  "section": "5.44",
+  "kind": "basic",
+  "text": "Does a khor block zones of control in both directions?",
+  "query": "RETURN [fn::zoc_extends(terrain:khor, 'into'), fn::zoc_extends(terrain:khor, 'out_of')];",
+  "expect": [
+   false,
+   false
+  ],
+  "match": "exact",
+  "answer": "Yes. ZOCs do not extend across a khor at all (§5.44).",
+  "about": [
+   "terrain:khor",
+   "zoc_boundary:khor"
+  ]
+ },
+ {
+  "id": "s5_3_mv_campaign_only",
+  "section": "5.3",
+  "kind": "basic",
+  "text": "In which scenario can the Anglo-Egyptian player build the Zariba?",
+  "query": "RETURN rule:r5_3_zariba_construction.scenarios;",
+  "expect": [
+   "scenario:campaign"
+  ],
+  "match": "exact",
+  "answer": "In the campaign game. In the historical scenario it is already built (§5.3).",
+  "about": [
+   "rule:r5_3_zariba_construction",
+   "scenario:campaign"
+  ]
+ },
+ {
+  "id": "s5_3_mv_historical_prebuilt",
+  "section": "5.3",
+  "kind": "basic",
+  "text": "Do I have to build the Zariba in the historical scenario?",
+  "query": "RETURN terrain:zariba_hexside.scenario_status.historical;",
+  "expect": "built and in place",
+  "match": "exact",
+  "answer": "No. The Zariba trench and thorn hedge hexsides are built and in place in the historical scenario (§5.3).",
+  "about": [
+   "terrain:zariba_hexside",
+   "scenario:historical"
+  ]
+ },
+ {
+  "id": "s5_3_mv_campaign_unbuilt",
+  "section": "5.3",
+  "kind": "basic",
+  "text": "What are unbuilt Zariba hexsides in the campaign game?",
+  "query": "RETURN terrain:zariba_hexside.scenario_status.campaign;",
+  "expect": "clear terrain unless constructed (5.3)",
+  "match": "exact",
+  "answer": "Clear terrain, unless the Anglo-Egyptian player constructs them (§5.3).",
+  "about": [
+   "terrain:zariba_hexside",
+   "scenario:campaign"
+  ]
+ },
+ {
+  "id": "s5_3_mv_builder_melee",
+  "section": "5.3",
+  "kind": "basic",
+  "text": "Can a battalion building the Zariba melee attack that turn?",
+  "query": "RETURN state:constructing_zariba->prohibits->action CONTAINS action:melee_attack;",
+  "expect": true,
+  "match": "exact",
+  "answer": "No. The constructing unit may neither fire offensively nor melee attack during the turn of construction (§5.3).",
+  "about": [
+   "state:constructing_zariba",
+   "action:melee_attack"
+  ]
+ },
+ {
+  "id": "s5_3_mv_lancers_build",
+  "section": "5.3",
+  "kind": "basic",
+  "text": "Can the 21 Lancers build Zariba hexsides?",
+  "query": "RETURN fn::allowed(unit:lancers_21, action:construct_zariba);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Only Anglo-Egyptian infantry units construct the Zariba (§5.3).",
+  "about": [
+   "unit:lancers_21",
+   "action:construct_zariba"
+  ]
+ },
+ {
+  "id": "s5_3_mv_maxim_build",
+  "section": "5.3",
+  "kind": "basic",
+  "text": "Can the Maxim battery build the Zariba?",
+  "query": "RETURN fn::allowed(unit:maxim_battery, action:construct_zariba);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. It is not an infantry unit (§5.3).",
+  "about": [
+   "unit:maxim_battery",
+   "action:construct_zariba"
+  ]
+ },
+ {
+  "id": "s5_3_mv_british_build",
+  "section": "5.3",
+  "kind": "basic",
+  "text": "Can a British infantry battalion build the Zariba?",
+  "query": "RETURN fn::allowed(unit_class:british_infantry, action:construct_zariba);",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes, in the campaign game, by beginning and ending the Anglo-Egyptian player turn adjacent to Zariba hexsides on their Nile side (§5.3).",
+  "about": [
+   "unit_class:british_infantry",
+   "action:construct_zariba"
+  ]
+ },
+ {
+  "id": "s5_21_mv_ferry_direction",
+  "section": "5.21",
+  "kind": "basic",
+  "text": "In which direction may the Friendlies be ferried?",
+  "query": "RETURN rule:r5_21_friendlies_ferry.params.direction;",
+  "expect": "east bank to west bank",
+  "match": "exact",
+  "answer": "From the east bank of the Nile to the west bank (§5.21).",
+  "about": [
+   "rule:r5_21_friendlies_ferry",
+   "location:east_bank",
+   "location:west_bank"
+  ]
+ },
+ {
+  "id": "s5_21_mv_dervish_gunboat_carry",
+  "section": "5.21",
+  "kind": "basic",
+  "text": "Can a Dervish gunboat carry Dervish units?",
+  "query": "RETURN fn::allowed(unit:dervish_gunboat, action:naval_transport);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Naval transport is not allowed; the only exception is the Anglo-Egyptian Friendlies ferry (§5.21).",
+  "about": [
+   "unit:dervish_gunboat",
+   "action:naval_transport"
+  ]
+ },
+ {
+  "id": "s5_21_mv_sultan_ferry",
+  "section": "5.21",
+  "kind": "basic",
+  "text": "Can the Sultan ferry a Friendlies unit?",
+  "query": "RETURN fn::allowed(unit:sultan, action:naval_transport);",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Any Anglo-Egyptian gunboat may carry a Friendlies unit from the east bank to the west bank once Isa Zachneih is eliminated (§5.21).",
+  "about": [
+   "unit:sultan",
+   "action:naval_transport",
+   "rule:r5_21_friendlies_ferry"
+  ]
+ },
+ {
+  "id": "s5_52_mv_four_baggara",
+  "section": "5.52",
+  "kind": "basic",
+  "text": "Can four Baggara units stack together?",
+  "query": "RETURN fn::stack_check([tribe:baggara, tribe:baggara, tribe:baggara, tribe:baggara]).legal;",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Units of the same tribe may stack, up to four (§5.51, §5.52).",
+  "about": [
+   "tribe:baggara",
+   "rule:r5_52_tribes_apart"
+  ]
+ },
+ {
+  "id": "s5_53_mv_khalifa_taiasha",
+  "section": "5.53",
+  "kind": "basic",
+  "text": "Can the Khalifa stack with his Taiasha?",
+  "query": "RETURN fn::stack_check([unit:khalifa_abdullah, tribe:taiasha, tribe:taiasha]).legal;",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. The Taiasha are the Khalifa's bodyguard (§5.23), and a leader may stack with units of his command (§5.53).",
+  "about": [
+   "unit:khalifa_abdullah",
+   "tribe:taiasha",
+   "command_group:khalifa"
+  ]
+ },
+ {
+  "id": "s5_53_mv_osman_sheik",
+  "section": "5.53",
+  "kind": "basic",
+  "text": "Can Osman Digna and Sheik El Din stack together?",
+  "query": "RETURN fn::stack_check([unit:osman_digna, unit:sheik_el_din]).legal;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. A Dervish leader that stacks may stack only with units of his own command (color). Sheik El Din is a unit of the green command, not of Osman Digna's, and the reverse holds too (§5.53).",
+  "about": [
+   "unit:osman_digna",
+   "unit:sheik_el_din",
+   "rule:r5_53_dervish_leader_command"
+  ],
+  "note": "See needs_movement.md: fn::stack_check checks a Dervish leader only against non-leader units, so two leaders of different commands come out legal."
+ },
+ {
+  "id": "s5_54_mv_battalions_needed",
+  "section": "5.54",
+  "kind": "basic",
+  "text": "How many battalions of a brigade must be stacked together for brigade integrity?",
+  "query": "RETURN constant:brigade_battalions.value;",
+  "expect": 4,
+  "match": "exact",
+  "answer": "All four infantry battalions of the brigade, in the same hex (§5.54).",
+  "about": [
+   "constant:brigade_battalions",
+   "state:brigade_integrity"
+  ]
+ },
+ {
+  "id": "s9_233_mv_zariba_crossing_cost",
+  "section": "9.233",
+  "kind": "basic",
+  "text": "What does it cost to enter or leave the Zariba?",
+  "query": "RETURN constant:zariba_crossing_mp.value;",
+  "expect": 2,
+  "match": "exact",
+  "answer": "+2 movement points to cross one of the two end hexsides that connect to the Nile, which are the only way in or out (§9.233, referenced by §5.3).",
+  "about": [
+   "constant:zariba_crossing_mp",
+   "location:zariba",
+   "rule:r9_233_access"
+  ]
+ },
+ {
+  "id": "s6_54_mv_friendly_fort_cost",
+  "section": "6.54",
+  "kind": "basic",
+  "text": "Does it cost extra movement points to enter or leave a friendly fort?",
+  "query": "RETURN rule:r6_54_friendly_fort_free.params.mp_cost;",
+  "expect": 0,
+  "match": "exact",
+  "answer": "No. There is no additional movement point cost to enter or leave a friendly fort (§6.54).",
+  "about": [
+   "rule:r6_54_friendly_fort_free",
+   "terrain:fort_hex"
+  ]
+ },
+ {
+  "id": "s5_51_gr_stack_sections",
+  "section": "5.51",
+  "kind": "graph",
+  "text": "Which sections' rules govern stacking?",
+  "query": "RETURN array::distinct(action:stack<-governs<-rule.section.num);",
+  "expect": [
+   "5.51",
+   "5.52",
+   "5.53",
+   "6.51"
+  ],
+  "match": "set",
+  "answer": "The stacking rules are §5.51–5.53, plus §6.51, where Dervish leaders 'stack free'.",
+  "about": [
+   "action:stack",
+   "section:`5.5`"
+  ]
+ },
+ {
+  "id": "s5_51_gr_limit_exceptions",
+  "section": "5.51",
+  "kind": "graph",
+  "text": "Which rules are exceptions to the four-unit stacking limit (directly or as exceptions to its exceptions), and in which sections?",
+  "query": "SELECT id, section.num AS section FROM rule:r5_51_limit.{..+collect}(<-exception_to<-rule);",
+  "expect": [
+   {
+    "id": "rule:r5_51_leaders_free",
+    "section": "5.51"
+   },
+   {
+    "id": "rule:r5_51_gunboats_alone",
+    "section": "5.51"
+   },
+   {
+    "id": "rule:r5_21_friendlies_ferry",
+    "section": "5.21"
+   }
+  ],
+  "match": "set",
+  "answer": "Leaders stack free and gunboats stack alone (§5.51). The Friendlies ferry is in turn an exception to the gunboat rule (§5.21).",
+  "about": [
+   "rule:r5_51_limit",
+   "rule:r5_51_leaders_free",
+   "rule:r5_51_gunboats_alone",
+   "rule:r5_21_friendlies_ferry"
+  ]
+ },
+ {
+  "id": "s5_4_gr_cited_by",
+  "section": "5.4",
+  "kind": "graph",
+  "text": "Which sections refer the reader to §5.4 (zones of control)?",
+  "query": "RETURN section:`5.4`<-cites<-section;",
+  "expect": [
+   "section:`5.12`",
+   "section:`5.26`"
+  ],
+  "match": "set",
+  "answer": "§5.12 (movement is limited by enemy ZOCs) and §5.26 (stop on entering an enemy ZOC).",
+  "about": [
+   "section:`5.4`",
+   "section:`5.12`",
+   "section:`5.26`"
+  ]
+ },
+ {
+  "id": "s5_21_gr_cited_by",
+  "section": "5.21",
+  "kind": "graph",
+  "text": "Which sections cite the Friendlies ferry rule §5.21?",
+  "query": "RETURN section:`5.21`<-cites<-section;",
+  "expect": [
+   "section:`5.22`",
+   "section:`5.51`",
+   "section:`6.52`",
+   "section:`9.14`"
+  ],
+  "match": "set",
+  "answer": "§5.22 (Nile), §5.51 (gunboat stacking), §6.52 (Friendlies) and §9.14 (west-bank Friendlies victory points).",
+  "about": [
+   "section:`5.21`"
+  ]
+ },
+ {
+  "id": "s5_53_gr_sheik_tribes",
+  "section": "5.53",
+  "kind": "graph",
+  "text": "Which tribes share Sheik El Din's command?",
+  "query": "RETURN unit:sheik_el_din->leads->command_group<-member_of<-tribe;",
+  "expect": [
+   "tribe:mulazmin",
+   "tribe:jehadia"
+  ],
+  "match": "set",
+  "answer": "The Mulazmin and the Jehadia (§5.53, §9.112).",
+  "about": [
+   "unit:sheik_el_din",
+   "command_group:sheik_el_din"
+  ]
+ },
+ {
+  "id": "s5_53_gr_green_command",
+  "section": "5.53",
+  "kind": "graph",
+  "text": "Which units belong to the green command?",
+  "query": "RETURN array::flatten((SELECT VALUE array::concat(<-member_of<-tribe, <-leads<-unit) FROM command_group WHERE color = 'green'));",
+  "expect": [
+   "tribe:mulazmin",
+   "tribe:jehadia",
+   "unit:sheik_el_din"
+  ],
+  "match": "set",
+  "answer": "The Mulazmin and Jehadia tribes and their leader, Sheik El Din (§5.52, §5.53).",
+  "about": [
+   "command_group:sheik_el_din",
+   "tribe:mulazmin",
+   "tribe:jehadia"
+  ]
+ },
+ {
+  "id": "s5_53_gr_osman_tribes",
+  "section": "5.53",
+  "kind": "graph",
+  "text": "Which tribe may Osman Digna stack with?",
+  "query": "RETURN unit:osman_digna->leads->command_group<-member_of<-tribe;",
+  "expect": [
+   "tribe:hadendowa"
+  ],
+  "match": "set",
+  "answer": "Only the Hadendowa, his command (§5.53, §9.112).",
+  "about": [
+   "unit:osman_digna",
+   "command_group:osman_digna"
+  ]
+ },
+ {
+  "id": "s6_53_gr_engineers_classes",
+  "section": "6.53",
+  "kind": "graph",
+  "text": "What is the transitive class chain of the Royal Engineers?",
+  "query": "RETURN array::distinct(array::concat(unit:royal_engineers->is_a->unit_class, unit:royal_engineers->is_a->unit_class.{..+collect}(->is_a->unit_class)));",
+  "expect": [
+   "unit_class:royal_engineers",
+   "unit_class:combat_unit",
+   "unit_class:land_unit",
+   "unit_class:unit"
+  ],
+  "match": "set",
+  "answer": "Royal Engineers → combat unit and land unit → unit. They are not classed as infantry, which is why their Zariba eligibility is open (§6.53, §5.3).",
+  "about": [
+   "unit:royal_engineers",
+   "unit_class:royal_engineers"
+  ]
+ },
+ {
+  "id": "s5_44_gr_out_not_in",
+  "section": "5.44",
+  "kind": "graph",
+  "text": "Which ZOC boundaries let a ZOC out but not in?",
+  "query": "SELECT VALUE id FROM zoc_boundary WHERE out_of = true AND into = false;",
+  "expect": [
+   "zoc_boundary:fort",
+   "zoc_boundary:wall",
+   "zoc_boundary:gate",
+   "zoc_boundary:hut",
+   "zoc_boundary:building",
+   "zoc_boundary:zariba"
+  ],
+  "match": "set",
+  "answer": "Fort, wall hexside (from the city outward), gate hexside, hut and building hexes, and the Zariba hexsides (§5.44).",
+  "about": [
+   "zoc_boundary:fort",
+   "zoc_boundary:gate",
+   "zoc_boundary:zariba"
+  ]
+ },
+ {
+  "id": "s5_21_gr_ferry_exceptions",
+  "section": "5.21",
+  "kind": "graph",
+  "text": "Which rules does the Friendlies ferry make an exception to?",
+  "query": "RETURN rule:r5_21_friendlies_ferry->exception_to->rule;",
+  "expect": [
+   "rule:r5_21_no_naval_transport",
+   "rule:r5_22_land_units_no_nile",
+   "rule:r5_51_gunboats_alone"
+  ],
+  "match": "set",
+  "answer": "The ban on naval transport (§5.21), the ban on land units in Nile hexes (§5.22) and the gunboats-stack-alone rule (§5.51).",
+  "about": [
+   "rule:r5_21_friendlies_ferry"
+  ]
+ },
+ {
+  "id": "s5_41_gr_zoc_exceptions",
+  "section": "5.41",
+  "kind": "graph",
+  "text": "Which rules are exceptions to 'all units exert a ZOC'?",
+  "query": "RETURN rule:r5_41_who_exerts<-exception_to<-rule;",
+  "expect": [
+   "rule:r5_41_gunboat_zoc",
+   "rule:r5_41_disrupted_no_zoc"
+  ],
+  "match": "set",
+  "answer": "Gunboats exert a ZOC only against enemy gunboats, and disrupted units have none (§5.41). Anglo-Egyptian leaders are excluded in the rule itself.",
+  "about": [
+   "rule:r5_41_who_exerts"
+  ]
+ },
+ {
+  "id": "s5_41_gr_no_zoc_classes",
+  "section": "5.41",
+  "kind": "graph",
+  "text": "Which unit types never exert a zone of control?",
+  "query": "SELECT VALUE in FROM capability WHERE out = action:exert_zoc AND allowed = false;",
+  "expect": [
+   "unit_class:ae_leader"
+  ],
+  "match": "set",
+  "answer": "Anglo-Egyptian leaders (§5.41). Disrupted units also lose theirs, but that is a state, not a unit type.",
+  "about": [
+   "action:exert_zoc",
+   "unit_class:ae_leader"
+  ]
+ },
+ {
+  "id": "s5_3_gr_constructing_prohibits",
+  "section": "5.3",
+  "kind": "graph",
+  "text": "Which actions does constructing the Zariba prohibit?",
+  "query": "RETURN state:constructing_zariba->prohibits->action;",
+  "expect": [
+   "action:offensive_fire",
+   "action:melee_attack"
+  ],
+  "match": "set",
+  "answer": "Offensive fire and melee attack, during the turn of construction (§5.3).",
+  "about": [
+   "state:constructing_zariba"
+  ]
+ },
+ {
+  "id": "s5_54_gr_integrity_classes",
+  "section": "5.54",
+  "kind": "graph",
+  "text": "Which infantry types can form a brigade with brigade integrity?",
+  "query": "SELECT VALUE in FROM is_a WHERE out = unit_class:ae_infantry;",
+  "expect": [
+   "unit_class:british_infantry",
+   "unit_class:egyptian_infantry",
+   "unit_class:sudanese_infantry"
+  ],
+  "match": "set",
+  "answer": "British, Sudanese and Egyptian infantry (§5.54).",
+  "about": [
+   "unit_class:ae_infantry",
+   "state:brigade_integrity"
+  ]
+ },
+ {
+  "id": "s5_23_gr_ae_city_classes",
+  "section": "5.23",
+  "kind": "graph",
+  "text": "Which Anglo-Egyptian unit types may enter the walled city?",
+  "query": "SELECT VALUE in FROM entry WHERE out = location:walled_city AND allowed = true AND in.faction = faction:anglo_egyptian;",
+  "expect": [
+   "unit_class:ae_infantry",
+   "unit_class:ae_cavalry",
+   "unit_class:camel_corps",
+   "unit_class:ae_artillery",
+   "unit_class:maxim_battery",
+   "unit_class:royal_engineers",
+   "unit_class:ae_leader"
+  ],
+  "match": "set",
+  "answer": "All of them except gunboats and Friendlies: infantry, cavalry, Camel Corps, artillery, Maxims, Royal Engineers and leaders, through a gate or breach (§5.23).",
+  "about": [
+   "location:walled_city",
+   "rule:r5_23_walled_city_ae"
+  ]
+ },
+ {
+  "id": "s5_1_gr_move_phases",
+  "section": "5.1",
+  "kind": "graph",
+  "text": "In which phases is normal movement performed?",
+  "query": "RETURN action:move->allowed_in->phase;",
+  "expect": [
+   "phase:ae_movement",
+   "phase:d_movement"
+  ],
+  "match": "set",
+  "answer": "In each player's own Movement Phase (§4, §5).",
+  "about": [
+   "action:move",
+   "phase:ae_movement",
+   "phase:d_movement"
+  ]
+ },
+ {
+  "id": "s5_3_op_builder_defensive_fire",
+  "section": "5.3",
+  "kind": "open",
+  "text": "May a unit building the Zariba fire defensively?",
+  "query": "RETURN [open_question:builder_defensive_fire.kind, state:constructing_zariba->prohibits->action CONTAINS action:defensive_fire];",
+  "expect": [
+   "gap",
+   false
+  ],
+  "match": "exact",
+  "answer": "The manual is silent. §5.3 forbids only offensive fire and melee attack during the turn of construction.",
+  "about": [
+   "open_question:builder_defensive_fire",
+   "state:constructing_zariba",
+   "action:defensive_fire"
+  ]
+ },
+ {
+  "id": "s5_3_op_engineers_build",
+  "section": "5.3",
+  "kind": "open",
+  "text": "Can the Royal Engineers build the Zariba?",
+  "query": "RETURN [fn::allowed(unit:royal_engineers, action:construct_zariba), open_question:engineers_build_zariba.kind];",
+  "expect": [
+   null,
+   "gap"
+  ],
+  "match": "exact",
+  "answer": "The manual does not say. §5.3 names 'any Anglo-Egyptian infantry unit' and never says whether the Royal Engineers count as one.",
+  "about": [
+   "unit:royal_engineers",
+   "action:construct_zariba",
+   "open_question:engineers_build_zariba"
+  ]
+ },
+ {
+  "id": "s5_3_op_friendlies_build",
+  "section": "5.3",
+  "kind": "open",
+  "text": "Can a Friendlies unit build the Zariba?",
+  "query": "RETURN [fn::allowed(unit_class:friendlies, action:construct_zariba), open_question:engineers_build_zariba.kind];",
+  "expect": [
+   null,
+   "gap"
+  ],
+  "match": "exact",
+  "answer": "Unstated. The Friendlies are Anglo-Egyptian and fight as infantry, but §5.3 does not say whether they count for construction.",
+  "about": [
+   "unit_class:friendlies",
+   "action:construct_zariba",
+   "open_question:engineers_build_zariba"
+  ]
+ },
+ {
+  "id": "s5_3_op_engineers_timing",
+  "section": "5.3",
+  "kind": "open",
+  "text": "Why must Zariba builders begin and end the turn adjacent when the Royal Engineers can demolish on the turn they arrive?",
+  "query": "RETURN open_question:engineers_timing.kind;",
+  "expect": "ambiguity",
+  "match": "exact",
+  "answer": "The manual does not explain the difference. §5.3 requires begin-and-end adjacency, while §6.53 lets the Engineers move adjacent and finish at the end of the same player turn.",
+  "about": [
+   "open_question:engineers_timing",
+   "rule:r5_3_zariba_construction"
+  ]
+ },
+ {
+  "id": "s5_22_op_gunboat_leave_nile",
+  "section": "5.22",
+  "kind": "open",
+  "text": "May a gunboat leave the Nile and enter a land hex?",
+  "query": "RETURN [fn::may_enter(unit:old_gunboat, terrain:clear), open_question:gunboat_land.kind];",
+  "expect": [
+   null,
+   "gap"
+  ],
+  "match": "exact",
+  "answer": "The manual never says so outright. §5.22 says only gunboats may enter Nile hexes, not that gunboats must stay in them (common sense says they do).",
+  "about": [
+   "open_question:gunboat_land",
+   "unit:old_gunboat",
+   "terrain:clear"
+  ]
+ },
+ {
+  "id": "s7_5_op_dervish_cavalry",
+  "section": "7.5",
+  "kind": "open",
+  "text": "Which Dervish units count as cavalry for retreat purposes?",
+  "query": "RETURN [fn::allowed(tribe:baggara, action:retreat), open_question:dervish_cavalry.kind];",
+  "expect": [
+   null,
+   "gap"
+  ],
+  "match": "exact",
+  "answer": "Not stated. Apart from the sample Danagla camel counter, the manual never says which Dervish units are cavalry or camel units (§2.3, §7.5).",
+  "about": [
+   "open_question:dervish_cavalry",
+   "tribe:baggara",
+   "action:retreat"
+  ]
+ },
+ {
+  "id": "s5_54_op_friendlies_integrity",
+  "section": "5.54",
+  "kind": "open",
+  "text": "Can the Friendlies brigade get brigade integrity?",
+  "query": "RETURN open_question:friendlies_brigade_integrity.kind;",
+  "expect": "ambiguity",
+  "match": "exact",
+  "answer": "Not settled. §5.54 names only British, Sudanese and Egyptian infantry; the Friendlies are called a brigade (§6.52) but are none of these, so presumably not.",
+  "about": [
+   "open_question:friendlies_brigade_integrity",
+   "unit_class:friendlies"
+  ]
+ },
+ {
+  "id": "s5_51_op_advance_leaders",
+  "section": "5.51",
+  "kind": "open",
+  "text": "Do leaders count toward the stacking limit when the Dervish must advance after melee?",
+  "query": "RETURN open_question:advance_leaders_stacking.kind;",
+  "expect": "gap",
+  "match": "exact",
+  "answer": "The manual is silent. §7.6 says 'up to the stacking limit', and §5.51 makes leaders free stacking, but neither says how the two combine.",
+  "about": [
+   "open_question:advance_leaders_stacking",
+   "rule:r5_51_leaders_free"
+  ]
+ },
+ {
+  "id": "s5_53_op_turn1_leader_assignment",
+  "section": "5.53",
+  "kind": "open",
+  "text": "Can Yakub stack with the Jaalin?",
+  "query": "RETURN command_group:turn1_leaders.individual_assignment;",
+  "expect": "unstated",
+  "match": "exact",
+  "answer": "The text does not say. §9.112 groups Yakub, Sherif and Ali Wad Helu with the Baggara, Jaalin, Danagla, Kehena and Degheim without saying which leader commands which tribe; the counter colors decide (§5.53).",
+  "about": [
+   "command_group:turn1_leaders",
+   "unit:yakub",
+   "tribe:jaalin"
+  ],
+  "note": "fn::stack_check([unit:yakub, tribe:jaalin]) returns legal: true, which says more than the manual does; see needs_movement.md."
+ },
+ {
+  "id": "s5_52_op_tribe_colors",
+  "section": "5.52",
+  "kind": "open",
+  "text": "What color is the Baggara command?",
+  "query": "RETURN [tribe:baggara.color, open_question:tribe_colors.kind];",
+  "expect": [
+   null,
+   "gap"
+  ],
+  "match": "exact",
+  "answer": "The manual names a color only for the green command (Mulazmin, Jehadia). The other colors are on the counters, not in the text (§5.52).",
+  "about": [
+   "tribe:baggara",
+   "open_question:tribe_colors"
+  ]
+ },
+ {
+  "id": "s5_41_op_gunboat_zoc_scope",
+  "section": "5.41",
+  "kind": "open",
+  "text": "Does a gunboat's ZOC reach an enemy gunboat across a river chain, or affect units on Nile islands?",
+  "query": "SELECT VALUE id FROM open_question WHERE refs CONTAINS section:`5.41`;",
+  "expect": [
+   "open_question:gunboat_zoc_scope"
+  ],
+  "match": "contains",
+  "answer": "The manual is silent. §5.41 says only that gunboats exert a ZOC against enemy gunboats; it says nothing about chains (§10.2) or islands.",
+  "about": [
+   "rule:r5_41_gunboat_zoc",
+   "section:`5.41`"
+  ],
+  "note": "Part C 16. The corpus has no open_question for it yet; see needs_movement.md."
+ },
+ {
+  "id": "s5_51_op_fort_stacking",
+  "section": "5.51",
+  "kind": "open",
+  "text": "Does a fort counter count as one of the four units in its hex?",
+  "query": "SELECT VALUE id FROM open_question WHERE refs CONTAINS section:`5.51`;",
+  "expect": [
+   "open_question:fort_stacking"
+  ],
+  "match": "contains",
+  "answer": "The manual does not say. §5.51 excepts only leaders and gunboats from the four-unit limit, while §6.54 speaks of units 'stacked inside the fort', as if the fort were terrain.",
+  "about": [
+   "unit:fort",
+   "rule:r5_51_limit",
+   "section:`5.51`"
+  ],
+  "note": "fn::stack_check counts a fort as a unit (5 = fort + 4 Baggara is illegal), which settles a question the manual leaves open; see needs_movement.md."
+ },
+ {
+  "id": "s5_51_op_move_through_enemy",
+  "section": "5.51",
+  "kind": "open",
+  "text": "Can my unit move through a hex holding only a disrupted enemy unit?",
+  "query": "RETURN [fn::allowed(tribe:baggara, action:overrun_leader), (SELECT VALUE id FROM action WHERE string::starts_with(name, 'move through'))];",
+  "expect": [
+   true,
+   [
+    "action:move_through_friendly"
+   ]
+  ],
+  "match": "exact",
+  "answer": "Unstated. §5.51 allows moving through friendly units, and a disrupted enemy has no ZOC (§5.41), but no rule covers moving through enemy units. The only stated case is a Dervish unit passing through a lone Anglo-Egyptian leader (§6.51).",
+  "about": [
+   "action:move_through_friendly",
+   "rule:r5_51_move_through",
+   "action:overrun_leader"
+  ],
+  "note": "Part C 18. The corpus records only the friendly permission; an open_question would make the gap explicit (see needs_movement.md)."
+ }
+]

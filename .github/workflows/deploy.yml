@@ -30,6 +30,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
+            Boardgame - Remember_Gordon/Manual/surrealdb/web/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
@@ -54,6 +55,21 @@ jobs:
         run: |
           cargo run -p traceability-typst -- docs/traceability.toml traceability.typ tools/traceability-typst/data.json
           typst compile traceability.typ dist/traceability.pdf
+
+      # The rulebook archive, published next to the game at https://<owner>.github.io/<repo>/archive/:
+      # a static site that runs the rules corpus (Boardgame - Remember_Gordon/Manual/surrealdb) as
+      # SurrealDB in WebAssembly. build.sh first loads the corpus natively, as the browser will, and
+      # fails unless all its benchmark questions pass. wasm-opt (binaryen) only shrinks the worker.
+      - name: Install binaryen
+        run: sudo apt-get install -y binaryen
+
+      - name: Rulebook archive
+        working-directory: "Boardgame - Remember_Gordon/Manual/surrealdb/web"
+        env:
+          PUBLIC_URL: /${{ github.event.repository.name }}/archive/
+        run: |
+          ./build.sh
+          cp -r crates/rgapp/dist "$GITHUB_WORKSPACE/dist/archive"
 
       - uses: actions/upload-pages-artifact@v3
         with:

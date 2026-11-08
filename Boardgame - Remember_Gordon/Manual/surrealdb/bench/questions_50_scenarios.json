@@ -1,0 +1,2655 @@
+[
+ {
+  "id": "s9_111_fort_areas",
+  "section": "9.111",
+  "kind": "player",
+  "text": "Where can I put my forts?",
+  "query": "RETURN setup:c_forts.locations;",
+  "expect": [
+   "location:west_bank",
+   "location:khor_shambat",
+   "location:east_bank",
+   "location:halfaya",
+   "location:nile_islands"
+  ],
+  "match": "set",
+  "answer": "Anywhere south of the Khor Shambat on the west bank, and/or south of all Halfaya hut hexes on the east bank, and on Nile River islands (9.111).",
+  "about": [
+   "setup:c_forts",
+   "unit:fort"
+  ]
+ },
+ {
+  "id": "s9_111_fort_north_of_shambat",
+  "section": "9.111",
+  "kind": "player",
+  "text": "Can I put a fort north of Khor Shambat?",
+  "query": "RETURN string::contains(setup:c_forts.constraint, 'south of the Khor Shambat on the west bank');",
+  "expect": true,
+  "match": "exact",
+  "answer": "No, not on the west bank: west-bank forts must go south of the Khor Shambat (9.111). East-bank forts are placed relative to the Halfaya huts instead.",
+  "about": [
+   "setup:c_forts",
+   "location:khor_shambat"
+  ],
+  "note": "The query checks that the placement constraint limits west-bank forts to south of the Khor Shambat (true = the answer 'No')."
+ },
+ {
+  "id": "s9_111_khalifa_start",
+  "section": "9.111",
+  "kind": "player",
+  "text": "Where does the Khalifa start?",
+  "query": "RETURN { at: setup:c_khalifa.locations, palace_hexes: location:omdurman_palace.hexes };",
+  "expect": {
+   "at": [
+    "location:omdurman_palace"
+   ],
+   "palace_hexes": 2
+  },
+  "match": "exact",
+  "answer": "In the walled city of Omdurman, in either of the two palace hexes (9.111).",
+  "about": [
+   "unit:khalifa_abdullah",
+   "setup:c_khalifa",
+   "location:omdurman_palace"
+  ]
+ },
+ {
+  "id": "s9_111_east_bank_defender",
+  "section": "9.111",
+  "kind": "player",
+  "text": "Who defends the east bank?",
+  "query": "RETURN array::flatten((SELECT VALUE subjects FROM setup WHERE scenario = scenario:campaign AND faction = faction:dervish AND locations CONTAINS location:east_bank));",
+  "expect": [
+   "unit:isa_zachneih",
+   "unit:fort"
+  ],
+  "match": "set",
+  "answer": "Isa Zachneih is the only Dervish combat unit set up on the east bank (in or south of El Debeba); forts may also be placed there, south of the Halfaya huts (9.111).",
+  "about": [
+   "unit:isa_zachneih",
+   "location:east_bank"
+  ],
+  "note": "Part B says 'Isa Zachneih alone'; that overclaims slightly, since 9.111 also lets forts go on the east bank south of all Halfaya hut hexes."
+ },
+ {
+  "id": "s9_111_forts_islands",
+  "section": "9.111",
+  "kind": "player",
+  "text": "Can forts go on islands?",
+  "query": "RETURN setup:c_forts.locations CONTAINS location:nile_islands;",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes: forts may be placed on Nile River islands (9.111).",
+  "about": [
+   "setup:c_forts",
+   "location:nile_islands"
+  ]
+ },
+ {
+  "id": "s9_112_osman_digna_turn",
+  "section": "9.112",
+  "kind": "player",
+  "text": "When does Osman Digna show up?",
+  "query": "SELECT VALUE turn FROM reinforcement WHERE scenario = scenario:campaign AND subjects CONTAINS unit:osman_digna;",
+  "expect": [
+   2
+  ],
+  "match": "exact",
+  "answer": "On turn 2, with all the Hadendowa units (9.112).",
+  "about": [
+   "unit:osman_digna",
+   "reinforcement:c_d2"
+  ]
+ },
+ {
+  "id": "s9_112_same_hex_entry",
+  "section": "9.112",
+  "kind": "player",
+  "text": "Can 20 units come in through the same hex?",
+  "query": "RETURN string::contains(rule:r9_112_entry_cost.statement, 'no matter how many units enter through that hex');",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes: each unit simply pays the terrain cost of the entry hex, no matter how many enter through it (9.112); stacking is only checked at the end of the movement phase and in combat (5.51).",
+  "about": [
+   "rule:r9_112_entry_cost",
+   "location:west_edge"
+  ]
+ },
+ {
+  "id": "s9_112_entry_edge",
+  "section": "9.112",
+  "kind": "player",
+  "text": "Where do my reinforcements appear?",
+  "query": "RETURN array::distinct(array::flatten((SELECT VALUE entry FROM reinforcement WHERE scenario = scenario:campaign AND faction = faction:dervish)));",
+  "expect": [
+   "location:west_edge"
+  ],
+  "match": "exact",
+  "answer": "On the west edge of the mapsheet, south of the Khor Shambat (9.112).",
+  "about": [
+   "location:west_edge",
+   "reinforcement:c_d1"
+  ]
+ },
+ {
+  "id": "s9_112_green_units_turn",
+  "section": "9.112",
+  "kind": "player",
+  "text": "When do the green units arrive?",
+  "query": "LET $t = array::flatten((SELECT VALUE <-member_of<-tribe FROM command_group WHERE color = 'green')); RETURN array::distinct((SELECT VALUE turn FROM reinforcement WHERE scenario = scenario:campaign AND subjects CONTAINSANY $t));",
+  "expect": [
+   3
+  ],
+  "match": "exact",
+  "answer": "Turn 3: the green Mulazmin and Jehadia arrive with Sheik El Din (9.112, 9.212's colour example).",
+  "about": [
+   "command_group:sheik_el_din",
+   "tribe:mulazmin",
+   "tribe:jehadia",
+   "reinforcement:c_d3"
+  ]
+ },
+ {
+  "id": "s9_113_nothing_on_board",
+  "section": "9.113",
+  "kind": "player",
+  "text": "Do I start with anything on the board?",
+  "query": "RETURN count(SELECT id FROM setup WHERE scenario = scenario:campaign AND faction = faction:anglo_egyptian AND not_in_play != true AND array::len(subjects) > 0);",
+  "expect": 0,
+  "match": "exact",
+  "answer": "No: there are no Anglo-Egyptian units on the mapsheet at start (9.113).",
+  "about": [
+   "setup:c_ae_none",
+   "faction:anglo_egyptian"
+  ]
+ },
+ {
+  "id": "s9_113_turn2_units",
+  "section": "9.113",
+  "kind": "player",
+  "text": "How many units can I bring in on turn 2?",
+  "query": "SELECT gunboats, land_units FROM ONLY reinforcement:c_ae2;",
+  "expect": {
+   "gunboats": 3,
+   "land_units": 12
+  },
+  "match": "exact",
+  "answer": "Any three gunboats plus any twelve land units (9.113); leaders entering that turn don't count against the 12.",
+  "about": [
+   "reinforcement:c_ae2"
+  ]
+ },
+ {
+  "id": "s9_113_leaders_not_counted",
+  "section": "9.113",
+  "kind": "player",
+  "text": "Do leaders count toward the 12?",
+  "query": "RETURN reinforcement:c_ae_leaders.counts_against_limit;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No: Kitchener, Gatacre and Hunter do not count against the 12-units-per-turn limit (9.113).",
+  "about": [
+   "reinforcement:c_ae_leaders",
+   "unit:kitchener"
+  ]
+ },
+ {
+  "id": "s9_113_kitchener_turn6",
+  "section": "9.113",
+  "kind": "player",
+  "text": "Can I hold Kitchener back until turn 6?",
+  "query": "RETURN reinforcement:c_ae_leaders.turn_window CONTAINS 6;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No: all three leaders must be in play by the end of turn four (9.113).",
+  "about": [
+   "unit:kitchener",
+   "reinforcement:c_ae_leaders"
+  ]
+ },
+ {
+  "id": "s9_113_entry_cost",
+  "section": "9.113",
+  "kind": "player",
+  "text": "How much movement does it cost to enter?",
+  "query": "SELECT id, entry_cost_mp FROM reinforcement WHERE entry_rule = true;",
+  "expect": [
+   {
+    "id": "reinforcement:c_ae_entry_gunboats",
+    "entry_cost_mp": 1
+   },
+   {
+    "id": "reinforcement:c_ae_entry_friendlies",
+    "entry_cost_mp": 8
+   },
+   {
+    "id": "reinforcement:c_ae_entry_others",
+    "entry_cost_mp": 1
+   }
+  ],
+  "match": "set",
+  "answer": "1 MP through the west-bank Anglo-Egyptian Entrance Area; gunboats pay 1 MP for the first north-edge Nile hex; the Friendlies pay 8 MP each at the Abu Alim hut hex (9.113).",
+  "about": [
+   "reinforcement:c_ae_entry_others",
+   "reinforcement:c_ae_entry_friendlies",
+   "reinforcement:c_ae_entry_gunboats"
+  ]
+ },
+ {
+  "id": "s9_113_gordon_in_campaign",
+  "section": "9.113",
+  "kind": "player",
+  "text": "Is Gordon in the campaign?",
+  "query": "RETURN (SELECT VALUE ->appears_in->scenario FROM ONLY unit:gordon) CONTAINS scenario:campaign;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No: the GORDON unit is not used in the campaign game (9.113).",
+  "about": [
+   "unit:gordon",
+   "setup:c_out_gordon"
+  ]
+ },
+ {
+  "id": "s9_12_last_turn",
+  "section": "9.12",
+  "kind": "player",
+  "text": "How many turns are left? (Which turn is the last?)",
+  "query": "RETURN scenario:campaign.last_turn;",
+  "expect": 22,
+  "match": "exact",
+  "answer": "Turn 22 (8:00 am, Sept. 3) is the last; check the Turn Record Track for how many remain (9.12).",
+  "about": [
+   "scenario:campaign",
+   "turn:22"
+  ]
+ },
+ {
+  "id": "s9_12_turn11_day",
+  "section": "9.12",
+  "kind": "player",
+  "text": "What day is it on turn 11?",
+  "query": "RETURN [turn:11.date, turn:11.label];",
+  "expect": [
+   "1898-09-02",
+   "6:00 am"
+  ],
+  "match": "exact",
+  "answer": "September 2, 6:00 am (Turn Record Track; the campaign runs 6:00 am Sept. 1 to 8:00 am Sept. 3, 9.12).",
+  "about": [
+   "turn:11"
+  ]
+ },
+ {
+  "id": "s9_13_zariba_in_campaign",
+  "section": "9.13",
+  "kind": "player",
+  "text": "Does the Zariba exist in the campaign?",
+  "query": "RETURN { built: scenario:campaign.zariba_built, constructible: scenario:campaign.zariba_constructible };",
+  "expect": {
+   "built": false,
+   "constructible": true
+  },
+  "match": "exact",
+  "answer": "Only if the Anglo-Egyptian player constructs it: its hexsides are clear terrain in the campaign game unless built (9.13 has no special rules; 2.1, 5.3).",
+  "about": [
+   "scenario:campaign",
+   "location:zariba"
+  ]
+ },
+ {
+  "id": "s9_14_tomb_default_holder",
+  "section": "9.14",
+  "kind": "player",
+  "text": "Who holds the Tomb if nobody's in it at the end?",
+  "query": "RETURN vp_award:tomb.initial_controller;",
+  "expect": "faction:dervish",
+  "match": "exact",
+  "answer": "The Dervish player: he controls the Tomb at the start, and the Anglo-Egyptian player takes it only by occupying it with a British leader plus a non-Friendlies combat unit at the conclusion of play (9.14).",
+  "about": [
+   "vp_award:tomb",
+   "location:mahdis_tomb"
+  ],
+  "note": "The manual says the Dervish control it at the start and how the Anglo-Egyptian player takes it; that an empty Tomb stays Dervish follows from that."
+ },
+ {
+  "id": "s9_14_tomb_disrupted_battalion",
+  "section": "9.14",
+  "kind": "player",
+  "text": "I'm in the Tomb with Hunter and a battalion, but the battalion is disrupted. Do I get it?",
+  "query": "RETURN count(SELECT id FROM prohibits WHERE in = state:disrupted AND out = action:occupy_tomb) > 0;",
+  "expect": true,
+  "match": "exact",
+  "answer": "No: the leader and the combat unit must both be undisrupted at the conclusion of play (9.14).",
+  "about": [
+   "rule:r9_14_take_tomb",
+   "state:disrupted",
+   "action:occupy_tomb"
+  ],
+  "note": "true = the disrupted state prohibits taking the Tomb, i.e. the answer is 'No'."
+ },
+ {
+  "id": "s9_14_friendlies_tomb",
+  "section": "9.14",
+  "kind": "player",
+  "text": "Can the Friendlies hold the Tomb with Kitchener?",
+  "query": "RETURN fn::allowed(unit_class:friendlies, action:occupy_tomb);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No: the combat unit must be a non-\"Friendlies\" Anglo-Egyptian combat unit (9.14); Friendlies may not even enter the walled city (5.23).",
+  "about": [
+   "unit_class:friendlies",
+   "action:occupy_tomb",
+   "rule:r9_14_take_tomb"
+  ]
+ },
+ {
+  "id": "s9_14_fort_points",
+  "section": "9.14",
+  "kind": "player",
+  "text": "Do I get points for killing forts?",
+  "query": "RETURN vp_award:ae_fort.points;",
+  "expect": 0,
+  "match": "exact",
+  "answer": "No: eliminating forts is worth no points (9.14).",
+  "about": [
+   "vp_award:ae_fort",
+   "unit:fort"
+  ]
+ },
+ {
+  "id": "s9_14_khalifa_worth",
+  "section": "9.14",
+  "kind": "player",
+  "text": "How much is the Khalifa worth?",
+  "query": "RETURN vp_award:ae_khalifa.points;",
+  "expect": 10,
+  "match": "exact",
+  "answer": "10 victory points to the Anglo-Egyptian player for eliminating KHALIFA ABDULLAH (9.14).",
+  "about": [
+   "vp_award:ae_khalifa",
+   "unit:khalifa_abdullah"
+  ],
+  "note": "Whether the general 1 point per Dervish unit is added on top is open (open_question:vp_overlap)."
+ },
+ {
+  "id": "s9_14_ae_22_ahead",
+  "section": "9.14",
+  "kind": "player",
+  "text": "We're 22 VP ahead as the British. What level is that?",
+  "query": "RETURN fn::campaign_level(faction:anglo_egyptian, 22);",
+  "expect": "Marginal",
+  "match": "exact",
+  "answer": "An Anglo-Egyptian marginal victory (15–29 points superiority, 9.14).",
+  "about": [
+   "victory_level:c_ae_marginal"
+  ]
+ },
+ {
+  "id": "s9_14_d_25_ahead",
+  "section": "9.14",
+  "kind": "player",
+  "text": "If the Dervish are ahead by 25?",
+  "query": "RETURN fn::campaign_level(faction:dervish, 25);",
+  "expect": "Tactical",
+  "match": "exact",
+  "answer": "A Dervish tactical victory (20–29 points superiority, 9.14).",
+  "about": [
+   "victory_level:c_d_tactical"
+  ]
+ },
+ {
+  "id": "s9_14_tomb_when",
+  "section": "9.14",
+  "kind": "player",
+  "text": "Do I have to hold the Tomb all game or just at the end?",
+  "query": "RETURN rule:r9_14_take_tomb.params.when;",
+  "expect": "conclusion of play",
+  "match": "exact",
+  "answer": "Just at the end: the Tomb's 25 VP go to whoever controls it at the conclusion of play (9.14).",
+  "about": [
+   "rule:r9_14_take_tomb",
+   "location:mahdis_tomb"
+  ]
+ },
+ {
+  "id": "s9_14_west_bank_wipeout",
+  "section": "9.14",
+  "kind": "player",
+  "text": "Is wiping out every Anglo-Egyptian unit on the west bank an instant win?",
+  "query": "RETURN victory_condition:c_d_west_bank.result;",
+  "expect": "Decisive",
+  "match": "exact",
+  "answer": "It is an alternative Dervish decisive victory: a decisive victory 'may be awarded' the Dervish player who eliminates all Anglo-Egyptian units on the west bank, gunboats excluded (9.14).",
+  "about": [
+   "victory_condition:c_d_west_bank"
+  ],
+  "note": "Part B's 'instant win' overreads the text: 9.14 says only that a decisive victory 'may be awarded'; it does not say the game ends at once."
+ },
+ {
+  "id": "s9_14_disrupted_not_eliminated",
+  "section": "9.14",
+  "kind": "player",
+  "text": "Do disrupted units count as 'eliminated' for VP?",
+  "query": "RETURN string::contains(combat_result:eliminated.meaning, 'removed from play') AND combat_result:disrupted.applies_state = state:disrupted;",
+  "expect": true,
+  "match": "exact",
+  "answer": "No: a D result only disrupts (inverts) units; VP are scored for eliminated units, which are removed from play (9.14, Explanation of Combat Results).",
+  "about": [
+   "combat_result:disrupted",
+   "combat_result:eliminated"
+  ],
+  "note": "true = 'disrupted' and 'eliminated' are distinct results; only the latter removes a unit."
+ },
+ {
+  "id": "s9_2_balanced",
+  "section": "9.2",
+  "kind": "player",
+  "text": "Is this scenario balanced?",
+  "query": "RETURN string::contains(scenario:historical.character, 'exercise in futility');",
+  "expect": true,
+  "match": "exact",
+  "answer": "No: the manual calls the historical scenario 'an exercise in futility for the Dervish player' (9.2).",
+  "about": [
+   "scenario:historical"
+  ]
+ },
+ {
+  "id": "s9_211_lancers_setup",
+  "section": "9.211",
+  "kind": "player",
+  "text": "Where do the Lancers set up?",
+  "query": "RETURN array::flatten((SELECT VALUE locations FROM setup WHERE scenario = scenario:historical AND subjects CONTAINS unit:lancers_21));",
+  "expect": [
+   "location:zariba"
+  ],
+  "match": "exact",
+  "answer": "Inside the Zariba, with all remaining Anglo-Egyptian units (9.211).",
+  "about": [
+   "unit:lancers_21",
+   "setup:h_zariba"
+  ]
+ },
+ {
+  "id": "s9_211_camel_corps_setup",
+  "section": "9.211",
+  "kind": "player",
+  "text": "Where does the Camel Corps start?",
+  "query": "RETURN array::flatten((SELECT VALUE locations FROM setup WHERE scenario = scenario:historical AND subjects CONTAINS unit:camel_corps));",
+  "expect": [
+   "location:kerreri"
+  ],
+  "match": "exact",
+  "answer": "In the hut hexes of the village of Kerreri (9.211).",
+  "about": [
+   "unit:camel_corps",
+   "setup:h_kerreri",
+   "location:kerreri"
+  ]
+ },
+ {
+  "id": "s9_211_gunboats_upriver",
+  "section": "9.211",
+  "kind": "player",
+  "text": "Can my gunboats start upriver?",
+  "query": "RETURN setup:h_gunboats.constraint;",
+  "expect": "any Nile River hexes adjacent to the Zariba",
+  "match": "exact",
+  "answer": "Only if that stretch is adjacent to the Zariba: gunboats start in Nile River hexes adjacent to the Zariba (9.211).",
+  "about": [
+   "setup:h_gunboats",
+   "location:zariba"
+  ]
+ },
+ {
+  "id": "s9_211_zariba_stacking",
+  "section": "9.211",
+  "kind": "player",
+  "text": "Do I have to obey stacking in the Zariba?",
+  "query": "RETURN [constant:stacking_limit.value, constant:zariba_hexes.value];",
+  "expect": [
+   4,
+   13
+  ],
+  "match": "exact",
+  "answer": "Yes: the normal limit of four units per hex applies in the 13 Zariba hexes, with leaders free-stacking (9.211, 5.51).",
+  "about": [
+   "constant:stacking_limit",
+   "constant:zariba_hexes",
+   "location:zariba"
+  ]
+ },
+ {
+  "id": "s9_212_sheik_el_din_hex",
+  "section": "9.212",
+  "kind": "player",
+  "text": "Where does Sheik El Din start?",
+  "query": "RETURN array::flatten((SELECT VALUE locations.letter FROM setup WHERE scenario = scenario:historical AND subjects CONTAINS unit:sheik_el_din));",
+  "expect": [
+   "D"
+  ],
+  "match": "exact",
+  "answer": "On lettered hex D (9.212).",
+  "about": [
+   "unit:sheik_el_din",
+   "setup:h_leader_sheik",
+   "location:hex_d"
+  ]
+ },
+ {
+  "id": "s9_212_leader_radius",
+  "section": "9.212",
+  "kind": "player",
+  "text": "How far from my leader can my units be?",
+  "query": "RETURN setup:h_dervish_rest.radius;",
+  "expect": 3,
+  "match": "exact",
+  "answer": "Within three hexes of their leader, matched by colour (9.212).",
+  "about": [
+   "setup:h_dervish_rest",
+   "constant:historical_leader_radius"
+  ]
+ },
+ {
+  "id": "s9_212_view_of_zariba",
+  "section": "9.212",
+  "kind": "player",
+  "text": "Can I start in view of the Zariba?",
+  "query": "RETURN string::contains(setup:h_dervish_rest.constraint, 'out of the line of sight of all Anglo-Egyptian units');",
+  "expect": true,
+  "match": "exact",
+  "answer": "No: all Dervish units must set up out of the line of sight of all Anglo-Egyptian units (9.212).",
+  "about": [
+   "rule:r9_212_out_of_los",
+   "setup:h_dervish_rest"
+  ],
+  "note": "true = the out-of-LOS constraint applies, i.e. the answer is 'No'."
+ },
+ {
+  "id": "s9_212_forts_historical",
+  "section": "9.212",
+  "kind": "player",
+  "text": "Do I have forts here?",
+  "query": "RETURN (SELECT VALUE ->appears_in->scenario FROM ONLY unit:fort) CONTAINS scenario:historical;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No: Isa Zachneih, the gunboats and the forts are not in play in the historical scenario (9.212).",
+  "about": [
+   "unit:fort",
+   "setup:h_out_dervish"
+  ]
+ },
+ {
+  "id": "s9_22_turns",
+  "section": "9.22",
+  "kind": "player",
+  "text": "How many turns do I have to break the Zariba?",
+  "query": "RETURN scenario:historical.length_turns;",
+  "expect": 4,
+  "match": "exact",
+  "answer": "Four game turns, 6:00 am to noon on September 2 (9.22).",
+  "about": [
+   "scenario:historical"
+  ]
+ },
+ {
+  "id": "s9_22_night",
+  "section": "9.22",
+  "kind": "player",
+  "text": "Is any turn a night turn?",
+  "query": "RETURN [1, 2, 3, 4].map(|$n| fn::is_night(scenario:historical, $n));",
+  "expect": [
+   false,
+   false,
+   false,
+   false
+  ],
+  "match": "exact",
+  "answer": "No: the scenario runs 6:00 am to 12:00 noon, September 2, all daylight turns (9.22, Turn Record Track).",
+  "about": [
+   "scenario:historical"
+  ]
+ },
+ {
+  "id": "s9_231_baggara_charge_hedge",
+  "section": "9.231",
+  "kind": "player",
+  "text": "Can my Baggara charge over the hedge?",
+  "query": "RETURN terrain:thorn_hedge.effects CONTAINS 'may not melee across in either direction';",
+  "expect": true,
+  "match": "exact",
+  "answer": "No: units may not melee across a thorn hedge hexside in either direction (9.231).",
+  "about": [
+   "terrain:thorn_hedge",
+   "tribe:baggara"
+  ],
+  "note": "true = the no-melee effect applies, i.e. the answer is 'No'."
+ },
+ {
+  "id": "s9_231_british_sally",
+  "section": "9.231",
+  "kind": "player",
+  "text": "Can the British sally out and melee over the hedge?",
+  "query": "RETURN string::contains(rule:r9_231_thorn_hedge.statement, 'no melee across in either direction');",
+  "expect": true,
+  "match": "exact",
+  "answer": "No: the no-melee rule works in both directions (9.231).",
+  "about": [
+   "rule:r9_231_thorn_hedge",
+   "terrain:thorn_hedge"
+  ],
+  "note": "true = 'either direction' covers the British, i.e. the answer is 'No'."
+ },
+ {
+  "id": "s9_231_hedge_british_fire",
+  "section": "9.231",
+  "kind": "player",
+  "text": "Does the hedge reduce British fire?",
+  "query": "RETURN fn::fire_drm({ firer: faction:anglo_egyptian, across_thorn_hedge: true });",
+  "expect": 0,
+  "match": "exact",
+  "answer": "No: the −2 applies only to Dervish fire attacks (9.231).",
+  "about": [
+   "modifier:thorn_hedge_fire",
+   "terrain:thorn_hedge"
+  ]
+ },
+ {
+  "id": "s9_232_entrenched_definition",
+  "section": "9.232",
+  "kind": "player",
+  "text": "Is my battalion entrenched?",
+  "query": "RETURN state:entrenched.definition;",
+  "expect": "directly adjacent to (and on the Nile River side of) a trench hexside",
+  "match": "exact",
+  "answer": "It is if it is directly adjacent to, and on the Nile River side of, a trench hexside (9.232).",
+  "about": [
+   "state:entrenched",
+   "terrain:trench"
+  ]
+ },
+ {
+  "id": "s9_232_spearmen_vs_trench",
+  "section": "9.232",
+  "kind": "player",
+  "text": "What do my spearmen get attacking the trench?",
+  "query": "RETURN fn::melee_mod(faction:dervish, true);",
+  "expect": -2,
+  "match": "exact",
+  "answer": "−2 instead of the usual +2 when melee attacking an entrenched unit (9.232).",
+  "about": [
+   "modifier:trench_melee",
+   "state:entrenched"
+  ]
+ },
+ {
+  "id": "s9_232_gunboats_fire_over",
+  "section": "9.232",
+  "kind": "player",
+  "text": "Can the gunboats fire over the entrenched troops?",
+  "query": "RETURN terrain:trench.effects CONTAINS 'entrenched units may be fired over in both directions (they do not block line of sight)';",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes: entrenched units may be fired over in both directions; they do not block line of sight (9.232).",
+  "about": [
+   "terrain:trench",
+   "state:entrenched"
+  ]
+ },
+ {
+  "id": "s9_232_middle_of_zariba",
+  "section": "9.232",
+  "kind": "player",
+  "text": "Do units in the middle of the Zariba get the trench bonus?",
+  "query": "RETURN fn::fire_drm({ firer: faction:dervish, target_entrenched: false });",
+  "expect": 0,
+  "match": "exact",
+  "answer": "Only units directly adjacent to a trench hexside (on the Nile side) are entrenched; others get no −4 against Dervish fire (9.232).",
+  "about": [
+   "state:entrenched",
+   "modifier:trench_fire"
+  ]
+ },
+ {
+  "id": "s9_233_cavalry_exit",
+  "section": "9.233",
+  "kind": "player",
+  "text": "How do my cavalry get out of the Zariba?",
+  "query": "RETURN fn::may_enter(unit:egyptian_cavalry, location:zariba).condition;",
+  "expect": "only via the two end hexsides that connect to the Nile River, paying +2 MP (exception: advance after combat across an entrenched hexside)",
+  "match": "exact",
+  "answer": "Through one of the two end hexsides that connect to the Nile, paying +2 MP to cross (9.233).",
+  "about": [
+   "location:zariba",
+   "modifier:zariba_crossing",
+   "unit:egyptian_cavalry"
+  ]
+ },
+ {
+  "id": "s9_233_advance_over_trench",
+  "section": "9.233",
+  "kind": "player",
+  "text": "Can I advance after combat out over the trench?",
+  "query": "RETURN string::contains(rule:r9_233_access.statement, 'exception: advance after combat across an entrenched hexside');",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes: advance after combat across an entrenched (trench) hexside is the stated exception to the end-hexside rule (9.233); you still can't advance across the thorn hedge (9.231).",
+  "about": [
+   "rule:r9_233_access",
+   "action:advance_after_combat"
+  ]
+ },
+ {
+  "id": "s9_233_dervish_side_entry",
+  "section": "9.233",
+  "kind": "player",
+  "text": "Can Dervish walk in through the side?",
+  "query": "RETURN string::starts_with(fn::may_enter(tribe:baggara, location:zariba).condition, 'only via the two end hexsides');",
+  "expect": true,
+  "match": "exact",
+  "answer": "No: units may only enter or leave the Zariba via the two end hexsides that connect to the Nile River (9.233).",
+  "about": [
+   "location:zariba",
+   "rule:r9_233_access"
+  ],
+  "note": "true = entry is restricted to the end hexsides, i.e. the answer is 'No'."
+ },
+ {
+  "id": "s9_24_104_vs_18",
+  "section": "9.24",
+  "kind": "player",
+  "text": "I killed 104 Dervish but lost 18. Who wins?",
+  "query": "RETURN fn::historical_result(104, 18).net_level;",
+  "expect": "DRAW",
+  "match": "exact",
+  "answer": "A draw: decisive (5) minus Dervish strategic (4) nets 1, a draw (the example in 9.24).",
+  "about": [
+   "rule:r9_24_net_victory",
+   "victory_condition:h_net"
+  ]
+ },
+ {
+  "id": "s9_24_dervish_min_kills",
+  "section": "9.24",
+  "kind": "player",
+  "text": "How many Anglo-Egyptian units must the Dervish kill for any result?",
+  "query": "SELECT VALUE min FROM ONLY victory_level WHERE scenario = scenario:historical AND faction = faction:dervish AND level = 'MARGINAL' LIMIT 1;",
+  "expect": 5,
+  "match": "exact",
+  "answer": "5 to reach the Dervish marginal level (level 2); 0–4 is level 1, draw (9.24). The final result is still the net of both sides' levels.",
+  "about": [
+   "victory_level:h_d_2"
+  ],
+  "note": "Part B's answer gives the Dervish side's own level; since the net is the difference of both levels, 5 kills against an Anglo-Egyptian level 1 nets only 1, a draw."
+ },
+ {
+  "id": "s9_24_leaders_count",
+  "section": "9.24",
+  "kind": "player",
+  "text": "Do leaders count as units for this tally?",
+  "query": "RETURN open_question:historical_leaders_count.kind;",
+  "expect": "gap",
+  "match": "exact",
+  "answer": "Not stated: 9.24 counts 'units eliminated' without saying whether leaders are units for this purpose; the corpus records it as an open question.",
+  "about": [
+   "open_question:historical_leaders_count"
+  ]
+ },
+ {
+  "id": "s9_31_big_map",
+  "section": "9.31",
+  "kind": "player",
+  "text": "Do we need the big map?",
+  "query": "RETURN scenario:fall_of_khartoum.maps CONTAINS map:omdurman;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No: only the small FALL OF KHARTOUM map is used (9.31).",
+  "about": [
+   "scenario:fall_of_khartoum",
+   "map:omdurman",
+   "map:khartoum"
+  ]
+ },
+ {
+  "id": "s9_321_gordon_gunboats",
+  "section": "9.321",
+  "kind": "player",
+  "text": "Which gunboats does Gordon have?",
+  "query": "RETURN { units: setup:k_gunboats.subjects, n: setup:k_gunboats.quantity, howitzer: fn::allowed(unit:old_gunboat, action:howitzer_fire) };",
+  "expect": {
+   "units": [
+    "unit:old_gunboat"
+   ],
+   "n": 2,
+   "howitzer": false
+  },
+  "match": "exact",
+  "answer": "Two old-style (unnamed) gunboats, so no howitzers (9.321, 6.64).",
+  "about": [
+   "setup:k_gunboats",
+   "unit:old_gunboat"
+  ]
+ },
+ {
+  "id": "s9_321_outside_wall",
+  "section": "9.321",
+  "kind": "player",
+  "text": "Can I post troops outside the wall?",
+  "query": "RETURN setup:k_british.locations;",
+  "expect": [
+   "location:khartoum",
+   "location:fort_makran",
+   "location:fort_buri",
+   "location:khartoum_wall"
+  ],
+  "match": "set",
+  "answer": "Only in building or hut hexes of Khartoum, in Forts Makran and/or Buri, and/or adjacent to any wall hex (9.321).",
+  "about": [
+   "setup:k_british",
+   "location:fort_makran",
+   "location:fort_buri",
+   "location:khartoum_wall"
+  ]
+ },
+ {
+  "id": "s9_321_garrison",
+  "section": "9.321",
+  "kind": "player",
+  "text": "Who is in the garrison?",
+  "query": "SELECT VALUE [subjects[0], quantity] FROM setup WHERE scenario = scenario:fall_of_khartoum AND faction = faction:anglo_egyptian;",
+  "expect": [
+   [
+    "unit:gordon",
+    1
+   ],
+   [
+    "unit:old_gunboat",
+    2
+   ],
+   [
+    "unit:egyptian_battalion_artillery",
+    1
+   ],
+   [
+    "unit_class:british_infantry",
+    2
+   ],
+   [
+    "unit_class:egyptian_infantry",
+    3
+   ],
+   [
+    "unit_class:sudanese_infantry",
+    4
+   ],
+   [
+    "unit_class:friendlies",
+    4
+   ]
+  ],
+  "match": "set",
+  "answer": "GORDON, two old gunboats, one Egyptian Battalion artillery unit, two British, three Egyptian and four Sudanese infantry units, and four Friendlies (9.321).",
+  "about": [
+   "scenario:fall_of_khartoum",
+   "unit:gordon"
+  ]
+ },
+ {
+  "id": "s9_322_entry_edges",
+  "section": "9.322",
+  "kind": "player",
+  "text": "Where do I come in?",
+  "query": "RETURN reinforcement:k_d1.entry;",
+  "expect": [
+   "location:khartoum_south_edge",
+   "location:khartoum_east_edge"
+  ],
+  "match": "set",
+  "answer": "Through any hexes on the south or east edge of the map, on turn one (9.322).",
+  "about": [
+   "reinforcement:k_d1"
+  ]
+ },
+ {
+  "id": "s9_322_leaders",
+  "section": "9.322",
+  "kind": "player",
+  "text": "Do I have leaders?",
+  "query": "SELECT VALUE in FROM appears_in WHERE out = scenario:fall_of_khartoum AND record::tb(in) = 'unit' AND in.class = unit_class:d_leader;",
+  "expect": [],
+  "match": "exact",
+  "answer": "None are listed: the Dervish force is 32 Mulazmin, 2 Hadendowa, 6 Kehena, 5 Degheim and 3 artillery (9.322).",
+  "about": [
+   "reinforcement:k_d1"
+  ]
+ },
+ {
+  "id": "s9_322_all_turn1",
+  "section": "9.322",
+  "kind": "player",
+  "text": "Do all my units arrive on turn 1?",
+  "query": "SELECT VALUE turn FROM reinforcement WHERE scenario = scenario:fall_of_khartoum AND faction = faction:dervish;",
+  "expect": [
+   1
+  ],
+  "match": "exact",
+  "answer": "Yes: the Dervish player enters on turn one with his whole force (9.322).",
+  "about": [
+   "reinforcement:k_d1"
+  ]
+ },
+ {
+  "id": "s9_33_game_end",
+  "section": "9.33",
+  "kind": "player",
+  "text": "When does the game end?",
+  "query": "RETURN math::max((SELECT VALUE gordon_survives_turn FROM victory_level WHERE scenario = scenario:fall_of_khartoum AND gordon_survives_turn != NONE));",
+  "expect": 8,
+  "match": "exact",
+  "answer": "Length is variable (9.33): it ends when GORDON is eliminated, and the last victory threshold is GORDON surviving the end of turn eight (British decisive, 9.35). It rarely lasts five turns.",
+  "about": [
+   "victory_condition:k_length",
+   "victory_level:k_b_decisive"
+  ],
+  "note": "The manual never states a last turn; turn 8 is read off 9.35's highest threshold."
+ },
+ {
+  "id": "s9_341_first_turn_night",
+  "section": "9.341",
+  "kind": "player",
+  "text": "Is the first turn at night?",
+  "query": "RETURN fn::is_night(scenario:fall_of_khartoum, 1);",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes: turn 1 is always a night turn, so Anglo-Egyptian movement and all fire ranges are halved and there is no howitzer fire (9.341, 8.1).",
+  "about": [
+   "rule:r9_341_night_turn1",
+   "state:night"
+  ]
+ },
+ {
+  "id": "s9_342_half_hex",
+  "section": "9.342",
+  "kind": "player",
+  "text": "Can I use a half-printed hex at the map edge?",
+  "query": "RETURN terrain:map_edge_partial_hex.playable_in CONTAINS scenario:fall_of_khartoum;",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes: all hexes are playable, including those showing half or less (9.342).",
+  "about": [
+   "terrain:map_edge_partial_hex",
+   "rule:r9_342_partial_hexes"
+  ]
+ },
+ {
+  "id": "s9_343_british_rifle_table",
+  "section": "9.343",
+  "kind": "player",
+  "text": "Do the British get their better rifle table?",
+  "query": "RETURN fn::range_table(unit_class:british_infantry, scenario:fall_of_khartoum);",
+  "expect": "range_table:dervish",
+  "match": "exact",
+  "answer": "No: both players must use the Dervish Range Effects Table (9.343).",
+  "about": [
+   "rule:r9_343_dervish_table",
+   "range_table:dervish"
+  ]
+ },
+ {
+  "id": "s9_344_north_fort_owner",
+  "section": "9.344",
+  "kind": "player",
+  "text": "Whose is the North Fort?",
+  "query": "RETURN location:north_fort.controller;",
+  "expect": "faction:dervish",
+  "match": "exact",
+  "answer": "The Dervish player's; he may also fire its guns (9.344).",
+  "about": [
+   "location:north_fort",
+   "rule:r9_344_north_fort"
+  ]
+ },
+ {
+  "id": "s9_345_nile_switch",
+  "section": "9.345",
+  "kind": "player",
+  "text": "How does a gunboat get from the White Nile to the Blue Nile?",
+  "query": "RETURN rule:r9_345_nile_switch.params;",
+  "expect": {
+   "mp": 6,
+   "kind": "upstream"
+  },
+  "match": "exact",
+  "answer": "Off-board, at a cost of six 'upstream' movement points (9.345).",
+  "about": [
+   "rule:r9_345_nile_switch",
+   "location:white_nile",
+   "location:blue_nile"
+  ]
+ },
+ {
+  "id": "s9_346_gordon_flee",
+  "section": "9.346",
+  "kind": "player",
+  "text": "Can Gordon flee by gunboat?",
+  "query": "RETURN fn::allowed(unit:gordon, action:move);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No: GORDON starts in the palace and may not move during the scenario (9.346).",
+  "about": [
+   "unit:gordon",
+   "rule:r9_346_gordon"
+  ]
+ },
+ {
+  "id": "s9_346_shoot_gordon",
+  "section": "9.346",
+  "kind": "player",
+  "text": "Can I shoot Gordon?",
+  "query": "RETURN string::contains(rule:r9_346_gordon.statement, 'only be eliminated by a Dervish unit passing through or occupying the palace hex');",
+  "expect": true,
+  "match": "exact",
+  "answer": "No: he may only be eliminated by a Dervish unit passing through or occupying the palace hex (9.346).",
+  "about": [
+   "unit:gordon",
+   "rule:r9_346_gordon"
+  ],
+  "note": "true = elimination is restricted to pass-through/occupation, i.e. the answer is 'No'."
+ },
+ {
+  "id": "s9_346_advance_kills_gordon",
+  "section": "9.346",
+  "kind": "player",
+  "text": "Does advancing after combat into the palace kill Gordon?",
+  "query": "RETURN rule:r9_346_gordon.actions CONTAINS action:advance_after_combat;",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes: occupying the palace by advance after combat eliminates him (9.346).",
+  "about": [
+   "unit:gordon",
+   "action:advance_after_combat",
+   "location:khartoum_palace"
+  ]
+ },
+ {
+  "id": "s9_35_turn5_lost24",
+  "section": "9.35",
+  "kind": "player",
+  "text": "Gordon died on turn 5 and I lost 24 units. Result?",
+  "query": "RETURN fn::fok_result(5, 24).result;",
+  "expect": "British marginal",
+  "match": "exact",
+  "answer": "A British marginal victory: Dervish tactical (turn 5) drops two levels for 24–31 units lost (the example in 9.35).",
+  "about": [
+   "rule:r9_35_demotion",
+   "victory_condition:k_demotion"
+  ]
+ },
+ {
+  "id": "s9_35_british_decisive_hold",
+  "section": "9.35",
+  "kind": "player",
+  "text": "How long must Gordon hold for a British decisive?",
+  "query": "RETURN victory_level:k_b_decisive.gordon_survives_turn;",
+  "expect": 8,
+  "match": "exact",
+  "answer": "He must survive the end of turn eight (9.35).",
+  "about": [
+   "victory_level:k_b_decisive",
+   "unit:gordon"
+  ]
+ },
+ {
+  "id": "s9_35_bodies_at_wall",
+  "section": "9.35",
+  "kind": "player",
+  "text": "Is there a cost to throwing bodies at the wall?",
+  "query": "RETURN victory_condition:k_demotion.bands;",
+  "expect": [
+   {
+    "min": 16,
+    "max": 23,
+    "levels_lost": 1
+   },
+   {
+    "min": 24,
+    "max": 31,
+    "levels_lost": 2
+   },
+   {
+    "min": 32,
+    "levels_lost": 3
+   }
+  ],
+  "match": "exact",
+  "answer": "Yes: the Dervish player loses one victory level for 16–23 units lost, two for 24–31 and three for 32 or more (9.35).",
+  "about": [
+   "victory_condition:k_demotion"
+  ]
+ },
+ {
+  "id": "s9_113_campaign_moves_first",
+  "section": "9.113",
+  "kind": "basic",
+  "text": "Who moves first in the campaign game?",
+  "query": "RETURN scenario:campaign.moves_first;",
+  "expect": "faction:anglo_egyptian",
+  "match": "exact",
+  "answer": "The Anglo-Egyptian player (9.113); the Dervish player sets up first and moves second (9.111).",
+  "about": [
+   "scenario:campaign"
+  ]
+ },
+ {
+  "id": "s9_111_campaign_sets_up_first",
+  "section": "9.111",
+  "kind": "basic",
+  "text": "Who sets up first in the campaign game?",
+  "query": "RETURN scenario:campaign.sets_up_first;",
+  "expect": "faction:dervish",
+  "match": "exact",
+  "answer": "The Dervish player sets up first (9.111).",
+  "about": [
+   "scenario:campaign"
+  ]
+ },
+ {
+  "id": "s9_12_campaign_length",
+  "section": "9.12",
+  "kind": "basic",
+  "text": "How many turns is the campaign game?",
+  "query": "RETURN scenario:campaign.length_turns;",
+  "expect": 22,
+  "match": "exact",
+  "answer": "22 game turns (9.12).",
+  "about": [
+   "scenario:campaign"
+  ]
+ },
+ {
+  "id": "s9_12_campaign_start_end",
+  "section": "9.12",
+  "kind": "basic",
+  "text": "When does the campaign game start and end?",
+  "query": "RETURN [scenario:campaign.start, scenario:campaign.end];",
+  "expect": [
+   "6:00 am, Sept. 1",
+   "8:00 am, Sept. 3"
+  ],
+  "match": "exact",
+  "answer": "From 6:00 am, Sept. 1 through 8:00 am, Sept. 3 (9.12).",
+  "about": [
+   "scenario:campaign"
+  ]
+ },
+ {
+  "id": "s9_12_campaign_night_turns",
+  "section": "9.12",
+  "kind": "basic",
+  "text": "Which turns of the campaign game are night turns?",
+  "query": "RETURN scenario:campaign.night_turns;",
+  "expect": [
+   9,
+   10,
+   19,
+   20
+  ],
+  "match": "set",
+  "answer": "Turns 9–10 (the night of Sept. 1–2) and 19–20 (the night of Sept. 2–3), per the Turn Record Track used by the campaign's 22 turns (9.12).",
+  "about": [
+   "scenario:campaign",
+   "turn:9",
+   "turn:19"
+  ]
+ },
+ {
+  "id": "s9_111_fort_count",
+  "section": "9.111",
+  "kind": "basic",
+  "text": "How many forts does the Dervish player get?",
+  "query": "RETURN setup:c_forts.quantity;",
+  "expect": 17,
+  "match": "exact",
+  "answer": "17 forts (9.111).",
+  "about": [
+   "setup:c_forts",
+   "unit:fort",
+   "constant:campaign_forts"
+  ]
+ },
+ {
+  "id": "s9_111_dervish_gunboats",
+  "section": "9.111",
+  "kind": "basic",
+  "text": "How many Dervish gunboats are there and where do they start?",
+  "query": "SELECT quantity, locations FROM ONLY setup:c_dervish_gunboats;",
+  "expect": {
+   "quantity": 2,
+   "locations": [
+    "location:south_edge_nile"
+   ]
+  },
+  "match": "exact",
+  "answer": "Two gunboats, in any south-edge Nile River hexes (9.111).",
+  "about": [
+   "setup:c_dervish_gunboats",
+   "unit:dervish_gunboat"
+  ]
+ },
+ {
+  "id": "s9_111_isa_setup",
+  "section": "9.111",
+  "kind": "basic",
+  "text": "Where does Isa Zachneih set up?",
+  "query": "RETURN setup:c_isa.constraint;",
+  "expect": "anywhere on the east bank, in or south of El Debeba",
+  "match": "exact",
+  "answer": "Anywhere on the east bank, in or south of El Debeba (9.111).",
+  "about": [
+   "unit:isa_zachneih",
+   "setup:c_isa",
+   "location:el_debeba"
+  ]
+ },
+ {
+  "id": "s9_111_taiasha_setup",
+  "section": "9.111",
+  "kind": "basic",
+  "text": "Where do the Taiasha units set up in the campaign?",
+  "query": "RETURN array::flatten((SELECT VALUE locations FROM setup WHERE scenario = scenario:campaign AND subjects CONTAINS tribe:taiasha));",
+  "expect": [
+   "location:walled_city"
+  ],
+  "match": "exact",
+  "answer": "Anywhere in the walled city of Omdurman, with the three artillery units (9.111).",
+  "about": [
+   "tribe:taiasha",
+   "setup:c_city_garrison"
+  ]
+ },
+ {
+  "id": "s9_111_campaign_lettered_hexes",
+  "section": "9.111",
+  "kind": "basic",
+  "text": "Do the lettered set-up hexes matter in the campaign game?",
+  "query": "RETURN scenario:campaign.lettered_hexes_used;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No: they are set-up hexes for the historical scenario only and are ignored in the campaign game (2.1, 9.2).",
+  "about": [
+   "scenario:campaign",
+   "location:hex_a"
+  ]
+ },
+ {
+  "id": "s9_112_mulazmin_turn",
+  "section": "9.112",
+  "kind": "basic",
+  "text": "When do the Mulazmin arrive?",
+  "query": "SELECT VALUE turn FROM reinforcement WHERE scenario = scenario:campaign AND subjects CONTAINS tribe:mulazmin;",
+  "expect": [
+   3
+  ],
+  "match": "exact",
+  "answer": "On turn 3, with the Jehadia and Sheik El Din (9.112).",
+  "about": [
+   "tribe:mulazmin",
+   "reinforcement:c_d3"
+  ]
+ },
+ {
+  "id": "s9_112_turn1_tribes",
+  "section": "9.112",
+  "kind": "basic",
+  "text": "Which tribes arrive on the Dervish first turn of the campaign?",
+  "query": "RETURN reinforcement:c_d1.subjects.filter(|$s| record::tb($s) = 'tribe');",
+  "expect": [
+   "tribe:baggara",
+   "tribe:jaalin",
+   "tribe:danagla",
+   "tribe:kehena",
+   "tribe:degheim"
+  ],
+  "match": "set",
+  "answer": "All Baggara, Jaalin, Danagla, Kehena and Degheim units (9.112).",
+  "about": [
+   "reinforcement:c_d1"
+  ]
+ },
+ {
+  "id": "s9_112_turn1_leaders",
+  "section": "9.112",
+  "kind": "basic",
+  "text": "Which Dervish leaders enter on turn 1?",
+  "query": "RETURN reinforcement:c_d1.subjects.filter(|$s| record::tb($s) = 'unit');",
+  "expect": [
+   "unit:yakub",
+   "unit:sherif",
+   "unit:ali_wad_helu"
+  ],
+  "match": "set",
+  "answer": "Yakub, Sherif and Ali Wad Helu (9.112).",
+  "about": [
+   "reinforcement:c_d1",
+   "unit:yakub"
+  ]
+ },
+ {
+  "id": "s9_112_hadendowa_turn",
+  "section": "9.112",
+  "kind": "basic",
+  "text": "When do the Hadendowa arrive?",
+  "query": "SELECT VALUE turn FROM reinforcement WHERE scenario = scenario:campaign AND subjects CONTAINS tribe:hadendowa;",
+  "expect": [
+   2
+  ],
+  "match": "exact",
+  "answer": "On turn 2, with Osman Digna (9.112).",
+  "about": [
+   "tribe:hadendowa",
+   "reinforcement:c_d2"
+  ]
+ },
+ {
+  "id": "s9_112_sheik_turn",
+  "section": "9.112",
+  "kind": "basic",
+  "text": "When does Sheik El Din enter the campaign?",
+  "query": "SELECT VALUE turn FROM reinforcement WHERE scenario = scenario:campaign AND subjects CONTAINS unit:sheik_el_din;",
+  "expect": [
+   3
+  ],
+  "match": "exact",
+  "answer": "On turn 3 (9.112).",
+  "about": [
+   "unit:sheik_el_din",
+   "reinforcement:c_d3"
+  ]
+ },
+ {
+  "id": "s9_112_dervish_turn4",
+  "section": "9.112",
+  "kind": "basic",
+  "text": "Do any Dervish reinforcements arrive on turn 4?",
+  "query": "RETURN fn::arrivals(scenario:campaign, faction:dervish, 4);",
+  "expect": [],
+  "match": "exact",
+  "answer": "No: the Dervish reinforcement schedule ends with turn 3 (9.112).",
+  "about": [
+   "reinforcement:c_d3"
+  ]
+ },
+ {
+  "id": "s9_113_gunboat_entry",
+  "section": "9.113",
+  "kind": "basic",
+  "text": "Where do Anglo-Egyptian gunboats enter in the campaign?",
+  "query": "RETURN reinforcement:c_ae_entry_gunboats.entry;",
+  "expect": [
+   "location:north_edge_nile"
+  ],
+  "match": "exact",
+  "answer": "Through any north-edge Nile River hex, paying one movement point for the first hex entered (9.113).",
+  "about": [
+   "reinforcement:c_ae_entry_gunboats"
+  ]
+ },
+ {
+  "id": "s9_113_friendlies_entry",
+  "section": "9.113",
+  "kind": "basic",
+  "text": "Where do the Friendlies enter?",
+  "query": "RETURN reinforcement:c_ae_entry_friendlies.entry;",
+  "expect": [
+   "location:abu_alim"
+  ],
+  "match": "exact",
+  "answer": "Through the Abu Alim hut hex on the east bank, paying eight movement points per unit (9.113).",
+  "about": [
+   "reinforcement:c_ae_entry_friendlies",
+   "location:abu_alim"
+  ]
+ },
+ {
+  "id": "s9_113_land_entry",
+  "section": "9.113",
+  "kind": "basic",
+  "text": "Where do the other Anglo-Egyptian land units enter?",
+  "query": "RETURN reinforcement:c_ae_entry_others.entry;",
+  "expect": [
+   "location:ae_entrance_area"
+  ],
+  "match": "exact",
+  "answer": "Through the west bank ANGLO-EGYPTIAN ENTRANCE AREA, one movement point each (9.113).",
+  "about": [
+   "reinforcement:c_ae_entry_others",
+   "location:ae_entrance_area"
+  ]
+ },
+ {
+  "id": "s9_113_turn1_wave",
+  "section": "9.113",
+  "kind": "basic",
+  "text": "How many gunboats and infantry brigades come in on Anglo-Egyptian turn 1?",
+  "query": "SELECT gunboats, infantry_brigades FROM ONLY reinforcement:c_ae1;",
+  "expect": {
+   "gunboats": 3,
+   "infantry_brigades": 2
+  },
+  "match": "exact",
+  "answer": "Any three gunboats and two infantry brigades from the Egyptian Division, plus the Friendlies, the Egyptian Cavalry and the Horse Artillery (9.113).",
+  "about": [
+   "reinforcement:c_ae1"
+  ]
+ },
+ {
+  "id": "s9_113_egyptian_cavalry_turn1",
+  "section": "9.113",
+  "kind": "basic",
+  "text": "Does the Egyptian Cavalry come in on turn 1?",
+  "query": "RETURN reinforcement:c_ae1.subjects CONTAINS unit:egyptian_cavalry;",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes, in the first wave with the Friendlies, the Horse Artillery, three gunboats and two Egyptian Division brigades (9.113).",
+  "about": [
+   "unit:egyptian_cavalry",
+   "reinforcement:c_ae1"
+  ]
+ },
+ {
+  "id": "s9_113_turn4_rest",
+  "section": "9.113",
+  "kind": "basic",
+  "text": "What enters on Anglo-Egyptian turn 4?",
+  "query": "RETURN reinforcement:c_ae4.all_remaining;",
+  "expect": true,
+  "match": "exact",
+  "answer": "All remaining Anglo-Egyptian units (9.113).",
+  "about": [
+   "reinforcement:c_ae4"
+  ]
+ },
+ {
+  "id": "s9_113_gatacre_turn3",
+  "section": "9.113",
+  "kind": "basic",
+  "text": "Can Gatacre enter on turn 3?",
+  "query": "RETURN reinforcement:c_ae_leaders.turn_window CONTAINS 3;",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes: the leaders may enter any time during the first four game turns (9.113).",
+  "about": [
+   "unit:gatacre",
+   "reinforcement:c_ae_leaders"
+  ]
+ },
+ {
+  "id": "s9_14_tomb_vp",
+  "section": "9.14",
+  "kind": "basic",
+  "text": "How many VP is the Mahdi's Tomb worth?",
+  "query": "RETURN vp_award:tomb.points;",
+  "expect": 25,
+  "match": "exact",
+  "answer": "25 victory points, to whoever controls it at the conclusion of play (9.14).",
+  "about": [
+   "vp_award:tomb",
+   "location:mahdis_tomb"
+  ]
+ },
+ {
+  "id": "s9_14_gunboat_sunk_vp",
+  "section": "9.14",
+  "kind": "basic",
+  "text": "How many VP does the Dervish player get for sinking a British gunboat?",
+  "query": "RETURN vp_award:d_gunboat.points;",
+  "expect": 10,
+  "match": "exact",
+  "answer": "10 points per British gunboat sunk (9.14).",
+  "about": [
+   "vp_award:d_gunboat"
+  ]
+ },
+ {
+  "id": "s9_14_british_leader_vp",
+  "section": "9.14",
+  "kind": "basic",
+  "text": "How many VP is each British leader worth to the Dervish player?",
+  "query": "RETURN vp_award:d_british_leader.points;",
+  "expect": 10,
+  "match": "exact",
+  "answer": "10 points for each British leader eliminated (9.14).",
+  "about": [
+   "vp_award:d_british_leader"
+  ]
+ },
+ {
+  "id": "s9_14_friendlies_vp_by_bank",
+  "section": "9.14",
+  "kind": "basic",
+  "text": "What does the Dervish player score for a Friendlies unit eliminated on the east bank, and on the west bank?",
+  "query": "RETURN [vp_award:d_friendlies_east.points, vp_award:d_friendlies_west.points];",
+  "expect": [
+   1,
+   3
+  ],
+  "match": "exact",
+  "answer": "1 point on the east bank side, 3 points on the west bank (9.14).",
+  "about": [
+   "vp_award:d_friendlies_east",
+   "vp_award:d_friendlies_west"
+  ]
+ },
+ {
+  "id": "s9_14_ae_land_unit_vp",
+  "section": "9.14",
+  "kind": "basic",
+  "text": "How many VP does the Dervish player get per Anglo-Egyptian land unit eliminated?",
+  "query": "RETURN vp_award:d_land_unit.points;",
+  "expect": 3,
+  "match": "exact",
+  "answer": "3 points each (9.14).",
+  "about": [
+   "vp_award:d_land_unit"
+  ]
+ },
+ {
+  "id": "s9_14_isa_vp",
+  "section": "9.14",
+  "kind": "basic",
+  "text": "How many VP for eliminating Isa Zachneih?",
+  "query": "RETURN vp_award:ae_isa.points;",
+  "expect": 1,
+  "match": "exact",
+  "answer": "1 point (9.14).",
+  "about": [
+   "vp_award:ae_isa",
+   "unit:isa_zachneih"
+  ]
+ },
+ {
+  "id": "s9_14_dervish_unit_vp",
+  "section": "9.14",
+  "kind": "basic",
+  "text": "How many VP does the Anglo-Egyptian player get for each ordinary Dervish unit, gunboat or artillery unit eliminated?",
+  "query": "RETURN vp_award:ae_dervish_unit.points;",
+  "expect": 1,
+  "match": "exact",
+  "answer": "1 point each, including gunboats, artillery and the other leaders (9.14).",
+  "about": [
+   "vp_award:ae_dervish_unit"
+  ]
+ },
+ {
+  "id": "s9_14_ae_35_superiority",
+  "section": "9.14",
+  "kind": "basic",
+  "text": "What does a 35-point Anglo-Egyptian superiority win?",
+  "query": "RETURN fn::campaign_level(faction:anglo_egyptian, 35);",
+  "expect": "Tactical",
+  "match": "exact",
+  "answer": "An Anglo-Egyptian tactical victory (30–49 points, 9.14).",
+  "about": [
+   "victory_level:c_ae_tactical"
+  ]
+ },
+ {
+  "id": "s9_14_d_30_superiority",
+  "section": "9.14",
+  "kind": "basic",
+  "text": "The Dervish player finishes 30 points ahead. What is that?",
+  "query": "RETURN fn::campaign_level(faction:dervish, 30);",
+  "expect": "Decisive",
+  "match": "exact",
+  "answer": "A Dervish decisive victory (30+ points, 9.14).",
+  "about": [
+   "victory_level:c_d_decisive"
+  ]
+ },
+ {
+  "id": "s9_14_ae_10_superiority",
+  "section": "9.14",
+  "kind": "basic",
+  "text": "The Anglo-Egyptian player is only 10 points ahead. What is that?",
+  "query": "RETURN fn::campaign_level(faction:anglo_egyptian, 10);",
+  "expect": "Draw",
+  "match": "exact",
+  "answer": "A draw: 1–14 points of Anglo-Egyptian superiority (9.14).",
+  "about": [
+   "victory_level:c_ae_draw"
+  ]
+ },
+ {
+  "id": "s9_14_d_12_superiority",
+  "section": "9.14",
+  "kind": "basic",
+  "text": "The Dervish player is 12 points ahead. What level?",
+  "query": "RETURN fn::campaign_level(faction:dervish, 12);",
+  "expect": "Marginal",
+  "match": "exact",
+  "answer": "A Dervish marginal victory (10–19 points, 9.14).",
+  "about": [
+   "victory_level:c_d_marginal"
+  ]
+ },
+ {
+  "id": "s9_14_totals_140_85",
+  "section": "9.14",
+  "kind": "basic",
+  "text": "Final totals: Anglo-Egyptian 140 VP, Dervish 85 VP. Result?",
+  "query": "RETURN fn::campaign_result(140, 85);",
+  "expect": {
+   "superiority": 55,
+   "winner": "Anglo-Egyptian",
+   "level": "Decisive"
+  },
+  "match": "exact",
+  "answer": "55 points of Anglo-Egyptian superiority: an Anglo-Egyptian decisive victory (50+, 9.14).",
+  "about": [
+   "victory_level:c_ae_decisive"
+  ]
+ },
+ {
+  "id": "s9_14_ae_annihilation",
+  "section": "9.14",
+  "kind": "basic",
+  "text": "Besides points, how can the Anglo-Egyptian player win a decisive victory?",
+  "query": "RETURN victory_condition:c_ae_annihilation.condition;",
+  "expect": "eliminates every Dervish unit in play (including gunboats and forts)",
+  "match": "exact",
+  "answer": "By eliminating every Dervish unit in play, gunboats and forts included (9.14).",
+  "about": [
+   "victory_condition:c_ae_annihilation"
+  ]
+ },
+ {
+  "id": "s9_13_campaign_special_rules",
+  "section": "9.13",
+  "kind": "basic",
+  "text": "Are there special rules for the campaign game?",
+  "query": "RETURN scenario:campaign.special_rules;",
+  "expect": "None.",
+  "match": "exact",
+  "answer": "None (9.13).",
+  "about": [
+   "scenario:campaign"
+  ]
+ },
+ {
+  "id": "s9_212_historical_moves_first",
+  "section": "9.212",
+  "kind": "basic",
+  "text": "Who moves first in the historical scenario?",
+  "query": "RETURN scenario:historical.moves_first;",
+  "expect": "faction:dervish",
+  "match": "exact",
+  "answer": "The Dervish player moves first (9.212); the Anglo-Egyptian player sets up first and moves second (9.211).",
+  "about": [
+   "scenario:historical"
+  ]
+ },
+ {
+  "id": "s9_211_historical_sets_up_first",
+  "section": "9.211",
+  "kind": "basic",
+  "text": "Who sets up first in the historical scenario?",
+  "query": "RETURN scenario:historical.sets_up_first;",
+  "expect": "faction:anglo_egyptian",
+  "match": "exact",
+  "answer": "The Anglo-Egyptian player (9.211).",
+  "about": [
+   "scenario:historical"
+  ]
+ },
+ {
+  "id": "s9_22_historical_times",
+  "section": "9.22",
+  "kind": "basic",
+  "text": "When does the historical scenario start and end?",
+  "query": "RETURN [scenario:historical.start, scenario:historical.end];",
+  "expect": [
+   "6:00 am, September 2",
+   "12:00 noon, September 2"
+  ],
+  "match": "exact",
+  "answer": "6:00 am to 12:00 noon on September 2 (9.22).",
+  "about": [
+   "scenario:historical"
+  ]
+ },
+ {
+  "id": "s9_212_khalifa_historical",
+  "section": "9.212",
+  "kind": "basic",
+  "text": "Where does the Khalifa start in the historical scenario?",
+  "query": "RETURN array::flatten((SELECT VALUE locations.letter FROM setup WHERE scenario = scenario:historical AND subjects CONTAINS unit:khalifa_abdullah));",
+  "expect": [
+   "K"
+  ],
+  "match": "exact",
+  "answer": "On lettered hex K (9.212).",
+  "about": [
+   "unit:khalifa_abdullah",
+   "setup:h_leader_khalifa",
+   "location:hex_k"
+  ]
+ },
+ {
+  "id": "s9_212_osman_historical",
+  "section": "9.212",
+  "kind": "basic",
+  "text": "Where does Osman Digna start in the historical scenario?",
+  "query": "RETURN array::flatten((SELECT VALUE locations.letter FROM setup WHERE scenario = scenario:historical AND subjects CONTAINS unit:osman_digna));",
+  "expect": [
+   "O"
+  ],
+  "match": "exact",
+  "answer": "On lettered hex O (9.212).",
+  "about": [
+   "unit:osman_digna",
+   "setup:h_leader_osman",
+   "location:hex_o"
+  ]
+ },
+ {
+  "id": "s9_212_hex_y",
+  "section": "9.212",
+  "kind": "basic",
+  "text": "Which leader starts on hex Y?",
+  "query": "RETURN array::flatten((SELECT VALUE subjects FROM setup WHERE scenario = scenario:historical AND locations CONTAINS location:hex_y));",
+  "expect": [
+   "unit:yakub"
+  ],
+  "match": "exact",
+  "answer": "Yakub (9.212).",
+  "about": [
+   "location:hex_y",
+   "unit:yakub"
+  ]
+ },
+ {
+  "id": "s9_211_kerreri_units",
+  "section": "9.211",
+  "kind": "basic",
+  "text": "Which units start in Kerreri?",
+  "query": "RETURN array::flatten((SELECT VALUE subjects FROM setup WHERE scenario = scenario:historical AND locations CONTAINS location:kerreri));",
+  "expect": [
+   "unit:camel_corps",
+   "unit:egyptian_cavalry",
+   "unit:horse_artillery"
+  ],
+  "match": "set",
+  "answer": "The Camel Corps, the Egyptian Cavalry and the Horse Artillery (9.211).",
+  "about": [
+   "location:kerreri",
+   "setup:h_kerreri"
+  ]
+ },
+ {
+  "id": "s9_211_friendlies_historical",
+  "section": "9.211",
+  "kind": "basic",
+  "text": "Are the Friendlies in the historical scenario?",
+  "query": "RETURN (SELECT VALUE ->appears_in->scenario FROM ONLY formation:friendlies_brigade) CONTAINS scenario:historical;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No: the Friendlies brigade (and GORDON) are not in play (9.211).",
+  "about": [
+   "formation:friendlies_brigade",
+   "setup:h_out_ae"
+  ]
+ },
+ {
+  "id": "s9_212_isa_historical",
+  "section": "9.212",
+  "kind": "basic",
+  "text": "Is Isa Zachneih in the historical scenario?",
+  "query": "RETURN setup:h_out_dervish.subjects CONTAINS unit:isa_zachneih;",
+  "expect": true,
+  "match": "exact",
+  "answer": "No: Isa Zachneih is not in play, nor are the Dervish gunboats and forts (9.212).",
+  "about": [
+   "unit:isa_zachneih",
+   "setup:h_out_dervish"
+  ],
+  "note": "true = Isa Zachneih is on the not-in-play list."
+ },
+ {
+  "id": "s9_211_zariba_hexes",
+  "section": "9.211",
+  "kind": "basic",
+  "text": "How many hexes does the Zariba have?",
+  "query": "RETURN location:zariba.hexes;",
+  "expect": 13,
+  "match": "exact",
+  "answer": "13 hexes (9.211).",
+  "about": [
+   "location:zariba",
+   "constant:zariba_hexes"
+  ]
+ },
+ {
+  "id": "s9_231_hedge_dervish_fire",
+  "section": "9.231",
+  "kind": "basic",
+  "text": "What modifier does Dervish fire suffer across the thorn hedge?",
+  "query": "RETURN fn::fire_drm({ firer: faction:dervish, across_thorn_hedge: true });",
+  "expect": -2,
+  "match": "exact",
+  "answer": "−2 to the die roll (9.231).",
+  "about": [
+   "modifier:thorn_hedge_fire",
+   "terrain:thorn_hedge"
+  ]
+ },
+ {
+  "id": "s9_232_trench_dervish_fire",
+  "section": "9.232",
+  "kind": "basic",
+  "text": "What modifier does Dervish fire get against an entrenched unit?",
+  "query": "RETURN fn::fire_drm({ firer: faction:dervish, target_entrenched: true });",
+  "expect": -4,
+  "match": "exact",
+  "answer": "−4 to the die roll, against entrenched units only (9.232).",
+  "about": [
+   "modifier:trench_fire",
+   "state:entrenched"
+  ]
+ },
+ {
+  "id": "s9_232_dervish_melee_not_entrenched",
+  "section": "9.232",
+  "kind": "basic",
+  "text": "What melee modifier do Dervish units get attacking a unit that is not entrenched?",
+  "query": "RETURN fn::melee_mod(faction:dervish, false);",
+  "expect": 2,
+  "match": "exact",
+  "answer": "The normal +2 (7.7); only against an entrenched unit does it become −2 (9.232).",
+  "about": [
+   "modifier:dervish_melee",
+   "modifier:trench_melee"
+  ]
+ },
+ {
+  "id": "s9_233_zariba_crossing_mp",
+  "section": "9.233",
+  "kind": "basic",
+  "text": "How many extra movement points does it cost to cross a Zariba end hexside?",
+  "query": "RETURN modifier:zariba_crossing.value;",
+  "expect": 2,
+  "match": "exact",
+  "answer": "+2 movement points (9.233).",
+  "about": [
+   "modifier:zariba_crossing",
+   "constant:zariba_crossing_mp"
+  ]
+ },
+ {
+  "id": "s9_24_ae_decisive_min",
+  "section": "9.24",
+  "kind": "basic",
+  "text": "How many Dervish units must the Anglo-Egyptian player eliminate for a decisive level in the historical scenario?",
+  "query": "SELECT VALUE min FROM ONLY victory_level WHERE scenario = scenario:historical AND faction = faction:anglo_egyptian AND rank = 5 LIMIT 1;",
+  "expect": 100,
+  "match": "exact",
+  "answer": "100 or more (level 5, 9.24).",
+  "about": [
+   "victory_level:h_ae_5"
+  ]
+ },
+ {
+  "id": "s9_24_50_vs_3",
+  "section": "9.24",
+  "kind": "basic",
+  "text": "In the historical scenario I eliminate 50 Dervish units and lose 3. What's my result?",
+  "query": "RETURN fn::historical_result(50, 3);",
+  "expect": {
+   "ae_level": 3,
+   "dervish_level": 1,
+   "net": 2,
+   "net_level": "MARGINAL",
+   "winner": "Anglo-Egyptian"
+  },
+  "match": "exact",
+  "answer": "Anglo-Egyptian tactical (3) minus Dervish draw (1) nets 2: an Anglo-Egyptian marginal victory (9.24).",
+  "about": [
+   "victory_condition:h_net"
+  ]
+ },
+ {
+  "id": "s9_24_20_vs_12",
+  "section": "9.24",
+  "kind": "basic",
+  "text": "The Anglo-Egyptian player kills only 20 Dervish units but loses 12. Result?",
+  "query": "RETURN fn::historical_result(20, 12);",
+  "expect": {
+   "ae_level": 1,
+   "dervish_level": 3,
+   "net": 2,
+   "net_level": "MARGINAL",
+   "winner": "Dervish"
+  },
+  "match": "exact",
+  "answer": "Dervish tactical (3) minus Anglo-Egyptian draw (1) nets 2: a Dervish marginal victory (9.24).",
+  "about": [
+   "victory_condition:h_net"
+  ]
+ },
+ {
+  "id": "s9_321_fok_sets_up_first",
+  "section": "9.321",
+  "kind": "basic",
+  "text": "Who sets up first in Fall of Khartoum?",
+  "query": "RETURN scenario:fall_of_khartoum.sets_up_first;",
+  "expect": "faction:anglo_egyptian",
+  "match": "exact",
+  "answer": "The British (Anglo-Egyptian) player sets up first and moves second (9.321).",
+  "about": [
+   "scenario:fall_of_khartoum"
+  ]
+ },
+ {
+  "id": "s9_322_fok_moves_first",
+  "section": "9.322",
+  "kind": "basic",
+  "text": "Who moves first in Fall of Khartoum?",
+  "query": "RETURN scenario:fall_of_khartoum.moves_first;",
+  "expect": "faction:dervish",
+  "match": "exact",
+  "answer": "The Dervish player moves first (9.322).",
+  "about": [
+   "scenario:fall_of_khartoum"
+  ]
+ },
+ {
+  "id": "s9_31_fok_map",
+  "section": "9.31",
+  "kind": "basic",
+  "text": "Which map does Fall of Khartoum use?",
+  "query": "RETURN scenario:fall_of_khartoum.maps;",
+  "expect": [
+   "map:khartoum"
+  ],
+  "match": "exact",
+  "answer": "Only the small FALL OF KHARTOUM scenario map (9.31).",
+  "about": [
+   "scenario:fall_of_khartoum",
+   "map:khartoum"
+  ]
+ },
+ {
+  "id": "s9_321_gordon_start",
+  "section": "9.321",
+  "kind": "basic",
+  "text": "Where does Gordon start in Fall of Khartoum?",
+  "query": "RETURN setup:k_gordon.locations;",
+  "expect": [
+   "location:khartoum_palace"
+  ],
+  "match": "exact",
+  "answer": "In the palace (9.321, 9.346).",
+  "about": [
+   "unit:gordon",
+   "setup:k_gordon",
+   "location:khartoum_palace"
+  ]
+ },
+ {
+  "id": "s9_322_mulazmin_count",
+  "section": "9.322",
+  "kind": "basic",
+  "text": "How many Mulazmin units does the Dervish player get in Fall of Khartoum?",
+  "query": "RETURN reinforcement:k_d1.counts.find(|$c| $c.subject = tribe:mulazmin).n;",
+  "expect": 32,
+  "match": "exact",
+  "answer": "32 (9.322).",
+  "about": [
+   "reinforcement:k_d1",
+   "tribe:mulazmin"
+  ]
+ },
+ {
+  "id": "s9_322_total_dervish",
+  "section": "9.322",
+  "kind": "basic",
+  "text": "How many units does the Dervish player have in Fall of Khartoum in all?",
+  "query": "RETURN math::sum(reinforcement:k_d1.counts.n);",
+  "expect": 48,
+  "match": "exact",
+  "answer": "48: 32 Mulazmin, 2 Hadendowa, 6 Kehena, 5 Degheim and 3 artillery (9.322).",
+  "about": [
+   "reinforcement:k_d1"
+  ]
+ },
+ {
+  "id": "s9_322_mulazmin_represent",
+  "section": "9.322",
+  "kind": "basic",
+  "text": "Whom do the Mulazmin represent in Fall of Khartoum?",
+  "query": "RETURN reinforcement:k_d1.counts.find(|$c| $c.subject = tribe:mulazmin).represents;",
+  "expect": "combined forces of Wad El Nejumi, Abu Girgeh, and Sheik El Obeid",
+  "match": "exact",
+  "answer": "The combined forces of Wad El Nejumi, Abu Girgeh and Sheik El Obeid (9.322).",
+  "about": [
+   "reinforcement:k_d1",
+   "person:wad_el_nejumi"
+  ]
+ },
+ {
+  "id": "s9_322_dervish_no_setup",
+  "section": "9.322",
+  "kind": "basic",
+  "text": "Does the Dervish player set anything up before Fall of Khartoum starts?",
+  "query": "RETURN count(SELECT id FROM setup WHERE scenario = scenario:fall_of_khartoum AND faction = faction:dervish);",
+  "expect": 0,
+  "match": "exact",
+  "answer": "No: his whole force enters on turn one through the south or east map edge (9.322).",
+  "about": [
+   "reinforcement:k_d1"
+  ]
+ },
+ {
+  "id": "s9_321_sudanese_count",
+  "section": "9.321",
+  "kind": "basic",
+  "text": "How many Sudanese infantry units does Gordon have?",
+  "query": "RETURN setup:k_sudan.quantity;",
+  "expect": 4,
+  "match": "exact",
+  "answer": "Four (representing the Sudanese blacks, 9.321).",
+  "about": [
+   "setup:k_sudan"
+  ]
+ },
+ {
+  "id": "s9_321_friendlies_represent",
+  "section": "9.321",
+  "kind": "basic",
+  "text": "Whom do the Friendlies represent in Fall of Khartoum?",
+  "query": "RETURN setup:k_friendlies.represents;",
+  "expect": "the Shaggyeh",
+  "match": "exact",
+  "answer": "The Shaggyeh; four Friendlies units are in the garrison (9.321).",
+  "about": [
+   "setup:k_friendlies"
+  ]
+ },
+ {
+  "id": "s9_321_british_represent",
+  "section": "9.321",
+  "kind": "basic",
+  "text": "What do the two British infantry units represent in Fall of Khartoum?",
+  "query": "RETURN setup:k_british.represents;",
+  "expect": "Caucasian troops",
+  "match": "exact",
+  "answer": "Caucasian troops (9.321).",
+  "about": [
+   "setup:k_british"
+  ]
+ },
+ {
+  "id": "s9_33_fok_length",
+  "section": "9.33",
+  "kind": "basic",
+  "text": "How many turns does Fall of Khartoum last?",
+  "query": "RETURN [scenario:fall_of_khartoum.length_turns, scenario:fall_of_khartoum.length_text];",
+  "expect": [
+   null,
+   "Variable, see victory conditions (9.35). Rarely lasts five turns."
+  ],
+  "match": "exact",
+  "answer": "It is variable, set by the victory conditions (9.35), and rarely lasts five turns (9.33).",
+  "about": [
+   "scenario:fall_of_khartoum",
+   "victory_condition:k_length"
+  ]
+ },
+ {
+  "id": "s9_344_north_fort_fires",
+  "section": "9.344",
+  "kind": "basic",
+  "text": "Can the Dervish player fire the North Fort's guns?",
+  "query": "RETURN location:north_fort.fires;",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes: the Dervish player controls the North Fort and may fire its guns (9.344).",
+  "about": [
+   "location:north_fort"
+  ]
+ },
+ {
+  "id": "s9_341_turn1_infantry_move",
+  "section": "9.341",
+  "kind": "basic",
+  "text": "On turn 1 of Fall of Khartoum, how far can my Egyptian infantry (MA 8) move?",
+  "query": "RETURN fn::night_ma(faction:anglo_egyptian, unit:egyptian_battalion_sample.move);",
+  "expect": 4,
+  "match": "exact",
+  "answer": "4: turn 1 is a night turn (9.341), and Anglo-Egyptian movement allowances are halved at night, rounding down (8.1).",
+  "about": [
+   "rule:r9_341_night_turn1",
+   "unit:egyptian_battalion_sample"
+  ]
+ },
+ {
+  "id": "s9_341_turn1_range",
+  "section": "9.341",
+  "kind": "basic",
+  "text": "On the first turn of Fall of Khartoum, what does a range of 3 become?",
+  "query": "RETURN fn::night_range(3);",
+  "expect": 1,
+  "match": "exact",
+  "answer": "1: all fire ranges are halved at night, rounding down (9.341, 8.1).",
+  "about": [
+   "rule:r9_341_night_turn1",
+   "state:night"
+  ]
+ },
+ {
+  "id": "s9_35_turn6_lost10",
+  "section": "9.35",
+  "kind": "basic",
+  "text": "Gordon dies on turn 6 and I lost 10 units. Result?",
+  "query": "RETURN fn::fok_result(6, 10).result;",
+  "expect": "Dervish marginal",
+  "match": "exact",
+  "answer": "A Dervish marginal victory; 10 losses cost no level (9.35).",
+  "about": [
+   "victory_level:k_d_marginal"
+  ]
+ },
+ {
+  "id": "s9_35_turn3_lost20",
+  "section": "9.35",
+  "kind": "basic",
+  "text": "Gordon dies on turn 3 but I lost 20 units. Result?",
+  "query": "RETURN fn::fok_result(3, 20).result;",
+  "expect": "Dervish tactical",
+  "match": "exact",
+  "answer": "Dervish decisive (turn four or sooner) drops one level for 16–23 losses: a Dervish tactical victory (9.35).",
+  "about": [
+   "victory_level:k_d_decisive",
+   "victory_condition:k_demotion"
+  ]
+ },
+ {
+  "id": "s9_35_turn4_lost32",
+  "section": "9.35",
+  "kind": "basic",
+  "text": "Gordon dies on turn 4 but I lost 32 units. Result?",
+  "query": "RETURN fn::fok_result(4, 32).result;",
+  "expect": "British marginal",
+  "match": "exact",
+  "answer": "Dervish decisive drops three levels for 32+ losses: a British marginal victory (9.35).",
+  "about": [
+   "victory_level:k_b_marginal",
+   "victory_condition:k_demotion"
+  ]
+ },
+ {
+  "id": "s9_35_gordon_survives_turn7",
+  "section": "9.35",
+  "kind": "basic",
+  "text": "Gordon survives the end of turn 7 but is killed on turn 8. What do the British get?",
+  "query": "RETURN victory_level:k_b_tactical.condition;",
+  "expect": "GORDON survives end of turn seven",
+  "match": "exact",
+  "answer": "A British tactical victory: GORDON survived the end of turn seven (9.35).",
+  "about": [
+   "victory_level:k_b_tactical"
+  ]
+ },
+ {
+  "id": "s9_graph_all_three_scenarios",
+  "section": "9",
+  "kind": "graph",
+  "text": "Which units and tribes appear in all three scenarios?",
+  "query": "SELECT VALUE in FROM (SELECT in, array::group(out) AS s FROM appears_in WHERE record::tb(in) IN ['unit', 'tribe'] GROUP BY in) WHERE array::len(array::distinct(s)) = 3;",
+  "expect": [
+   "tribe:degheim",
+   "tribe:hadendowa",
+   "tribe:kehena",
+   "tribe:mulazmin",
+   "unit:dervish_artillery",
+   "unit:old_gunboat"
+  ],
+  "match": "set",
+  "answer": "The Mulazmin, Hadendowa, Kehena and Degheim tribes, the Dervish artillery, and the old-type gunboats: all are named in Fall of Khartoum's forces (9.321, 9.322) and are part of both Omdurman scenarios (9.111–9.113, 9.211–9.212).",
+  "about": [
+   "tribe:mulazmin",
+   "unit:dervish_artillery",
+   "unit:old_gunboat"
+  ],
+  "note": "Counts the distinct scenarios each unit/tribe reaches through appears_in edges (set-up and reinforcement records)."
+ },
+ {
+  "id": "s9_graph_historical_not_campaign",
+  "section": "9",
+  "kind": "graph",
+  "text": "Which units are in the historical scenario but not in the campaign game?",
+  "query": "LET $h = (SELECT VALUE in FROM appears_in WHERE out = scenario:historical AND record::tb(in) = 'unit'); LET $c = (SELECT VALUE in FROM appears_in WHERE out = scenario:campaign AND record::tb(in) = 'unit'); RETURN array::distinct($h.filter(|$u| $c CONTAINSNOT $u));",
+  "expect": [],
+  "match": "set",
+  "answer": "None: the campaign game brings in every Anglo-Egyptian unit by turn 4 ('All remaining Anglo-Egyptian units', 9.113) and every Dervish unit the historical scenario uses (9.111, 9.112).",
+  "about": [
+   "reinforcement:c_ae4",
+   "scenario:historical",
+   "scenario:campaign"
+  ]
+ },
+ {
+  "id": "s9_graph_camel_corps_scenarios",
+  "section": "9.113",
+  "kind": "graph",
+  "text": "In which scenarios does the Camel Corps appear?",
+  "query": "SELECT VALUE ->appears_in->scenario FROM ONLY unit:camel_corps;",
+  "expect": [
+   "scenario:campaign",
+   "scenario:historical"
+  ],
+  "match": "set",
+  "answer": "The historical scenario (it starts in Kerreri, 9.211) and the campaign game, where it enters with 'all remaining Anglo-Egyptian units' on turn 4 at the latest (9.113).",
+  "about": [
+   "unit:camel_corps",
+   "reinforcement:c_ae4"
+  ]
+ },
+ {
+  "id": "s9_graph_walled_city_setups",
+  "section": "9.111",
+  "kind": "graph",
+  "text": "Which set-up records place units in the walled city of Omdurman (including its parts)?",
+  "query": "LET $parts = array::concat([location:walled_city], (SELECT VALUE id FROM location WHERE ->member_of->location CONTAINS location:walled_city)); SELECT VALUE id FROM setup WHERE locations CONTAINSANY $parts;",
+  "expect": [
+   "setup:c_khalifa",
+   "setup:c_city_garrison"
+  ],
+  "match": "set",
+  "answer": "Two campaign set-ups: the Khalifa in a palace hex, and the three artillery units plus all Taiasha anywhere in the walled city (9.111).",
+  "about": [
+   "location:walled_city",
+   "location:omdurman_palace",
+   "setup:c_khalifa",
+   "setup:c_city_garrison"
+  ]
+ },
+ {
+  "id": "s9_graph_historical_only_rules",
+  "section": "9.2",
+  "kind": "graph",
+  "text": "Which rules apply only to the historical scenario?",
+  "query": "SELECT VALUE id FROM rule WHERE scenarios = [scenario:historical];",
+  "expect": [
+   "rule:r2_1_lettered_hexes",
+   "rule:r9_212_out_of_los",
+   "rule:r9_212_near_leader",
+   "rule:r9_24_net_victory"
+  ],
+  "match": "set",
+  "answer": "The lettered set-up hexes (2.1), the Dervish set-up limits (out of LOS, within three hexes of the leader, 9.212) and the net victory procedure (9.24). The Zariba rules (9.231–9.233) also apply in the campaign game if the Zariba is constructed (5.3, 7.7).",
+  "about": [
+   "scenario:historical",
+   "rule:r9_24_net_victory"
+  ]
+ },
+ {
+  "id": "s9_graph_reinforcements_with_leaders",
+  "section": "9.112",
+  "kind": "graph",
+  "text": "Which reinforcement groups bring a leader?",
+  "query": "SELECT VALUE id FROM reinforcement WHERE array::len((subjects ?? []).filter(|$s| record::tb($s) = 'unit' AND $s.class IN [unit_class:d_leader, unit_class:ae_leader])) > 0;",
+  "expect": [
+   "reinforcement:c_d1",
+   "reinforcement:c_d2",
+   "reinforcement:c_d3",
+   "reinforcement:c_ae_leaders"
+  ],
+  "match": "set",
+  "answer": "All three Dervish campaign arrivals (Yakub, Sherif, Ali Wad Helu on turn 1; Osman Digna on turn 2; Sheik El Din on turn 3, 9.112) and the Anglo-Egyptian leaders' window (Kitchener, Gatacre, Hunter, turns 1–4, 9.113).",
+  "about": [
+   "reinforcement:c_d1",
+   "reinforcement:c_ae_leaders"
+  ]
+ },
+ {
+  "id": "s9_graph_yakub_tribes",
+  "section": "9.112",
+  "kind": "graph",
+  "text": "Which tribes enter with Yakub's group?",
+  "query": "RETURN array::distinct(array::flatten((SELECT VALUE ->leads->command_group<-member_of<-tribe FROM ONLY unit:yakub)));",
+  "expect": [
+   "tribe:baggara",
+   "tribe:jaalin",
+   "tribe:danagla",
+   "tribe:kehena",
+   "tribe:degheim"
+  ],
+  "match": "set",
+  "answer": "The Baggara, Jaalin, Danagla, Kehena and Degheim enter with their leaders Yakub, Sherif and Ali Wad Helu on turn 1 (9.112); which leader commands which tribe is not stated.",
+  "about": [
+   "unit:yakub",
+   "command_group:turn1_leaders"
+  ]
+ },
+ {
+  "id": "s9_graph_hadendowa_leader",
+  "section": "9.112",
+  "kind": "graph",
+  "text": "Which leader commands the Hadendowa?",
+  "query": "RETURN array::flatten((SELECT VALUE ->member_of->command_group<-leads<-unit FROM ONLY tribe:hadendowa));",
+  "expect": [
+   "unit:osman_digna"
+  ],
+  "match": "exact",
+  "answer": "Osman Digna (9.112: 'all Hadendowa units and their leader, OSMAN DIGNA').",
+  "about": [
+   "tribe:hadendowa",
+   "command_group:osman_digna"
+  ]
+ },
+ {
+  "id": "s9_graph_green_leader_hex",
+  "section": "9.212",
+  "kind": "graph",
+  "text": "Where do the green units set up in the historical scenario?",
+  "query": "LET $l = array::flatten((SELECT VALUE <-leads<-unit FROM command_group WHERE color = 'green')); RETURN array::flatten((SELECT VALUE locations FROM setup WHERE scenario = scenario:historical AND subjects CONTAINSANY $l));",
+  "expect": [
+   "location:hex_d"
+  ],
+  "match": "exact",
+  "answer": "Within three hexes of Sheik El Din, who starts on hex D (9.212's own example).",
+  "about": [
+   "command_group:sheik_el_din",
+   "unit:sheik_el_din",
+   "location:hex_d"
+  ]
+ },
+ {
+  "id": "s9_graph_gordon_exception",
+  "section": "9.346",
+  "kind": "graph",
+  "text": "Which general rule does Gordon's elimination rule make an exception to?",
+  "query": "SELECT VALUE ->exception_to->rule.section.num FROM ONLY rule:r9_346_gordon;",
+  "expect": [
+   "6.51"
+  ],
+  "match": "exact",
+  "answer": "6.51's rule for eliminating Anglo-Egyptian leaders: in Fall of Khartoum GORDON can only die to a Dervish unit passing through or occupying the palace (9.346).",
+  "about": [
+   "rule:r9_346_gordon",
+   "rule:r6_51_ae_leader_elimination"
+  ]
+ },
+ {
+  "id": "s9_graph_s9_exceptions",
+  "section": "9",
+  "kind": "graph",
+  "text": "Which scenario rules (§9) are exceptions to general rules, and to which?",
+  "query": "SELECT VALUE [id, ->exception_to->rule] FROM rule WHERE string::starts_with(section.num, '9.') AND array::len(->exception_to->rule) > 0;",
+  "expect": [
+   [
+    "rule:r9_231_thorn_hedge",
+    [
+     "rule:r7_7_no_terrain"
+    ]
+   ],
+   [
+    "rule:r9_232_trench",
+    [
+     "rule:r7_7_no_terrain"
+    ]
+   ],
+   [
+    "rule:r9_343_dervish_table",
+    [
+     "rule:r2_32_ae_weapons"
+    ]
+   ],
+   [
+    "rule:r9_346_gordon",
+    [
+     "rule:r6_51_ae_leader_elimination"
+    ]
+   ]
+  ],
+  "match": "set",
+  "answer": "The thorn hedge and trench (melee terrain effects, overriding 7.7's no-terrain rule), the Dervish range table for both sides in Fall of Khartoum (overriding 2.32), and Gordon's elimination (overriding 6.51).",
+  "about": [
+   "rule:r9_231_thorn_hedge",
+   "rule:r9_232_trench",
+   "rule:r9_343_dervish_table",
+   "rule:r9_346_gordon"
+  ]
+ },
+ {
+  "id": "s9_graph_vp_unit_subjects",
+  "section": "9.14",
+  "kind": "graph",
+  "text": "Which campaign VP awards name a specific unit rather than a class of units?",
+  "query": "SELECT VALUE id FROM vp_award WHERE scenario = scenario:campaign AND record::tb(subject) = 'unit';",
+  "expect": [
+   "vp_award:ae_isa",
+   "vp_award:ae_khalifa"
+  ],
+  "match": "set",
+  "answer": "Two: eliminating Isa Zachneih (1 point) and KHALIFA ABDULLAH (10 points); the others are per class (leaders, gunboats, Friendlies, land units, forts, any Dervish unit) or the Tomb (9.14).",
+  "about": [
+   "vp_award:ae_isa",
+   "vp_award:ae_khalifa"
+  ]
+ },
+ {
+  "id": "s9_graph_fok_tribes",
+  "section": "9.322",
+  "kind": "graph",
+  "text": "Which Dervish tribes take part in Fall of Khartoum?",
+  "query": "SELECT VALUE in FROM appears_in WHERE out = scenario:fall_of_khartoum AND record::tb(in) = 'tribe';",
+  "expect": [
+   "tribe:mulazmin",
+   "tribe:hadendowa",
+   "tribe:kehena",
+   "tribe:degheim"
+  ],
+  "match": "set",
+  "answer": "Mulazmin, Hadendowa, Kehena and Degheim (9.322).",
+  "about": [
+   "reinforcement:k_d1",
+   "scenario:fall_of_khartoum"
+  ]
+ },
+ {
+  "id": "s9_graph_open_questions_s9",
+  "section": "9",
+  "kind": "graph",
+  "text": "Which open questions does the corpus raise about the scenario rules (§9)?",
+  "query": "SELECT VALUE id FROM open_question WHERE array::len((->raises->section.num).filter(|$n| string::starts_with($n, '9.'))) > 0;",
+  "expect": [
+   "open_question:advance_overruns_leader",
+   "open_question:british_leader_term",
+   "open_question:disrupt_leaders_forts",
+   "open_question:fok_gunboats_night",
+   "open_question:fok_later_turns",
+   "open_question:gordon_late_elimination",
+   "open_question:historical_equal_levels",
+   "open_question:historical_leaders_count",
+   "open_question:tribe_colors",
+   "open_question:vp_overlap",
+   "open_question:zero_superiority"
+  ],
+  "match": "set",
+  "answer": "The 'British leader' term, VP overlap, leader/fort disruption (for the Tomb), leaders in the historical tally, tribe colours and turn-1 leader assignments, Fall of Khartoum's later turns, and an advance after combat overrunning a leader (9.14, 9.24, 9.112/9.212, 9.341, 9.346).",
+  "about": [
+   "open_question:british_leader_term",
+   "open_question:vp_overlap"
+  ],
+  "note": "Zero campaign superiority, equal historical levels and Gordon eliminated on turn 7/8 are recorded only inside fn::campaign_result / fn::historical_result / fn::fok_result, not as open_question records; needs_scenarios.md proposes adding them (the expected set would then grow)."
+ },
+ {
+  "id": "s9_14_open_british_leader",
+  "section": "9.14",
+  "kind": "open",
+  "text": "Are Kitchener, Gatacre and Hunter all 'British leaders' for the 10 VP and for taking the Tomb?",
+  "query": "RETURN [open_question:british_leader_term.kind, unit:gatacre.british_leader_basis];",
+  "expect": [
+   "ambiguity",
+   "implied"
+  ],
+  "match": "exact",
+  "answer": "Presumably yes, but 9.14 only says 'British leader'; the Anglo-Egyptian leader counters are the only candidates (Gordon is not in the campaign), so the corpus marks it implied and records the ambiguity.",
+  "about": [
+   "open_question:british_leader_term",
+   "unit:gatacre"
+  ]
+ },
+ {
+  "id": "s9_14_open_vp_overlap",
+  "section": "9.14",
+  "kind": "open",
+  "text": "Killing Kitchener: does the Dervish player get 10 (British leader) or 13 (plus 3 as an Anglo-Egyptian land unit)? And is the Khalifa worth 10 or 11?",
+  "query": "RETURN open_question:vp_overlap.kind;",
+  "expect": "ambiguity",
+  "match": "exact",
+  "answer": "The manual doesn't say whether overlapping VP categories add up (9.14); the corpus records this as an open ambiguity.",
+  "about": [
+   "open_question:vp_overlap",
+   "vp_award:d_british_leader",
+   "vp_award:ae_khalifa"
+  ]
+ },
+ {
+  "id": "s9_14_open_zero_superiority",
+  "section": "9.14",
+  "kind": "open",
+  "text": "Both sides finish the campaign with the same VP total. Who wins?",
+  "query": "RETURN fn::campaign_result(60, 60);",
+  "expect": {
+   "superiority": 0,
+   "winner": null,
+   "level": null,
+   "note": "equal totals: no band of 9.14 covers zero superiority"
+  },
+  "match": "exact",
+  "answer": "The manual doesn't say: the victory table starts at 1 point of superiority for both sides (9.14). fn::campaign_result returns no winner and no level for equal totals.",
+  "about": [
+   "victory_level:c_ae_draw",
+   "victory_level:c_d_draw"
+  ],
+  "note": "The gap is recorded only in fn::campaign_result's note; there is no open_question record (proposed in needs_scenarios.md)."
+ },
+ {
+  "id": "s9_14_open_disrupted_leader_tomb",
+  "section": "9.14",
+  "kind": "open",
+  "text": "Can my British leader in the Tomb be disrupted, spoiling the Tomb condition?",
+  "query": "RETURN open_question:disrupt_leaders_forts.kind;",
+  "expect": "gap",
+  "match": "exact",
+  "answer": "Not settled: 9.14 needs both Tomb occupiers undisrupted, but the manual doesn't say whether a leader can be disrupted at all (it has no combat factors); the corpus records the gap.",
+  "about": [
+   "open_question:disrupt_leaders_forts",
+   "rule:r9_14_take_tomb"
+  ]
+ },
+ {
+  "id": "s9_24_open_khalifa_extra",
+  "section": "9.24",
+  "kind": "open",
+  "text": "In the historical scenario, does killing the Khalifa (or any leader) count extra, or at all?",
+  "query": "RETURN { historical_vp_awards: count(SELECT id FROM vp_award WHERE scenario = scenario:historical), leaders_count: open_question:historical_leaders_count.kind };",
+  "expect": {
+   "historical_vp_awards": 0,
+   "leaders_count": "gap"
+  },
+  "match": "exact",
+  "answer": "No extra value is stated: historical victory is 'based solely on eliminating enemy units' (9.24), with no point awards; whether leaders count as units in that tally is not stated.",
+  "about": [
+   "open_question:historical_leaders_count",
+   "unit:khalifa_abdullah"
+  ]
+ },
+ {
+  "id": "s9_24_open_equal_levels",
+  "section": "9.24",
+  "kind": "open",
+  "text": "Both sides reach the same historical victory level (say 35 kills vs 6 losses, both marginal). What is the net result?",
+  "query": "RETURN fn::historical_result(35, 6);",
+  "expect": {
+   "ae_level": 2,
+   "dervish_level": 2,
+   "net": 0,
+   "net_level": null,
+   "winner": null
+  },
+  "match": "exact",
+  "answer": "The manual doesn't say: subtracting equal levels gives 0, and the table's lowest level is 1 (DRAW) (9.24). Presumably a draw, but it is unstated.",
+  "about": [
+   "victory_condition:h_net",
+   "rule:r9_24_net_victory"
+  ],
+  "note": "The corpus returns net 0 with no level and no winner, i.e. unstated; there is no open_question record for it (proposed in needs_scenarios.md)."
+ },
+ {
+  "id": "s9_212_open_tribe_leader",
+  "section": "9.212",
+  "kind": "open",
+  "text": "In the historical scenario, which tribes set up around Yakub, Sherif and Ali Wad Helu?",
+  "query": "RETURN command_group:turn1_leaders.individual_assignment;",
+  "expect": "unstated",
+  "match": "exact",
+  "answer": "The manual matches units to leaders 'by color' (9.212) but gives a colour only for Sheik El Din's green units; which turn-1 tribe belongs to Yakub, Sherif or Ali Wad Helu is on the counters, not in the text.",
+  "about": [
+   "command_group:turn1_leaders",
+   "open_question:tribe_colors"
+  ]
+ },
+ {
+  "id": "s9_341_open_later_turns",
+  "section": "9.341",
+  "kind": "open",
+  "text": "In Fall of Khartoum, are turns 2 and later day or night turns?",
+  "query": "RETURN [fn::is_night(scenario:fall_of_khartoum, 2), open_question:fok_later_turns.kind];",
+  "expect": [
+   null,
+   "gap"
+  ],
+  "match": "exact",
+  "answer": "Not stated: 9.341 makes only turn 1 a night turn; the scenario (25 January 1885, pre-dawn) has no track of its own. The corpus returns 'unstated' and records the gap.",
+  "about": [
+   "open_question:fok_later_turns",
+   "scenario:fall_of_khartoum"
+  ]
+ },
+ {
+  "id": "s9_341_open_gunboat_night",
+  "section": "9.341",
+  "kind": "open",
+  "text": "On Fall of Khartoum's night turn 1, are Gordon's gunboats' movement allowances halved too?",
+  "query": "RETURN fn::night_ma(faction:anglo_egyptian, unit:old_gunboat.move_downstream);",
+  "expect": 8,
+  "match": "exact",
+  "answer": "By the letter of 8.1, yes: 'all Anglo-Egyptian movement allowances are halved', and the gunboats are Anglo-Egyptian units (16 downstream becomes 8). The manual never addresses gunboats at night specifically.",
+  "about": [
+   "unit:old_gunboat",
+   "rule:r9_341_night_turn1"
+  ],
+  "note": "Part C 23. The corpus applies 8.1 to every Anglo-Egyptian allowance without an open_question record; the reading is the literal one; needs_scenarios.md proposes open_question:fok_gunboats_night."
+ },
+ {
+  "id": "s9_35_open_gordon_turn7_8",
+  "section": "9.35",
+  "kind": "open",
+  "text": "Gordon is eliminated on turn 7 (or turn 8). What is the result?",
+  "query": "RETURN [fn::fok_result(7, 0).result, fn::fok_result(8, 0).result];",
+  "expect": [
+   "British marginal",
+   "British tactical"
+  ],
+  "match": "exact",
+  "answer": "Implied only: 9.35 lists Dervish results for turns 4–6 and British results by survival of turns 6–8; a turn-7 kill means GORDON survived turn 6 (British marginal), a turn-8 kill that he survived turn 7 (British tactical).",
+  "about": [
+   "victory_level:k_b_marginal",
+   "victory_level:k_b_tactical"
+  ],
+  "note": "The reading is encoded in fn::fok_result (its COMMENT says 'implied by 9.35'); no open_question record exists, see needs_scenarios.md."
+ }
+]

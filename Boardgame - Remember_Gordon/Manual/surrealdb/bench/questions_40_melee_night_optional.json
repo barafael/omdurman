@@ -1,0 +1,2652 @@
+[
+ {
+  "id": "s7_1_spear_gunboat",
+  "section": "7.1",
+  "kind": "player",
+  "text": "Can I attack a gunboat with spears (in melee)?",
+  "query": "RETURN fn::allowed(unit:sultan, action:melee_defend);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Gunboats may neither melee attack nor be melee attacked (7.1).",
+  "about": [
+   "unit:sultan",
+   "action:melee_defend",
+   "rule:r7_1_gunboats_no_melee"
+  ]
+ },
+ {
+  "id": "s7_1_gunboat_melee",
+  "section": "7.1",
+  "kind": "player",
+  "text": "Can my gunboat fight in melee?",
+  "query": "RETURN fn::allowed(unit:old_gunboat, action:melee_attack);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Gunboats have no melee strength and may not melee attack (7.1).",
+  "about": [
+   "unit:old_gunboat",
+   "action:melee_attack",
+   "rule:r7_1_gunboats_no_melee"
+  ]
+ },
+ {
+  "id": "s7_2_two_hexes",
+  "section": "7.2",
+  "kind": "player",
+  "text": "Can I melee from two hexes away?",
+  "query": "RETURN rule:r7_2_adjacent.statement CONTAINS \"adjacent enemy units only\";",
+  "expect": true,
+  "match": "exact",
+  "answer": "No. Units may melee attack adjacent enemy units only (7.2).",
+  "about": [
+   "rule:r7_2_adjacent",
+   "action:melee_attack"
+  ]
+ },
+ {
+  "id": "s7_2_over_wall",
+  "section": "7.2",
+  "kind": "player",
+  "text": "Can I assault over the wall?",
+  "query": "RETURN [terrain:wall.effects CONTAINS \"no melee across (7.2)\", rule:r7_2_walls.kind];",
+  "expect": [
+   true,
+   "prohibition"
+  ],
+  "match": "exact",
+  "answer": "No. Units may not melee attack across a wall hexside, only through a gate or breach hexside (7.2).",
+  "about": [
+   "terrain:wall",
+   "rule:r7_2_walls",
+   "terrain:gate",
+   "terrain:breach"
+  ]
+ },
+ {
+  "id": "s7_3_destroyed_still_rolls",
+  "section": "7.3",
+  "kind": "player",
+  "text": "My battalion was destroyed in the melee. Does it still hurt the attacker?",
+  "query": "RETURN rule:r7_3_simultaneous.statement CONTAINS \"still get a melee combat die roll\";",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Melee is simultaneous, so units eliminated by melee attacks still get their melee combat die roll (7.3).",
+  "about": [
+   "rule:r7_3_simultaneous",
+   "action:melee_defend"
+  ]
+ },
+ {
+  "id": "s7_3_who_first",
+  "section": "7.3",
+  "kind": "player",
+  "text": "Who rolls first in a melee?",
+  "query": "RETURN rule:r7_3_simultaneous.statement CONTAINS \"simultaneous\";",
+  "expect": true,
+  "match": "exact",
+  "answer": "It doesn't matter: melee combat is considered simultaneous (7.3).",
+  "about": [
+   "rule:r7_3_simultaneous"
+  ]
+ },
+ {
+  "id": "s7_4_artillery_attack",
+  "section": "7.4",
+  "kind": "player",
+  "text": "Can my artillery melee attack?",
+  "query": "RETURN fn::allowed(unit:battery_32, action:melee_attack);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Only infantry, cavalry, camel units and Dervish leaders may melee attack (7.4).",
+  "about": [
+   "unit:battery_32",
+   "action:melee_attack",
+   "rule:r7_4_attackers"
+  ]
+ },
+ {
+  "id": "s7_4_maxims_attack",
+  "section": "7.4",
+  "kind": "player",
+  "text": "Can the Maxims melee attack?",
+  "query": "RETURN fn::allowed(unit:maxim_battery, action:melee_attack);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. The Maxim battery is not infantry, cavalry, camel or a Dervish leader (7.4).",
+  "about": [
+   "unit:maxim_battery",
+   "action:melee_attack",
+   "rule:r7_4_attackers"
+  ]
+ },
+ {
+  "id": "s7_4_artillery_defend",
+  "section": "7.4",
+  "kind": "player",
+  "text": "Can artillery defend in melee?",
+  "query": "RETURN fn::allowed(unit:battery_32, action:melee_defend);",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. All units except gunboats may melee defend (7.4).",
+  "about": [
+   "unit:battery_32",
+   "action:melee_defend",
+   "rule:r7_4_defenders"
+  ]
+ },
+ {
+  "id": "s7_4_khalifa_attack",
+  "section": "7.4",
+  "kind": "player",
+  "text": "Can the Khalifa attack in melee?",
+  "query": "RETURN fn::allowed(unit:khalifa_abdullah, action:melee_attack);",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Dervish leaders may melee attack (7.4, 6.51).",
+  "about": [
+   "unit:khalifa_abdullah",
+   "action:melee_attack",
+   "rule:r7_4_attackers"
+  ]
+ },
+ {
+  "id": "s7_4_kitchener_attack",
+  "section": "7.4",
+  "kind": "player",
+  "text": "Can Kitchener melee attack?",
+  "query": "RETURN fn::allowed(unit:kitchener, action:melee_attack);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Only Dervish leaders are named among melee attackers; Anglo-Egyptian leaders have a movement factor only (7.4, 6.51).",
+  "about": [
+   "unit:kitchener",
+   "action:melee_attack",
+   "rule:r7_4_attackers"
+  ]
+ },
+ {
+  "id": "s7_5_lancers_escape",
+  "section": "7.5",
+  "kind": "player",
+  "text": "Infantry charges my Lancers. Can I get away?",
+  "query": "RETURN [fn::allowed(unit:lancers_21, action:retreat), constant:cav_retreat_hexes.value];",
+  "expect": [
+   true,
+   2
+  ],
+  "match": "exact",
+  "answer": "Yes. Cavalry may retreat two hexes from an infantry melee attack (7.5).",
+  "about": [
+   "unit:lancers_21",
+   "action:retreat",
+   "rule:r7_5_retreat"
+  ]
+ },
+ {
+  "id": "s7_5_cavalry_charge",
+  "section": "7.5",
+  "kind": "player",
+  "text": "Can I retreat from a cavalry charge?",
+  "query": "RETURN rule:r7_5_retreat.params.trigger;",
+  "expect": "infantry melee attack",
+  "match": "exact",
+  "answer": "No. The retreat is allowed only from an infantry melee attack (7.5).",
+  "about": [
+   "rule:r7_5_retreat",
+   "action:retreat"
+  ]
+ },
+ {
+  "id": "s7_5_retreat_twice",
+  "section": "7.5",
+  "kind": "player",
+  "text": "My camels retreated and got attacked again. Can they retreat again?",
+  "query": "RETURN constant:retreats_per_unit_turn.value;",
+  "expect": 1,
+  "match": "exact",
+  "answer": "No. Only one retreat per unit per turn is permitted; enemy units whose attacks are not yet resolved may attack them where they retreated to (7.5).",
+  "about": [
+   "constant:retreats_per_unit_turn",
+   "rule:r7_5_retreat",
+   "action:retreat"
+  ]
+ },
+ {
+  "id": "s7_5_retreat_timing",
+  "section": "7.5",
+  "kind": "player",
+  "text": "Does retreating happen before or instead of rolling?",
+  "query": "RETURN open_question:retreat_timing.kind;",
+  "expect": "gap",
+  "match": "exact",
+  "answer": "The manual does not say: 7.5 allows the two-hex retreat from an infantry melee attack but gives no timing, and does not say whether either side still rolls (7.5).",
+  "about": [
+   "open_question:retreat_timing",
+   "rule:r7_5_retreat"
+  ],
+  "note": "Part B's bracketed answer 'Instead of fighting' overclaims; 7.5 does not say the retreat replaces the melee die rolls."
+ },
+ {
+  "id": "s7_6_must_advance",
+  "section": "7.6",
+  "kind": "player",
+  "text": "My Hadendowa killed all the defenders. Do I have to move in?",
+  "query": "RETURN rule:r7_6_dervish_must_advance.kind;",
+  "expect": "obligation",
+  "match": "exact",
+  "answer": "Yes. If a melee attack eliminates all defenders in the hex, the Dervish player MUST advance into it (7.6).",
+  "about": [
+   "rule:r7_6_dervish_must_advance",
+   "tribe:hadendowa",
+   "action:advance_after_combat"
+  ]
+ },
+ {
+  "id": "s7_6_leave_one",
+  "section": "7.6",
+  "kind": "player",
+  "text": "Can I leave one unit behind after the forced advance?",
+  "query": "RETURN rule:r7_6_dervish_must_advance.params.all_must_advance;",
+  "expect": true,
+  "match": "exact",
+  "answer": "No. All surviving eligible Dervish units must advance, up to the stacking limit (7.6).",
+  "about": [
+   "rule:r7_6_dervish_must_advance",
+   "action:advance_after_combat"
+  ]
+ },
+ {
+  "id": "s7_6_british_decline",
+  "section": "7.6",
+  "kind": "player",
+  "text": "Can my British battalions decline to advance after a successful melee?",
+  "query": "RETURN rule:r7_6_ae_may_advance.kind;",
+  "expect": "permission",
+  "match": "exact",
+  "answer": "Yes. The Anglo-Egyptian player may advance if desired; it is not compulsory (7.6).",
+  "about": [
+   "rule:r7_6_ae_may_advance",
+   "faction:anglo_egyptian",
+   "action:advance_after_combat"
+  ]
+ },
+ {
+  "id": "s7_6_defender_advance",
+  "section": "7.6",
+  "kind": "player",
+  "text": "Can the defender advance after a failed attack?",
+  "query": "RETURN rule:r7_6_attackers_only.statement CONTAINS \"Only attacking units may advance\";",
+  "expect": true,
+  "match": "exact",
+  "answer": "No. Only attacking units may advance (7.6).",
+  "about": [
+   "rule:r7_6_attackers_only",
+   "action:advance_after_combat"
+  ]
+ },
+ {
+  "id": "s7_6_good_terrain",
+  "section": "7.6",
+  "kind": "player",
+  "text": "Does a forced advance pull my units out of good terrain?",
+  "query": "RETURN [rule:r7_6_dervish_must_advance.params.all_must_advance, count(SELECT id FROM rule WHERE exception_to CONTAINS rule:r7_6_dervish_must_advance)];",
+  "expect": [
+   true,
+   0
+  ],
+  "match": "exact",
+  "answer": "Yes. Every surviving eligible Dervish unit must advance, and 7.6 makes no exception for the terrain the attackers stand in (7.6).",
+  "about": [
+   "rule:r7_6_dervish_must_advance",
+   "action:advance_after_combat"
+  ],
+  "note": "Part B adds 'which is the point'; the manual states the obligation but not the designer's intent."
+ },
+ {
+  "id": "s7_7_defender_rolls",
+  "section": "7.7",
+  "kind": "player",
+  "text": "Does the defender roll too?",
+  "query": "RETURN rule:r7_7_resolution.statement CONTAINS \"attacker and defender both roll\";",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Both the attacker and the defender roll on the Combat Results Table, each with its melee modifier (7.7).",
+  "about": [
+   "rule:r7_7_resolution",
+   "action:melee_defend"
+  ]
+ },
+ {
+  "id": "s7_7_huts",
+  "section": "7.7",
+  "kind": "player",
+  "text": "Does hut terrain help me in melee?",
+  "query": "RETURN count(SELECT id FROM rule WHERE exception_to CONTAINS rule:r7_7_no_terrain AND concerns CONTAINS terrain:hut) > 0;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. No terrain modifiers apply to melee; the only exception is Zariba hexsides (7.7, 9.23).",
+  "about": [
+   "rule:r7_7_no_terrain",
+   "terrain:hut"
+  ]
+ },
+ {
+  "id": "s7_7_dervish_bonus",
+  "section": "7.7",
+  "kind": "player",
+  "text": "What's the Dervish melee bonus?",
+  "query": "RETURN fn::melee_mod(faction:dervish, false);",
+  "expect": 2,
+  "match": "exact",
+  "answer": "+2 to the Dervish melee die roll (7.7).",
+  "about": [
+   "modifier:dervish_melee",
+   "faction:dervish"
+  ]
+ },
+ {
+  "id": "s7_7_losses_stack",
+  "section": "7.7",
+  "kind": "player",
+  "text": "Melee losses: do I pick from the whole stack?",
+  "query": "RETURN rule:r7_7_losses_first.statement;",
+  "expect": "Melee losses must be taken from meleeing units first.",
+  "match": "exact",
+  "answer": "No. Melee losses must be taken from the units that took part in the melee first (7.7).",
+  "about": [
+   "rule:r7_7_losses_first"
+  ]
+ },
+ {
+  "id": "s7_7_column",
+  "section": "7.7",
+  "kind": "player",
+  "text": "Which CRT column do I use in melee?",
+  "query": "RETURN open_question:melee_crt_column.kind;",
+  "expect": "gap",
+  "match": "exact",
+  "answer": "The manual does not say. Melee strength is printed on the counter (7.1) and both sides roll on the Combat Results Table (7.7), but which column a melee uses is not stated.",
+  "about": [
+   "open_question:melee_crt_column",
+   "rule:r7_7_resolution",
+   "component:combat_results_table"
+  ],
+  "note": "Part B's 'Your melee strength' is a reading, not stated in the manual; recorded as open_question:melee_crt_column."
+ },
+ {
+  "id": "s7_7_trench",
+  "section": "7.7",
+  "kind": "player",
+  "text": "Does the trench help defenders in melee?",
+  "query": "RETURN fn::melee_mod(faction:dervish, true);",
+  "expect": -2,
+  "match": "exact",
+  "answer": "Yes. Dervish units melee attacking an entrenched unit get −2 instead of +2 (7.7 exception, 9.232).",
+  "about": [
+   "modifier:trench_melee",
+   "rule:r9_232_trench",
+   "state:entrenched"
+  ]
+ },
+ {
+  "id": "s8_1_dervish_ma",
+  "section": "8.1",
+  "kind": "player",
+  "text": "Is my Dervish movement halved at night?",
+  "query": "RETURN fn::night_ma(unit:danagla_sample.faction, unit:danagla_sample.move);",
+  "expect": 12,
+  "match": "exact",
+  "answer": "No. Only Anglo-Egyptian movement allowances are halved at night; a 12-MP Dervish camel unit keeps 12 (8.1).",
+  "about": [
+   "unit:danagla_sample",
+   "rule:r8_1_ae_movement_halved"
+  ]
+ },
+ {
+  "id": "s8_1_cavalry_15",
+  "section": "8.1",
+  "kind": "player",
+  "text": "What is my 15-MP cavalry's movement allowance at night?",
+  "query": "RETURN fn::night_ma(unit:lancers_21.faction, unit:lancers_21.move);",
+  "expect": 7,
+  "match": "exact",
+  "answer": "7: Anglo-Egyptian movement allowances are halved, rounding down (8.1).",
+  "about": [
+   "unit:lancers_21",
+   "modifier:night_ae_movement"
+  ]
+ },
+ {
+  "id": "s8_1_artillery_range",
+  "section": "8.1",
+  "kind": "player",
+  "text": "Can my artillery fire at full range at night?",
+  "query": "RETURN modifier:night_range.{factor, who};",
+  "expect": {
+   "factor": 0.5,
+   "who": "both sides"
+  },
+  "match": "exact",
+  "answer": "No. All fire ranges are halved at night for both sides, rounding down (8.1).",
+  "about": [
+   "modifier:night_range",
+   "rule:r8_1_ranges_halved"
+  ]
+ },
+ {
+  "id": "s8_1_spears",
+  "section": "8.1",
+  "kind": "player",
+  "text": "Spears are range 1. Do they still work at night?",
+  "query": "RETURN fn::night_range(1);",
+  "expect": 1,
+  "match": "exact",
+  "answer": "Yes. Range 1 stays range 1 at night (8.1).",
+  "about": [
+   "rule:r8_1_ranges_halved",
+   "range_line:d_spears_swords"
+  ]
+ },
+ {
+  "id": "s8_1_which_turns",
+  "section": "8.1",
+  "kind": "player",
+  "text": "Which turns are night turns?",
+  "query": "SELECT VALUE n FROM turn WHERE night = true ORDER BY n;",
+  "expect": [
+   9,
+   10,
+   19,
+   20
+  ],
+  "match": "exact",
+  "answer": "Turns 9, 10, 19 and 20, the shaded NIGHT boxes of the Turn Record Track (8, TurnTrack).",
+  "about": [
+   "state:night",
+   "component:turn_record_track",
+   "scenario:campaign"
+  ]
+ },
+ {
+  "id": "s8_1_maxim_second",
+  "section": "8.1",
+  "kind": "player",
+  "text": "Do Maxims get a second fire at night?",
+  "query": "RETURN (SELECT VALUE out FROM prohibits WHERE in = state:night) CONTAINS action:maxim_second_fire;",
+  "expect": false,
+  "match": "exact",
+  "answer": "Yes, nothing forbids it: night removes only Anglo-Egyptian howitzer fire, and Maxim fire is subject only to the halved ranges (8.1).",
+  "about": [
+   "state:night",
+   "action:maxim_second_fire",
+   "action:howitzer_fire"
+  ]
+ },
+ {
+  "id": "s8_2_when",
+  "section": "8.2",
+  "kind": "player",
+  "text": "When do my warriors run off (desert)?",
+  "query": "RETURN { turn: (SELECT VALUE n FROM ONLY turn WHERE special = \"Dervish Desertion Roll\" LIMIT 1), phase: (SELECT VALUE out.name FROM ONLY allowed_in WHERE in = action:desert LIMIT 1) };",
+  "expect": {
+   "turn": 9,
+   "phase": "Dervish Movement Phase"
+  },
+  "match": "exact",
+  "answer": "During the movement phase of the first night turn of the campaign game, turn 9 on the track (8.2, TurnTrack).",
+  "about": [
+   "action:desert",
+   "turn:9",
+   "rule:r8_2_desertion"
+  ]
+ },
+ {
+  "id": "s8_2_roll_4",
+  "section": "8.2",
+  "kind": "player",
+  "text": "I rolled a 4 for desertion. How many go?",
+  "query": "RETURN fn::desertion(4).units;",
+  "expect": 6,
+  "match": "exact",
+  "answer": "Six: deserters equal 1½ times the roll (8.2).",
+  "about": [
+   "rule:r8_2_desertion",
+   "constant:desertion_multiplier"
+  ]
+ },
+ {
+  "id": "s8_2_choose",
+  "section": "8.2",
+  "kind": "player",
+  "text": "Can I choose to lose my worst units?",
+  "query": "RETURN rule:r8_2_desertion.params.chooser;",
+  "expect": "faction:dervish",
+  "match": "exact",
+  "answer": "Yes. The Dervish player chooses which units desert (8.2).",
+  "about": [
+   "rule:r8_2_desertion",
+   "faction:dervish"
+  ]
+ },
+ {
+  "id": "s8_2_leader",
+  "section": "8.2",
+  "kind": "player",
+  "text": "Can I lose a leader to desertion?",
+  "query": "RETURN fn::allowed(unit:yakub, action:desert);",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Only the KHALIFA, gunboats, artillery units and forts may not be chosen, so other leaders may (8.2).",
+  "about": [
+   "unit:yakub",
+   "action:desert",
+   "rule:r8_2_desertion"
+  ]
+ },
+ {
+  "id": "s8_2_vp",
+  "section": "8.2",
+  "kind": "player",
+  "text": "Does the British player score for deserters?",
+  "query": "RETURN vp_award:ae_deserters.points;",
+  "expect": 0,
+  "match": "exact",
+  "answer": "No. No victory points are awarded for deserting Dervishes (8.2).",
+  "about": [
+   "vp_award:ae_deserters",
+   "action:desert"
+  ]
+ },
+ {
+  "id": "s8_2_fok",
+  "section": "8.2",
+  "kind": "player",
+  "text": "Does desertion happen in Fall of Khartoum too?",
+  "query": "RETURN rule:r8_2_desertion.scenarios CONTAINS scenario:fall_of_khartoum;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. The roll is made 'once each campaign game' (8.2).",
+  "about": [
+   "rule:r8_2_desertion",
+   "scenario:fall_of_khartoum"
+  ]
+ },
+ {
+  "id": "s10_both",
+  "section": "10",
+  "kind": "player",
+  "text": "Can the Dervish use both mines and chain?",
+  "query": "RETURN rule:r10_one_or_other.kind;",
+  "expect": "recommendation",
+  "match": "exact",
+  "answer": "It isn't forbidden, but using both optionals in the same game is not recommended (10).",
+  "about": [
+   "rule:r10_one_or_other"
+  ]
+ },
+ {
+  "id": "s10_secret",
+  "section": "10",
+  "kind": "player",
+  "text": "Does the British player know which optional rule is in use?",
+  "query": "RETURN rule:r10_one_or_other.statement CONTAINS \"without the Anglo-Egyptian player knowing which\";",
+  "expect": true,
+  "match": "exact",
+  "answer": "Ideally not: the suggested use is that the Dervish has one or the other and the Anglo-Egyptian player finds out only when he stumbles onto it (10).",
+  "about": [
+   "rule:r10_one_or_other"
+  ]
+ },
+ {
+  "id": "s10_12_stopped",
+  "section": "10.12",
+  "kind": "player",
+  "text": "My gunboat was just ordered to stop. What happened?",
+  "query": "SELECT VALUE id FROM rule WHERE string::starts_with(section.num, \"10\") AND statement CONTAINS \"must stop\";",
+  "expect": [
+   "rule:r10_12_strike_mine",
+   "rule:r10_22_chain_stop"
+  ],
+  "match": "set",
+  "answer": "It struck a mine: the Dervish player orders it to stop and rolls for the blast (10.12). With the chain option instead, a British gunboat entering a chained hex must also stop (10.22).",
+  "about": [
+   "rule:r10_12_strike_mine",
+   "rule:r10_22_chain_stop",
+   "action:strike_mine"
+  ],
+  "note": "Part B answers only 'A mine'; the chain (10.22) also stops a British gunboat."
+ },
+ {
+  "id": "s10_12_damaged_shoot",
+  "section": "10.12",
+  "kind": "player",
+  "text": "Can my mine-damaged gunboat still shoot?",
+  "query": "SELECT VALUE out FROM prohibits WHERE in = state:mine_damaged;",
+  "expect": [
+   "action:move"
+  ],
+  "match": "set",
+  "answer": "Yes. The damage costs it its engines (it drifts); guns and Maxims are unaffected unless they drift out of range (10.12).",
+  "about": [
+   "state:mine_damaged",
+   "rule:r10_12_strike_mine"
+  ]
+ },
+ {
+  "id": "s10_12_sunk_vp",
+  "section": "10.12",
+  "kind": "player",
+  "text": "Does a mine-sunk gunboat give the Dervish 10 VP?",
+  "query": "RETURN vp_award:d_gunboat.points;",
+  "expect": 10,
+  "match": "exact",
+  "answer": "Yes. The Dervish player gets 10 points for each British gunboat sunk, however it was sunk (9.14, 10.12).",
+  "about": [
+   "vp_award:d_gunboat",
+   "die_outcome:mine_sunk"
+  ]
+ },
+ {
+  "id": "s10_11_same_hex",
+  "section": "10.11",
+  "kind": "player",
+  "text": "Can both mines be in one hex?",
+  "query": "RETURN rule:r10_11_record_mines.params.distinct;",
+  "expect": true,
+  "match": "exact",
+  "answer": "No. The two mines may not both be placed in the same hex (10.11).",
+  "about": [
+   "rule:r10_11_record_mines",
+   "constant:mines"
+  ]
+ },
+ {
+  "id": "s10_13_more_mines",
+  "section": "10.13",
+  "kind": "player",
+  "text": "After both mines have gone off, are there more?",
+  "query": "RETURN rule:r10_13_two_only.statement CONTAINS \"no more are available\";",
+  "expect": true,
+  "match": "exact",
+  "answer": "No. After both mines have been rolled for, no more are available (10.13).",
+  "about": [
+   "rule:r10_13_two_only",
+   "constant:mines"
+  ]
+ },
+ {
+  "id": "s10_14_dervish_gunboats",
+  "section": "10.14",
+  "kind": "player",
+  "text": "Can my Dervish gunboats sail through the mined hexes?",
+  "query": "RETURN rule:r10_14_dervish_gunboats_safe.kind;",
+  "expect": "permission",
+  "match": "exact",
+  "answer": "Yes, with no ill effect; the Dervish player knows where the mines are (10.14).",
+  "about": [
+   "rule:r10_14_dervish_gunboats_safe",
+   "unit_class:d_gunboat"
+  ]
+ },
+ {
+  "id": "s10_23_dervish_cross",
+  "section": "10.23",
+  "kind": "player",
+  "text": "Can my Dervish gunboats cross the chain?",
+  "query": "RETURN fn::allowed(unit:dervish_gunboat, action:cross_chain);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. No gunboat, British or Dervish, may cross the chain until the British player has sunk it (10.23).",
+  "about": [
+   "unit:dervish_gunboat",
+   "action:cross_chain",
+   "rule:r10_23_chain_block"
+  ]
+ },
+ {
+  "id": "s10_23_get_rid",
+  "section": "10.23",
+  "kind": "player",
+  "text": "How do I get rid of the chain?",
+  "query": "RETURN { artillery_min: threshold:sink_chain.min_result, units: (SELECT VALUE in FROM capability WHERE out = action:sink_chain AND allowed = true ORDER BY in) };",
+  "expect": {
+   "artillery_min": 3,
+   "units": [
+    "unit_class:cavalry",
+    "unit_class:infantry"
+   ]
+  },
+  "match": "exact",
+  "answer": "Either an infantry or cavalry unit spends one complete turn on a riverbank adjacent to a chained hex, or artillery fires at the chain and gets 3 or more on the CRT (10.23).",
+  "about": [
+   "rule:r10_23_sink_chain",
+   "threshold:sink_chain",
+   "action:sink_chain"
+  ]
+ },
+ {
+  "id": "s10_23_gunboat_artillery",
+  "section": "10.23",
+  "kind": "player",
+  "text": "Can a gunboat's own artillery shoot the chain?",
+  "query": "LET $c = fn::can(unit:sultan, action:fire_at_chain); RETURN [$c.allowed, $c.basis, open_question:artillery_meaning.kind];",
+  "expect": [
+   true,
+   "implied",
+   "ambiguity"
+  ],
+  "match": "exact",
+  "answer": "Only by reading: gunboats fire an artillery factor, so the corpus records it as implied, but 10.23 says only 'artillery' and the manual never says whether gunboats count (open_question:artillery_meaning).",
+  "about": [
+   "unit:sultan",
+   "action:fire_at_chain",
+   "open_question:artillery_meaning"
+  ],
+  "note": "Part B's 'Artillery fire is allowed, so yes' overclaims: whether 'artillery' includes gunboats is open (open_question:artillery_meaning); the corpus records the edge as implied."
+ },
+ {
+  "id": "s10_21_length",
+  "section": "10.21",
+  "kind": "player",
+  "text": "How long can the chain be?",
+  "query": "RETURN constant:chain_max_hexes.value;",
+  "expect": 4,
+  "match": "exact",
+  "answer": "Not more than four river hexes (10.21).",
+  "about": [
+   "constant:chain_max_hexes",
+   "rule:r10_21_record_chain"
+  ]
+ },
+ {
+  "id": "s11_mahdi_tomb",
+  "section": "11",
+  "kind": "player",
+  "text": "Who was the Mahdi, and why is his tomb worth 25 points?",
+  "query": "RETURN { mahdi: person:mahdi.name, tomb_vp: location:mahdis_tomb.vp, why: location:mahdis_tomb.description };",
+  "expect": {
+   "mahdi": "Mohammed Ahmed Ibn Al-Sayid Abdullah",
+   "tomb_vp": 25,
+   "why": "not only the tallest structure in the entire Sudan in 1898, it was also a Dervish holy shrine"
+  },
+  "match": "exact",
+  "answer": "Mohammed Ahmed Ibn Al-Sayid Abdullah proclaimed himself the Mahdi, the Messiah, in 1881 (11). His tomb was the tallest structure in the Sudan and a Dervish holy shrine, so it is worth 25 VP (9.14).",
+  "about": [
+   "person:mahdi",
+   "location:mahdis_tomb",
+   "vp_award:tomb"
+  ]
+ },
+ {
+  "id": "s11_fuzzy_wuzzies",
+  "section": "11",
+  "kind": "player",
+  "text": "Who are the 'Fuzzy-Wuzzies'?",
+  "query": "SELECT VALUE name FROM tribe WHERE aka CONTAINS \"Fuzzy-Wuzzies\";",
+  "expect": [
+   "Hadendowa"
+  ],
+  "match": "exact",
+  "answer": "The Hadendowa, Osman Digna's troops, who broke Baker Pasha's square and later a British square (11).",
+  "about": [
+   "tribe:hadendowa",
+   "person:osman_digna"
+  ]
+ },
+ {
+  "id": "s11_named_gunboat_howitzers",
+  "section": "11",
+  "kind": "player",
+  "text": "Why do the named gunboats have howitzers?",
+  "query": "RETURN string::contains(unit_class:named_gunboat.history ?? \"\", \"howitzers\");",
+  "expect": true,
+  "match": "exact",
+  "answer": "The new shallow-draft gunboats of 1898 carried 12-pounders, 6-pounders and Maxims on the upper deck and 4-inch howitzers on the gun deck (11).",
+  "about": [
+   "unit_class:named_gunboat",
+   "unit:sultan"
+  ],
+  "note": "Fails until unit_class:named_gunboat carries the section 11 history (see needs file)."
+ },
+ {
+  "id": "s11_17_forts",
+  "section": "11",
+  "kind": "player",
+  "text": "Why are there 17 forts?",
+  "query": "RETURN [constant:campaign_forts.value, string::contains(unit:fort.history ?? \"\", \"seventeen forts\")];",
+  "expect": [
+   17,
+   true
+  ],
+  "match": "exact",
+  "answer": "To guard the approaches to Omdurman the Khalifa had seventeen forts built and armed with old artillery pieces (11, 9.111).",
+  "about": [
+   "unit:fort",
+   "constant:campaign_forts"
+  ],
+  "note": "Fails until unit:fort carries the section 11 history (see needs file)."
+ },
+ {
+  "id": "s11_rifles",
+  "section": "11",
+  "kind": "player",
+  "text": "Why do only the Jehadia and Danagla have rifles?",
+  "query": "SELECT VALUE id FROM tribe WHERE history CONTAINS \"Remingtons\";",
+  "expect": [
+   "tribe:jehadia",
+   "tribe:danagla"
+  ],
+  "match": "set",
+  "answer": "The few guns available, old Remingtons and brass muzzle loaders, were issued to the Jehadia and the Danagla; the rest carried swords and spears (11).",
+  "about": [
+   "tribe:jehadia",
+   "tribe:danagla",
+   "range_line:d_rifles"
+  ],
+  "note": "Part B's 'only' slightly overclaims: the Isa Zachneih unit also fires on the rifles line (2.31)."
+ },
+ {
+  "id": "s11_khartoum_gap",
+  "section": "11",
+  "kind": "player",
+  "text": "Why is there a gap in Khartoum's wall?",
+  "query": "RETURN { gap: location:khartoum_wall.gap, fell: historical_event:fall_of_khartoum.date };",
+  "expect": {
+   "gap": "washed away by the receding White Nile after the flood",
+   "fell": "1885-01-25"
+  },
+  "match": "exact",
+  "answer": "The receding White Nile had eroded a section of the wall; some 20,000 Dervishes poured through it on 25 January 1885 (11, 2.1).",
+  "about": [
+   "location:khartoum_wall",
+   "historical_event:fall_of_khartoum"
+  ]
+ },
+ {
+  "id": "s11_jehadia_commander",
+  "section": "11",
+  "kind": "player",
+  "text": "Who commands the Jehadia?",
+  "query": "RETURN array::flatten(tribe:jehadia->member_of->command_group<-leads<-unit);",
+  "expect": [
+   "unit:sheik_el_din"
+  ],
+  "match": "exact",
+  "answer": "Sheik El Din, the Khalifa's son (11, 5.53).",
+  "about": [
+   "tribe:jehadia",
+   "unit:sheik_el_din",
+   "command_group:sheik_el_din"
+  ]
+ },
+ {
+  "id": "s11_lancers",
+  "section": "11",
+  "kind": "player",
+  "text": "What happened to the 21st Lancers?",
+  "query": "RETURN string::contains(unit:lancers_21.history, \"cavalry charge\");",
+  "expect": true,
+  "match": "exact",
+  "answer": "They won their first battle streamer and three Victoria Crosses in one of history's last great knee-to-knee cavalry charges (11).",
+  "about": [
+   "unit:lancers_21"
+  ]
+ },
+ {
+  "id": "sCombatResults_d_three",
+  "section": "CombatResults",
+  "kind": "player",
+  "text": "D on a stack of 3. How many flip?",
+  "query": "RETURN fn::disrupted_count(3);",
+  "expect": 2,
+  "match": "exact",
+  "answer": "Two: half the units in the target hex, rounded up, are disrupted (Explanation of Combat Results).",
+  "about": [
+   "combat_result:disrupted",
+   "state:disrupted"
+  ]
+ },
+ {
+  "id": "sCombatResults_excess",
+  "section": "CombatResults",
+  "kind": "player",
+  "text": "The result is '2' but the hex has 1 unit. What happens?",
+  "query": "RETURN open_question:excess_eliminations.kind;",
+  "expect": "gap",
+  "match": "exact",
+  "answer": "The unit is eliminated; what, if anything, happens to the excess loss is not stated (Explanation of Combat Results).",
+  "about": [
+   "open_question:excess_eliminations",
+   "combat_result:eliminated"
+  ]
+ },
+ {
+  "id": "sCombatResults_minus_one",
+  "section": "CombatResults",
+  "kind": "player",
+  "text": "My modifiers bring the roll to −1. Is that an automatic miss?",
+  "query": "RETURN fn::net_roll(2, -3);",
+  "expect": 1,
+  "match": "exact",
+  "answer": "No. Modified die rolls below 1 are treated as 1 (Explanation of Combat Results).",
+  "about": [
+   "rule:rcrt_clamp",
+   "constant:die_min"
+  ]
+ },
+ {
+  "id": "sCombatResults_above_10",
+  "section": "CombatResults",
+  "kind": "player",
+  "text": "Can I roll above 10 with bonuses?",
+  "query": "RETURN fn::net_roll(10, 2);",
+  "expect": 10,
+  "match": "exact",
+  "answer": "No. Modified die rolls above 10 are treated as 10 (Explanation of Combat Results).",
+  "about": [
+   "rule:rcrt_clamp",
+   "constant:die_max"
+  ]
+ },
+ {
+  "id": "sDisrupted_melee_after_fire",
+  "section": "Disrupted",
+  "kind": "player",
+  "text": "My unit got disrupted in his defensive fire. Can it melee this turn?",
+  "query": "RETURN (SELECT VALUE out FROM prohibits WHERE in = state:disrupted) CONTAINS action:melee_attack;",
+  "expect": true,
+  "match": "exact",
+  "answer": "No. Disrupted units may not melee, and they turn face up only at the end of your player turn (Disrupted Units).",
+  "about": [
+   "state:disrupted",
+   "action:melee_attack",
+   "rule:rdisrupted"
+  ],
+  "note": "The query asks whether the disrupted state prohibits melee attack (true = it may not melee)."
+ },
+ {
+  "id": "sDisrupted_recover_when",
+  "section": "Disrupted",
+  "kind": "player",
+  "text": "When does a disrupted unit recover?",
+  "query": "RETURN state:disrupted.recovery;",
+  "expect": "turned face up at the end of the owning player's turn",
+  "match": "exact",
+  "answer": "At the end of the owning player's (your) player turn it is turned face up (Disrupted Units).",
+  "about": [
+   "state:disrupted",
+   "action:recover"
+  ]
+ },
+ {
+  "id": "sDisrupted_defend_melee",
+  "section": "Disrupted",
+  "kind": "player",
+  "text": "Can a disrupted unit defend in melee?",
+  "query": "RETURN open_question:disrupted_melee_defense.kind;",
+  "expect": "ambiguity",
+  "match": "exact",
+  "answer": "Not settled: the back cover says disrupted units 'may not melee', while 7.4 says all units except gunboats may melee defend (Disrupted Units, 7.4).",
+  "about": [
+   "open_question:disrupted_melee_defense",
+   "state:disrupted",
+   "action:melee_defend"
+  ]
+ },
+ {
+  "id": "sDisrupted_enemy_turn",
+  "section": "Disrupted",
+  "kind": "player",
+  "text": "If my unit is disrupted during the enemy's turn, is it still disrupted for my next movement?",
+  "query": "RETURN { recovery: state:disrupted.recovery, may_move: (SELECT VALUE out FROM prohibits WHERE in = state:disrupted) CONTAINSNOT action:move };",
+  "expect": {
+   "recovery": "turned face up at the end of the owning player's turn",
+   "may_move": false
+  },
+  "match": "exact",
+  "answer": "Yes. It turns face up only at the end of your own player turn, so it sits out your movement phase and recovers at the end of that turn (Disrupted Units).",
+  "about": [
+   "state:disrupted",
+   "action:move",
+   "action:recover"
+  ]
+ },
+ {
+  "id": "sDisrupted_tomb",
+  "section": "Disrupted",
+  "kind": "player",
+  "text": "Can a disrupted unit hold the Tomb?",
+  "query": "RETURN (SELECT VALUE out FROM prohibits WHERE in = state:disrupted) CONTAINS action:occupy_tomb;",
+  "expect": true,
+  "match": "exact",
+  "answer": "No. The British leader and the combat unit taking the Tomb must both be undisrupted at the conclusion of play (9.14).",
+  "about": [
+   "state:disrupted",
+   "action:occupy_tomb",
+   "location:mahdis_tomb"
+  ],
+  "note": "true = the disrupted state prohibits taking the Tomb."
+ },
+ {
+  "id": "sDisrupted_again",
+  "section": "Disrupted",
+  "kind": "player",
+  "text": "Can a disrupted unit be disrupted again?",
+  "query": "SELECT VALUE kind FROM open_question WHERE refs CONTAINS state:disrupted AND question CONTAINS \"already disrupted\";",
+  "expect": [
+   "gap"
+  ],
+  "match": "exact",
+  "answer": "The manual does not address it: a D disrupts half the units in the hex, rounded up, and says nothing about units that are already disrupted (Explanation of Combat Results, Disrupted Units).",
+  "about": [
+   "state:disrupted",
+   "combat_result:disrupted"
+  ],
+  "note": "Fails until the corpus records this gap as an open_question (see needs file)."
+ },
+ {
+  "id": "sTurnTrack_next_night",
+  "section": "TurnTrack",
+  "kind": "player",
+  "text": "It's turn 8 (8:00 pm). Is the next turn night?",
+  "query": "RETURN (turn:8->next->turn)[0].night;",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Turn 9, the next box, is the first NIGHT turn (Turn Record Track).",
+  "about": [
+   "turn:8",
+   "turn:9"
+  ]
+ },
+ {
+  "id": "sTurnTrack_desertion",
+  "section": "TurnTrack",
+  "kind": "player",
+  "text": "When's the desertion roll?",
+  "query": "SELECT VALUE n FROM turn WHERE special = \"Dervish Desertion Roll\";",
+  "expect": [
+   9
+  ],
+  "match": "exact",
+  "answer": "Turn 9, the first night turn, marked 'Dervish Desertion Roll' on the track (Turn Record Track, 8.2).",
+  "about": [
+   "turn:9",
+   "action:desert"
+  ]
+ },
+ {
+  "id": "sTurnTrack_time_now",
+  "section": "TurnTrack",
+  "kind": "player",
+  "text": "It's turn 15. What time is it?",
+  "query": "RETURN fn::turn(15).{date, time};",
+  "expect": {
+   "date": "1898-09-02",
+   "time": "14:00"
+  },
+  "match": "exact",
+  "answer": "2:00 pm on 2 September 1898 (Turn Record Track).",
+  "about": [
+   "turn:15"
+  ]
+ },
+ {
+  "id": "sTurnTrack_until_dawn",
+  "section": "TurnTrack",
+  "kind": "player",
+  "text": "It's turn 8 (8:00 pm). How many turns until dawn?",
+  "query": "RETURN (SELECT VALUE n FROM turn WHERE n > 8 AND night = false ORDER BY n LIMIT 1)[0] - 8;",
+  "expect": 3,
+  "match": "exact",
+  "answer": "Three: turns 9 and 10 are night, and turn 11 is 6:00 am on 2 September (Turn Record Track).",
+  "about": [
+   "turn:8",
+   "turn:11"
+  ]
+ },
+ {
+  "id": "s7_7_ae_melee_bonus",
+  "section": "7.7",
+  "kind": "basic",
+  "text": "What is the Anglo-Egyptian melee modifier?",
+  "query": "RETURN fn::melee_mod(faction:anglo_egyptian, false);",
+  "expect": 1,
+  "match": "exact",
+  "answer": "+1 to the Anglo-Egyptian melee die roll (7.7).",
+  "about": [
+   "modifier:ae_melee",
+   "faction:anglo_egyptian"
+  ]
+ },
+ {
+  "id": "s7_4_cavalry_attack",
+  "section": "7.4",
+  "kind": "basic",
+  "text": "Can cavalry melee attack?",
+  "query": "RETURN fn::allowed(unit:lancers_21, action:melee_attack);",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Infantry, cavalry, camel units and Dervish leaders may melee attack (7.4).",
+  "about": [
+   "unit:lancers_21",
+   "action:melee_attack"
+  ]
+ },
+ {
+  "id": "s7_4_camel_corps_attack",
+  "section": "7.4",
+  "kind": "basic",
+  "text": "Can the Camel Corps melee attack?",
+  "query": "RETURN fn::allowed(unit:camel_corps, action:melee_attack);",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Camel units may melee attack (7.4).",
+  "about": [
+   "unit:camel_corps",
+   "action:melee_attack"
+  ]
+ },
+ {
+  "id": "s7_4_tribal_attack",
+  "section": "7.4",
+  "kind": "basic",
+  "text": "Can a Baggara unit melee attack?",
+  "query": "RETURN fn::allowed(tribe:baggara, action:melee_attack);",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Dervish tribal units are infantry, and infantry may melee attack (7.4).",
+  "about": [
+   "tribe:baggara",
+   "action:melee_attack"
+  ]
+ },
+ {
+  "id": "s7_4_fort_attack",
+  "section": "7.4",
+  "kind": "basic",
+  "text": "Can a fort melee attack?",
+  "query": "RETURN fn::allowed(unit:fort, action:melee_attack);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. A fort's melee value is defensive only (6.54, 7.4).",
+  "about": [
+   "unit:fort",
+   "action:melee_attack"
+  ]
+ },
+ {
+  "id": "s7_4_fort_defend",
+  "section": "7.4",
+  "kind": "basic",
+  "text": "Can a fort be melee attacked?",
+  "query": "RETURN fn::allowed(unit:fort, action:melee_defend);",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. All units except gunboats may melee defend; a fort defends with its melee value (7.4, 6.54).",
+  "about": [
+   "unit:fort",
+   "action:melee_defend"
+  ]
+ },
+ {
+  "id": "s7_5_which_retreat",
+  "section": "7.5",
+  "kind": "basic",
+  "text": "Which units can retreat from a melee?",
+  "query": "SELECT VALUE in FROM capability WHERE out = action:retreat AND allowed = true;",
+  "expect": [
+   "unit_class:cavalry",
+   "unit_class:camel"
+  ],
+  "match": "set",
+  "answer": "Cavalry and camel units, from an infantry melee attack (7.5).",
+  "about": [
+   "action:retreat",
+   "unit_class:cavalry",
+   "unit_class:camel"
+  ]
+ },
+ {
+  "id": "s7_5_camel_retreat",
+  "section": "7.5",
+  "kind": "basic",
+  "text": "Can my Danagla camels retreat from an infantry melee attack?",
+  "query": "RETURN fn::allowed(unit:danagla_sample, action:retreat);",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes, two hexes (7.5).",
+  "about": [
+   "unit:danagla_sample",
+   "action:retreat"
+  ]
+ },
+ {
+  "id": "s7_5_infantry_retreat",
+  "section": "7.5",
+  "kind": "basic",
+  "text": "Can infantry retreat from a melee attack?",
+  "query": "RETURN fn::allowed(unit:egyptian_battalion_sample, action:retreat);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Only cavalry and camel units are given a retreat (7.5).",
+  "about": [
+   "unit:egyptian_battalion_sample",
+   "action:retreat",
+   "rule:r7_5_retreat"
+  ],
+  "note": "Implied: 7.5 is the only retreat in the rules. The corpus has no edge for other units, so fn::allowed returns NONE (see needs file)."
+ },
+ {
+  "id": "s7_6_advance_eligibility",
+  "section": "7.6",
+  "kind": "basic",
+  "text": "Which units are eligible to advance after a melee?",
+  "query": "RETURN rule:r7_6_dervish_must_advance.params.eligibility;",
+  "expect": [
+   "adjacent to the vacated hex",
+   "participated in the melee attack that eliminated the defenders"
+  ],
+  "match": "set",
+  "answer": "Units that were adjacent to the vacated hex and took part in the melee attack that eliminated the defenders (7.6).",
+  "about": [
+   "rule:r7_6_dervish_must_advance",
+   "action:advance_after_combat"
+  ]
+ },
+ {
+  "id": "s7_6_advance_cap",
+  "section": "7.6",
+  "kind": "basic",
+  "text": "How many units can advance into the vacated hex?",
+  "query": "RETURN [rule:r7_6_dervish_must_advance.params.cap, constant:stacking_limit.value];",
+  "expect": [
+   "stacking limit",
+   4
+  ],
+  "match": "exact",
+  "answer": "Up to the stacking limit, four units (7.6, 5.51).",
+  "about": [
+   "rule:r7_6_dervish_must_advance",
+   "constant:stacking_limit"
+  ]
+ },
+ {
+  "id": "s7_2_gate_breach",
+  "section": "7.2",
+  "kind": "basic",
+  "text": "Can I melee attack through a gate or breach?",
+  "query": "RETURN rule:r7_2_walls.statement CONTAINS \"may melee attack through a gate or breach hexside\";",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Melee is barred across a wall hexside but allowed through a gate or breach hexside (7.2).",
+  "about": [
+   "rule:r7_2_walls",
+   "terrain:gate",
+   "terrain:breach"
+  ]
+ },
+ {
+  "id": "s7_7_terrain_modifiers",
+  "section": "7.7",
+  "kind": "basic",
+  "text": "Are terrain modifiers applied to melee?",
+  "query": "RETURN rule:r7_7_no_terrain.statement CONTAINS \"No terrain modifiers apply to melee combat\";",
+  "expect": true,
+  "match": "exact",
+  "answer": "No, except Zariba hexsides in the historical scenario and, if constructed, the campaign game (7.7).",
+  "about": [
+   "rule:r7_7_no_terrain"
+  ],
+  "note": "true = the corpus records that no terrain modifiers apply."
+ },
+ {
+  "id": "s7_7_friendlies_melee_mod",
+  "section": "7.7",
+  "kind": "basic",
+  "text": "What melee modifier do the Friendlies use?",
+  "query": "RETURN fn::melee_mod(unit_class:friendlies, false);",
+  "expect": 2,
+  "match": "exact",
+  "answer": "+2: the Friendlies melee with the Dervish melee modifier (6.52, 7.7).",
+  "about": [
+   "unit_class:friendlies",
+   "modifier:dervish_melee"
+  ]
+ },
+ {
+  "id": "s7_1_lancers_melee",
+  "section": "7.1",
+  "kind": "basic",
+  "text": "What is the 21st Lancers' melee strength?",
+  "query": "RETURN unit:lancers_21.melee;",
+  "expect": 5,
+  "match": "exact",
+  "answer": "5, printed on the counter (8·5·15) (7.1, 2.3).",
+  "about": [
+   "unit:lancers_21"
+  ]
+ },
+ {
+  "id": "s7_1_battery_melee",
+  "section": "7.1",
+  "kind": "basic",
+  "text": "What melee strength does 32 Battery defend with?",
+  "query": "RETURN unit:battery_32.melee;",
+  "expect": 1,
+  "match": "exact",
+  "answer": "1, printed on the counter (10·1·7); artillery may defend but not attack in melee (7.1, 7.4).",
+  "about": [
+   "unit:battery_32"
+  ]
+ },
+ {
+  "id": "s7_melee_last_phase",
+  "section": "7",
+  "kind": "basic",
+  "text": "Is melee the last phase of my player turn?",
+  "query": "SELECT VALUE name FROM phase WHERE player_turn_phase = phase:ae_player_turn ORDER BY step DESC LIMIT 1;",
+  "expect": [
+   "Anglo-Egyptian Melee Attacks"
+  ],
+  "match": "exact",
+  "answer": "Yes. Melee attacks come after movement and fire combat, at the end of the player turn (4, 7).",
+  "about": [
+   "phase:ae_melee",
+   "phase:ae_player_turn"
+  ]
+ },
+ {
+  "id": "sTurnTrack_turn10_night",
+  "section": "TurnTrack",
+  "kind": "basic",
+  "text": "Is turn 10 a night turn?",
+  "query": "RETURN fn::is_night(scenario:campaign, 10);",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Turn 10 (SEPT. 2 NIGHT) is a shaded night box (Turn Record Track).",
+  "about": [
+   "turn:10",
+   "state:night"
+  ]
+ },
+ {
+  "id": "sTurnTrack_turn13_time",
+  "section": "TurnTrack",
+  "kind": "basic",
+  "text": "What time is turn 13?",
+  "query": "RETURN fn::turn(13).{date, time};",
+  "expect": {
+   "date": "1898-09-02",
+   "time": "10:00"
+  },
+  "match": "exact",
+  "answer": "10:00 am on 2 September (Turn Record Track).",
+  "about": [
+   "turn:13"
+  ]
+ },
+ {
+  "id": "sTurnTrack_night_count",
+  "section": "TurnTrack",
+  "kind": "basic",
+  "text": "How many night turns are in the campaign?",
+  "query": "RETURN count(SELECT id FROM turn WHERE night = true);",
+  "expect": 4,
+  "match": "exact",
+  "answer": "Four: turns 9, 10, 19 and 20 (Turn Record Track).",
+  "about": [
+   "scenario:campaign",
+   "component:turn_record_track"
+  ]
+ },
+ {
+  "id": "s8_historical_no_night",
+  "section": "8",
+  "kind": "basic",
+  "text": "Are there night turns in the historical scenario?",
+  "query": "RETURN [1, 2, 3, 4].map(|$n| fn::is_night(scenario:historical, $n));",
+  "expect": [
+   false,
+   false,
+   false,
+   false
+  ],
+  "match": "exact",
+  "answer": "No. It runs from 6:00 am to 12:00 noon on 2 September, all day turns (9.22).",
+  "about": [
+   "scenario:historical",
+   "state:night"
+  ]
+ },
+ {
+  "id": "s8_fok_turn1_night",
+  "section": "8",
+  "kind": "basic",
+  "text": "Is turn 1 of Fall of Khartoum a night turn?",
+  "query": "RETURN fn::is_night(scenario:fall_of_khartoum, 1);",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Turn 1 is always a night turn there, with the effects of 8.1 (9.341).",
+  "about": [
+   "scenario:fall_of_khartoum",
+   "state:night"
+  ]
+ },
+ {
+  "id": "s8_1_no_howitzer_night",
+  "section": "8.1",
+  "kind": "basic",
+  "text": "Can the gunboats fire their howitzers at night?",
+  "query": "RETURN (SELECT VALUE out FROM prohibits WHERE in = state:night) CONTAINS action:howitzer_fire;",
+  "expect": true,
+  "match": "exact",
+  "answer": "No. There is no Anglo-Egyptian howitzer fire on night turns (8.1, 6.64).",
+  "about": [
+   "state:night",
+   "action:howitzer_fire"
+  ],
+  "note": "true = night prohibits howitzer fire."
+ },
+ {
+  "id": "s8_1_infantry_range3_night",
+  "section": "8.1",
+  "kind": "basic",
+  "text": "At night, can my British infantry fire at range 3?",
+  "query": "RETURN rule:r8_1_ranges_halved.params.example.night.filter(|$e| $e.range = 3)[0].effect;",
+  "expect": "may not fire",
+  "match": "exact",
+  "answer": "No. At night Anglo-Egyptian infantry may not fire at range 3 or more (8.1).",
+  "about": [
+   "rule:r8_1_ranges_halved",
+   "range_line:ae_rifles"
+  ]
+ },
+ {
+  "id": "s8_1_infantry_range1_night",
+  "section": "8.1",
+  "kind": "basic",
+  "text": "At night, is my infantry still doubled at range 1?",
+  "query": "RETURN rule:r8_1_ranges_halved.params.example.night.filter(|$e| $e.range = 1)[0].effect;",
+  "expect": "doubled",
+  "match": "exact",
+  "answer": "Yes. Range effects are the same as by day: doubled at range 1, normal at range 2 (8.1).",
+  "about": [
+   "rule:r8_1_ranges_halved",
+   "range_line:ae_rifles"
+  ]
+ },
+ {
+  "id": "s8_1_range5_night",
+  "section": "8.1",
+  "kind": "basic",
+  "text": "How far does a range-5 weapon reach at night?",
+  "query": "RETURN fn::night_range(5);",
+  "expect": 2,
+  "match": "exact",
+  "answer": "2 hexes: ranges are halved and rounded down (8.1).",
+  "about": [
+   "modifier:night_range"
+  ]
+ },
+ {
+  "id": "s8_1_range3_night",
+  "section": "8.1",
+  "kind": "basic",
+  "text": "How far does a range-3 weapon reach at night?",
+  "query": "RETURN fn::night_range(3);",
+  "expect": 1,
+  "match": "exact",
+  "answer": "1 hex: half of 3 rounded down (8.1).",
+  "about": [
+   "modifier:night_range"
+  ]
+ },
+ {
+  "id": "s8_1_gunboat_night_ma",
+  "section": "8.1",
+  "kind": "basic",
+  "text": "What is an old gunboat's downstream allowance at night?",
+  "query": "RETURN fn::night_ma(unit:old_gunboat.faction, unit:old_gunboat.move_downstream);",
+  "expect": 8,
+  "match": "exact",
+  "answer": "8: all Anglo-Egyptian movement allowances are halved at night, gunboats included (8.1, 5.24).",
+  "about": [
+   "unit:old_gunboat",
+   "modifier:night_ae_movement"
+  ]
+ },
+ {
+  "id": "s8_1_infantry_night_ma",
+  "section": "8.1",
+  "kind": "basic",
+  "text": "How far can an 8-MP Egyptian battalion move at night?",
+  "query": "RETURN fn::night_ma(unit:egyptian_battalion_sample.faction, unit:egyptian_battalion_sample.move);",
+  "expect": 4,
+  "match": "exact",
+  "answer": "4 movement points: half of 8 (8.1).",
+  "about": [
+   "unit:egyptian_battalion_sample",
+   "modifier:night_ae_movement"
+  ]
+ },
+ {
+  "id": "s8_2_khalifa_desert",
+  "section": "8.2",
+  "kind": "basic",
+  "text": "Can the Khalifa desert?",
+  "query": "RETURN fn::allowed(unit:khalifa_abdullah, action:desert);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. The KHALIFA unit may not be chosen to desert (8.2).",
+  "about": [
+   "unit:khalifa_abdullah",
+   "action:desert"
+  ]
+ },
+ {
+  "id": "s8_2_exempt_units",
+  "section": "8.2",
+  "kind": "basic",
+  "text": "Which Dervish units can't be chosen to desert?",
+  "query": "RETURN rule:r8_2_desertion.params.exempt;",
+  "expect": [
+   "unit:khalifa_abdullah",
+   "unit_class:d_gunboat",
+   "unit_class:d_artillery",
+   "unit_class:fort"
+  ],
+  "match": "set",
+  "answer": "The KHALIFA unit, gunboats, artillery units and forts (8.2).",
+  "about": [
+   "rule:r8_2_desertion",
+   "action:desert"
+  ]
+ },
+ {
+  "id": "s8_2_hadendowa_desert",
+  "section": "8.2",
+  "kind": "basic",
+  "text": "Can a Hadendowa unit desert?",
+  "query": "RETURN fn::allowed(tribe:hadendowa, action:desert);",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Any Dervish unit except the KHALIFA, gunboats, artillery and forts may be chosen (8.2).",
+  "about": [
+   "tribe:hadendowa",
+   "action:desert"
+  ]
+ },
+ {
+  "id": "s8_2_artillery_desert",
+  "section": "8.2",
+  "kind": "basic",
+  "text": "Can Dervish artillery desert?",
+  "query": "RETURN fn::allowed(unit:dervish_artillery, action:desert);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Artillery units may not be chosen (8.2).",
+  "about": [
+   "unit:dervish_artillery",
+   "action:desert"
+  ]
+ },
+ {
+  "id": "s8_2_roll_10",
+  "section": "8.2",
+  "kind": "basic",
+  "text": "I rolled a 10 for desertion. How many units desert?",
+  "query": "RETURN fn::desertion(10).units;",
+  "expect": 15,
+  "match": "exact",
+  "answer": "Fifteen: 1½ × 10 (8.2).",
+  "about": [
+   "rule:r8_2_desertion",
+   "constant:desertion_multiplier"
+  ]
+ },
+ {
+  "id": "s8_2_roll_2",
+  "section": "8.2",
+  "kind": "basic",
+  "text": "I rolled a 2 for desertion. How many units desert?",
+  "query": "RETURN fn::desertion(2).units;",
+  "expect": 3,
+  "match": "exact",
+  "answer": "Three: 1½ × 2 (8.2).",
+  "about": [
+   "rule:r8_2_desertion",
+   "constant:desertion_multiplier"
+  ]
+ },
+ {
+  "id": "s8_2_how_often",
+  "section": "8.2",
+  "kind": "basic",
+  "text": "How many desertion rolls are there per campaign game?",
+  "query": "RETURN constant:desertion_rolls.value;",
+  "expect": 1,
+  "match": "exact",
+  "answer": "One, on the first night turn (8.2).",
+  "about": [
+   "constant:desertion_rolls",
+   "action:desert"
+  ]
+ },
+ {
+  "id": "s8_2_historical",
+  "section": "8.2",
+  "kind": "basic",
+  "text": "Is there a desertion roll in the historical scenario?",
+  "query": "RETURN rule:r8_2_desertion.scenarios CONTAINS scenario:historical;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. The roll is made once each campaign game (8.2).",
+  "about": [
+   "rule:r8_2_desertion",
+   "scenario:historical"
+  ]
+ },
+ {
+  "id": "s10_12_mine_roll_6",
+  "section": "10.12",
+  "kind": "basic",
+  "text": "What happens on a mine roll of 6?",
+  "query": "RETURN fn::mine(6);",
+  "expect": "gunboat damaged: lost use of its engines, drifts two hexes per turn with the current for the rest of the game",
+  "match": "exact",
+  "answer": "The gunboat is damaged: it loses its engines and drifts two hexes per turn with the current for the rest of the game (10.12).",
+  "about": [
+   "die_outcome:mine_damaged",
+   "state:mine_damaged"
+  ]
+ },
+ {
+  "id": "s10_12_mine_roll_9",
+  "section": "10.12",
+  "kind": "basic",
+  "text": "What happens on a mine roll of 9?",
+  "query": "RETURN fn::mine(9);",
+  "expect": "gunboat sunk",
+  "match": "exact",
+  "answer": "The gunboat is sunk (10.12).",
+  "about": [
+   "die_outcome:mine_sunk"
+  ]
+ },
+ {
+  "id": "s10_12_mine_roll_3",
+  "section": "10.12",
+  "kind": "basic",
+  "text": "What happens on a mine roll of 3?",
+  "query": "RETURN fn::mine(3);",
+  "expect": "no effect",
+  "match": "exact",
+  "answer": "No effect (10.12).",
+  "about": [
+   "die_outcome:mine_no_effect"
+  ]
+ },
+ {
+  "id": "s10_11_mine_count",
+  "section": "10.11",
+  "kind": "basic",
+  "text": "How many river mines does the Dervish player get?",
+  "query": "RETURN constant:mines.value;",
+  "expect": 2,
+  "match": "exact",
+  "answer": "Two (10.11).",
+  "about": [
+   "constant:mines",
+   "rule:r10_11_record_mines"
+  ]
+ },
+ {
+  "id": "s10_11_mine_area",
+  "section": "10.11",
+  "kind": "basic",
+  "text": "Where may the mines be placed?",
+  "query": "RETURN rule:r10_11_record_mines.params.area;",
+  "expect": "south of the E–W hexrow in which the Khor Shambat empties into the Nile",
+  "match": "exact",
+  "answer": "In Nile River hexes south of the E–W hexrow in which the Khor Shambat empties into the Nile (10.11).",
+  "about": [
+   "rule:r10_11_record_mines",
+   "location:khor_shambat"
+  ]
+ },
+ {
+  "id": "s10_campaign_only",
+  "section": "10",
+  "kind": "basic",
+  "text": "Can the optional rules be used in the historical scenario?",
+  "query": "RETURN rule:r10_campaign_only.scenarios;",
+  "expect": [
+   "scenario:campaign"
+  ],
+  "match": "exact",
+  "answer": "No. The optional rules are for the campaign game only (10).",
+  "about": [
+   "rule:r10_campaign_only",
+   "scenario:campaign"
+  ]
+ },
+ {
+  "id": "s10_12_drift_hexes",
+  "section": "10.12",
+  "kind": "basic",
+  "text": "How far does a mine-damaged gunboat drift?",
+  "query": "RETURN constant:mine_drift_hexes.value;",
+  "expect": 2,
+  "match": "exact",
+  "answer": "Two hexes per turn, for the rest of the game (10.12).",
+  "about": [
+   "constant:mine_drift_hexes",
+   "action:drift"
+  ]
+ },
+ {
+  "id": "s10_12_drift_direction",
+  "section": "10.12",
+  "kind": "basic",
+  "text": "Which way does a damaged gunboat drift?",
+  "query": "RETURN die_outcome:mine_damaged.outcome CONTAINS \"with the current\";",
+  "expect": true,
+  "match": "exact",
+  "answer": "With the current, i.e. downstream (10.12).",
+  "about": [
+   "die_outcome:mine_damaged",
+   "action:drift"
+  ]
+ },
+ {
+  "id": "s10_22_chain_stop",
+  "section": "10.22",
+  "kind": "basic",
+  "text": "What happens when my gunboat enters a chained hex?",
+  "query": "RETURN rule:r10_22_chain_stop.statement;",
+  "expect": "A British gunboat entering a chained river hex must stop and may move no further that turn.",
+  "match": "exact",
+  "answer": "It must stop and may move no further that turn (10.22).",
+  "about": [
+   "rule:r10_22_chain_stop"
+  ]
+ },
+ {
+  "id": "s10_23_chain_roll_2",
+  "section": "10.23",
+  "kind": "basic",
+  "text": "My artillery got a 2 against the chain. Is it sunk?",
+  "query": "RETURN fn::special_hit(\"river chain\", 2);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Artillery needs 3 or more on the Combat Results Table to sink the chain (10.23).",
+  "about": [
+   "threshold:sink_chain",
+   "action:fire_at_chain"
+  ]
+ },
+ {
+  "id": "s10_23_cavalry_sink",
+  "section": "10.23",
+  "kind": "basic",
+  "text": "Can my cavalry sink the chain?",
+  "query": "RETURN fn::allowed(unit:lancers_21, action:sink_chain);",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes, by spending one complete turn on a riverbank adjacent to a chained hex (10.23).",
+  "about": [
+   "unit:lancers_21",
+   "action:sink_chain"
+  ]
+ },
+ {
+  "id": "s10_23_british_cross",
+  "section": "10.23",
+  "kind": "basic",
+  "text": "Can my British gunboats cross the chain before it is sunk?",
+  "query": "RETURN fn::allowed(unit:sultan, action:cross_chain);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. No gunboat may cross the chain until it has been sunk (10.23).",
+  "about": [
+   "unit:sultan",
+   "action:cross_chain"
+  ]
+ },
+ {
+  "id": "s11_mahdi_proclaimed",
+  "section": "11",
+  "kind": "basic",
+  "text": "When did the Mahdi proclaim himself?",
+  "query": "RETURN historical_event:mahdi_proclaimed.date;",
+  "expect": "1881",
+  "match": "exact",
+  "answer": "In 1881 (11).",
+  "about": [
+   "historical_event:mahdi_proclaimed",
+   "person:mahdi"
+  ]
+ },
+ {
+  "id": "s11_khartoum_fell",
+  "section": "11",
+  "kind": "basic",
+  "text": "When did Khartoum fall?",
+  "query": "RETURN historical_event:fall_of_khartoum.date;",
+  "expect": "1885-01-25",
+  "match": "exact",
+  "answer": "In the pre-dawn hours of 25 January 1885 (11).",
+  "about": [
+   "historical_event:fall_of_khartoum"
+  ]
+ },
+ {
+  "id": "s11_scenario_1885",
+  "section": "11",
+  "kind": "basic",
+  "text": "What scenario recreates 25 January 1885?",
+  "query": "RETURN array::flatten(SELECT VALUE ->appears_in->scenario FROM historical_event WHERE date = \"1885-01-25\");",
+  "expect": [
+   "scenario:fall_of_khartoum"
+  ],
+  "match": "exact",
+  "answer": "The bonus game FALL OF KHARTOUM (11, 9.3).",
+  "about": [
+   "historical_event:fall_of_khartoum",
+   "scenario:fall_of_khartoum"
+  ]
+ },
+ {
+  "id": "s11_mahdi_died",
+  "section": "11",
+  "kind": "basic",
+  "text": "When did the Mahdi die?",
+  "query": "RETURN historical_event:mahdi_dies.date;",
+  "expect": "1885-06",
+  "match": "exact",
+  "answer": "In June 1885 (11).",
+  "about": [
+   "historical_event:mahdi_dies",
+   "person:mahdi"
+  ]
+ },
+ {
+  "id": "s11_mahdi_successor",
+  "section": "11",
+  "kind": "basic",
+  "text": "Who succeeded the Mahdi?",
+  "query": "SELECT VALUE name FROM person WHERE role CONTAINS \"succeeded the Mahdi\";",
+  "expect": [
+   "Abdullah the Taiasha"
+  ],
+  "match": "exact",
+  "answer": "The Khalifa, Abdullah the Taiasha, a chief of the Baggaras (11).",
+  "about": [
+   "person:khalifa",
+   "unit:khalifa_abdullah"
+  ]
+ },
+ {
+  "id": "s11_kerreri",
+  "section": "11",
+  "kind": "basic",
+  "text": "When did Kitchener arrive at Kerreri?",
+  "query": "RETURN historical_event:kerreri_arrival.date;",
+  "expect": "1898-09-01",
+  "match": "exact",
+  "answer": "On 1 September 1898, where the campaign game begins (11, 9.1).",
+  "about": [
+   "historical_event:kerreri_arrival",
+   "scenario:campaign"
+  ]
+ },
+ {
+  "id": "s11_battle_date",
+  "section": "11",
+  "kind": "basic",
+  "text": "When was the Battle of Omdurman?",
+  "query": "RETURN historical_event:battle_of_omdurman.date;",
+  "expect": "1898-09-02",
+  "match": "exact",
+  "answer": "2 September 1898; by 11:30 it was virtually over (11).",
+  "about": [
+   "historical_event:battle_of_omdurman"
+  ]
+ },
+ {
+  "id": "s11_egyptian_division",
+  "section": "11",
+  "kind": "basic",
+  "text": "Who commanded Kitchener's Egyptian Division?",
+  "query": "SELECT VALUE name FROM person WHERE role CONTAINS \"Egyptian Division\";",
+  "expect": [
+   "General Hunter"
+  ],
+  "match": "exact",
+  "answer": "General Hunter (11).",
+  "about": [
+   "person:hunter",
+   "unit:hunter"
+  ]
+ },
+ {
+  "id": "s11_sirdar",
+  "section": "11",
+  "kind": "basic",
+  "text": "What was Kitchener's title?",
+  "query": "RETURN unit:kitchener.title;",
+  "expect": "Sirdar",
+  "match": "exact",
+  "answer": "Sirdar, commander of the Egyptian army (11, 1.1).",
+  "about": [
+   "unit:kitchener",
+   "person:kitchener"
+  ]
+ },
+ {
+  "id": "s11_atbara_captured",
+  "section": "11",
+  "kind": "basic",
+  "text": "Who was captured at the Atbara?",
+  "query": "SELECT VALUE name FROM person WHERE role CONTAINS \"Atbara\";",
+  "expect": [
+   "Mahmud"
+  ],
+  "match": "exact",
+  "answer": "Mahmud, one of the Khalifa's few remaining competent generals (11).",
+  "about": [
+   "person:mahmud",
+   "historical_event:atbara"
+  ]
+ },
+ {
+  "id": "s11_kashgeil",
+  "section": "11",
+  "kind": "basic",
+  "text": "Whose army was destroyed at Kashgeil?",
+  "query": "SELECT VALUE name FROM person WHERE role CONTAINS \"Kashgeil\";",
+  "expect": [
+   "General William Hicks (Hicks Pasha)"
+  ],
+  "match": "exact",
+  "answer": "Hicks Pasha's Egyptian army, on 4 November 1883, about 225 miles southwest of Khartoum (11).",
+  "about": [
+   "person:hicks",
+   "historical_event:kashgeil"
+  ]
+ },
+ {
+  "id": "s11_khartoum_invested",
+  "section": "11",
+  "kind": "basic",
+  "text": "When did the Mahdi invest Khartoum?",
+  "query": "RETURN historical_event:khartoum_invested.date;",
+  "expect": "1884-03-12",
+  "match": "exact",
+  "answer": "On 12 March 1884 (11).",
+  "about": [
+   "historical_event:khartoum_invested"
+  ]
+ },
+ {
+  "id": "s11_victoria_quotes",
+  "section": "11",
+  "kind": "basic",
+  "text": "What did Queen Victoria write in her diary about Gordon?",
+  "query": "RETURN person:victoria.quotes;",
+  "expect": [
+   "The government alone is to blame",
+   "Surely now he is avenged"
+  ],
+  "match": "set",
+  "answer": "After Khartoum fell: 'The government alone is to blame'; after Omdurman: 'Surely now he is avenged' (11).",
+  "about": [
+   "person:victoria"
+  ]
+ },
+ {
+  "id": "s11_memorial",
+  "section": "11",
+  "kind": "basic",
+  "text": "When was Kitchener's memorial service for Gordon?",
+  "query": "RETURN historical_event:gordon_memorial.date;",
+  "expect": "1898-09-04",
+  "match": "exact",
+  "answer": "On 4 September 1898, two days after the battle, before the ruins of the palace in Khartoum (11).",
+  "about": [
+   "historical_event:gordon_memorial",
+   "person:gordon"
+  ]
+ },
+ {
+  "id": "sCombatResults_d_meaning",
+  "section": "CombatResults",
+  "kind": "basic",
+  "text": "What does a D result do?",
+  "query": "RETURN combat_result:disrupted.meaning;",
+  "expect": "½ (round up) of the units in the target hex are disrupted (inverted).",
+  "match": "exact",
+  "answer": "Half the units in the target hex, rounded up, are disrupted (inverted) (Explanation of Combat Results).",
+  "about": [
+   "combat_result:disrupted",
+   "state:disrupted"
+  ]
+ },
+ {
+  "id": "sCombatResults_dash",
+  "section": "CombatResults",
+  "kind": "basic",
+  "text": "What does a '—' result mean?",
+  "query": "RETURN combat_result:miss.meaning;",
+  "expect": "miss, no effect",
+  "match": "exact",
+  "answer": "A miss, no effect (Explanation of Combat Results).",
+  "about": [
+   "combat_result:miss"
+  ]
+ },
+ {
+  "id": "sCombatResults_number",
+  "section": "CombatResults",
+  "kind": "basic",
+  "text": "What does a number result on the CRT mean?",
+  "query": "RETURN combat_result:eliminated.meaning;",
+  "expect": "That many units in the target hex are eliminated, i.e. removed from play.",
+  "match": "exact",
+  "answer": "That many units in the target hex are eliminated, removed from play (Explanation of Combat Results).",
+  "about": [
+   "combat_result:eliminated"
+  ]
+ },
+ {
+  "id": "sCombatResults_d_four",
+  "section": "CombatResults",
+  "kind": "basic",
+  "text": "A D hits a hex of four units. How many are disrupted?",
+  "query": "RETURN fn::disrupted_count(4);",
+  "expect": 2,
+  "match": "exact",
+  "answer": "Two, half of four (Explanation of Combat Results).",
+  "about": [
+   "combat_result:disrupted"
+  ]
+ },
+ {
+  "id": "sCombatResults_d_one",
+  "section": "CombatResults",
+  "kind": "basic",
+  "text": "A D hits a lone unit. Is it disrupted?",
+  "query": "RETURN fn::disrupted_count(1);",
+  "expect": 1,
+  "match": "exact",
+  "answer": "Yes: half of one rounded up is one (Explanation of Combat Results).",
+  "about": [
+   "combat_result:disrupted"
+  ]
+ },
+ {
+  "id": "sCombatResults_ae_direct",
+  "section": "CombatResults",
+  "kind": "basic",
+  "text": "What bonus does the CRT give Anglo-Egyptian direct fire?",
+  "query": "RETURN modifier:ae_direct_fire.value;",
+  "expect": 1,
+  "match": "exact",
+  "answer": "+1 on all Anglo-Egyptian direct fire attacks (Explanation of Combat Results, 6.24).",
+  "about": [
+   "modifier:ae_direct_fire"
+  ]
+ },
+ {
+  "id": "sCombatResults_integrity",
+  "section": "CombatResults",
+  "kind": "basic",
+  "text": "What is the brigade integrity bonus?",
+  "query": "RETURN modifier:brigade_integrity.value;",
+  "expect": 1,
+  "match": "exact",
+  "answer": "+1 (Explanation of Combat Results, 5.54).",
+  "about": [
+   "modifier:brigade_integrity",
+   "state:brigade_integrity"
+  ]
+ },
+ {
+  "id": "sDisrupted_move",
+  "section": "Disrupted",
+  "kind": "basic",
+  "text": "Can a disrupted unit move?",
+  "query": "RETURN (SELECT VALUE out FROM prohibits WHERE in = state:disrupted) CONTAINS action:move;",
+  "expect": true,
+  "match": "exact",
+  "answer": "No. Disrupted units may not move (Disrupted Units).",
+  "about": [
+   "state:disrupted",
+   "action:move"
+  ],
+  "note": "true = the disrupted state prohibits movement."
+ },
+ {
+  "id": "sDisrupted_def_fire",
+  "section": "Disrupted",
+  "kind": "basic",
+  "text": "Can a disrupted unit fire defensively?",
+  "query": "RETURN (SELECT VALUE out FROM prohibits WHERE in = state:disrupted) CONTAINS action:defensive_fire;",
+  "expect": true,
+  "match": "exact",
+  "answer": "No. Disrupted units may not fire offensively or defensively (Disrupted Units).",
+  "about": [
+   "state:disrupted",
+   "action:defensive_fire"
+  ],
+  "note": "true = prohibited."
+ },
+ {
+  "id": "sDisrupted_zoc",
+  "section": "Disrupted",
+  "kind": "basic",
+  "text": "Does a disrupted unit have a ZOC?",
+  "query": "RETURN (SELECT VALUE out FROM prohibits WHERE in = state:disrupted) CONTAINS action:exert_zoc;",
+  "expect": true,
+  "match": "exact",
+  "answer": "No. Disrupted units have no ZOC (Disrupted Units, 5.41).",
+  "about": [
+   "state:disrupted",
+   "action:exert_zoc"
+  ],
+  "note": "true = the disrupted state removes the ZOC."
+ },
+ {
+  "id": "sDisrupted_marked",
+  "section": "Disrupted",
+  "kind": "basic",
+  "text": "How do I mark a disrupted unit?",
+  "query": "RETURN state:disrupted.marked_by;",
+  "expect": "counter inverted",
+  "match": "exact",
+  "answer": "Invert the counter (Explanation of Combat Results).",
+  "about": [
+   "state:disrupted"
+  ]
+ },
+ {
+  "id": "sTurnTrack_turn1",
+  "section": "TurnTrack",
+  "kind": "basic",
+  "text": "What date and time is turn 1 of the campaign?",
+  "query": "RETURN fn::turn(1).label;",
+  "expect": "1898 SEPT. 1 6:00 am",
+  "match": "exact",
+  "answer": "6:00 am, 1 September 1898 (Turn Record Track).",
+  "about": [
+   "turn:1"
+  ]
+ },
+ {
+  "id": "sTurnTrack_last",
+  "section": "TurnTrack",
+  "kind": "basic",
+  "text": "When is the last turn of the campaign game?",
+  "query": "RETURN fn::turn(scenario:campaign.last_turn).{n, date, time};",
+  "expect": {
+   "n": 22,
+   "date": "1898-09-03",
+   "time": "08:00"
+  },
+  "match": "exact",
+  "answer": "Turn 22, 8:00 am on 3 September (Turn Record Track, 9.12).",
+  "about": [
+   "turn:22",
+   "scenario:campaign"
+  ]
+ },
+ {
+  "id": "sTurnTrack_noon_sept2",
+  "section": "TurnTrack",
+  "kind": "basic",
+  "text": "Which turn is noon on 2 September?",
+  "query": "SELECT VALUE n FROM turn WHERE date = \"1898-09-02\" AND time = \"12:00\";",
+  "expect": [
+   14
+  ],
+  "match": "exact",
+  "answer": "Turn 14 (Turn Record Track).",
+  "about": [
+   "turn:14"
+  ]
+ },
+ {
+  "id": "sTurnTrack_campaign_length",
+  "section": "TurnTrack",
+  "kind": "basic",
+  "text": "How many turns does the campaign game last?",
+  "query": "RETURN scenario:campaign.length_turns;",
+  "expect": 22,
+  "match": "exact",
+  "answer": "22 turns, the whole Turn Record Track (Turn Record Track, 9.12).",
+  "about": [
+   "scenario:campaign",
+   "component:turn_record_track"
+  ]
+ },
+ {
+  "id": "sTurnTrack_day_turn_hours",
+  "section": "TurnTrack",
+  "kind": "basic",
+  "text": "How much time does a day turn represent?",
+  "query": "RETURN constant:day_turn_hours.value;",
+  "expect": 2,
+  "match": "exact",
+  "answer": "Two hours; the track steps from 6:00 am to 8:00 pm in two-hour boxes (1.2, Turn Record Track).",
+  "about": [
+   "constant:day_turn_hours",
+   "component:turn_record_track"
+  ]
+ },
+ {
+  "id": "s7_rules_melee_attack",
+  "section": "7",
+  "kind": "graph",
+  "text": "Which section 7 rules govern melee attacks?",
+  "query": "SELECT VALUE in FROM governs WHERE out = action:melee_attack AND string::starts_with(in.section.num, \"7\");",
+  "expect": [
+   "rule:r7_1_printed",
+   "rule:r7_1_gunboats_no_melee",
+   "rule:r7_2_adjacent",
+   "rule:r7_2_walls",
+   "rule:r7_3_simultaneous",
+   "rule:r7_4_attackers",
+   "rule:r7_7_resolution",
+   "rule:r7_7_no_terrain",
+   "rule:r7_7_losses_first"
+  ],
+  "match": "set",
+  "answer": "7.1 (printed strength, no gunboats), 7.2 (adjacent only, not across walls), 7.3 (simultaneous), 7.4 (who attacks) and 7.7 (resolution, no terrain modifiers, losses).",
+  "about": [
+   "action:melee_attack",
+   "section:`7`"
+  ]
+ },
+ {
+  "id": "s7_4_states_prohibit_melee",
+  "section": "7.4",
+  "kind": "graph",
+  "text": "Which unit states prohibit melee attacks?",
+  "query": "SELECT VALUE in FROM prohibits WHERE out = action:melee_attack;",
+  "expect": [
+   "state:disrupted",
+   "state:constructing_zariba",
+   "state:demolishing"
+  ],
+  "match": "set",
+  "answer": "Disrupted units (back cover), units constructing the Zariba (5.3) and Royal Engineers performing demolitions (6.53).",
+  "about": [
+   "action:melee_attack",
+   "state:disrupted",
+   "state:constructing_zariba",
+   "state:demolishing"
+  ]
+ },
+ {
+  "id": "s7_7_terrain_exceptions",
+  "section": "7.7",
+  "kind": "graph",
+  "text": "Which rules are exceptions to 'no terrain modifiers in melee'?",
+  "query": "SELECT VALUE in FROM exception_to WHERE out = rule:r7_7_no_terrain;",
+  "expect": [
+   "rule:r9_231_thorn_hedge",
+   "rule:r9_232_trench"
+  ],
+  "match": "set",
+  "answer": "The Zariba hexsides: thorn hedge (no melee across) and trench (Dervish −2 instead of +2) (7.7, 9.231, 9.232).",
+  "about": [
+   "rule:r7_7_no_terrain",
+   "rule:r9_231_thorn_hedge",
+   "rule:r9_232_trench"
+  ]
+ },
+ {
+  "id": "s7_melee_phase_actions",
+  "section": "7",
+  "kind": "graph",
+  "text": "Which actions take place in the Dervish melee phase?",
+  "query": "SELECT VALUE in FROM allowed_in WHERE out = phase:d_melee;",
+  "expect": [
+   "action:melee_attack",
+   "action:melee_defend",
+   "action:retreat",
+   "action:advance_after_combat"
+  ],
+  "match": "set",
+  "answer": "Melee attack and defence, cavalry/camel retreat, and advance after melee (7.4, 7.5, 7.6).",
+  "about": [
+   "phase:d_melee",
+   "action:melee_attack"
+  ]
+ },
+ {
+  "id": "sDisrupted_prohibited_actions",
+  "section": "Disrupted",
+  "kind": "graph",
+  "text": "Which actions does the disrupted state prohibit?",
+  "query": "SELECT VALUE out FROM prohibits WHERE in = state:disrupted;",
+  "expect": [
+   "action:exert_zoc",
+   "action:move",
+   "action:fire",
+   "action:offensive_fire",
+   "action:defensive_fire",
+   "action:melee_attack",
+   "action:demolish",
+   "action:occupy_tomb"
+  ],
+  "match": "set",
+  "answer": "ZOC, movement, all fire and melee (back cover), Royal Engineers' demolition (6.53) and taking the Tomb (9.14).",
+  "about": [
+   "state:disrupted"
+  ]
+ },
+ {
+  "id": "s8_1_rules_night",
+  "section": "8.1",
+  "kind": "graph",
+  "text": "Which rules concern night turns?",
+  "query": "SELECT VALUE in FROM concerns WHERE out = state:night;",
+  "expect": [
+   "rule:r8_1_ae_movement_halved",
+   "rule:r8_1_no_howitzer",
+   "rule:r8_1_ranges_halved",
+   "rule:r6_64_no_night_howitzer",
+   "rule:r9_341_night_turn1"
+  ],
+  "match": "set",
+  "answer": "8.1's three effects (movement, howitzers, ranges), 6.64 (no howitzer fire at night) and 9.341 (FALL OF KHARTOUM turn 1 is night).",
+  "about": [
+   "state:night"
+  ]
+ },
+ {
+  "id": "sTurnTrack_after_9",
+  "section": "TurnTrack",
+  "kind": "graph",
+  "text": "What turn comes after turn 9?",
+  "query": "RETURN turn:9->next->turn;",
+  "expect": [
+   "turn:10"
+  ],
+  "match": "exact",
+  "answer": "Turn 10, the second night box (SEPT. 2 NIGHT) (Turn Record Track).",
+  "about": [
+   "turn:9",
+   "turn:10"
+  ]
+ },
+ {
+  "id": "sTurnTrack_two_after_18",
+  "section": "TurnTrack",
+  "kind": "graph",
+  "text": "It's turn 18. What will the box two turns later say?",
+  "query": "RETURN (turn:18->next->turn->next->turn).label;",
+  "expect": [
+   "SEPT. 3 NIGHT"
+  ],
+  "match": "exact",
+  "answer": "Turn 20, 'SEPT. 3 NIGHT' (Turn Record Track).",
+  "about": [
+   "turn:18",
+   "turn:20"
+  ]
+ },
+ {
+  "id": "s11_historical_scenario_event",
+  "section": "11",
+  "kind": "graph",
+  "text": "Which historical event does the historical scenario recreate?",
+  "query": "RETURN scenario:historical<-appears_in<-historical_event;",
+  "expect": [
+   "historical_event:battle_of_omdurman"
+  ],
+  "match": "exact",
+  "answer": "The Battle of Omdurman on 2 September 1898 (11, 9.2).",
+  "about": [
+   "scenario:historical",
+   "historical_event:battle_of_omdurman"
+  ]
+ },
+ {
+  "id": "s11_events_with_scenarios",
+  "section": "11",
+  "kind": "graph",
+  "text": "Which historical events are recreated by a scenario?",
+  "query": "SELECT VALUE id FROM historical_event WHERE count(->appears_in) > 0;",
+  "expect": [
+   "historical_event:fall_of_khartoum",
+   "historical_event:kerreri_arrival",
+   "historical_event:battle_of_omdurman"
+  ],
+  "match": "set",
+  "answer": "The fall of Khartoum (FALL OF KHARTOUM), Kitchener's arrival at Kerreri (campaign game) and the battle itself (historical scenario) (11).",
+  "about": [
+   "historical_event:fall_of_khartoum",
+   "historical_event:kerreri_arrival",
+   "historical_event:battle_of_omdurman"
+  ]
+ },
+ {
+  "id": "s11_persons_with_counter",
+  "section": "11",
+  "kind": "graph",
+  "text": "Which persons of the historical notes have a counter in the game?",
+  "query": "SELECT VALUE id FROM person WHERE counter != NONE;",
+  "expect": [
+   "person:khalifa",
+   "person:gordon",
+   "person:kitchener",
+   "person:hunter",
+   "person:osman_digna",
+   "person:sheik_el_din"
+  ],
+  "match": "set",
+  "answer": "The Khalifa, Gordon, Kitchener, Hunter, Osman Digna and Sheik El Din (11, 2.3, 9).",
+  "about": [
+   "person:khalifa",
+   "person:gordon",
+   "person:kitchener",
+   "person:osman_digna"
+  ]
+ },
+ {
+  "id": "s10_2_chain_actions",
+  "section": "10.2",
+  "kind": "graph",
+  "text": "Which actions do the river chain rules govern?",
+  "query": "RETURN array::distinct(SELECT VALUE out FROM governs WHERE in.section.num IN [\"10.21\", \"10.22\", \"10.23\"]);",
+  "expect": [
+   "action:record_chain",
+   "action:move",
+   "action:cross_chain",
+   "action:sink_chain",
+   "action:fire_at_chain"
+  ],
+  "match": "set",
+  "answer": "Recording the chain (10.21), gunboat movement into a chained hex (10.22), crossing it, and sinking it by units or artillery fire (10.23).",
+  "about": [
+   "action:cross_chain",
+   "action:sink_chain",
+   "action:fire_at_chain"
+  ]
+ },
+ {
+  "id": "s7_7_open_multi_hex",
+  "section": "7.7",
+  "kind": "open",
+  "text": "If I melee one hex from two different hexes, is it one combined attack or two?",
+  "query": "RETURN open_question:melee_crt_column.kind;",
+  "expect": "gap",
+  "match": "exact",
+  "answer": "The manual doesn't say. 7.7 only says both sides roll on the CRT with their melee modifier; how attackers from several hexes are combined, and which column is used, is not stated.",
+  "about": [
+   "open_question:melee_crt_column",
+   "rule:r7_7_resolution"
+  ]
+ },
+ {
+  "id": "s7_7_open_losses_scope",
+  "section": "7.7",
+  "kind": "open",
+  "text": "Does the defender also have to take melee losses from its meleeing units first?",
+  "query": "RETURN open_question:melee_losses_scope.kind;",
+  "expect": "ambiguity",
+  "match": "exact",
+  "answer": "Unclear. 7.7 says 'melee losses must be taken from meleeing units first' without saying whether this binds a defending stack, all of which defends, or only attackers with stackmates that did not attack.",
+  "about": [
+   "open_question:melee_losses_scope",
+   "rule:r7_7_losses_first"
+  ]
+ },
+ {
+  "id": "s7_5_open_retreat_zoc",
+  "section": "7.5",
+  "kind": "open",
+  "text": "Can a retreating cavalry unit pass through enemy ZOCs, and can the attacker advance into the hex it left?",
+  "query": "RETURN open_question:retreat_timing.kind;",
+  "expect": "gap",
+  "match": "exact",
+  "answer": "Not stated. 7.5 gives only the distance (two hexes), the trigger (an infantry melee attack) and the once-per-turn limit.",
+  "about": [
+   "open_question:retreat_timing",
+   "rule:r7_5_retreat"
+  ]
+ },
+ {
+  "id": "sDisrupted_open_melee_defense",
+  "section": "Disrupted",
+  "kind": "open",
+  "text": "Does the corpus forbid disrupted units to melee defend?",
+  "query": "RETURN { open: open_question:disrupted_melee_defense.kind, defend_prohibited: (SELECT VALUE out FROM prohibits WHERE in = state:disrupted) CONTAINS action:melee_defend };",
+  "expect": {
+   "open": "ambiguity",
+   "defend_prohibited": false
+  },
+  "match": "exact",
+  "answer": "No: it records the question as open. The back cover says disrupted units 'may not melee', which clearly bars melee attack; 7.4 says all units except gunboats may melee defend.",
+  "about": [
+   "open_question:disrupted_melee_defense",
+   "state:disrupted",
+   "action:melee_defend"
+  ]
+ },
+ {
+  "id": "s8_2_open_rounding",
+  "section": "8.2",
+  "kind": "open",
+  "text": "I rolled a 7 for desertion: do 10 or 11 units desert?",
+  "query": "RETURN fn::desertion(7).rounding;",
+  "expect": "unstated",
+  "match": "exact",
+  "answer": "The manual doesn't say. 1½ × 7 is 10½, and 8.2 gives no rounding rule.",
+  "about": [
+   "open_question:desertion_rounding",
+   "rule:r8_2_desertion"
+  ]
+ },
+ {
+  "id": "s10_12_open_drift_trigger",
+  "section": "10.12",
+  "kind": "open",
+  "text": "Does a gunboat drifting into a mined hex set the mine off?",
+  "query": "RETURN open_question:mine_drift_trigger.kind;",
+  "expect": "gap",
+  "match": "exact",
+  "answer": "Not stated. 10.12 triggers a mine 'when a British gunboat enters a mined hex' and does not say whether drifting counts, or whether a damaged gunboat can trigger the second mine.",
+  "about": [
+   "open_question:mine_drift_trigger",
+   "rule:r10_12_strike_mine",
+   "action:drift"
+  ]
+ },
+ {
+  "id": "s10_23_open_complete_turn",
+  "section": "10.23",
+  "kind": "open",
+  "text": "Is the 'one complete turn' to sink the chain a full game turn or one Anglo-Egyptian player turn?",
+  "query": "RETURN open_question:chain_complete_turn.kind;",
+  "expect": "ambiguity",
+  "match": "exact",
+  "answer": "The manual says only 'one complete turn' on a riverbank adjacent to a chained hex (10.23).",
+  "about": [
+   "open_question:chain_complete_turn",
+   "rule:r10_23_sink_chain"
+  ]
+ },
+ {
+  "id": "s7_6_open_leaders_cap",
+  "section": "7.6",
+  "kind": "open",
+  "text": "Do leaders count toward the stacking limit that caps the compulsory Dervish advance?",
+  "query": "RETURN open_question:advance_leaders_stacking.kind;",
+  "expect": "gap",
+  "match": "exact",
+  "answer": "Not stated. 7.6 caps the advance at the stacking limit, and 5.51 lets leaders stack free, but 7.6 doesn't say how leaders are treated.",
+  "about": [
+   "open_question:advance_leaders_stacking",
+   "rule:r7_6_dervish_must_advance"
+  ]
+ },
+ {
+  "id": "s7_6_open_fort_melee",
+  "section": "7.6",
+  "kind": "open",
+  "text": "How does an infantry melee attack destroy a fort?",
+  "query": "RETURN open_question:fort_melee_reference.kind;",
+  "expect": "inconsistency",
+  "match": "exact",
+  "answer": "6.54 says forts may be destroyed by infantry melee attack and points to 7.6, but 7.6 says nothing about forts.",
+  "about": [
+   "open_question:fort_melee_reference",
+   "unit:fort"
+  ]
+ },
+ {
+  "id": "sCombatResults_open_disrupt_leaders",
+  "section": "CombatResults",
+  "kind": "open",
+  "text": "Can a D result disrupt an Anglo-Egyptian leader or a fort?",
+  "query": "RETURN open_question:disrupt_leaders_forts.kind;",
+  "expect": "gap",
+  "match": "exact",
+  "answer": "Not stated. A D disrupts half the units in the hex; whether leaders and forts can be among them (which matters for the Tomb) is not said.",
+  "about": [
+   "open_question:disrupt_leaders_forts",
+   "combat_result:disrupted"
+  ]
+ },
+ {
+  "id": "s8_1_open_night_range_cells",
+  "section": "8.1",
+  "kind": "open",
+  "text": "What exactly is my artillery's range at night?",
+  "query": "RETURN open_question:night_range_rounding.kind;",
+  "expect": "gap",
+  "match": "exact",
+  "answer": "8.1 halves ranges (round down, range 1 stays 1), but the day ranges are on the Range Effects Table, which is not in the manual text.",
+  "about": [
+   "open_question:night_range_rounding",
+   "rule:r8_1_ranges_halved"
+  ]
+ },
+ {
+  "id": "s7_5_open_dervish_cavalry",
+  "section": "7.5",
+  "kind": "open",
+  "text": "Which Dervish units count as cavalry or camels for the 7.5 retreat?",
+  "query": "RETURN open_question:dervish_cavalry.kind;",
+  "expect": "gap",
+  "match": "exact",
+  "answer": "Only the sample Danagla camel counter is identified in the text; the other Dervish units' types are on the counters (7.5, 2.3).",
+  "about": [
+   "open_question:dervish_cavalry",
+   "action:retreat"
+  ]
+ }
+]

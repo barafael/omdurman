@@ -1,0 +1,2522 @@
+[
+ {
+  "id": "s6_11_shooting_strength",
+  "section": "6.11",
+  "kind": "player",
+  "text": "Which number is my shooting strength?",
+  "query": "RETURN unit:lancers_21.fire = <int> string::split(unit:lancers_21.printed, \"·\")[0];",
+  "expect": true,
+  "match": "exact",
+  "answer": "The first number on the counter, the fire combat factor (6.11); the 21 Lancers' 8·5·15 fire with 8 (2.3).",
+  "about": [
+   "unit:lancers_21",
+   "rule:r6_11_fire_factor"
+  ]
+ },
+ {
+  "id": "s6_12_must_fire_adjacent",
+  "section": "6.12",
+  "kind": "player",
+  "text": "Do I have to shoot at the unit next to me?",
+  "query": "RETURN count(SELECT id FROM rule WHERE kind = \"obligation\" AND (actions ?? []) CONTAINSANY [action:fire, action:direct_fire, action:defensive_fire, action:offensive_fire]) = 0 AND rule:r6_12_voluntary.kind = \"permission\";",
+  "expect": true,
+  "match": "exact",
+  "answer": "No. Fire combat is always voluntary; a unit is never required to fire because enemies are in range or adjacent (6.12).",
+  "about": [
+   "rule:r6_12_voluntary",
+   "action:fire"
+  ]
+ },
+ {
+  "id": "s6_12_hold_fire",
+  "section": "6.12",
+  "kind": "player",
+  "text": "Can I hold fire to stay hidden?",
+  "query": "RETURN (SELECT VALUE kind FROM rule WHERE section = section:`6.12`);",
+  "expect": [
+   "permission"
+  ],
+  "match": "exact",
+  "answer": "Yes, you may always hold fire: fire is never required (6.12). The game has no hidden units, so holding fire hides nothing.",
+  "about": [
+   "rule:r6_12_voluntary"
+  ]
+ },
+ {
+  "id": "s6_13_split_battery",
+  "section": "6.13",
+  "kind": "player",
+  "text": "Can I split my 10-factor battery between two hexes?",
+  "query": "RETURN (SELECT VALUE kind FROM rule WHERE actions CONTAINS action:divide_fire_factor);",
+  "expect": [
+   "prohibition"
+  ],
+  "match": "exact",
+  "answer": "No. A unit's fire combat factor is unitary and may not be divided among enemy units on different hexes (6.13).",
+  "about": [
+   "rule:r6_13_unitary",
+   "action:divide_fire_factor",
+   "unit:battery_32"
+  ]
+ },
+ {
+  "id": "s6_14_pool_fire",
+  "section": "6.14",
+  "kind": "player",
+  "text": "Can three battalions pool their fire on one target?",
+  "query": "RETURN (SELECT VALUE kind FROM rule WHERE section = section:`6.14` AND actions CONTAINS action:combine_fire);",
+  "expect": [
+   "permission"
+  ],
+  "match": "exact",
+  "answer": "Yes. Any number of units that may legally fire at the hex combine their factors into one attack (6.14).",
+  "about": [
+   "rule:r6_14_combine",
+   "action:combine_fire"
+  ]
+ },
+ {
+  "id": "s6_14_combine_across_hexes",
+  "section": "6.14",
+  "kind": "player",
+  "text": "Can units from different hexes combine?",
+  "query": "RETURN string::contains(rule:r6_14_combine.statement, \"as many friendly units as may legally do so\");",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. 6.14 lets you fire at an enemy-occupied hex with as many friendly units as may legally do so, combined into one attack; it does not require them to share a hex.",
+  "about": [
+   "rule:r6_14_combine"
+  ]
+ },
+ {
+  "id": "s6_14_already_fired_at",
+  "section": "6.14",
+  "kind": "player",
+  "text": "That Baggara stack was already shot this phase. Can my artillery hit it again?",
+  "query": "RETURN { fired_at_per_phase: rule:r6_14_once.params.fired_at_per_phase, exception: array::sort(rule:r6_14_once<-exception_to<-rule) };",
+  "expect": {
+   "fired_at_per_phase": 1,
+   "exception": [
+    "rule:r6_42_refire_targets",
+    "rule:r6_64_howitzer"
+   ]
+  },
+  "match": "exact",
+  "answer": "No. A unit may only be fired at once per fire combat phase (6.14). The only re-fire is in the Maxim Second Fire and Howitzer Subphase, where Maxims and named gunboats' howitzers may fire at units already fired at in direct fire (6.42).",
+  "about": [
+   "rule:r6_14_once",
+   "rule:r6_42_refire_targets",
+   "tribe:baggara"
+  ],
+  "note": "Part B's answer is right, but artillery batteries themselves never fire in 6.42; only Maxims and named gunboats' howitzer fire do."
+ },
+ {
+  "id": "s6_14_fire_twice",
+  "section": "6.14",
+  "kind": "player",
+  "text": "Can a unit fire twice?",
+  "query": "RETURN rule:r6_14_once.params.exceptions;",
+  "expect": [
+   "unit_class:maxim_battery",
+   "unit_class:gunboat"
+  ],
+  "match": "set",
+  "answer": "Normally no: a combat unit fires once per fire combat phase. The exceptions are Maxim guns and gunboats (6.14); 6.42 and 6.64 say how: Maxims fire a second time, and the named gunboats fire their artillery factor again as howitzer fire.",
+  "about": [
+   "rule:r6_14_once",
+   "unit_class:maxim_battery",
+   "unit_class:gunboat"
+  ],
+  "note": "6.14 says 'gunboats' without qualification; only the named gunboats actually get a second fire (6.42, 6.64). See open_question:dervish_defensive_maxims."
+ },
+ {
+  "id": "s6_15_split_stack",
+  "section": "6.15",
+  "kind": "player",
+  "text": "My stack has 4 units. Can they hit 4 different hexes?",
+  "query": "RETURN { allowed: rule:r6_15_split_stack.kind = \"permission\", drm_if_split: fn::fire_drm({ firer: faction:anglo_egyptian, direct: true, integrity: false }), drm_if_together: fn::fire_drm({ firer: faction:anglo_egyptian, direct: true, integrity: true }) };",
+  "expect": {
+   "allowed": true,
+   "drm_if_split": 1,
+   "drm_if_together": 2
+  },
+  "match": "exact",
+  "answer": "Yes, a stack may be divided to fire at different hexes (6.15), but a brigade-integrity stack then loses its +1 integrity bonus, which needs all four firing at the same hex (6.15, 6.24); the normal +1 remains.",
+  "about": [
+   "rule:r6_15_split_stack",
+   "state:brigade_integrity",
+   "modifier:brigade_integrity"
+  ]
+ },
+ {
+  "id": "s6_16_halved_brigade",
+  "section": "6.16",
+  "kind": "player",
+  "text": "Four 9-factor battalions at half strength. Is that 18 or 16?",
+  "query": "RETURN fn::halve([9, 9, 9, 9]);",
+  "expect": 16,
+  "match": "exact",
+  "answer": "16. Round down each unit separately: 4 + 4 + 4 + 4 (6.16, the manual's own example).",
+  "about": [
+   "rule:r6_16_halving",
+   "unit:egyptian_battalion_sample"
+  ]
+ },
+ {
+  "id": "s6_16_halved_one",
+  "section": "6.16",
+  "kind": "player",
+  "text": "My 1-factor unit is halved. Is that 0?",
+  "query": "RETURN fn::halve([1]);",
+  "expect": 1,
+  "match": "exact",
+  "answer": "No. A unit's firing strength is never reduced below one by halving (6.16).",
+  "about": [
+   "rule:r6_16_halving"
+  ]
+ },
+ {
+  "id": "s6_16_halve_each",
+  "section": "6.16",
+  "kind": "player",
+  "text": "Do I halve the total or each unit?",
+  "query": "RETURN rule:r6_16_halving.params.rounding;",
+  "expect": "down, per unit",
+  "match": "exact",
+  "answer": "Each unit, rounding each one down (6.16).",
+  "about": [
+   "rule:r6_16_halving"
+  ]
+ },
+ {
+  "id": "s6_21_check_first",
+  "section": "6.21",
+  "kind": "player",
+  "text": "Before rolling, what do I check first?",
+  "query": "RETURN { first: rule:r6_21_los_first.concerns, exception: rule:r6_21_los_first<-exception_to<-rule };",
+  "expect": {
+   "first": [
+    "component:los_table"
+   ],
+   "exception": [
+    "rule:r6_64_howitzer"
+   ]
+  },
+  "match": "exact",
+  "answer": "The Line of Sight Table, to be sure the firer can see the target hex; howitzer fire is the exception (6.21, 6.64).",
+  "about": [
+   "rule:r6_21_los_first",
+   "component:los_table",
+   "rule:r6_64_howitzer"
+  ]
+ },
+ {
+  "id": "s6_22_rifle_range1",
+  "section": "6.22",
+  "kind": "player",
+  "text": "Is my rifle doubled at range 1?",
+  "query": "RETURN string::contains(rule:r8_1_ranges_halved.statement, \"infantry at night: doubled at range 1\");",
+  "expect": true,
+  "match": "exact",
+  "answer": "The Range Effects Table decides (6.22); its cells are not in the manual text. 8.1 implies yes for Anglo-Egyptian infantry: range effects are the same day and night, and its example has Anglo-Egyptian infantry doubled at range 1.",
+  "about": [
+   "rule:r6_22_range",
+   "rule:r8_1_ranges_halved",
+   "range_line:ae_rifles"
+  ],
+  "note": "Only the 8.1 example gives a cell; the corpus holds no Range Effects Table cells (open_question:range_cells)."
+ },
+ {
+  "id": "s6_22_spears_range",
+  "section": "6.22",
+  "kind": "player",
+  "text": "Is the target out of range for spears?",
+  "query": "RETURN open_question:range_cells.refs CONTAINS section:`6.22` AND range_line:d_spears_swords.basis = \"implied\";",
+  "expect": true,
+  "match": "exact",
+  "answer": "The manual doesn't say. Ranges are on the Dervish Range Effects Table, which is not in the manual text (6.22); 2.31 does not even name a table line for spears and swords.",
+  "about": [
+   "range_line:d_spears_swords",
+   "open_question:range_cells"
+  ],
+  "note": "Part B gives no answer. Depends on table cells outside the corpus."
+ },
+ {
+  "id": "s6_22_multiply_then_sum",
+  "section": "6.22",
+  "kind": "player",
+  "text": "Do units at different ranges get different multipliers before adding?",
+  "query": "RETURN string::contains(rule:r6_22_range.statement, \"add up all factors firing at the hex\") AND constant:range_multipliers.factors = [3, 2, 1, 0.5];",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Each firing unit's factor is tripled, doubled, normal or halved for its own range, and then all the factors firing at the hex are added up (6.22).",
+  "about": [
+   "rule:r6_22_range",
+   "constant:range_multipliers"
+  ]
+ },
+ {
+  "id": "s6_23_huts_modifier",
+  "section": "6.23",
+  "kind": "player",
+  "text": "The target is in huts. What do I subtract?",
+  "query": "RETURN { value: modifier:terrain_defense.value, source: modifier:terrain_defense.source };",
+  "expect": {
+   "value": null,
+   "source": "component:terrain_effects_chart"
+  },
+  "match": "exact",
+  "answer": "Whatever the Terrain Effects Chart gives for huts (6.23). The chart's values are not in the manual text.",
+  "about": [
+   "modifier:terrain_defense",
+   "terrain:hut",
+   "component:terrain_effects_chart"
+  ],
+  "note": "Table value outside the corpus."
+ },
+ {
+  "id": "s6_23_read_crt",
+  "section": "6.23",
+  "kind": "player",
+  "text": "How do I read the CRT?",
+  "query": "RETURN component:combat_results_table.purpose;",
+  "expect": "cross-index the net die roll with the number of combat factors firing",
+  "match": "exact",
+  "answer": "Cross-index the net (modified) die roll with the number of fire combat factors firing (6.23).",
+  "about": [
+   "component:combat_results_table",
+   "rule:r6_23_terrain_and_crt"
+  ]
+ },
+ {
+  "id": "s6_23_shift_or_drm",
+  "section": "6.23",
+  "kind": "player",
+  "text": "Is the terrain bonus a column shift or a die modifier?",
+  "query": "RETURN modifier:terrain_defense.applies_to;",
+  "expect": "fire die roll",
+  "match": "exact",
+  "answer": "A die modifier: the terrain benefit is applied as a negative modifier to the ten-sided die roll (6.23).",
+  "about": [
+   "modifier:terrain_defense"
+  ]
+ },
+ {
+  "id": "s6_24_british_always_plus1",
+  "section": "6.24",
+  "kind": "player",
+  "text": "Do the British always get +1 when shooting?",
+  "query": "RETURN { direct: fn::fire_drm({ firer: faction:anglo_egyptian, direct: true }), condition: modifier:ae_direct_fire.condition };",
+  "expect": {
+   "direct": 1,
+   "condition": "all Anglo-Egyptian direct fire attacks"
+  },
+  "match": "exact",
+  "answer": "On direct fire, yes: every Anglo-Egyptian direct fire attack gets +1 for accuracy (6.24).",
+  "about": [
+   "modifier:ae_direct_fire",
+   "rule:r6_24_ae_accuracy"
+  ]
+ },
+ {
+  "id": "s6_24_bonus_stacks",
+  "section": "6.24",
+  "kind": "player",
+  "text": "Does the bonus stack with integrity?",
+  "query": "RETURN fn::fire_drm({ firer: faction:anglo_egyptian, direct: true, integrity: true });",
+  "expect": 2,
+  "match": "exact",
+  "answer": "Yes. The +1 accuracy and the +1 brigade integrity are cumulative, +2 in all (6.24, 5.54).",
+  "about": [
+   "modifier:ae_direct_fire",
+   "modifier:brigade_integrity"
+  ]
+ },
+ {
+  "id": "s6_24_dervish_bonus",
+  "section": "6.24",
+  "kind": "player",
+  "text": "Do the Dervish get any fire bonus?",
+  "query": "RETURN fn::fire_drm({ firer: faction:dervish, direct: true });",
+  "expect": 0,
+  "match": "exact",
+  "answer": "No. The rules give the Dervish no fire bonus; the +1s are Anglo-Egyptian only (6.24).",
+  "about": [
+   "faction:dervish",
+   "rule:r6_24_ae_accuracy"
+  ]
+ },
+ {
+  "id": "s6_24_howitzer_bonus",
+  "section": "6.24",
+  "kind": "player",
+  "text": "Does the +1 apply to howitzer fire?",
+  "query": "RETURN open_question:howitzer_accuracy_bonus.kind;",
+  "expect": "ambiguity",
+  "match": "exact",
+  "answer": "Not settled. 6.24 gives +1 to all Anglo-Egyptian direct fire attacks, and howitzer fire is fired separately, in its own subphase, ignoring line of sight (6.42, 6.64). The manual never says whether the bonus applies.",
+  "about": [
+   "open_question:howitzer_accuracy_bonus",
+   "modifier:ae_direct_fire",
+   "action:howitzer_fire"
+  ]
+ },
+ {
+  "id": "s6_3_khor_ridge",
+  "section": "6.3",
+  "kind": "player",
+  "text": "I'm in a khor and he's on a ridge. Can I see him?",
+  "query": "RETURN open_question:range_cells.refs CONTAINS section:`6.3`;",
+  "expect": true,
+  "match": "exact",
+  "answer": "Look it up on the Line of Sight Table: cross-index your terrain with the target's (6.3). The table's cells are not in the manual text.",
+  "about": [
+   "component:los_table",
+   "open_question:range_cells"
+  ],
+  "note": "Table cell outside the corpus."
+ },
+ {
+  "id": "s6_3_tomb_blocks",
+  "section": "6.3",
+  "kind": "player",
+  "text": "Does the Mahdi's Tomb block sight?",
+  "query": "RETURN { notes_are_part_of: component:special_los_notes.part_of, notes_text: component:special_los_notes.text };",
+  "expect": {
+   "notes_are_part_of": "component:los_table",
+   "notes_text": null
+  },
+  "match": "exact",
+  "answer": "Check the Special LOS Notes printed with the Line of Sight Table (6.3). Their text is not in the manual, so the rulebook text doesn't settle it.",
+  "about": [
+   "component:special_los_notes",
+   "location:mahdis_tomb"
+  ],
+  "note": "Special LOS Notes are not transcribed."
+ },
+ {
+  "id": "s6_3_shell_behind_hill",
+  "section": "6.3",
+  "kind": "player",
+  "text": "Can my gunboats shell troops behind a hill?",
+  "query": "RETURN { los_exception: rule:r6_3_los<-exception_to<-rule, named: fn::allowed(unit_class:named_gunboat, action:howitzer_fire), old: fn::allowed(unit_class:old_gunboat, action:howitzer_fire) };",
+  "expect": {
+   "los_exception": [
+    "rule:r6_64_howitzer"
+   ],
+   "named": true,
+   "old": false
+  },
+  "match": "exact",
+  "answer": "Only with howitzer fire, which ignores line of sight, and only the five named gunboats have it (6.3, 6.64). Their direct fire and the old gunboats still need LOS.",
+  "about": [
+   "rule:r6_3_los",
+   "rule:r6_64_howitzer",
+   "unit_class:named_gunboat",
+   "unit_class:old_gunboat"
+  ]
+ },
+ {
+  "id": "s6_4_who_first",
+  "section": "6.4",
+  "kind": "player",
+  "text": "Who resolves fire first on my turn?",
+  "query": "RETURN [(SELECT VALUE fire_mode FROM phase WHERE parent = phase:ae_fire_combat ORDER BY ord)[0], (SELECT VALUE fire_mode FROM phase WHERE parent = phase:d_fire_combat ORDER BY ord)[0]];",
+  "expect": [
+   "defensive",
+   "defensive"
+  ],
+  "match": "exact",
+  "answer": "The defender. On either player's turn the non-moving player's defensive fire comes first, then the moving player's offensive fire (6.4).",
+  "about": [
+   "phase:ae_fire_combat",
+   "phase:d_fire_combat",
+   "rule:r6_4_sequence"
+  ]
+ },
+ {
+  "id": "s6_4_dervish_second_subphase",
+  "section": "6.4",
+  "kind": "player",
+  "text": "Does the Dervish ever use the second subphase?",
+  "query": "RETURN array::distinct((SELECT VALUE out.actor FROM allowed_in WHERE in IN [action:maxim_second_fire, action:howitzer_fire]));",
+  "expect": [
+   "faction:anglo_egyptian"
+  ],
+  "match": "exact",
+  "answer": "No. The Maxim Second Fire and Howitzer Fire Subphase is Anglo-Egyptian only; the Dervish player executes only 6.41 (6.4, 6.42).",
+  "about": [
+   "rule:r6_4_sequence",
+   "action:maxim_second_fire"
+  ]
+ },
+ {
+  "id": "s6_41_see_result_first",
+  "section": "6.41",
+  "kind": "player",
+  "text": "Can I see the result of my first attack before committing the next unit?",
+  "query": "RETURN string::contains(rule:r6_41_allocate_then_resolve.statement, \"first allocates all fire attacks\");",
+  "expect": true,
+  "match": "exact",
+  "answer": "No. All fire attacks are allocated first; only then are they resolved (6.41).",
+  "about": [
+   "rule:r6_41_allocate_then_resolve",
+   "action:allocate_fire"
+  ]
+ },
+ {
+  "id": "s6_41_resolve_order",
+  "section": "6.41",
+  "kind": "player",
+  "text": "Can I choose which attack to resolve first?",
+  "query": "RETURN string::contains(rule:r6_41_allocate_then_resolve.statement, \"in any order\");",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. After allocation the firing player resolves the attacks in any order he wishes (6.41).",
+  "about": [
+   "rule:r6_41_allocate_then_resolve",
+   "action:resolve_fire"
+  ]
+ },
+ {
+  "id": "s6_41_redirect",
+  "section": "6.41",
+  "kind": "player",
+  "text": "If my first attack wipes out the target, can I redirect the second?",
+  "query": "RETURN string::contains(rule:r6_41_allocate_then_resolve.statement, \"first allocates all fire attacks\") AND string::contains(rule:r6_41_allocate_then_resolve.statement, \"then resolves\");",
+  "expect": true,
+  "match": "exact",
+  "answer": "No. Every attack was allocated before any was resolved (6.41), so it stays on its allocated target.",
+  "about": [
+   "rule:r6_41_allocate_then_resolve"
+  ]
+ },
+ {
+  "id": "s6_42_skipped_maxims",
+  "section": "6.42",
+  "kind": "player",
+  "text": "My Maxims didn't fire in direct fire. Do they get two shots now?",
+  "query": "RETURN rule:r6_42_maxim_once_if_skipped.kind;",
+  "expect": "limit",
+  "match": "exact",
+  "answer": "No. Maxims that skipped the Direct Fire Subphase still fire only once in the Maxim and Howitzer Subphase (6.42).",
+  "about": [
+   "rule:r6_42_maxim_once_if_skipped",
+   "unit:maxim_battery"
+  ]
+ },
+ {
+  "id": "s6_42_refire_target",
+  "section": "6.42",
+  "kind": "player",
+  "text": "Can I hit the stack my rifles just shot?",
+  "query": "RETURN { kind: rule:r6_42_refire_targets.kind, overrides: rule:r6_42_refire_targets->exception_to->rule };",
+  "expect": {
+   "kind": "permission",
+   "overrides": [
+    "rule:r6_14_once"
+   ]
+  },
+  "match": "exact",
+  "answer": "Yes, with Maxims or howitzers: units firing in 6.42 may fire at enemy units already fired at in the Direct Fire Subphase (6.42).",
+  "about": [
+   "rule:r6_42_refire_targets",
+   "rule:r6_14_once"
+  ]
+ },
+ {
+  "id": "s6_42_add_howitzer",
+  "section": "6.42",
+  "kind": "player",
+  "text": "Can I add a howitzer to my Maxim attack?",
+  "query": "RETURN { kind: rule:r6_42_combine_howitzer.kind, combinable_on: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].filter(|$r| fn::howitzer_impact($r) = die_outcome:howitzer_on_target.outcome) };",
+  "expect": {
+   "kind": "condition",
+   "combinable_on": [
+    7,
+    8,
+    9,
+    10
+   ]
+  },
+  "match": "exact",
+  "answer": "Only if the howitzer fire impacts in the intended hex (6.42), which is an impact roll of 7–10 (6.64).",
+  "about": [
+   "rule:r6_42_combine_howitzer",
+   "die_outcome:howitzer_on_target"
+  ]
+ },
+ {
+  "id": "s6_42_howitzer_scatters",
+  "section": "6.42",
+  "kind": "player",
+  "text": "If the howitzer scatters, does the Maxim attack still happen?",
+  "query": "RETURN open_question:howitzer_maxim_scatter.kind;",
+  "expect": "gap",
+  "match": "exact",
+  "answer": "The manual doesn't say. 6.42 allows the combination only if the howitzer impacts the intended hex; what happens to the Maxims when it scatters is not stated.",
+  "about": [
+   "open_question:howitzer_maxim_scatter",
+   "rule:r6_42_combine_howitzer"
+  ],
+  "note": "Part B says 'the rule implies the Maxims fire alone at their own target'; the text does not say even that, so it is treated as open."
+ },
+ {
+  "id": "s6_42_old_gunboats",
+  "section": "6.42",
+  "kind": "player",
+  "text": "Can old gunboats fire in this subphase?",
+  "query": "RETURN [fn::allowed(unit:old_gunboat, action:howitzer_fire), fn::allowed(unit:old_gunboat, action:maxim_second_fire)];",
+  "expect": [
+   false,
+   false
+  ],
+  "match": "exact",
+  "answer": "No. Only named gunboats fire howitzers there, and only Maxim guns fire a second time; the old gunboat (4·10/16) has neither (6.42, 6.64, 2.3).",
+  "about": [
+   "unit:old_gunboat",
+   "action:howitzer_fire",
+   "action:maxim_second_fire"
+  ]
+ },
+ {
+  "id": "s6_51_khalifa_melee",
+  "section": "6.51",
+  "kind": "player",
+  "text": "Can the Khalifa lead a melee charge?",
+  "query": "RETURN fn::allowed(unit:khalifa_abdullah, action:melee_attack);",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Dervish leaders may attack, melee and be eliminated like any other combat unit (6.51, 7.4).",
+  "about": [
+   "unit:khalifa_abdullah",
+   "action:melee_attack"
+  ]
+ },
+ {
+  "id": "s6_51_overrun_hunter",
+  "section": "6.51",
+  "kind": "player",
+  "text": "Can my spearmen kill Hunter by running over him?",
+  "query": "RETURN fn::can(tribe:baggara, action:overrun_leader).{allowed, condition};",
+  "expect": {
+   "allowed": true,
+   "condition": "the Anglo-Egyptian leader is alone in the hex the Dervish unit occupies or passes through"
+  },
+  "match": "exact",
+  "answer": "Yes, if he is alone: an Anglo-Egyptian leader is eliminated when a Dervish unit occupies or passes through his hex while he's alone in it (6.51a).",
+  "about": [
+   "unit:hunter",
+   "tribe:baggara",
+   "action:overrun_leader"
+  ]
+ },
+ {
+  "id": "s6_51_kitchener_stack_dies",
+  "section": "6.51",
+  "kind": "player",
+  "text": "If the stack Kitchener is in gets wiped out, does he escape?",
+  "query": "RETURN rule:r6_51_ae_leader_elimination.params.conditions CONTAINS \"all combat units it is stacked with eliminated in fire combat or melee\";",
+  "expect": true,
+  "match": "exact",
+  "answer": "No. If all the combat units a leader is stacked with are eliminated in fire combat or melee, he is eliminated too (6.51b).",
+  "about": [
+   "unit:kitchener",
+   "rule:r6_51_ae_leader_elimination"
+  ]
+ },
+ {
+  "id": "s6_51_shoot_kitchener_alone",
+  "section": "6.51",
+  "kind": "player",
+  "text": "Can Kitchener be shot on his own?",
+  "query": "RETURN open_question:lone_leader_fire.kind;",
+  "expect": "gap",
+  "match": "exact",
+  "answer": "The manual doesn't say. 6.51 names only two ways an Anglo-Egyptian leader dies: overrun while alone, or loss of all his stackmates. Fire at a lone leader isn't addressed.",
+  "about": [
+   "unit:kitchener",
+   "open_question:lone_leader_fire"
+  ]
+ },
+ {
+  "id": "s6_51_why_leader",
+  "section": "6.51",
+  "kind": "player",
+  "text": "Why do I need a leader alive?",
+  "query": "SELECT VALUE out FROM concerns WHERE in = rule:r6_51_ae_leader_tomb AND record::tb(out) = \"location\";",
+  "expect": [
+   "location:mahdis_tomb"
+  ],
+  "match": "exact",
+  "answer": "At least one Anglo-Egyptian leader must survive to occupy the Mahdi's Tomb hex if it is to be taken from the Dervish player (6.51, 9.14).",
+  "about": [
+   "rule:r6_51_ae_leader_tomb",
+   "location:mahdis_tomb"
+  ]
+ },
+ {
+  "id": "s6_51_leader_no_zoc",
+  "section": "6.51",
+  "kind": "player",
+  "text": "Does a leader pass-through stop my Dervish unit?",
+  "query": "RETURN fn::allowed(unit:hunter, action:exert_zoc);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Anglo-Egyptian leaders exert no ZOC (5.41), and a lone leader whose hex a Dervish unit passes through is eliminated (6.51a).",
+  "about": [
+   "unit_class:ae_leader",
+   "action:exert_zoc"
+  ]
+ },
+ {
+  "id": "s6_52_friendlies_plus1",
+  "section": "6.52",
+  "kind": "player",
+  "text": "Do the Friendlies get the British +1 accuracy?",
+  "query": "RETURN open_question:friendlies_accuracy_bonus.kind;",
+  "expect": "ambiguity",
+  "match": "exact",
+  "answer": "Not settled. 6.24 gives +1 to all Anglo-Egyptian direct fire attacks and the Friendlies are Anglo-Egyptian units, but they fire on the Dervish Range Effects Table (6.52). The manual doesn't say.",
+  "about": [
+   "unit_class:friendlies",
+   "open_question:friendlies_accuracy_bonus"
+  ]
+ },
+ {
+  "id": "s6_52_friendlies_melee_mod",
+  "section": "6.52",
+  "kind": "player",
+  "text": "What melee modifier do the Friendlies use?",
+  "query": "RETURN fn::melee_mod(unit_class:friendlies, false);",
+  "expect": 2,
+  "match": "exact",
+  "answer": "The Dervish melee modifier, +2 (6.52, 7.7).",
+  "about": [
+   "unit_class:friendlies",
+   "modifier:dervish_melee"
+  ]
+ },
+ {
+  "id": "s6_52_friendlies_walled_city",
+  "section": "6.52",
+  "kind": "player",
+  "text": "Can they enter Omdurman's walled city?",
+  "query": "RETURN fn::may_enter(unit_class:friendlies, location:walled_city).allowed;",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. The Friendlies may not enter the walled city of Omdurman (6.52, 5.23).",
+  "about": [
+   "unit_class:friendlies",
+   "location:walled_city"
+  ]
+ },
+ {
+  "id": "s6_53_wall_without_artillery",
+  "section": "6.53",
+  "kind": "player",
+  "text": "How do I blow a hole in the wall without artillery?",
+  "query": "SELECT VALUE in FROM capability WHERE out = action:demolish AND allowed = true;",
+  "expect": [
+   "unit_class:royal_engineers"
+  ],
+  "match": "exact",
+  "answer": "Use the Royal Engineers: they move adjacent to the wall hexside and demolish it (6.53).",
+  "about": [
+   "unit:royal_engineers",
+   "action:demolish"
+  ]
+ },
+ {
+  "id": "s6_53_how_long",
+  "section": "6.53",
+  "kind": "player",
+  "text": "How long does demolition take?",
+  "query": "RETURN { phase: (SELECT VALUE out FROM allowed_in WHERE in = action:demolish), at_end: rule:r6_53_engineers.params.conditions_at_end_of_ae_turn };",
+  "expect": {
+   "phase": [
+    "phase:ae_player_turn"
+   ],
+   "at_end": [
+    "adjacent to the target",
+    "undisrupted"
+   ]
+  },
+  "match": "exact",
+  "answer": "One player turn: they end their move adjacent, and if they are still adjacent and undisrupted at the end of that Anglo-Egyptian player turn, the target is destroyed (6.53).",
+  "about": [
+   "rule:r6_53_engineers",
+   "action:demolish"
+  ]
+ },
+ {
+  "id": "s6_53_disrupted_fails",
+  "section": "6.53",
+  "kind": "player",
+  "text": "If the Dervish defensive fire disrupts my Engineers, does the demolition fail?",
+  "query": "RETURN state:disrupted->prohibits->action CONTAINS action:demolish;",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. The target is destroyed only if the Engineers are undisrupted at the end of the Anglo-Egyptian player turn (6.53), and disrupted units stay inverted until then.",
+  "about": [
+   "state:disrupted",
+   "action:demolish",
+   "unit:royal_engineers"
+  ]
+ },
+ {
+  "id": "s6_53_engineers_shoot",
+  "section": "6.53",
+  "kind": "player",
+  "text": "Can my Engineers shoot while demolishing?",
+  "query": "RETURN state:demolishing->prohibits->action;",
+  "expect": [
+   "action:offensive_fire",
+   "action:melee_attack"
+  ],
+  "match": "set",
+  "answer": "Not offensively: they may neither fire offensively nor melee attack in that combat phase (6.53).",
+  "about": [
+   "state:demolishing",
+   "unit:royal_engineers"
+  ]
+ },
+ {
+  "id": "s6_53_breach_kills_adjacent",
+  "section": "6.53",
+  "kind": "player",
+  "text": "Do defenders next to a breached wall die?",
+  "query": "RETURN threshold:breach_wall.side_effect;",
+  "expect": "one enemy unit adjacent to the hexside is eliminated",
+  "match": "exact",
+  "answer": "One of them: if enemy units are adjacent to the wall hexside when it is breached, one enemy unit is eliminated (6.53, 6.63).",
+  "about": [
+   "threshold:breach_wall",
+   "rule:r6_63_breach"
+  ]
+ },
+ {
+  "id": "s6_53_fort_garrison",
+  "section": "6.53",
+  "kind": "player",
+  "text": "Does the fort's garrison suffer when the Engineers destroy it?",
+  "query": "RETURN { cites: array::sort((SELECT VALUE out.num FROM cites WHERE in = section:`6.53`)), effect: threshold:destroy_fort.side_effect };",
+  "expect": {
+   "cites": [
+    "6.62",
+    "6.63"
+   ],
+   "effect": "one enemy unit inside is eliminated with the fort"
+  },
+  "match": "exact",
+  "answer": "Yes, one unit inside is eliminated with the fort; 6.53 refers to 6.62 for the effect.",
+  "about": [
+   "rule:r6_53_engineers",
+   "threshold:destroy_fort"
+  ]
+ },
+ {
+  "id": "s6_53_stack_engineers",
+  "section": "6.53",
+  "kind": "player",
+  "text": "Can I protect the Engineers by stacking them with infantry?",
+  "query": "RETURN rule:r6_53_engineers.params.stacked_allowed;",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. The Royal Engineers may perform demolitions while stacked with other Anglo-Egyptian units (6.53).",
+  "about": [
+   "rule:r6_53_engineers",
+   "unit:royal_engineers"
+  ]
+ },
+ {
+  "id": "s6_54_empty_fort_fires",
+  "section": "6.54",
+  "kind": "player",
+  "text": "Does an empty fort still shoot?",
+  "query": "RETURN fn::can(unit:fort, action:fire).{allowed, rule};",
+  "expect": {
+   "allowed": true,
+   "rule": "rule:r6_54_fort_fires_alone"
+  },
+  "match": "exact",
+  "answer": "Yes. The fort's artillery factor fires normally even if no friendly unit is stacked with it (6.54).",
+  "about": [
+   "unit:fort",
+   "rule:r6_54_fort_fires_alone"
+  ]
+ },
+ {
+  "id": "s6_54_fort_melee",
+  "section": "6.54",
+  "kind": "player",
+  "text": "Can my fort charge out and melee?",
+  "query": "RETURN fn::allowed(unit:fort, action:melee_attack);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. A fort's melee value is defensive only (6.54).",
+  "about": [
+   "unit:fort",
+   "rule:r6_54_fort_melee_defensive"
+  ]
+ },
+ {
+  "id": "s6_54_garrison_fort",
+  "section": "6.54",
+  "kind": "player",
+  "text": "Can I garrison a fort?",
+  "query": "RETURN rule:r6_54_friendly_fort_free.params.mp_cost;",
+  "expect": 0,
+  "match": "exact",
+  "answer": "Yes, a friendly one, at no extra movement point cost to enter or leave (6.54).",
+  "about": [
+   "rule:r6_54_friendly_fort_free",
+   "unit_class:fort"
+  ]
+ },
+ {
+  "id": "s6_54_enter_enemy_fort",
+  "section": "6.54",
+  "kind": "player",
+  "text": "My infantry cleared out the defenders. Can they move into the fort?",
+  "query": "RETURN (SELECT VALUE kind FROM rule WHERE actions CONTAINS action:occupy_enemy_fort);",
+  "expect": [
+   "prohibition"
+  ],
+  "match": "exact",
+  "answer": "No. Players may not occupy an enemy fort nor advance after combat into an unoccupied enemy fort (6.54).",
+  "about": [
+   "rule:r6_54_no_enemy_fort",
+   "action:occupy_enemy_fort"
+  ]
+ },
+ {
+  "id": "s6_54_fort_protection",
+  "section": "6.54",
+  "kind": "player",
+  "text": "How much does a fort protect its garrison?",
+  "query": "RETURN fn::fire_drm({ target_in_fort: true });",
+  "expect": -3,
+  "match": "exact",
+  "answer": "−3 off the die roll of enemy fire attacks on units stacked inside the fort (6.54).",
+  "about": [
+   "modifier:fort_defense",
+   "unit:fort"
+  ]
+ },
+ {
+  "id": "s6_54_rifles_at_fort",
+  "section": "6.54",
+  "kind": "player",
+  "text": "Can my rifles hit the fort itself?",
+  "query": "RETURN { rifles: fn::allowed(unit:egyptian_battalion_sample, action:fire_at_fort), infantry_melee_means: rule:r6_54_fort_destruction.params.means CONTAINS \"infantry melee attack (7.6)\" };",
+  "expect": {
+   "rifles": false,
+   "infantry_melee_means": true
+  },
+  "match": "exact",
+  "answer": "No. Only artillery may fire at forts (6.62); infantry can destroy a fort by melee attack (6.54, though 7.6 gives no procedure).",
+  "about": [
+   "rule:r6_62_fort_target",
+   "rule:r6_54_fort_destruction",
+   "unit:egyptian_battalion_sample"
+  ]
+ },
+ {
+  "id": "s6_54_fort_vp",
+  "section": "6.54",
+  "kind": "player",
+  "text": "Do forts give VP?",
+  "query": "RETURN vp_award:ae_fort.points;",
+  "expect": 0,
+  "match": "exact",
+  "answer": "No. The Anglo-Egyptian player gets no points for eliminating forts (9.14).",
+  "about": [
+   "vp_award:ae_fort",
+   "unit_class:fort"
+  ]
+ },
+ {
+  "id": "s6_61_jehadia_vs_gunboat",
+  "section": "6.61",
+  "kind": "player",
+  "text": "Can my Jehadia riflemen shoot at a gunboat?",
+  "query": "RETURN fn::allowed(tribe:jehadia, action:fire_at_gunboat);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Only artillery may fire at gunboats (6.61).",
+  "about": [
+   "tribe:jehadia",
+   "action:fire_at_gunboat"
+  ]
+ },
+ {
+  "id": "s6_61_d_vs_gunboat",
+  "section": "6.61",
+  "kind": "player",
+  "text": "Does a D result disrupt a gunboat?",
+  "query": "RETURN { needs: threshold:sink_gunboat.min_result, otherwise: threshold:sink_gunboat.otherwise };",
+  "expect": {
+   "needs": 3,
+   "otherwise": "miss"
+  },
+  "match": "exact",
+  "answer": "No. A gunboat is sunk on a result of 3 or more; any other result, D included, is a miss (6.61).",
+  "about": [
+   "threshold:sink_gunboat",
+   "combat_result:disrupted"
+  ]
+ },
+ {
+  "id": "s6_61_forts_vs_gunboats",
+  "section": "6.61",
+  "kind": "player",
+  "text": "Can my forts shoot at gunboats?",
+  "query": "RETURN fn::can(unit:fort, action:fire_at_gunboat).{allowed, basis};",
+  "expect": {
+   "allowed": true,
+   "basis": "implied"
+  },
+  "match": "exact",
+  "answer": "Probably, but the manual doesn't say outright. Only artillery may fire at gunboats (6.61). Forts fire an 'artillery factor' on the artillery line (2.31, 6.54), but the manual never says that counts as 'artillery'.",
+  "about": [
+   "unit:fort",
+   "action:fire_at_gunboat",
+   "open_question:artillery_meaning"
+  ],
+  "note": "Part B answers a plain yes. That is a reading (open_question:artillery_meaning), so the expected basis is 'implied'."
+ },
+ {
+  "id": "s6_62_flatten_fort",
+  "section": "6.62",
+  "kind": "player",
+  "text": "What do I need on the CRT to flatten a fort?",
+  "query": "RETURN [fn::special_hit(\"fort\", 1), fn::special_hit(\"fort\", 2)];",
+  "expect": [
+   false,
+   true
+  ],
+  "match": "exact",
+  "answer": "A result of 2 or more; anything else is a miss (6.62).",
+  "about": [
+   "threshold:destroy_fort"
+  ]
+ },
+ {
+  "id": "s6_62_whole_garrison",
+  "section": "6.62",
+  "kind": "player",
+  "text": "Does destroying the fort kill the whole garrison?",
+  "query": "RETURN string::contains(rule:r6_62_fort_target.statement, \"one unit is eliminated with it\");",
+  "expect": true,
+  "match": "exact",
+  "answer": "No, one unit: if the fort contains enemy units at the instant it is destroyed, one unit is eliminated with it (6.62).",
+  "about": [
+   "rule:r6_62_fort_target",
+   "threshold:destroy_fort"
+  ]
+ },
+ {
+  "id": "s6_62_separate_attack",
+  "section": "6.62",
+  "kind": "player",
+  "text": "Is firing at the fort a separate attack from firing at the units in it?",
+  "query": "RETURN open_question:fort_target_vs_garrison.kind;",
+  "expect": "gap",
+  "match": "exact",
+  "answer": "The manual doesn't say. Only artillery may fire at a fort, needing 2+ (6.62), while fire at units inside a fort suffers −3 (6.54). Whether one attack does both, and how it is resolved, is not stated.",
+  "about": [
+   "rule:r6_62_fort_target",
+   "rule:r6_54_fort_defense"
+  ],
+  "note": "Part B pointed to Part C, which had no entry for it; the corpus now records open_question:fort_target_vs_garrison."
+ },
+ {
+  "id": "s6_63_open_wall",
+  "section": "6.63",
+  "kind": "player",
+  "text": "How do I open the wall?",
+  "query": "RETURN { artillery_needs: threshold:breach_wall.min_result, engineers: fn::allowed(unit:royal_engineers, action:demolish) };",
+  "expect": {
+   "artillery_needs": 2,
+   "engineers": true
+  },
+  "match": "exact",
+  "answer": "Artillery fire with a result of 2 or more (6.63), or the Royal Engineers' demolition (6.53).",
+  "about": [
+   "threshold:breach_wall",
+   "unit:royal_engineers"
+  ]
+ },
+ {
+  "id": "s6_63_see_through_breach",
+  "section": "6.63",
+  "kind": "player",
+  "text": "After a breach, can I see into the city?",
+  "query": "RETURN terrain:breach.effects CONTAINS \"negates the wall hexside for line of sight (6.63)\";",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. A breach negates the wall hexside for line of sight purposes (6.63).",
+  "about": [
+   "terrain:breach",
+   "rule:r6_63_breach"
+  ]
+ },
+ {
+  "id": "s6_63_enter_breach",
+  "section": "6.63",
+  "kind": "player",
+  "text": "Does the breach let me enter?",
+  "query": "RETURN location:walled_city.entry_only_through CONTAINS terrain:breach;",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Units enter and leave the walled city through a gate or breach hexside (5.23); melee, ZOC and advance after combat also pass through breaches (5.44, 6.82, 7.2).",
+  "about": [
+   "terrain:breach",
+   "location:walled_city"
+  ]
+ },
+ {
+  "id": "s6_63_khartoum_walls",
+  "section": "6.63",
+  "kind": "player",
+  "text": "Can Khartoum's walls be breached too?",
+  "query": "RETURN rule:r6_63_breach.concerns CONTAINS location:khartoum_wall;",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. 6.63 covers a wall hexside of Khartoum or of the walled city of Omdurman.",
+  "about": [
+   "rule:r6_63_breach",
+   "location:khartoum_wall"
+  ]
+ },
+ {
+  "id": "s6_64_fire_twice",
+  "section": "6.64",
+  "kind": "player",
+  "text": "Can my gunboat fire its big guns twice a turn?",
+  "query": "RETURN { howitzer: fn::allowed(unit:sultan, action:howitzer_fire), same_factor: unit:sultan.howitzer_factor = unit:sultan.artillery_factor, old: fn::allowed(unit:old_gunboat, action:howitzer_fire) };",
+  "expect": {
+   "howitzer": true,
+   "same_factor": true,
+   "old": false
+  },
+  "match": "exact",
+  "answer": "A named gunboat can: direct fire in 6.41, then the same artillery factor again as howitzer fire in 6.42, though not at night (6.64). Old gunboats can't.",
+  "about": [
+   "unit:sultan",
+   "action:howitzer_fire",
+   "rule:r6_64_howitzer"
+  ]
+ },
+ {
+  "id": "s6_64_min_range",
+  "section": "6.64",
+  "kind": "player",
+  "text": "How close can I drop a howitzer shell?",
+  "query": "RETURN [fn::howitzer_range_ok(3), fn::howitzer_range_ok(4)];",
+  "expect": [
+   false,
+   true
+  ],
+  "match": "exact",
+  "answer": "No closer than 4 hexes from the firing gunboat; the target must be 4 to 10 hexes away (6.64).",
+  "about": [
+   "constant:howitzer_min_range"
+  ]
+ },
+ {
+  "id": "s6_64_tomb_unseen",
+  "section": "6.64",
+  "kind": "player",
+  "text": "Can I shell the Mahdi's Tomb hex without seeing it?",
+  "query": "RETURN rule:r6_64_howitzer->exception_to->rule CONTAINS rule:r6_3_los;",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes, if it is 4–10 hexes from the gunboat: howitzer targets are chosen ignoring the Line of Sight Table (6.64, 6.3).",
+  "about": [
+   "rule:r6_64_howitzer",
+   "location:mahdis_tomb"
+  ]
+ },
+ {
+  "id": "s6_64_impact_roll_3",
+  "section": "6.64",
+  "kind": "player",
+  "text": "What happens if I roll a 3 on the second die?",
+  "query": "RETURN fn::howitzer_impact(3);",
+  "expect": "impact hex per the Howitzer Fire Scattergram",
+  "match": "exact",
+  "answer": "It misses the designated hex (only 7–10 hit it) and lands where the Howitzer Fire Scattergram says (6.64).",
+  "about": [
+   "die_outcome:howitzer_scatter",
+   "component:howitzer_scattergram"
+  ]
+ },
+ {
+  "id": "s6_64_friendly_scatter",
+  "section": "6.64",
+  "kind": "player",
+  "text": "If it scatters onto my own battalion, does it count?",
+  "query": "RETURN rule:r6_64_howitzer.params.friendly_fire;",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Once rolled, the results take effect even if the fire scatters into a friendly-occupied hex (6.64).",
+  "about": [
+   "rule:r6_64_howitzer"
+  ]
+ },
+ {
+  "id": "s6_64_night",
+  "section": "6.64",
+  "kind": "player",
+  "text": "Howitzers at night?",
+  "query": "RETURN state:night->prohibits->action CONTAINS action:howitzer_fire;",
+  "expect": true,
+  "match": "exact",
+  "answer": "No. No howitzer fire is allowed during night game turns (6.64, 8.1).",
+  "about": [
+   "state:night",
+   "action:howitzer_fire"
+  ]
+ },
+ {
+  "id": "s6_64_which_die",
+  "section": "6.64",
+  "kind": "player",
+  "text": "Which die is which?",
+  "query": "RETURN rule:r6_64_howitzer.params.rolls;",
+  "expect": [
+   "Combat Results Table",
+   "impact hex"
+  ],
+  "match": "exact",
+  "answer": "The first roll is the Combat Results Table roll, the second the impact hex roll (6.64).",
+  "about": [
+   "rule:r6_64_howitzer"
+  ]
+ },
+ {
+  "id": "s6_7_unmoved_targets",
+  "section": "6.7",
+  "kind": "player",
+  "text": "Can I shoot at units that didn't move this turn?",
+  "query": "RETURN string::contains(rule:r6_7_defensive_fire.statement, \"any of the moving player's units in range\");",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Defensive fire may target any of the moving player's units in range, moved or not (6.7).",
+  "about": [
+   "rule:r6_7_defensive_fire",
+   "action:defensive_fire"
+  ]
+ },
+ {
+  "id": "s6_7_no_advance",
+  "section": "6.7",
+  "kind": "player",
+  "text": "His unit fled after my defensive fire. Can I move into the empty hex?",
+  "query": "RETURN (SELECT VALUE kind FROM rule WHERE section = section:`6.7` AND actions CONTAINS action:advance_after_combat);",
+  "expect": [
+   "prohibition"
+  ],
+  "match": "exact",
+  "answer": "No. There is no advance after combat as a result of defensive fire (6.7).",
+  "about": [
+   "rule:r6_7_no_advance",
+   "action:advance_after_combat"
+  ]
+ },
+ {
+  "id": "s6_81_max_range",
+  "section": "6.81",
+  "kind": "player",
+  "text": "Can my artillery fire at maximum range during my turn?",
+  "query": "RETURN string::contains(rule:r6_81_offensive_fire.statement, \"up to their maximum range\");",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. In offensive fire the moving player may fire with all units able to fire, up to their maximum range (6.81).",
+  "about": [
+   "rule:r6_81_offensive_fire",
+   "action:offensive_fire"
+  ]
+ },
+ {
+  "id": "s6_82_move_in",
+  "section": "6.82",
+  "kind": "player",
+  "text": "I eliminated that stack. Can I move in?",
+  "query": "RETURN rule:r6_82_advance.params.eligibility;",
+  "expect": [
+   "participated in the attack",
+   "adjacent to the vacated hex"
+  ],
+  "match": "set",
+  "answer": "Yes, after offensive fire, with units that took part in the attack and were adjacent to the vacated hex (6.82).",
+  "about": [
+   "rule:r6_82_advance",
+   "action:advance_after_combat"
+  ]
+ },
+ {
+  "id": "s6_82_artillery_follow",
+  "section": "6.82",
+  "kind": "player",
+  "text": "Can my supporting artillery follow up?",
+  "query": "RETURN fn::allowed(unit:battery_32, action:advance_after_combat);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Artillery may not advance after combat (6.82).",
+  "about": [
+   "unit:battery_32",
+   "rule:r6_82_advance_limits"
+  ]
+ },
+ {
+  "id": "s6_82_two_hexes_away",
+  "section": "6.82",
+  "kind": "player",
+  "text": "Can a unit two hexes away that fired advance?",
+  "query": "RETURN rule:r6_82_advance.params.eligibility CONTAINS \"adjacent to the vacated hex\";",
+  "expect": true,
+  "match": "exact",
+  "answer": "No. To advance, a unit must have taken part in the attack and been adjacent to the vacated hex (6.82).",
+  "about": [
+   "rule:r6_82_advance"
+  ]
+ },
+ {
+  "id": "s6_82_across_khor",
+  "section": "6.82",
+  "kind": "player",
+  "text": "Can I advance across the khor?",
+  "query": "RETURN terrain:khor.effects CONTAINS \"units may never advance after combat across a khor (6.82)\";",
+  "expect": true,
+  "match": "exact",
+  "answer": "Never. Units may never advance after combat across a khor (6.82).",
+  "about": [
+   "terrain:khor",
+   "rule:r6_82_advance_limits"
+  ]
+ },
+ {
+  "id": "s6_82_advance_is_movement",
+  "section": "6.82",
+  "kind": "player",
+  "text": "Does advancing count as movement?",
+  "query": "RETURN { in_movement_phase: count(SELECT id FROM allowed_in WHERE in = action:advance_after_combat AND out.step = 1) > 0, overruns_leader: open_question:advance_overruns_leader.kind };",
+  "expect": {
+   "in_movement_phase": false,
+   "overruns_leader": "ambiguity"
+  },
+  "match": "exact",
+  "answer": "It happens in the combat phase, not the movement phase (6.82). Whether an advance into a lone Anglo-Egyptian leader's hex counts as 'occupying' it is stated only for Gordon (9.346).",
+  "about": [
+   "action:advance_after_combat",
+   "open_question:advance_overruns_leader"
+  ]
+ },
+ {
+  "id": "s6_23_which_die",
+  "section": "6.23",
+  "kind": "basic",
+  "text": "What die do I roll for fire combat?",
+  "query": "SELECT VALUE out.faces FROM concerns WHERE in = rule:r6_23_terrain_and_crt AND out.kind = \"die\";",
+  "expect": [
+   10
+  ],
+  "match": "exact",
+  "answer": "The ten-sided die (6.23).",
+  "about": [
+   "component:d10",
+   "rule:r6_23_terrain_and_crt"
+  ]
+ },
+ {
+  "id": "s6_24_british_bonus",
+  "section": "6.24",
+  "kind": "basic",
+  "text": "What bonus do British units get when shooting?",
+  "query": "RETURN modifier:ae_direct_fire.value;",
+  "expect": 1,
+  "match": "exact",
+  "answer": "+1 to the die roll on every Anglo-Egyptian direct fire attack, the accuracy bonus (6.24).",
+  "about": [
+   "modifier:ae_direct_fire"
+  ]
+ },
+ {
+  "id": "s6_61_sink_gunboat_result",
+  "section": "6.61",
+  "kind": "basic",
+  "text": "What do I need on the CRT to sink a gunboat?",
+  "query": "RETURN threshold:sink_gunboat.min_result;",
+  "expect": 3,
+  "match": "exact",
+  "answer": "A result of 3 or more; anything else is a miss (6.61).",
+  "about": [
+   "threshold:sink_gunboat"
+  ]
+ },
+ {
+  "id": "s6_22_battery32_line",
+  "section": "6.22",
+  "kind": "basic",
+  "text": "Which line does the 32 Battery fire on?",
+  "query": "RETURN fn::lines(unit:battery_32);",
+  "expect": [
+   "range_line:ae_artillery"
+  ],
+  "match": "exact",
+  "answer": "The Artillery line of the Anglo-Egyptian Range Effects Table (2.32).",
+  "about": [
+   "unit:battery_32",
+   "range_line:ae_artillery"
+  ]
+ },
+ {
+  "id": "s6_11_maxim_factor",
+  "section": "6.11",
+  "kind": "basic",
+  "text": "What is the Maxim battery's fire factor?",
+  "query": "RETURN unit:maxim_battery.fire;",
+  "expect": 6,
+  "match": "exact",
+  "answer": "6 (Maxim Batt. 6·1·12, 2.3), and it fires twice per turn.",
+  "about": [
+   "unit:maxim_battery"
+  ]
+ },
+ {
+  "id": "s6_51_khalifa_fires",
+  "section": "6.51",
+  "kind": "basic",
+  "text": "Can the Khalifa fire?",
+  "query": "RETURN fn::allowed(unit:khalifa_abdullah, action:fire);",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Dervish leaders have a fire factor and may attack like any other combat unit (6.51).",
+  "about": [
+   "unit:khalifa_abdullah",
+   "action:fire"
+  ]
+ },
+ {
+  "id": "s6_62_fort_destroyed_garrison",
+  "section": "6.62",
+  "kind": "basic",
+  "text": "What happens to the fort's garrison when the fort is destroyed?",
+  "query": "RETURN threshold:destroy_fort.side_effect;",
+  "expect": "one enemy unit inside is eliminated with the fort",
+  "match": "exact",
+  "answer": "One unit inside is eliminated with the fort; the others survive (6.62).",
+  "about": [
+   "threshold:destroy_fort"
+  ]
+ },
+ {
+  "id": "s6_64_max_range",
+  "section": "6.64",
+  "kind": "basic",
+  "text": "How far can a howitzer shell reach?",
+  "query": "RETURN constant:howitzer_max_range.value;",
+  "expect": 10,
+  "match": "exact",
+  "answer": "Up to 10 hexes from the firing gunboat (6.64).",
+  "about": [
+   "constant:howitzer_max_range"
+  ]
+ },
+ {
+  "id": "sCombatResults_fire_roll12",
+  "section": "CombatResults",
+  "kind": "basic",
+  "text": "What is a modified roll of 12 treated as?",
+  "query": "RETURN fn::clamp_roll(12);",
+  "expect": 10,
+  "match": "exact",
+  "answer": "10. Modified die rolls above 10 are treated as 10 (back cover).",
+  "about": [
+   "rule:rcrt_clamp",
+   "constant:die_max"
+  ]
+ },
+ {
+  "id": "s6_16_halved_brigade_total",
+  "section": "6.16",
+  "kind": "basic",
+  "text": "My four 9-factor battalions are halved; what do they fire?",
+  "query": "RETURN fn::halve([9, 9, 9, 9]);",
+  "expect": 16,
+  "match": "exact",
+  "answer": "16: each battalion's 9 halves to 4, rounded down per unit (6.16).",
+  "about": [
+   "rule:r6_16_halving"
+  ]
+ },
+ {
+  "id": "s6_24_integrity_into_fort",
+  "section": "6.24",
+  "kind": "basic",
+  "text": "What's the total die modifier for a brigade-integrity stack firing at a unit inside a fort?",
+  "query": "RETURN fn::fire_drm({ firer: faction:anglo_egyptian, direct: true, integrity: true, target_in_fort: true });",
+  "expect": -1,
+  "match": "exact",
+  "answer": "−1: +1 accuracy, +1 brigade integrity, −3 for the fort (6.24, 5.54, 6.54), before any terrain modifier.",
+  "about": [
+   "modifier:ae_direct_fire",
+   "modifier:brigade_integrity",
+   "modifier:fort_defense"
+  ]
+ },
+ {
+  "id": "s6_16_mixed_halving",
+  "section": "6.16",
+  "kind": "basic",
+  "text": "Two 8-factor units and a 3-factor unit fire at half strength. What's the total?",
+  "query": "RETURN fn::halve([8, 8, 3]);",
+  "expect": 9,
+  "match": "exact",
+  "answer": "9: 4 + 4 + 1, each unit rounded down separately (6.16).",
+  "about": [
+   "rule:r6_16_halving"
+  ]
+ },
+ {
+  "id": "s6_54_integrity_roll1_into_fort",
+  "section": "6.54",
+  "kind": "basic",
+  "text": "My brigade-integrity stack fires at Dervishes in a fort and rolls a 1. What do I read on the CRT?",
+  "query": "RETURN fn::net_roll(1, fn::fire_drm({ firer: faction:anglo_egyptian, direct: true, integrity: true, target_in_fort: true }));",
+  "expect": 1,
+  "match": "exact",
+  "answer": "1: 1 + 1 + 1 − 3 = 0, and modified rolls below 1 count as 1 (6.24, 5.54, 6.54, back cover).",
+  "about": [
+   "modifier:fort_defense",
+   "rule:rcrt_clamp",
+   "modifier:brigade_integrity"
+  ]
+ },
+ {
+  "id": "s6_64_howitzer_units_count",
+  "section": "6.64",
+  "kind": "basic",
+  "text": "How many units have howitzer fire capability?",
+  "query": "RETURN constant:howitzer_units.value;",
+  "expect": 5,
+  "match": "exact",
+  "answer": "Five, the five named British gunboats (6.64).",
+  "about": [
+   "constant:howitzer_units",
+   "unit_class:named_gunboat"
+  ]
+ },
+ {
+  "id": "s6_64_min_range_value",
+  "section": "6.64",
+  "kind": "basic",
+  "text": "What is the howitzer's minimum target distance?",
+  "query": "RETURN constant:howitzer_min_range.value;",
+  "expect": 4,
+  "match": "exact",
+  "answer": "4 hexes (6.64).",
+  "about": [
+   "constant:howitzer_min_range"
+  ]
+ },
+ {
+  "id": "s6_64_rolls",
+  "section": "6.64",
+  "kind": "basic",
+  "text": "How many times do I roll the die for one howitzer fire?",
+  "query": "RETURN constant:howitzer_rolls.value;",
+  "expect": 2,
+  "match": "exact",
+  "answer": "Twice: the CRT roll, then the impact hex roll (6.64).",
+  "about": [
+   "constant:howitzer_rolls"
+  ]
+ },
+ {
+  "id": "s6_64_on_target_band",
+  "section": "6.64",
+  "kind": "basic",
+  "text": "What impact roll hits the designated hex?",
+  "query": "RETURN die_outcome:howitzer_on_target.{min, max};",
+  "expect": {
+   "min": 7,
+   "max": 10
+  },
+  "match": "exact",
+  "answer": "7–10 (6.64).",
+  "about": [
+   "die_outcome:howitzer_on_target"
+  ]
+ },
+ {
+  "id": "s6_64_eleven_hexes",
+  "section": "6.64",
+  "kind": "basic",
+  "text": "Can my gunboat lob a howitzer shell 11 hexes?",
+  "query": "RETURN fn::howitzer_range_ok(11);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. The target hex must be 4 to 10 hexes from the gunboat (6.64).",
+  "about": [
+   "constant:howitzer_max_range"
+  ]
+ },
+ {
+  "id": "s6_42_maxim_fires_per_turn",
+  "section": "6.42",
+  "kind": "basic",
+  "text": "How many times per turn do Maxim guns fire?",
+  "query": "RETURN constant:maxim_fires_per_turn.value;",
+  "expect": 2,
+  "match": "exact",
+  "answer": "Twice, the second time in the Maxim Second Fire and Howitzer Subphase (2.3, 6.42).",
+  "about": [
+   "constant:maxim_fires_per_turn",
+   "unit:maxim_battery"
+  ]
+ },
+ {
+  "id": "s6_64_sultan_factors",
+  "section": "6.64",
+  "kind": "basic",
+  "text": "What does the Sultan fire with: artillery, howitzer and Maxim factors?",
+  "query": "RETURN unit:sultan.{artillery_factor, howitzer_factor, maxim_factor};",
+  "expect": {
+   "artillery_factor": 5,
+   "howitzer_factor": 5,
+   "maxim_factor": 6
+  },
+  "match": "exact",
+  "answer": "Artillery and howitzer factor 5 (the same factor, fired twice per 6.64) and Maxims 6, which fire twice per turn (2.3).",
+  "about": [
+   "unit:sultan"
+  ]
+ },
+ {
+  "id": "s6_52_friendlies_table",
+  "section": "6.52",
+  "kind": "basic",
+  "text": "Which Range Effects Table do the Friendlies use?",
+  "query": "RETURN fn::range_table(unit_class:friendlies, NONE);",
+  "expect": [
+   "range_table:dervish"
+  ],
+  "match": "exact",
+  "answer": "The Dervish Range Effects Table, on the rifles line (6.52).",
+  "about": [
+   "unit_class:friendlies",
+   "range_table:dervish"
+  ]
+ },
+ {
+  "id": "s6_22_jehadia_line",
+  "section": "6.22",
+  "kind": "basic",
+  "text": "Which line do the Jehadia fire on?",
+  "query": "RETURN fn::lines(tribe:jehadia);",
+  "expect": [
+   "range_line:d_rifles"
+  ],
+  "match": "exact",
+  "answer": "The rifles line of the Dervish Range Effects Table (2.31).",
+  "about": [
+   "tribe:jehadia",
+   "range_line:d_rifles"
+  ]
+ },
+ {
+  "id": "s6_22_baggara_weapon",
+  "section": "6.22",
+  "kind": "basic",
+  "text": "What are the Baggara armed with for fire combat?",
+  "query": "RETURN fn::lines(tribe:baggara).weapon;",
+  "expect": [
+   "weapon:spears_and_swords"
+  ],
+  "match": "exact",
+  "answer": "Spears and swords, like all Dervish units other than artillery, gunboats, forts, Jehadia, Danagla and Isa Zachneih (2.31).",
+  "about": [
+   "tribe:baggara",
+   "weapon:spears_and_swords"
+  ]
+ },
+ {
+  "id": "s6_22_isa_line",
+  "section": "6.22",
+  "kind": "basic",
+  "text": "Which line does Isa Zachneih fire on?",
+  "query": "RETURN fn::lines(unit:isa_zachneih);",
+  "expect": [
+   "range_line:d_rifles"
+  ],
+  "match": "exact",
+  "answer": "The Dervish rifles line (2.31).",
+  "about": [
+   "unit:isa_zachneih"
+  ]
+ },
+ {
+  "id": "s6_22_dervish_gunboat_line",
+  "section": "6.22",
+  "kind": "basic",
+  "text": "Which line do Dervish gunboats fire on?",
+  "query": "RETURN fn::lines(unit:dervish_gunboat);",
+  "expect": [
+   "range_line:d_artillery"
+  ],
+  "match": "exact",
+  "answer": "The artillery line of the Dervish Range Effects Table (2.31).",
+  "about": [
+   "unit:dervish_gunboat"
+  ]
+ },
+ {
+  "id": "s6_22_old_gunboat_line",
+  "section": "6.22",
+  "kind": "basic",
+  "text": "Which line does an old gunboat fire on?",
+  "query": "RETURN fn::lines(unit:old_gunboat);",
+  "expect": [
+   "range_line:ae_artillery"
+  ],
+  "match": "exact",
+  "answer": "The Artillery line of the Anglo-Egyptian Range Effects Table (2.32).",
+  "about": [
+   "unit:old_gunboat"
+  ]
+ },
+ {
+  "id": "s6_51_kitchener_fires",
+  "section": "6.51",
+  "kind": "basic",
+  "text": "Can Kitchener fire?",
+  "query": "RETURN fn::allowed(unit:kitchener, action:fire);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Anglo-Egyptian leaders have a movement factor only (6.51).",
+  "about": [
+   "unit:kitchener",
+   "action:fire"
+  ]
+ },
+ {
+  "id": "sDisrupted_fire_defensive",
+  "section": "Disrupted",
+  "kind": "basic",
+  "text": "Can a disrupted unit fire defensively?",
+  "query": "RETURN state:disrupted->prohibits->action CONTAINS action:defensive_fire;",
+  "expect": true,
+  "match": "exact",
+  "answer": "No. Disrupted units may not fire, offensively or defensively (back cover).",
+  "about": [
+   "state:disrupted",
+   "action:defensive_fire"
+  ]
+ },
+ {
+  "id": "sCombatResults_fire_d_four",
+  "section": "CombatResults",
+  "kind": "basic",
+  "text": "A D result hits my stack of four. How many are disrupted?",
+  "query": "RETURN fn::disrupted_count(4);",
+  "expect": 2,
+  "match": "exact",
+  "answer": "Two: half the units in the target hex, rounded up (back cover).",
+  "about": [
+   "combat_result:disrupted"
+  ]
+ },
+ {
+  "id": "sCombatResults_fire_d_one",
+  "section": "CombatResults",
+  "kind": "basic",
+  "text": "A D result hits a lone unit. Is it disrupted?",
+  "query": "RETURN fn::disrupted_count(1);",
+  "expect": 1,
+  "match": "exact",
+  "answer": "Yes: half of one, rounded up, is one (back cover).",
+  "about": [
+   "combat_result:disrupted"
+  ]
+ },
+ {
+  "id": "sCombatResults_fire_hash",
+  "section": "CombatResults",
+  "kind": "basic",
+  "text": "What does a number result like '2' on the CRT mean?",
+  "query": "RETURN combat_result:eliminated.meaning;",
+  "expect": "That many units in the target hex are eliminated, i.e. removed from play.",
+  "match": "exact",
+  "answer": "That many units in the target hex are eliminated, removed from play (back cover).",
+  "about": [
+   "combat_result:eliminated"
+  ]
+ },
+ {
+  "id": "sCombatResults_fire_dash",
+  "section": "CombatResults",
+  "kind": "basic",
+  "text": "What does a dash on the CRT mean?",
+  "query": "RETURN combat_result:miss.meaning;",
+  "expect": "miss, no effect",
+  "match": "exact",
+  "answer": "A miss, no effect (back cover).",
+  "about": [
+   "combat_result:miss"
+  ]
+ },
+ {
+  "id": "s6_24_ae_into_fort",
+  "section": "6.24",
+  "kind": "basic",
+  "text": "What's my modifier for ordinary British direct fire at Dervishes in a fort?",
+  "query": "RETURN fn::fire_drm({ firer: faction:anglo_egyptian, direct: true, target_in_fort: true });",
+  "expect": -2,
+  "match": "exact",
+  "answer": "−2: +1 accuracy and −3 for the fort (6.24, 6.54), plus any terrain modifier.",
+  "about": [
+   "modifier:ae_direct_fire",
+   "modifier:fort_defense"
+  ]
+ },
+ {
+  "id": "s6_63_breach_result",
+  "section": "6.63",
+  "kind": "basic",
+  "text": "What CRT result breaches a wall?",
+  "query": "RETURN [fn::special_hit(\"wall hexside\", 1), fn::special_hit(\"wall hexside\", 2)];",
+  "expect": [
+   false,
+   true
+  ],
+  "match": "exact",
+  "answer": "2 or more; anything else is a miss (6.63).",
+  "about": [
+   "threshold:breach_wall"
+  ]
+ },
+ {
+  "id": "s6_62_battery_at_fort",
+  "section": "6.62",
+  "kind": "basic",
+  "text": "Can the 32 Battery fire at a fort?",
+  "query": "RETURN fn::allowed(unit:battery_32, action:fire_at_fort);",
+  "expect": true,
+  "match": "exact",
+  "answer": "Yes. Artillery is the one unit type that may fire at forts (6.62).",
+  "about": [
+   "unit:battery_32",
+   "action:fire_at_fort"
+  ]
+ },
+ {
+  "id": "s6_61_maxims_at_gunboat",
+  "section": "6.61",
+  "kind": "basic",
+  "text": "Can my Maxim battery fire at a Dervish gunboat?",
+  "query": "RETURN fn::allowed(unit:maxim_battery, action:fire_at_gunboat);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Only artillery may fire at gunboats, and Maxims fire on their own Maxims line, not as artillery (6.61, 2.32).",
+  "about": [
+   "unit:maxim_battery",
+   "action:fire_at_gunboat"
+  ]
+ },
+ {
+  "id": "s6_61_lancers_at_gunboat",
+  "section": "6.61",
+  "kind": "basic",
+  "text": "Can the 21 Lancers shoot at a gunboat?",
+  "query": "RETURN fn::allowed(unit:lancers_21, action:fire_at_gunboat);",
+  "expect": false,
+  "match": "exact",
+  "answer": "No. Only artillery may fire at gunboats (6.61).",
+  "about": [
+   "unit:lancers_21",
+   "action:fire_at_gunboat"
+  ]
+ },
+ {
+  "id": "s6_53_engineers_fire_normally",
+  "section": "6.53",
+  "kind": "basic",
+  "text": "Can the Royal Engineers fire normally when not demolishing, and with what?",
+  "query": "RETURN { fire: fn::allowed(unit:royal_engineers, action:fire), factor: unit:royal_engineers.fire, lines: fn::lines(unit:royal_engineers) };",
+  "expect": {
+   "fire": true,
+   "factor": 5,
+   "lines": [
+    "range_line:ae_rifles"
+   ]
+  },
+  "match": "exact",
+  "answer": "Yes. They have normal combat capabilities (6.53): fire factor 5, on the Anglo-Egyptian Rifles line (2.32).",
+  "about": [
+   "unit:royal_engineers"
+  ]
+ },
+ {
+  "id": "s6_14_fired_at_once",
+  "section": "6.14",
+  "kind": "basic",
+  "text": "How many times can one of my units be fired at in a fire combat phase?",
+  "query": "RETURN rule:r6_14_once.params.fired_at_per_phase;",
+  "expect": 1,
+  "match": "exact",
+  "answer": "Once (6.14), apart from the Maxim and howitzer re-fire allowed in 6.42.",
+  "about": [
+   "rule:r6_14_once"
+  ]
+ },
+ {
+  "id": "s6_14_fires_once",
+  "section": "6.14",
+  "kind": "basic",
+  "text": "How many times can an ordinary infantry battalion fire in one fire combat phase?",
+  "query": "RETURN rule:r6_14_once.params.fires_per_phase;",
+  "expect": 1,
+  "match": "exact",
+  "answer": "Once (6.14).",
+  "about": [
+   "rule:r6_14_once"
+  ]
+ },
+ {
+  "id": "s6_3_los_table_where",
+  "section": "6.3",
+  "kind": "basic",
+  "text": "Where do I find the Line of Sight Table?",
+  "query": "RETURN component:los_table.printed_on;",
+  "expect": "back of the rulebook",
+  "match": "exact",
+  "answer": "On the back of the rulebook (6.3).",
+  "about": [
+   "component:los_table"
+  ]
+ },
+ {
+  "id": "s6_64_scattergram_where",
+  "section": "6.64",
+  "kind": "basic",
+  "text": "Where is the Howitzer Fire Scattergram?",
+  "query": "RETURN component:howitzer_scattergram.printed_on;",
+  "expect": "lower right corner of the Omdurman mapsheet",
+  "match": "exact",
+  "answer": "In the lower right corner of the Omdurman mapsheet (2.1, 6.64).",
+  "about": [
+   "component:howitzer_scattergram"
+  ]
+ },
+ {
+  "id": "s6_64_which_subphase",
+  "section": "6.64",
+  "kind": "basic",
+  "text": "In which subphase do howitzers fire?",
+  "query": "SELECT VALUE out.name FROM allowed_in WHERE in = action:howitzer_fire;",
+  "expect": [
+   "Maxim Second Fire and Howitzer Fire Subphase (Anglo-Egyptian defensive)",
+   "Maxim Second Fire and Howitzer Fire Subphase (Anglo-Egyptian offensive)"
+  ],
+  "match": "set",
+  "answer": "The Maxim Second Fire and Howitzer Fire Subphase, in both Anglo-Egyptian defensive and offensive fire (6.42, 6.64).",
+  "about": [
+   "action:howitzer_fire"
+  ]
+ },
+ {
+  "id": "s6_22_range_outcomes",
+  "section": "6.22",
+  "kind": "basic",
+  "text": "What can the Range Effects Table do to my fire factor?",
+  "query": "RETURN constant:range_multipliers.values;",
+  "expect": [
+   "tripled",
+   "doubled",
+   "normal",
+   "halved",
+   "out of range"
+  ],
+  "match": "exact",
+  "answer": "Triple, double, leave it normal, halve it, or rule the target out of range (6.22).",
+  "about": [
+   "constant:range_multipliers"
+  ]
+ },
+ {
+  "id": "s6_63_breach_marker",
+  "section": "6.63",
+  "kind": "basic",
+  "text": "Where do I put the BREACH marker?",
+  "query": "RETURN marker:breach.placement;",
+  "expect": "in a hex adjacent to the breached wall hexside, arrow pointing to the breached hexside",
+  "match": "exact",
+  "answer": "In a hex adjacent to the breached wall hexside, with its arrow pointing at that hexside (6.63).",
+  "about": [
+   "marker:breach"
+  ]
+ },
+ {
+  "id": "sCombatResults_fire_roll_minus",
+  "section": "CombatResults",
+  "kind": "basic",
+  "text": "My modifiers bring the roll to −1. Is that an automatic miss?",
+  "query": "RETURN fn::clamp_roll(-1);",
+  "expect": 1,
+  "match": "exact",
+  "answer": "No. Modified rolls below 1 are treated as 1, so cross-index a 1 on the CRT (back cover).",
+  "about": [
+   "rule:rcrt_clamp",
+   "constant:die_min"
+  ]
+ },
+ {
+  "id": "sCombatResults_fire_d_three",
+  "section": "CombatResults",
+  "kind": "basic",
+  "text": "D on a stack of 3. How many flip?",
+  "query": "RETURN fn::disrupted_count(3);",
+  "expect": 2,
+  "match": "exact",
+  "answer": "Two: half of three, rounded up (back cover).",
+  "about": [
+   "combat_result:disrupted"
+  ]
+ },
+ {
+  "id": "sCombatResults_fire_cap10",
+  "section": "CombatResults",
+  "kind": "basic",
+  "text": "I roll a 10 with +2 in bonuses. What do I read on the CRT?",
+  "query": "RETURN fn::net_roll(10, fn::fire_drm({ firer: faction:anglo_egyptian, direct: true, integrity: true }));",
+  "expect": 10,
+  "match": "exact",
+  "answer": "10. Modified rolls above 10 count as 10 (back cover).",
+  "about": [
+   "rule:rcrt_clamp",
+   "constant:die_max"
+  ]
+ },
+ {
+  "id": "sDisrupted_fire_recover",
+  "section": "Disrupted",
+  "kind": "basic",
+  "text": "My unit was disrupted by fire. When does it turn back face up?",
+  "query": "RETURN state:disrupted.recovery;",
+  "expect": "turned face up at the end of the owning player's turn",
+  "match": "exact",
+  "answer": "At the end of its owning player's turn (back cover).",
+  "about": [
+   "state:disrupted"
+  ]
+ },
+ {
+  "id": "s6_42_who_fires_second_subphase",
+  "section": "6.42",
+  "kind": "basic",
+  "text": "Which unit classes may fire in the Maxim Second Fire and Howitzer Subphase?",
+  "query": "SELECT VALUE in FROM capability WHERE out IN [action:maxim_second_fire, action:howitzer_fire] AND allowed = true;",
+  "expect": [
+   "unit_class:maxim_battery",
+   "unit_class:named_gunboat",
+   "unit_class:named_gunboat"
+  ],
+  "match": "set",
+  "answer": "Maxim guns (the Maxim battery and the named gunboats' Maxims) and the named gunboats' howitzers (6.42).",
+  "about": [
+   "action:maxim_second_fire",
+   "action:howitzer_fire"
+  ]
+ },
+ {
+  "id": "s6_54_fort_zoc_empty",
+  "section": "6.54",
+  "kind": "basic",
+  "text": "Does an unoccupied fort have a ZOC?",
+  "query": "RETURN fn::can(unit:fort, action:exert_zoc).{allowed, condition};",
+  "expect": {
+   "allowed": true,
+   "condition": "even if unoccupied"
+  },
+  "match": "exact",
+  "answer": "Yes. Forts have a ZOC even when unoccupied (6.54).",
+  "about": [
+   "unit:fort",
+   "action:exert_zoc"
+  ]
+ },
+ {
+  "id": "s6_64_rules_governing_howitzer",
+  "section": "6.64",
+  "kind": "graph",
+  "text": "Which rules govern howitzer fire?",
+  "query": "RETURN action:howitzer_fire<-governs<-rule;",
+  "expect": [
+   "rule:r6_42_combine_howitzer",
+   "rule:r6_42_refire_targets",
+   "rule:r6_42_second_subphase",
+   "rule:r6_64_howitzer",
+   "rule:r6_64_no_night_howitzer",
+   "rule:r8_1_no_howitzer"
+  ],
+  "match": "set",
+  "answer": "6.42 (the subphase, combining with Maxims, re-firing at targets), 6.64 (the procedure, no howitzers at night) and 8.1 (no howitzer fire at night).",
+  "about": [
+   "action:howitzer_fire"
+  ]
+ },
+ {
+  "id": "s6_3_los_exceptions",
+  "section": "6.3",
+  "kind": "graph",
+  "text": "Which rules are exceptions to the line of sight rule?",
+  "query": "RETURN array::distinct((SELECT VALUE in FROM exception_to WHERE out IN [rule:r6_21_los_first, rule:r6_3_los]));",
+  "expect": [
+   "rule:r6_64_howitzer"
+  ],
+  "match": "exact",
+  "answer": "Only howitzer fire (6.64), as 6.21 and 6.3 both say.",
+  "about": [
+   "rule:r6_3_los",
+   "rule:r6_21_los_first",
+   "rule:r6_64_howitzer"
+  ]
+ },
+ {
+  "id": "s6_61_who_fires_at_gunboats",
+  "section": "6.61",
+  "kind": "graph",
+  "text": "Which unit classes may fire at gunboats, and on what basis?",
+  "query": "SELECT in, basis FROM capability WHERE out = action:fire_at_gunboat AND allowed = true;",
+  "expect": [
+   {
+    "in": "unit_class:artillery",
+    "basis": "explicit"
+   },
+   {
+    "in": "unit_class:gunboat",
+    "basis": "implied"
+   },
+   {
+    "in": "unit_class:fort",
+    "basis": "implied"
+   }
+  ],
+  "match": "set",
+  "answer": "Artillery explicitly (6.61). Gunboats and forts only by reading their 'artillery factor' as artillery (2.31, 2.32, 6.54), which the manual leaves open.",
+  "about": [
+   "action:fire_at_gunboat",
+   "unit_class:artillery",
+   "open_question:artillery_meaning"
+  ]
+ },
+ {
+  "id": "s6_64_cited_by",
+  "section": "6.64",
+  "kind": "graph",
+  "text": "Which sections cite 6.64?",
+  "query": "SELECT VALUE in.num FROM cites WHERE out = section:`6.64`;",
+  "expect": [
+   "6.21",
+   "6.3",
+   "6.42"
+  ],
+  "match": "set",
+  "answer": "6.21 and 6.3 (the LOS exception) and 6.42 (howitzer fire in the second subphase).",
+  "about": [
+   "rule:r6_64_howitzer"
+  ]
+ },
+ {
+  "id": "s6_64_cites",
+  "section": "6.64",
+  "kind": "graph",
+  "text": "Which sections does 6.64 itself cite?",
+  "query": "RETURN array::distinct((SELECT VALUE out.num FROM cites WHERE in = section:`6.64`));",
+  "expect": [
+   "4",
+   "6.41",
+   "6.42"
+  ],
+  "match": "set",
+  "answer": "Section 4 (the turn sequence) and 6.41 and 6.42 (the two subphases): 'see 4 and 6.41', 'see 4 and 6.42'.",
+  "about": [
+   "rule:r6_64_howitzer"
+  ],
+  "note": "The section generator's citation pattern needs a dot, so 'see 4' is missed (see needs_fire.md)."
+ },
+ {
+  "id": "s6_64_named_gunboat_lines",
+  "section": "6.64",
+  "kind": "graph",
+  "text": "Which range lines do the named gunboats fire on?",
+  "query": "SELECT VALUE out FROM fires_on WHERE in = unit_class:named_gunboat;",
+  "expect": [
+   "range_line:ae_howitzer",
+   "range_line:ae_artillery",
+   "range_line:ae_maxims"
+  ],
+  "match": "set",
+  "answer": "Howitzer, Artillery and Maxims, all on the Anglo-Egyptian Range Effects Table (2.32).",
+  "about": [
+   "unit_class:named_gunboat",
+   "unit:sultan"
+  ]
+ },
+ {
+  "id": "s6_4_states_prohibiting_fire",
+  "section": "6.4",
+  "kind": "graph",
+  "text": "Which unit states forbid some kind of fire?",
+  "query": "RETURN array::distinct((SELECT VALUE in FROM prohibits WHERE out IN [action:fire, action:direct_fire, action:offensive_fire, action:defensive_fire, action:howitzer_fire, action:maxim_second_fire]));",
+  "expect": [
+   "state:disrupted",
+   "state:constructing_zariba",
+   "state:demolishing",
+   "state:night"
+  ],
+  "match": "set",
+  "answer": "Disrupted (no fire at all; back cover), constructing the Zariba and demolishing (no offensive fire; 5.3, 6.53), and night turns (no howitzer fire; 6.64, 8.1).",
+  "about": [
+   "state:disrupted",
+   "state:demolishing",
+   "state:night"
+  ]
+ },
+ {
+  "id": "s6_52_dervish_rifles_users",
+  "section": "6.52",
+  "kind": "graph",
+  "text": "Who fires on the Dervish rifles line?",
+  "query": "SELECT VALUE in FROM fires_on WHERE out = range_line:d_rifles;",
+  "expect": [
+   "tribe:jehadia",
+   "tribe:danagla",
+   "unit:isa_zachneih",
+   "unit_class:friendlies"
+  ],
+  "match": "set",
+  "answer": "The Jehadia, the Danagla and Isa Zachneih (2.31), plus the Anglo-Egyptian Friendlies (6.52).",
+  "about": [
+   "range_line:d_rifles",
+   "unit_class:friendlies"
+  ]
+ },
+ {
+  "id": "s6_14_once_exceptions",
+  "section": "6.14",
+  "kind": "graph",
+  "text": "Which rules make exceptions to the fire-once / fired-at-once limit?",
+  "query": "SELECT VALUE in FROM exception_to WHERE out = rule:r6_14_once;",
+  "expect": [
+   "rule:r6_42_refire_targets",
+   "rule:r6_64_howitzer"
+  ],
+  "match": "set",
+  "answer": "6.42's re-fire at units already fired at, and 6.64's second fire of the named gunboats' artillery factor as howitzer fire.",
+  "about": [
+   "rule:r6_14_once"
+  ]
+ },
+ {
+  "id": "s6_42_open_questions",
+  "section": "6.42",
+  "kind": "graph",
+  "text": "Which open questions does the corpus raise about 6.42?",
+  "query": "SELECT VALUE in FROM raises WHERE out = section:`6.42`;",
+  "expect": [
+   "open_question:fired_at_once_scope",
+   "open_question:dervish_defensive_maxims",
+   "open_question:howitzer_maxim_scatter"
+  ],
+  "match": "set",
+  "answer": "Whether 'fired at once' is per unit or per hex, whether any Dervish unit fires twice, and how a scattered howitzer shot combined with Maxims resolves.",
+  "about": [
+   "open_question:howitzer_maxim_scatter"
+  ]
+ },
+ {
+  "id": "s6_61_artillery_units",
+  "section": "6.61",
+  "kind": "graph",
+  "text": "Which named counters count as artillery for firing at gunboats, forts and walls?",
+  "query": "SELECT VALUE id FROM unit WHERE classes CONTAINS unit_class:artillery;",
+  "expect": [
+   "unit:battery_32",
+   "unit:horse_artillery",
+   "unit:egyptian_battalion_artillery",
+   "unit:dervish_artillery"
+  ],
+  "match": "set",
+  "answer": "The artillery units: 32 Battery, Horse Artillery, the Egyptian Battalion artillery and the Dervish artillery (6.61–6.63). Gunboats and forts are left open.",
+  "about": [
+   "unit_class:artillery"
+  ]
+ },
+ {
+  "id": "s6_54_fort_rules",
+  "section": "6.54",
+  "kind": "graph",
+  "text": "Which section 6 rules concern forts?",
+  "query": "SELECT VALUE in FROM concerns WHERE out = unit_class:fort AND string::starts_with(in.section.num, \"6\");",
+  "expect": [
+   "rule:r6_53_engineers",
+   "rule:r6_54_fort_fires_alone",
+   "rule:r6_54_fort_melee_defensive",
+   "rule:r6_54_fort_defense",
+   "rule:r6_54_no_enemy_fort",
+   "rule:r6_54_friendly_fort_free",
+   "rule:r6_54_fort_destruction",
+   "rule:r6_54_fort_zoc",
+   "rule:r6_62_fort_target"
+  ],
+  "match": "set",
+  "answer": "The Royal Engineers' demolition (6.53), the fort rules of 6.54, and artillery fire at forts (6.62).",
+  "about": [
+   "unit_class:fort"
+  ]
+ },
+ {
+  "id": "s6_4_second_subphase_phases",
+  "section": "6.4",
+  "kind": "graph",
+  "text": "In which phases does Maxim second fire happen, and who fires?",
+  "query": "SELECT out AS phase, out.actor AS actor, out.fire_mode AS mode FROM allowed_in WHERE in = action:maxim_second_fire;",
+  "expect": [
+   {
+    "phase": "phase:ae_turn_ae_offensive_maxim_howitzer",
+    "actor": "faction:anglo_egyptian",
+    "mode": "offensive"
+   },
+   {
+    "phase": "phase:d_turn_ae_defensive_maxim_howitzer",
+    "actor": "faction:anglo_egyptian",
+    "mode": "defensive"
+   }
+  ],
+  "match": "set",
+  "answer": "In the Anglo-Egyptian Maxim and Howitzer subphase of both fire combat phases, offensive on his own turn and defensive on the Dervish turn; always the Anglo-Egyptian player (6.4).",
+  "about": [
+   "action:maxim_second_fire"
+  ]
+ },
+ {
+  "id": "s6_14_open_fired_at_once_scope",
+  "section": "6.14",
+  "kind": "open",
+  "text": "Does 'may only be fired at once' mean once per unit or once per hex?",
+  "query": "RETURN open_question:fired_at_once_scope.{kind, refs};",
+  "expect": {
+   "kind": "ambiguity",
+   "refs": [
+    "section:`6.14`",
+    "rule:r6_14_once",
+    "section:`6.42`"
+   ]
+  },
+  "match": "exact",
+  "answer": "Not settled. 6.14 says a combat unit may only be fired at once, but fire is aimed at enemy-occupied hexes; whether the rest of a stack can still be targeted after one unit in it was fired at isn't said.",
+  "about": [
+   "open_question:fired_at_once_scope",
+   "rule:r6_14_once"
+  ]
+ },
+ {
+  "id": "s6_24_open_howitzer_bonus",
+  "section": "6.24",
+  "kind": "open",
+  "text": "Is howitzer fire 'direct fire' for the +1 accuracy bonus?",
+  "query": "SELECT VALUE id FROM open_question WHERE refs CONTAINS modifier:ae_direct_fire;",
+  "expect": [
+   "open_question:howitzer_accuracy_bonus"
+  ],
+  "match": "exact",
+  "answer": "The manual doesn't say. The +1 is for 'all Anglo-Egyptian direct fire attacks' (6.24). Howitzer fire comes in a different subphase from direct fire and ignores line of sight (6.42, 6.64).",
+  "about": [
+   "open_question:howitzer_accuracy_bonus",
+   "modifier:ae_direct_fire"
+  ]
+ },
+ {
+  "id": "s6_42_open_howitzer_maxim_scatter",
+  "section": "6.42",
+  "kind": "open",
+  "text": "A howitzer shot combined with Maxims scatters. How is the combined attack resolved?",
+  "query": "RETURN open_question:howitzer_maxim_scatter.kind;",
+  "expect": "gap",
+  "match": "exact",
+  "answer": "Unstated. 6.42 permits the combination only if the howitzer fire impacts in the intended hex, but gives no procedure for a scatter after the fire was allocated together, or for the howitzer's separate CRT roll.",
+  "about": [
+   "open_question:howitzer_maxim_scatter",
+   "rule:r6_42_combine_howitzer"
+  ]
+ },
+ {
+  "id": "s6_52_open_friendlies_bonus",
+  "section": "6.52",
+  "kind": "open",
+  "text": "Do the Friendlies add the Anglo-Egyptian +1 when firing on the Dervish table?",
+  "query": "SELECT VALUE id FROM open_question WHERE refs CONTAINS unit_class:friendlies AND refs CONTAINS section:`6.24`;",
+  "expect": [
+   "open_question:friendlies_accuracy_bonus"
+  ],
+  "match": "exact",
+  "answer": "Not settled. 6.24 covers all Anglo-Egyptian direct fire, and 6.52 moves the Friendlies onto the Dervish Range Effects Table without mentioning the bonus.",
+  "about": [
+   "open_question:friendlies_accuracy_bonus",
+   "unit_class:friendlies"
+  ]
+ },
+ {
+  "id": "sCombatResults_open_excess",
+  "section": "CombatResults",
+  "kind": "open",
+  "text": "A '3' result hits a hex holding 2 units. What happens to the excess?",
+  "query": "RETURN open_question:excess_eliminations.kind;",
+  "expect": "gap",
+  "match": "exact",
+  "answer": "Both units are eliminated (the result removes that many units), but the back cover doesn't say whether the excess carries over to anything; nothing in the manual suggests it does.",
+  "about": [
+   "open_question:excess_eliminations",
+   "combat_result:eliminated"
+  ]
+ },
+ {
+  "id": "sCombatResults_open_disrupt_leaders_forts",
+  "section": "CombatResults",
+  "kind": "open",
+  "text": "Can a D result disrupt an Anglo-Egyptian leader or a fort?",
+  "query": "SELECT VALUE id FROM open_question WHERE refs CONTAINS unit_class:ae_leader AND refs CONTAINS unit_class:fort;",
+  "expect": [
+   "open_question:disrupt_leaders_forts"
+  ],
+  "match": "exact",
+  "answer": "The manual doesn't say. D disrupts half the units in the target hex, rounded up (back cover); whether leaders (no combat values) or forts count among those units isn't addressed, and it matters for the Tomb (9.14).",
+  "about": [
+   "open_question:disrupt_leaders_forts",
+   "combat_result:disrupted"
+  ]
+ },
+ {
+  "id": "s6_51_open_lone_leader_target",
+  "section": "6.51",
+  "kind": "open",
+  "text": "Can I fire at a hex holding only an Anglo-Egyptian leader, and what does a hit do?",
+  "query": "RETURN open_question:lone_leader_fire.kind;",
+  "expect": "gap",
+  "match": "exact",
+  "answer": "Not addressed. 6.51 gives Anglo-Egyptian leaders no combat values and names only two ways they die: overrun when alone, and loss of all their stackmates in fire or melee.",
+  "about": [
+   "open_question:lone_leader_fire",
+   "unit_class:ae_leader"
+  ]
+ },
+ {
+  "id": "s6_61_open_artillery_meaning",
+  "section": "6.61",
+  "kind": "open",
+  "text": "Does 'only artillery' include gunboats and forts?",
+  "query": "RETURN { question: open_question:artillery_meaning.kind, fort_vs_gunboat: fn::can(unit:fort, action:fire_at_gunboat).basis, gunboat_vs_fort: fn::can(unit:sultan, action:fire_at_fort).basis };",
+  "expect": {
+   "question": "ambiguity",
+   "fort_vs_gunboat": "implied",
+   "gunboat_vs_fort": "implied"
+  },
+  "match": "exact",
+  "answer": "The manual doesn't define it. Gunboats and forts fire an 'artillery factor' on the artillery line (2.31, 2.32, 6.54), which suggests yes, but 6.61–6.63 just say 'artillery'. The corpus records those capabilities as implied, not explicit.",
+  "about": [
+   "open_question:artillery_meaning",
+   "unit_class:gunboat",
+   "unit_class:fort"
+  ]
+ },
+ {
+  "id": "s6_14_open_dervish_fire_twice",
+  "section": "6.14",
+  "kind": "open",
+  "text": "6.14 names gunboats as an exception to firing once. Do Dervish gunboats fire twice?",
+  "query": "RETURN { question: open_question:dervish_defensive_maxims.kind, dervish_howitzer: fn::allowed(unit:dervish_gunboat, action:howitzer_fire), dervish_maxim_second: fn::allowed(unit:dervish_gunboat, action:maxim_second_fire) };",
+  "expect": {
+   "question": "gap",
+   "dervish_howitzer": false,
+   "dervish_maxim_second": null
+  },
+  "match": "exact",
+  "answer": "The manual doesn't say. 6.14 says 'gunboats' without qualification, but the only second fire it describes (6.42, 6.64) is for Anglo-Egyptian named gunboats and Maxims, and Dervish gunboats have no howitzers.",
+  "about": [
+   "open_question:dervish_defensive_maxims",
+   "unit:dervish_gunboat"
+  ]
+ },
+ {
+  "id": "s6_54_open_fort_melee",
+  "section": "6.54",
+  "kind": "open",
+  "text": "How does an infantry melee attack destroy a fort?",
+  "query": "RETURN { question: open_question:fort_melee_reference.kind, cites: (SELECT VALUE out.num FROM cites WHERE in = section:`6.54` AND out.num = \"7.6\") };",
+  "expect": {
+   "question": "inconsistency",
+   "cites": [
+    "7.6"
+   ]
+  },
+  "match": "exact",
+  "answer": "The manual doesn't explain. 6.54 says forts may be destroyed by infantry melee attack 'see 7.6', but 7.6 says nothing about forts or what happens to the garrison.",
+  "about": [
+   "open_question:fort_melee_reference",
+   "rule:r6_54_fort_destruction"
+  ]
+ },
+ {
+  "id": "s6_23_open_terrain_values",
+  "section": "6.23",
+  "kind": "open",
+  "text": "What defensive modifier does a ridge give against fire?",
+  "query": "RETURN modifier:terrain_defense.{value, note};",
+  "expect": {
+   "value": null,
+   "note": "Values are on the Terrain Effects Chart, not in the manual text."
+  },
+  "match": "exact",
+  "answer": "The manual text doesn't give it: terrain modifiers are on the Terrain Effects Chart (6.23), which is not transcribed in the manual.",
+  "about": [
+   "modifier:terrain_defense",
+   "component:terrain_effects_chart"
+  ]
+ },
+ {
+  "id": "s6_23_open_crt_cell",
+  "section": "6.23",
+  "kind": "open",
+  "text": "With 12 factors firing and a net roll of 7, what result do I get?",
+  "query": "RETURN { gap: open_question:range_cells.kind, crt_in_question: string::contains(open_question:range_cells.question, \"Combat Results Table\") };",
+  "expect": {
+   "gap": "gap",
+   "crt_in_question": true
+  },
+  "match": "exact",
+  "answer": "The manual text can't answer it: the Combat Results Table cells are printed on the mapsheet and the back cover, not in the rules (6.23).",
+  "about": [
+   "open_question:range_cells",
+   "component:combat_results_table"
+  ]
+ },
+ {
+  "id": "s6_53_open_engineers_timing",
+  "section": "6.53",
+  "kind": "open",
+  "text": "Can the Royal Engineers move adjacent and finish a demolition the same turn?",
+  "query": "RETURN open_question:engineers_timing.kind;",
+  "expect": "ambiguity",
+  "match": "exact",
+  "answer": "As written, yes: they end their movement adjacent and the target falls if they're still adjacent and undisrupted at the end of that Anglo-Egyptian player turn (6.53). The corpus marks it ambiguous because Zariba building (5.3) needs the unit adjacent at both the start and end of the turn.",
+  "about": [
+   "open_question:engineers_timing",
+   "rule:r6_53_engineers"
+  ]
+ }
+]
