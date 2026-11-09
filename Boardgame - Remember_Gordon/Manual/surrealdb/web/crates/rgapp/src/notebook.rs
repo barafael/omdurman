@@ -6,7 +6,7 @@ use leptos::task::spawn_local;
 
 use crate::kb::{Kb, QueryResult};
 use crate::router::{Route, href, replace};
-use crate::ui::value_view;
+use crate::ui::{highlight, value_view};
 
 /// Example questions, each with the query that answers it.
 pub const GALLERY: &[(&str, &str)] = &[
@@ -118,8 +118,14 @@ pub fn Notebook(initial: Option<String>) -> impl IntoView {
         </section>
         <div class="notebook">
             <div class="editor">
-                <textarea spellcheck="false" prop:value=move || src.get() on:input=move |ev| src.set(event_target_value(&ev))
-                    on:keydown=move |ev: web_sys::KeyboardEvent| { if ev.key() == "Enter" && (ev.ctrl_key() || ev.meta_key()) { ev.prevent_default(); run(); } }></textarea>
+                // The highlighted query underneath, the (transparent) textarea on top: the textarea
+                // takes the typing and the caret, the layer below shows the colours. Both share the
+                // font and padding, and the layer sizes the box to its text.
+                <div class="code-edit">
+                    <pre class="sql hl" aria-hidden="true">{move || highlight(&src.get())}"\n"</pre>
+                    <textarea spellcheck="false" autocapitalize="off" autocomplete="off" prop:value=move || src.get() on:input=move |ev| src.set(event_target_value(&ev))
+                        on:keydown=move |ev: web_sys::KeyboardEvent| { if ev.key() == "Enter" && (ev.ctrl_key() || ev.meta_key()) { ev.prevent_default(); run(); } }></textarea>
+                </div>
                 <div class="q-actions">
                     <button on:click=move |_| run() disabled=move || busy.get()>{move || if busy.get() { "running…" } else { "run (Ctrl+Enter)" }}</button>
                 </div>

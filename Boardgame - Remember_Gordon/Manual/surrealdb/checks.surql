@@ -156,3 +156,6 @@ SELECT id, section.num FROM rule WHERE section.num IN ["2", "5", "6", "6.5", "6.
 
 -- CHECK every question links to an existing section and has an answer
 SELECT id FROM question WHERE section.id = NONE OR answer = NONE OR text = NONE;
+
+-- CHECK every unit and tribe has its counter-sheet sprite (data/10_sprites.surql)
+RETURN array::flatten([(SELECT VALUE id FROM unit WHERE sprite = NONE), (SELECT VALUE id FROM tribe WHERE sprite = NONE)]);

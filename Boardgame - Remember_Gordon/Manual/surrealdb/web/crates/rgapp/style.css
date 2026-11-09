@@ -160,6 +160,31 @@ pre.sql {
   font-size: .8rem; line-height: 1.45; white-space: pre-wrap; word-break: break-word; overflow-x: auto;
 }
 .query-chip { margin: .5rem 0 1rem; font-size: .9rem; }
+/* SurrealQL tokens: keywords, functions, record ids, strings, numbers, params, arrows, comments, literals */
+.t-k { color: var(--accent); font-weight: 700; }
+.t-f { color: var(--nile); }
+.t-r { color: var(--green-command); }
+.t-s { color: var(--open); }
+.t-n, .t-l { color: #7a4fa0; }
+:root[data-theme="dark"] .t-n, :root[data-theme="dark"] .t-l { color: #c39ae6; }
+.t-p { color: #b5527a; }
+:root[data-theme="dark"] .t-p { color: #e48fb3; }
+.t-a { color: var(--accent); font-weight: 700; }
+.t-c { color: var(--muted); font-style: italic; }
+/* the notebook's editor: a highlighted layer under a transparent textarea */
+.code-edit { position: relative; }
+.code-edit pre.hl, .code-edit textarea {
+  margin: 0; padding: .55rem .75rem; border-left: 3px solid var(--nile); border-radius: 0;
+  font: .88rem/1.45 "Courier Prime", ui-monospace, monospace; white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;
+  tab-size: 4; letter-spacing: normal;
+}
+.code-edit pre.hl { min-height: 11rem; background: var(--code-bg); }
+.code-edit textarea {
+  position: absolute; inset: 0; width: 100%; height: 100%; resize: none; overflow: hidden; border-top: none; border-right: none; border-bottom: none;
+  color: transparent; background: transparent; caret-color: var(--ink); outline: none;
+}
+.code-edit textarea::selection { background: color-mix(in srgb, var(--nile) 30%, transparent); color: transparent; }
+.code-edit:focus-within { box-shadow: 0 0 0 2px color-mix(in srgb, var(--nile) 45%, transparent); }
 .chips { display: inline-flex; flex-wrap: wrap; gap: .25rem; }
 .chips.wide { display: flex; }
 .chip { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 999px; padding: 0 .55em; font-size: .85rem; }
@@ -182,23 +207,17 @@ ol.rows { margin: .2rem 0; padding-left: 1.3rem; }
 /* ---------------------------------------------------------------- counters */
 .counters { display: flex; flex-wrap: wrap; gap: .5rem; }
 .counters a, .counters button.pal { text-decoration: none; }
-.counter {
-  width: 82px; height: 82px; display: flex; flex-direction: column; align-items: center; justify-content: space-between;
-  padding: 4px 3px 3px; border-radius: 5px; border: 1.5px solid; box-shadow: 1px 2px 0 var(--shadow), 0 0 0 1px rgba(0,0,0,.05) inset;
-  font-family: "Courier Prime", monospace; transition: transform .12s;
+figure.counter { margin: 0; width: 84px; display: flex; flex-direction: column; align-items: center; gap: 3px; transition: transform .12s; }
+figure.counter:hover { transform: translateY(-2px) rotate(-1deg); }
+figure.counter img, figure.counter .blank {
+  width: 84px; height: 84px; border-radius: 4px; display: block; object-fit: cover;
+  box-shadow: 1px 2px 0 var(--shadow), 0 0 0 1px rgba(0,0,0,.25);
 }
-.counter:hover { transform: translateY(-2px) rotate(-1deg); }
-.counter.ae { background: var(--ae-bg); border-color: var(--ae); color: var(--ae); }
-.counter.dv { background: var(--dv-bg); border-color: var(--dv); color: var(--dv); }
-.counter.dv[style*="--tribe"] { border-color: var(--tribe); color: var(--tribe); box-shadow: 1px 2px 0 var(--shadow), inset 0 -6px 0 color-mix(in srgb, var(--tribe) 35%, transparent); }
-.counter .c-name { font-size: .58rem; line-height: 1.05; text-align: center; font-weight: 700; text-transform: uppercase; letter-spacing: .02em; max-height: 2.2em; overflow: hidden; }
-.counter .c-vals { font-size: .78rem; font-weight: 700; letter-spacing: .05em; white-space: nowrap; }
-.counter .c-vals.long { font-size: .6rem; letter-spacing: 0; }
-.counter.small { width: 64px; height: 64px; }
-.counter.small .c-name { font-size: .5rem; }
-.glyph { width: 40px; height: 28px; fill: none; stroke: currentColor; stroke-width: 1.8; }
-.counter.small .glyph { width: 32px; height: 22px; }
-.glyph .fill { fill: currentColor; }
+figure.counter .blank { display: grid; place-items: center; text-align: center; padding: 4px; font-size: .7rem; background: var(--paper-3); color: var(--ink); }
+figure.counter figcaption { font-size: .68rem; line-height: 1.1; text-align: center; color: var(--muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+figure.counter.small { width: 62px; }
+figure.counter.small img, figure.counter.small .blank { width: 62px; height: 62px; }
+figure.counter.small figcaption { font-size: .6rem; }
 button.pal { padding: 0; background: none; border: none; }
 
 /* ---------------------------------------------------------------- armies */
@@ -214,8 +233,8 @@ ul.plain { list-style: none; padding: 0; margin: .3rem 0; }
 ul.plain li { margin: .15rem 0; }
 .dossier { border: 2px solid var(--rule); background: var(--paper-2); padding: 1rem 1.2rem; box-shadow: 0 3px 12px var(--shadow); }
 .dossier-head { display: flex; gap: 1.2rem; align-items: flex-start; }
-.dossier-head .counter { width: 108px; height: 108px; flex: none; }
-.dossier-head .counter .glyph { width: 54px; height: 38px; }
+.dossier-head figure.counter { width: 128px; flex: none; }
+.dossier-head figure.counter img, .dossier-head figure.counter .blank { width: 128px; height: 128px; }
 .dossier-head h2 { margin: .1rem 0; font-size: 2rem; }
 .classes { color: var(--muted); font-style: italic; margin: .1rem 0 .5rem; }
 .dossier-grid { display: grid; grid-template-columns: 1fr 1.4fr; gap: 1.5rem; margin-top: .5rem; }
@@ -234,31 +253,7 @@ details { margin: .6rem 0; }
 summary { cursor: pointer; color: var(--accent); }
 
 /* ---------------------------------------------------------------- field */
-.field-top { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 1.5rem; align-items: start; }
-.schematic { margin: 0; }
-.schematic svg { width: 100%; height: auto; border: 1px solid var(--rule); box-shadow: 0 2px 10px var(--shadow); background: var(--sand); }
-.schematic figcaption { font-size: .8rem; color: var(--muted); margin-top: .3rem; }
-.bank.west { fill: var(--sand); }
-.bank.east { fill: var(--sand-2); }
-.nile { fill: none; stroke: var(--nile); stroke-width: 44; stroke-linecap: round; opacity: .85; }
-.current { stroke: #f4ecd6; stroke-width: 2; fill: none; opacity: .9; }
-.island { fill: var(--sand); stroke: var(--rule); }
-.khor { fill: none; stroke: #8a6a3c; stroke-width: 3; stroke-dasharray: 7 5; }
-.khor-label, .river-label, .bank-label, .edge, .map-place text, .eastbox text { font-family: "IM Fell English SC", serif; fill: var(--ink); }
-.khor-label { font-size: 15px; fill: #8a6a3c; }
-.river-label { font-size: 15px; fill: #f4ecd6; letter-spacing: .1em; }
-.bank-label { font-size: 13px; fill: var(--muted); letter-spacing: .3em; }
-.edge { font-size: 11.5px; fill: var(--accent); letter-spacing: .04em; }
-.zariba { fill: none; stroke: var(--ae); stroke-width: 5; stroke-dasharray: 3 3; }
-.walled { fill: color-mix(in srgb, var(--dv) 25%, transparent); stroke: var(--dv); stroke-width: 2; }
-.town { fill: none; stroke: var(--dv); stroke-width: 1; stroke-dasharray: 2 3; }
-.map-place { cursor: pointer; }
-.map-place circle { fill: var(--accent); }
-.map-place text { font-size: 14px; }
-.map-place:hover text { fill: var(--accent); text-decoration: underline; }
-.eastbox rect { fill: color-mix(in srgb, var(--paper) 80%, transparent); stroke: var(--rule); }
-.eastbox text { font-size: 13px; }
-.eastbox .tiny { font-size: 9.5px; fill: var(--muted); font-family: "IM Fell English", serif; font-style: italic; }
+.field-top { max-width: 52rem; }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: .8rem; }
 .card { display: block; padding: .6rem .9rem; border: 1px solid var(--rule); background: var(--paper-2); color: var(--ink); text-decoration: none; }
 a.card:hover { border-color: var(--accent); }
@@ -396,7 +391,6 @@ ul.asked { padding-left: 1.1rem; font-size: .95rem; }
 .pinned { margin: 1rem 0; }
 .more { display: block; margin: .8rem auto; }
 .notebook { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 1.2rem; }
-.editor textarea { width: 100%; min-height: 11rem; font-family: "Courier Prime", monospace; font-size: .88rem; line-height: 1.45; background: var(--code-bg); resize: vertical; }
 .statement { margin: .5rem 0; padding: .4rem .6rem; border: 1px solid var(--rule); background: var(--paper-2); overflow-x: auto; }
 .gallery ul { padding-left: 1rem; font-size: .92rem; }
 .gallery li { margin: .3rem 0; }
@@ -410,7 +404,7 @@ ul.asked { padding-left: 1.1rem; font-size: .95rem; }
   body { font-size: 17px; }
   header { position: static; }
   nav { flex-wrap: nowrap; overflow-x: auto; width: 100%; order: 3; padding-bottom: .2rem; }
-  .armies, .dossier-grid, .field-top, .sequence, .calc-grid, .scenario-detail, .stack-grid, .rulebook, .notebook, .record { grid-template-columns: 1fr; }
+  .armies, .dossier-grid, .sequence, .calc-grid, .scenario-detail, .stack-grid, .rulebook, .notebook, .record { grid-template-columns: 1fr; }
   .toc { position: static; max-height: 16rem; }
   .track-row { grid-template-columns: repeat(4, 1fr); }
   .track-row.reverse::before { display: none; }

@@ -21,6 +21,21 @@ OUT = os.path.join(WEB, "crates", "rgapp", "public", "data")
 sys.path.insert(0, CORPUS)
 import rg  # noqa: E402
 
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(CORPUS)))
+SPRITES = os.path.join(REPO, "omdurman-app", "assets", "sprites")
+SPRITES_OUT = os.path.join(WEB, "crates", "rgapp", "public", "sprites")
+
+
+def sprites():
+    """The game's counter images the corpus names (data/10_sprites.surql), as (stem, path)."""
+    import re
+    text = open(os.path.join(CORPUS, "data", "10_sprites.surql"), encoding="utf-8").read()
+    stems = sorted(set(re.findall(r'sprite = "([A-Za-z0-9_]+)"', text)))
+    missing = [s for s in stems if not os.path.isfile(os.path.join(SPRITES, s + ".webp"))]
+    if missing:
+        sys.exit(f"sprites named in data/10_sprites.surql but missing from {SPRITES}: {missing}")
+    return [(s, os.path.join(SPRITES, s + ".webp")) for s in stems]
+
 
 def sources():
     subprocess.run([sys.executable, os.path.join(CORPUS, "tools", "gen_sections.py"), rg.MANUAL,
@@ -59,7 +74,13 @@ def main():
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         shutil.copyfile(path, dst)
     json.dump(m, open(mpath, "w"), indent=1)
-    print(f"{len(files)} files, {sum(f['bytes'] for f in m['files']) // 1024} KiB, version {m['version']} -> {os.path.relpath(OUT)}")
+    if os.path.isdir(SPRITES_OUT):
+        shutil.rmtree(SPRITES_OUT)
+    os.makedirs(SPRITES_OUT)
+    for stem, path in sprites():
+        shutil.copyfile(path, os.path.join(SPRITES_OUT, stem + ".webp"))
+    print(f"{len(files)} files, {sum(f['bytes'] for f in m['files']) // 1024} KiB, version {m['version']} -> {os.path.relpath(OUT)};"
+          f" {len(os.listdir(SPRITES_OUT))} counter sprites -> {os.path.relpath(SPRITES_OUT)}")
 
 
 if __name__ == "__main__":

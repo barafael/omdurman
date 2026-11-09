@@ -5,7 +5,7 @@ use leptos::prelude::*;
 use serde_json::Value;
 
 use crate::router::{Route, href};
-use crate::ui::{list, manual_text, query_chip, rid_link, show, text, use_query};
+use crate::ui::{list, manual_text, query_chip, rid_link, show, sql_block, text, use_query};
 
 const TIMELINE: &str = "SELECT id, date, text, scenario, scenario.name AS scenario_name FROM historical_event ORDER BY date;";
 const PEOPLE: &str = "SELECT id, name, known_as, role, counter FROM person WHERE role != NONE AND id != person:peter_bertram ORDER BY name;";
@@ -156,7 +156,7 @@ pub fn Home() -> impl IntoView {
                     <a class="way-title" href=href(route)>{*title}</a>
                     <p>{*blurb}</p>
                     <p class="q">{format!("“{question}”")}</p>
-                    <pre class="sql">{*sql}</pre>
+                    {sql_block(sql)}
                     <a class="small" href=href(&Route::Notebook(Some(sql.to_string())))>"ask it in the notebook →"</a>
                 </div>
             }).collect_view()}</div>

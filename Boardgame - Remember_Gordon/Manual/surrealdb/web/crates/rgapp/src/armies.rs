@@ -8,12 +8,12 @@ use serde_json::Value;
 use crate::router::{Route, href};
 use crate::ui::{
     counter, kind_of, list, query_chip, rid_link, sec_link, show, side_of, strings, text,
-    tribe_color, use_query, value_view,
+    use_query, value_view,
 };
 
 const OOB: &str = "RETURN {
-  units: (SELECT id, name, faction, class AS kind, class.name AS kind_name, printed, count, generic, title FROM unit ORDER BY name),
-  groups: (SELECT id, name, color, basis, individual_assignment, <-leads<-unit.{id, name} AS leaders, <-member_of<-tribe.{id, name, color, unit_class} AS tribes FROM command_group ORDER BY name),
+  units: (SELECT id, name, faction, class AS kind, class.name AS kind_name, printed, count, generic, title, sprite FROM unit ORDER BY name),
+  groups: (SELECT id, name, color, basis, individual_assignment, <-leads<-unit.{id, name, sprite} AS leaders, <-member_of<-tribe.{id, name, color, unit_class, sprite} AS tribes FROM command_group ORDER BY name),
   formations: (SELECT id, name, designation, kind, nationality FROM formation ORDER BY name)
 };";
 
@@ -23,7 +23,7 @@ fn dossier_sql(rid: &str) -> String {
 LET $p = fn::precedence($s);
 RETURN {{
   id: $s, table: record::tb($s), name: $s.name, faction: $s.faction.name ?? $s.faction, kind: $s.class ?? $s.unit_class ?? $s,
-  printed: $s.printed, count: $s.count, title: $s.title, role: $s.role, history: $s.history, color: $s.color, aka: $s.aka,
+  printed: $s.printed, sprite: $s.sprite, count: $s.count, title: $s.title, role: $s.role, history: $s.history, color: $s.color, aka: $s.aka,
   description: $s.description, note: $s.note, basis: $s.basis,
   classes: $p.filter(|$x| record::tb($x) = "unit_class").map(|$x| $x.name),
   lines: fn::lines($s).map(|$l| string::concat($l.name, " · ", $l.table.name)),
@@ -88,8 +88,8 @@ pub fn Armies(selected: Option<String>) -> impl IntoView {
                                         {(!text(&g["color"]).is_empty()).then(|| view! { <span class="swatch" title=text(&g["color"])></span> })}
                                     </div>
                                     <div class="counters">
-                                        {leaders.iter().map(|l| view! { <a href=href(&Route::Armies(Some(text(&l["id"]))))>{counter(text(&l["name"]), "dv", "leader", String::new(), tribe_color(&text(&g["color"])), true)}</a> }).collect_view()}
-                                        {tribes.iter().map(|t| view! { <a href=href(&Route::Armies(Some(text(&t["id"]))))>{counter(text(&t["name"]), "dv", kind_of(&text(&t["unit_class"])), String::new(), tribe_color(&text(&t["color"])), true)}</a> }).collect_view()}
+                                        {leaders.iter().map(|l| view! { <a href=href(&Route::Armies(Some(text(&l["id"]))))>{counter(text(&l["name"]), "dv", &text(&l["sprite"]), true)}</a> }).collect_view()}
+                                        {tribes.iter().map(|t| view! { <a href=href(&Route::Armies(Some(text(&t["id"]))))>{counter(text(&t["name"]), "dv", &text(&t["sprite"]), true)}</a> }).collect_view()}
                                     </div>
                                     {unstated.then(|| view! { <p class="small note">"The rules name these leaders and tribes together; which leader commands which tribe is not stated."</p> })}
                                 </div>
@@ -113,7 +113,7 @@ fn unit_counter(u: &Value) -> impl IntoView + use<> {
     let rid = text(&u["id"]);
     view! {
         <a href=href(&Route::Armies(Some(rid))) title=text(&u["kind_name"])>
-            {counter(name, side_of(&text(&u["faction"])), kind_of(&text(&u["kind"])), text(&u["printed"]), None, false)}
+            {counter(name, side_of(&text(&u["faction"])), &text(&u["sprite"]), false)}
         </a>
     }
 }
@@ -129,13 +129,11 @@ fn Dossier(rid: String) -> impl IntoView {
                 let abilities = list(&d["abilities"]);
                 let (may, maynot): (Vec<Value>, Vec<Value>) = abilities.into_iter().partition(|a| a["allowed"] == Value::Bool(true));
                 let side = side_of(&text(&d["faction"]).to_lowercase());
-                let kind = kind_of(&text(&d["kind"]));
                 let table = text(&d["table"]);
                 let name = text(&d["name"]);
-                let color = tribe_color(&text(&d["color"]));
                 view! {
                     <div class="dossier-head">
-                        {(table != "command_group").then(|| counter(name.clone(), side, kind, text(&d["printed"]), color, false))}
+                        {(table != "command_group").then(|| counter(name.clone(), side, &text(&d["sprite"]), false))}
                         <div>
                             <p class="kicker">{format!("dossier · {}", text(&d["faction"]))}</p>
                             <h2>{name.clone()}{d["count"].as_i64().filter(|n| *n > 1).map(|n| format!(" (×{n})"))}</h2>

@@ -3,7 +3,7 @@
 to load, visit every view, report console errors and error panels, run a few interactions, and save a
 screenshot of each view.
 
-    python3 web/smoke.py [--shots DIR] [--dark] [--subpath /omdurman/archive/]   (needs `websockets`)
+    python3 web/smoke.py [--shots DIR] [--dark] [--subpath /omdurman/archive/] [--live URL]   (needs `websockets`)
 
 Serves crates/rgapp/dist itself, so build first (trunk build, or build.sh). After the reference
 project's bench.py (bavovniatko db/web)."""
@@ -150,6 +150,8 @@ def main():
     sub = sys.argv[sys.argv.index("--subpath") + 1] if "--subpath" in sys.argv else "/"
     global BASE
     BASE = f"http://127.0.0.1:{PORT}/{sub.strip('/')}/".replace("//", "/").replace("http:/", "http://")
+    if "--live" in sys.argv:  # test a deployed site instead of the local dist
+        BASE = sys.argv[sys.argv.index("--live") + 1].rstrip("/") + "/"
     server, browser, ws_url = start(sub)
     try:
         ok = asyncio.run(session(ws_url, shots, "--dark" in sys.argv))

@@ -5,7 +5,7 @@
 use leptos::prelude::*;
 use serde_json::Value;
 
-use crate::ui::{counter, d10, kind_of, list, sec_link, show, strings, text, use_query};
+use crate::ui::{counter, d10, highlight, list, sec_link, show, strings, text, use_query};
 
 /// One instrument: its inputs, the query they make, and how its answer reads.
 fn instrument(
@@ -27,7 +27,7 @@ fn instrument(
                 Some(Err(e)) if !e.is_empty() => view! { <p class="error">{e}</p> }.into_any(),
                 _ => view! { <p class="loading">"…"</p> }.into_any(),
             }}</div>
-            <pre class="sql">{move || sql.get()}</pre>
+            <pre class="sql">{move || highlight(&sql.get())}</pre>
         </div>
     }
 }
@@ -83,11 +83,11 @@ fn signed(v: &Value) -> String {
 }
 
 const PALETTE: &str = "RETURN {
-  dervish: array::flatten([(SELECT id, name, class AS kind FROM unit WHERE class = unit_class:d_leader ORDER BY name), (SELECT id, name, unit_class AS kind, color FROM tribe ORDER BY name),
-    (SELECT id, name, class AS kind FROM unit WHERE id IN [unit:isa_zachneih, unit:dervish_artillery, unit:dervish_gunboat, unit:fort])]),
-  anglo_egyptian: array::flatten([(SELECT id, name, class AS kind FROM unit WHERE class = unit_class:ae_leader ORDER BY name),
-    (SELECT id, name, id AS kind FROM unit_class WHERE id IN [unit_class:british_infantry, unit_class:egyptian_infantry, unit_class:sudanese_infantry, unit_class:friendlies]),
-    (SELECT id, name, class AS kind FROM unit WHERE id IN [unit:lancers_21, unit:camel_corps, unit:battery_32, unit:maxim_battery, unit:royal_engineers, unit:sultan, unit:old_gunboat])])
+  dervish: array::flatten([(SELECT id, name, sprite FROM unit WHERE class = unit_class:d_leader ORDER BY name), (SELECT id, name, sprite FROM tribe ORDER BY name),
+    (SELECT id, name, sprite FROM unit WHERE id IN [unit:isa_zachneih, unit:dervish_artillery, unit:dervish_gunboat, unit:fort])]),
+  anglo_egyptian: array::flatten([(SELECT id, name, sprite FROM unit WHERE class = unit_class:ae_leader ORDER BY name),
+    (SELECT id, name, sprite FROM unit_class WHERE id IN [unit_class:british_infantry, unit_class:egyptian_infantry, unit_class:sudanese_infantry, unit_class:friendlies]),
+    (SELECT id, name, sprite FROM unit WHERE id IN [unit:lancers_21, unit:camel_corps, unit:battery_32, unit:maxim_battery, unit:royal_engineers, unit:sultan, unit:old_gunboat])])
 };";
 
 #[component]
@@ -119,13 +119,13 @@ fn Stacking() -> impl IntoView {
         (
             "unit:osman_digna".into(),
             "Osman Digna".into(),
-            "unit_class:d_leader".into(),
+            "Hadendowa_1_0".into(),
             "dv".into(),
         ),
         (
             "tribe:baggara".into(),
             "Baggara".into(),
-            "unit_class:d_infantry".into(),
+            "Baggara_0_0".into(),
             "dv".into(),
         ),
     ]);
@@ -141,10 +141,10 @@ fn Stacking() -> impl IntoView {
     });
     let res = use_query(move || sql.get());
     let chip = move |side: &'static str, u: Value| {
-        let (id, name, kind) = (text(&u["id"]), text(&u["name"]), text(&u["kind"]));
+        let (id, name, kind) = (text(&u["id"]), text(&u["name"]), text(&u["sprite"]));
         view! {
             <button class="pal" on:click=move |_| hex.update(|h| h.push((id.clone(), name.clone(), kind.clone(), side.into())))>
-                {counter(text(&u["name"]), side, kind_of(&text(&u["kind"])), String::new(), None, true)}
+                {counter(text(&u["name"]), side, &text(&u["sprite"]), true)}
             </button>
         }
     };
@@ -161,7 +161,7 @@ fn Stacking() -> impl IntoView {
                 <div class="hex-panel">
                     <div class="hex">
                         {move || hex.get().into_iter().enumerate().map(|(i, (_, name, kind, side))| view! {
-                            <button class="pal" title="remove" on:click=move |_| hex.update(|h| { h.remove(i); })>{counter(name, &side, kind_of(&kind), String::new(), None, true)}</button>
+                            <button class="pal" title="remove" on:click=move |_| hex.update(|h| { h.remove(i); })>{counter(name, &side, &kind, true)}</button>
                         }).collect_view()}
                         {move || hex.get().is_empty().then(|| view! { <p class="small">"An empty hex."</p> })}
                     </div>
@@ -180,7 +180,7 @@ fn Stacking() -> impl IntoView {
                         Some(Err(e)) if !e.is_empty() => view! { <p class="error">{e}</p> }.into_any(),
                         _ => view! { <p class="loading">"…"</p> }.into_any(),
                     }}</div>
-                    <pre class="sql">{move || sql.get()}</pre>
+                    <pre class="sql">{move || highlight(&sql.get())}</pre>
                 </div>
             </div>
         </section>

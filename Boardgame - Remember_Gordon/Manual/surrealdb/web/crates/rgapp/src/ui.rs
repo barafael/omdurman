@@ -164,6 +164,197 @@ pub fn value_view(v: &Value) -> AnyView {
     }
 }
 
+// ------------------------------------------------------------------ SurrealQL highlighting
+
+const KEYWORDS: &[&str] = &[
+    "SELECT",
+    "FROM",
+    "WHERE",
+    "RETURN",
+    "LET",
+    "IF",
+    "ELSE",
+    "THEN",
+    "END",
+    "ORDER",
+    "BY",
+    "GROUP",
+    "ALL",
+    "VALUE",
+    "AND",
+    "OR",
+    "NOT",
+    "IN",
+    "CONTAINS",
+    "CONTAINSANY",
+    "CONTAINSALL",
+    "CONTAINSNOT",
+    "CONTAINSNONE",
+    "INSIDE",
+    "AS",
+    "LIMIT",
+    "START",
+    "ONLY",
+    "DESC",
+    "ASC",
+    "FOR",
+    "FETCH",
+    "SPLIT",
+    "OMIT",
+    "INFO",
+    "DB",
+    "TABLE",
+    "COUNT",
+    "CREATE",
+    "UPDATE",
+    "UPSERT",
+    "DELETE",
+    "RELATE",
+    "INSERT",
+    "INTO",
+    "SET",
+    "CONTENT",
+    "MERGE",
+    "DEFINE",
+    "REMOVE",
+    "FUNCTION",
+    "FIELD",
+    "INDEX",
+    "TYPE",
+    "RELATION",
+    "BEGIN",
+    "COMMIT",
+    "CANCEL",
+    "TRANSACTION",
+    "IS",
+    "OVERWRITE",
+];
+
+/// One highlighted run: its class ("" for plain text) and text.
+fn sql_tokens(q: &str) -> Vec<(&'static str, String)> {
+    let c: Vec<char> = q.chars().collect();
+    let mut out: Vec<(&'static str, String)> = vec![];
+    let mut push = |cls: &'static str, t: String| match out.last_mut() {
+        Some((c0, t0)) if *c0 == cls && cls.is_empty() => t0.push_str(&t),
+        _ => out.push((cls, t)),
+    };
+    let word = |ch: char| ch.is_alphanumeric() || ch == '_';
+    let mut i = 0;
+    while i < c.len() {
+        let ch = c[i];
+        let rest = |n: usize| c[i..(i + n).min(c.len())].iter().collect::<String>();
+        if rest(2) == "--" || rest(2) == "//" {
+            let j = c[i..]
+                .iter()
+                .position(|&x| x == '\n')
+                .map_or(c.len(), |p| i + p);
+            push("c", c[i..j].iter().collect());
+            i = j;
+        } else if ch == '"' || ch == '\'' {
+            let mut j = i + 1;
+            while j < c.len() && c[j] != ch {
+                j += if c[j] == '\\' { 2 } else { 1 };
+            }
+            let j = (j + 1).min(c.len());
+            push("s", c[i..j].iter().collect());
+            i = j;
+        } else if ch == '$' {
+            let mut j = i + 1;
+            while j < c.len() && word(c[j]) {
+                j += 1;
+            }
+            push("p", c[i..j].iter().collect());
+            i = j;
+        } else if rest(2) == "->" || rest(2) == "<-" {
+            push("a", rest(2));
+            i += 2;
+        } else if ch.is_ascii_digit() {
+            let mut j = i;
+            while j < c.len()
+                && (c[j].is_ascii_digit() || c[j] == '.')
+                && !(c[j] == '.' && c.get(j + 1) == Some(&'.'))
+            {
+                j += 1;
+            }
+            push("n", c[i..j].iter().collect());
+            i = j;
+        } else if word(ch) {
+            let mut j = i;
+            while j < c.len() && word(c[j]) {
+                j += 1;
+            }
+            // a function path: ident::ident(::ident)*
+            if c.get(j) == Some(&':') && c.get(j + 1) == Some(&':') {
+                while c.get(j) == Some(&':') && c.get(j + 1) == Some(&':') {
+                    j += 2;
+                    while j < c.len() && word(c[j]) {
+                        j += 1;
+                    }
+                }
+                push("f", c[i..j].iter().collect());
+            // a record id: table:key, table:`key`, table:⟨key⟩
+            } else if c.get(j) == Some(&':')
+                && c.get(j + 1)
+                    .is_some_and(|&x| word(x) || x == '`' || x == '⟨')
+            {
+                let mut k = j + 1;
+                match c[k] {
+                    '`' | '⟨' => {
+                        let close = if c[k] == '`' { '`' } else { '⟩' };
+                        k += 1;
+                        while k < c.len() && c[k] != close {
+                            k += 1;
+                        }
+                        k = (k + 1).min(c.len());
+                    }
+                    _ => {
+                        while k < c.len() && word(c[k]) {
+                            k += 1;
+                        }
+                    }
+                }
+                push("r", c[i..k].iter().collect());
+                j = k;
+            } else {
+                let w: String = c[i..j].iter().collect();
+                let cls = if KEYWORDS.contains(&w.as_str()) {
+                    "k"
+                } else if matches!(w.as_str(), "true" | "false" | "NONE" | "NULL") {
+                    "l"
+                } else {
+                    ""
+                };
+                push(cls, w);
+            }
+            i = j;
+        } else {
+            push("", ch.to_string());
+            i += 1;
+        }
+    }
+    out
+}
+
+/// SurrealQL as highlighted spans (keywords, functions, record ids, strings, numbers, params,
+/// graph arrows, comments).
+pub fn highlight(q: &str) -> Vec<AnyView> {
+    sql_tokens(q)
+        .into_iter()
+        .map(|(cls, t)| {
+            if cls.is_empty() {
+                t.into_any()
+            } else {
+                view! { <span class=format!("t-{cls}")>{t}</span> }.into_any()
+            }
+        })
+        .collect()
+}
+
+/// A highlighted SurrealQL block.
+pub fn sql_block(q: &str) -> impl IntoView + use<> {
+    view! { <pre class="sql">{highlight(q)}</pre> }
+}
+
 // ------------------------------------------------------------------ the query behind a view
 
 /// A folded "dispatch" showing the SurrealQL a panel ran, with a link to open it in the notebook.
@@ -178,7 +369,7 @@ pub fn query_chip(sql: impl Fn() -> String + Send + Sync + 'static) -> impl Into
             </button>
             <Show when=move || open.get()>
                 {let s = s2.clone(); move || { let q = s(); view! {
-                    <pre class="sql">{q.clone()}</pre>
+                    {sql_block(&q)}
                     <a class="small" href=href(&Route::Notebook(Some(q)))>"open in the notebook →"</a>
                 } }}
             </Show>
@@ -256,7 +447,7 @@ fn inline(s: &str) -> impl IntoView + use<> {
 
 // ------------------------------------------------------------------ counters
 
-/// The glyph family for a unit class id.
+/// The broad kind of a unit class id ("leader", "gunboat", ...), for sorting counters into groups.
 pub fn kind_of(class: &str) -> &'static str {
     let c = class.trim_start_matches("unit_class:");
     match c {
@@ -272,54 +463,22 @@ pub fn kind_of(class: &str) -> &'static str {
     }
 }
 
-/// A unit-type symbol in a 40×28 box, after the map symbols of the period's wargames.
-pub fn glyph(kind: &str) -> impl IntoView + use<> {
-    let body = match kind {
-        "infantry" => view! { <rect x="6" y="5" width="28" height="18"/><path d="M6 5 L34 23 M34 5 L6 23"/> }.into_any(),
-        "cavalry" => view! { <rect x="6" y="5" width="28" height="18"/><path d="M6 23 L34 5"/> }.into_any(),
-        "camel" => view! { <rect x="6" y="5" width="28" height="18"/><path d="M9 19 Q14 8 20 15 Q26 8 31 19"/> }.into_any(),
-        "artillery" => view! { <rect x="6" y="5" width="28" height="18"/><circle cx="20" cy="14" r="3.5" class="fill"/> }.into_any(),
-        "maxim" => view! { <rect x="6" y="5" width="28" height="18"/><circle cx="15" cy="14" r="2.5" class="fill"/><circle cx="25" cy="14" r="2.5" class="fill"/> }.into_any(),
-        "engineers" => view! { <rect x="6" y="5" width="28" height="18"/><path d="M12 19 V10 H28 V19 M20 10 V19"/> }.into_any(),
-        "gunboat" => view! { <path d="M3 16 H37 L32 23 H8 Z"/><path d="M17 16 V6 M17 7 L26 11 L17 13"/> }.into_any(),
-        "leader" => view! { <path class="fill" d="M20 3 L23.5 11 L32 11.5 L25.5 17 L27.5 25 L20 20.5 L12.5 25 L14.5 17 L8 11.5 L16.5 11 Z"/> }.into_any(),
-        "fort" => view! { <path d="M20 3 L35 13 L30 25 H10 L5 13 Z"/><path d="M20 9 L28 14 L25 21 H15 L12 14 Z"/> }.into_any(),
-        _ => view! { <rect x="6" y="5" width="28" height="18"/> }.into_any(),
+/// A unit as its counter from the game's counter sheet (omdurman-app/assets/sprites, named per
+/// record in data/10_sprites.surql), captioned with its name. A record without a counter shows as a
+/// plain blank chit.
+pub fn counter(name: String, side: &str, sprite: &str, small: bool) -> impl IntoView + use<> {
+    let class = format!("counter {side}{}", if small { " small" } else { "" });
+    let face = if sprite.is_empty() {
+        view! { <div class="blank">{name.clone()}</div> }.into_any()
+    } else {
+        view! { <img src=format!("sprites/{sprite}.webp") alt=name.clone() loading="lazy" draggable="false"/> }.into_any()
     };
-    view! { <svg class="glyph" viewBox="0 0 40 28" aria-hidden="true">{body}</svg> }
-}
-
-/// A unit as a cardboard counter.
-pub fn counter(
-    name: String,
-    side: &str,
-    kind: &str,
-    values: String,
-    color: Option<String>,
-    small: bool,
-) -> impl IntoView + use<> {
-    let class = format!(
-        "counter {} {}{}",
-        side,
-        kind,
-        if small { " small" } else { "" }
-    );
-    let style = color.map(|c| format!("--tribe:{c}")).unwrap_or_default();
-    let long = values.chars().count() > 9;
+    let title = name.clone();
     view! {
-        <div class=class style=style>
-            <div class="c-name">{name}</div>
-            {glyph(kind)}
-            <div class="c-vals" class:long=long>{if values.is_empty() { "· · ·".to_string() } else { values }}</div>
-        </div>
-    }
-}
-
-/// The CSS colour for a tribe's command colour, when the manual names one.
-pub fn tribe_color(name: &str) -> Option<String> {
-    match name {
-        "green" => Some("var(--green-command)".into()),
-        _ => None,
+        <figure class=class title=title>
+            {face}
+            <figcaption>{name}</figcaption>
+        </figure>
     }
 }
 

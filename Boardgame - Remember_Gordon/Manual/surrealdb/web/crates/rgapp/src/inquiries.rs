@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use crate::kb::Kb;
 use crate::router::{Route, go, href};
-use crate::ui::{list, sec_link, show, text, use_query, value_view};
+use crate::ui::{list, sec_link, show, sql_block, text, use_query, value_view};
 
 const QUESTIONS: &str = "SELECT record::id(id) AS key, section_num AS section, kind, text, answer, query, expect, match, note FROM question ORDER BY section, key;";
 const PAGE: usize = 30;
@@ -125,7 +125,7 @@ fn card(q: Value, open: bool) -> impl IntoView {
                     <div class="q-body">
                         <p class="answer-text">{text(&q["answer"])}" "{sec_link(&text(&q["section"]))}</p>
                         {(!text(&q["note"]).is_empty()).then(|| view! { <p class="small note">{text(&q["note"])}</p> })}
-                        <pre class="sql">{query.clone()}</pre>
+                        {sql_block(&query)}
                         <div class="q-actions">
                             <button on:click=move |_| fire()>"run it"</button>
                             <a class="small" href=href(&Route::Notebook(Some(query.clone())))>"edit in the notebook"</a>

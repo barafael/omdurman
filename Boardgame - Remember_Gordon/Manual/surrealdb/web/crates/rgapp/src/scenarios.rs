@@ -5,7 +5,9 @@ use leptos::prelude::*;
 use serde_json::Value;
 
 use crate::router::{Route, href};
-use crate::ui::{list, query_chip, sec_link, show, strings, text, use_query, value_view};
+use crate::ui::{
+    highlight, list, query_chip, sec_link, show, strings, text, use_query, value_view,
+};
 
 const LIST: &str = "SELECT id, name, start, end, length_turns, length_text, sets_up_first.name AS sets_up_first, moves_first.name AS moves_first,
   maps.name AS maps, character, (SELECT VALUE [date, text] FROM historical_event WHERE scenario = $parent.id)[0] AS event,
@@ -165,7 +167,7 @@ fn Calculator(scenario: String) -> impl IntoView {
                     _ => view! { <p class="loading">"…"</p> }.into_any(),
                 }}</div>
             </div>
-            <pre class="sql">{move || sql.get()}</pre>
+            <pre class="sql">{move || highlight(&sql.get())}</pre>
         </section>
     }
 }
