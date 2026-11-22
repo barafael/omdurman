@@ -288,16 +288,11 @@ pub struct GunboatMovement {
 // ---------------------------------------------------------------------------
 
 /// The §5.52 stacking group of a Dervish unit (see
-/// [`UnitIdentity::dervish_stacking_group`]): tribal units group by tribe;
-/// the Dervish artillery is its own group.
+/// [`UnitIdentity::dervish_stacking_group`]): tribal units group by tribe.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum DervishStackingGroup {
     /// A tribal counter of this tribe (§5.52).
     Tribe(DervishTribe),
-    /// The three Dervish artillery counters (§9.322) -- not a tribe, but not
-    /// any tribe's unit either, so they stack only with each other (and with
-    /// a leader whose §5.53 command allows).
-    Artillery,
 }
 
 /// The owner-side identity of a unit: which faction, plus the optional
@@ -416,18 +411,15 @@ impl UnitIdentity {
     }
 
     /// The §5.52 stacking group this Dervish unit belongs to, if any: tribal
-    /// units group by tribe, and the Dervish artillery (§9.322's three guns)
-    /// groups as its own "tribe" -- a gun is not a Hadendowa (or Kehena, or
-    /// Mulazmin, ...) unit, so counters of different groups may not share a
-    /// hex. Guns still stack with guns, and with the Khalifa (whose §5.53
-    /// command check constrains tribal units only -- §5.23 groups the
-    /// Khalifa, his artillery, and the Taiasha as the walled-city force).
-    /// `None` for every unit the §5.52 law does not constrain: Dervish
-    /// leaders, forts and gunboats, and all Anglo-Egyptian units.
+    /// units group by tribe. The Dervish artillery is no tribe, so §5.52
+    /// does not bar it from any hex -- the guns stack with any Dervish units
+    /// (the four-unit limit, §5.51, and the leaders' §5.53 command check
+    /// still apply). `None` for every unit the §5.52 law does not constrain:
+    /// the artillery, Dervish leaders, forts and gunboats, and all
+    /// Anglo-Egyptian units.
     pub fn dervish_stacking_group(&self) -> Option<DervishStackingGroup> {
         match self {
             UnitIdentity::DervishTribal { tribe } => Some(DervishStackingGroup::Tribe(*tribe)),
-            UnitIdentity::DervishArtillery => Some(DervishStackingGroup::Artillery),
             _ => None,
         }
     }
@@ -672,8 +664,7 @@ pub enum StackingError {
     #[error("a hex holds only one fort [§5.51]")]
     FortStack,
     /// "Units of different Dervish tribes may not stack together" (§5.52).
-    /// The Dervish artillery (§9.322's three guns) is not a tribe but is not
-    /// any tribe's unit either: it forms its own stacking group (see
+    /// The Dervish artillery is no tribe and stacks with any of them (see
     /// [`UnitIdentity::dervish_stacking_group`]).
     #[error("Dervish units of different tribes may not stack [§5.52]")]
     DervishTribeMix,

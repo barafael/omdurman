@@ -349,10 +349,15 @@ fn end_phase_button(
             ),
         };
         let confirm = ui
-            .add(egui::Button::new(question).fill(crate::ui::palette::BTN_DANGER))
+            .add(egui::Button::new(format!("{question}  (E)")).fill(crate::ui::palette::BTN_DANGER))
             .on_hover_text(why);
-        let keep = ui.button("Go back");
-        if confirm.clicked() {
+        let keep = ui.button("Go back  (Esc)");
+        // E again confirms what E armed (pressing it twice did nothing: only
+        // a click on the red button would do); Esc goes back.
+        let keys = !ui.ctx().egui_wants_keyboard_input();
+        let confirm_key = keys && ui.input(|i| end_phase_hotkey(i.modifiers, &i.events));
+        let back_key = keys && ui.input(|i| i.key_pressed(egui::Key::Escape));
+        if confirm.clicked() || confirm_key {
             ui.data_mut(|d| d.remove::<String>(armed_id));
             if let Some(allocation) = allocation {
                 allocation.attacks.clear();
@@ -361,7 +366,7 @@ fn end_phase_button(
             }
             crate::ui_trace::button("End Phase (discard allocations)");
             submit_end_phase(&state.0, pending);
-        } else if keep.clicked() {
+        } else if keep.clicked() || back_key {
             ui.data_mut(|d| d.remove::<String>(armed_id));
         }
         return;
@@ -768,7 +773,7 @@ pub(crate) fn telegram_overlay(
                             .color(crate::ui::palette::TEXT),
                     );
                     ui.add_space(14.0);
-                    let button = ui.button("Continue  (Enter)");
+                    let button = ui.button("Continue  (Enter / E)");
                     button.request_focus();
                     if button.clicked() {
                         dismiss = true;
@@ -778,7 +783,11 @@ pub(crate) fn telegram_overlay(
         });
     // Above the backdrop, which shares its order.
     ctx.move_to_top(card.response.layer_id);
-    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+    // E dismisses it too: a player pressing End Phase (E) at the turn's
+    // end met a modal that swallowed the key without a word. It only
+    // closes the telegram -- the focused Continue button keeps the game
+    // hotkeys from ending a phase on the same press.
+    if ctx.input(|i| i.key_pressed(egui::Key::Escape) || end_phase_hotkey(i.modifiers, &i.events)) {
         dismiss = true;
     }
     if dismiss {

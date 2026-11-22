@@ -128,6 +128,56 @@ pub fn arrival_allowance(gs: &GameState) -> Option<String> {
     })
 }
 
+/// The 1-based Campaign turn whose wave brings `identity` on (§9.112; the
+/// Anglo-Egyptian waves are open choices, "all remaining" from turn 4,
+/// §9.113). `None` for a unit of no wave.
+fn wave_turn(identity: &omdurman_rules::UnitIdentity) -> Option<u8> {
+    use omdurman_rules::UnitIdentity;
+    use omdurman_rules::reinforcements::{CampaignLeader, dervish_campaign_schedule};
+    match identity {
+        UnitIdentity::DervishTribal { tribe } => dervish_campaign_schedule()
+            .waves
+            .iter()
+            .find(|w| w.tribes.contains(tribe))
+            .map(|w| w.turn),
+        UnitIdentity::DervishLeader(leader) => dervish_campaign_schedule()
+            .waves
+            .iter()
+            .find(|w| w.leaders.contains(&CampaignLeader::Dervish(*leader)))
+            .map(|w| w.turn),
+        other if other.owner() == Player::AngloEgyptian => Some(4),
+        _ => None,
+    }
+}
+
+/// The counters past their own wave that may still enter now (the engine
+/// keeps units held back, or kept off by a full entry hex, rather than
+/// losing them): "Late: Jaalin (1) -- …", so a late arrival is no surprise.
+pub fn late_arrivals(
+    gs: &GameState,
+    unplaced: impl IntoIterator<Item = omdurman_rules::UnitId>,
+) -> Option<String> {
+    if !entry_window_open(gs) {
+        return None;
+    }
+    let turn = gs.current_turn.value();
+    let names: Vec<String> = unplaced
+        .into_iter()
+        .filter_map(|id| Some((id, omdurman_rules::unit_profiles::profile_for_unit(id)?)))
+        .filter(|(_, p)| wave_turn(&p.identity).is_some_and(|due| due < turn))
+        .filter(|&(id, _)| enterable(gs, id))
+        .map(|(_, p)| p.identity.label_in(gs.scenario))
+        .collect();
+    if names.is_empty() {
+        return None;
+    }
+    let names = crate::combat_ui::tally_names(names).join(", ");
+    Some(format!(
+        "Late: {names} \u{2014} past their turn of entry, they may still come on \
+         (§9.112/§9.113)."
+    ))
+}
+
 /// Ring the hexes reinforcements may enter on while the local player's side
 /// may bring them in (§9.112/§9.113): the picked counter's own legal hexes,
 /// or -- with nothing picked -- the entrance areas of every counter that may

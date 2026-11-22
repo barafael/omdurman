@@ -60,6 +60,76 @@ impl FireAllocationState {
             .any(|o| o.shots().iter().any(|s| s.unit == unit))
     }
 
+    /// Stage a wall (§6.63) or chain (§10.23 b) shot from the breach card.
+    /// A second shot at a target already staged joins that shot (§6.14
+    /// combined fire: one target, one roll) -- staged apart, the whole
+    /// allocation would be refused at Resolve as a target allocated twice.
+    /// `Err` when a battery is already staged in another order (§6.13).
+    pub fn stage_special(&mut self, order: FireOrder) -> Result<(), &'static str> {
+        let same_target = |a: &FireOrder, b: &FireOrder| match (a, b) {
+            (FireOrder::BreachWall { target: x, .. }, FireOrder::BreachWall { target: y, .. }) => {
+                (x.a, x.b) == (y.a, y.b) || (x.a, x.b) == (y.b, y.a)
+            }
+            (FireOrder::SinkChain { .. }, FireOrder::SinkChain { .. }) => true,
+            _ => false,
+        };
+        let joins = self.specials.iter().position(|s| same_target(s, &order));
+        let firers = |o: &FireOrder| match o {
+            FireOrder::BreachWall { firers, .. } | FireOrder::SinkChain { firers } => {
+                firers.clone()
+            }
+            FireOrder::Attack(_) => Vec::new(),
+        };
+        let fresh: Vec<omdurman_rules::UnitId> = firers(&order)
+            .into_iter()
+            .filter(|id| joins.is_none_or(|i| !firers(&self.specials[i]).contains(id)))
+            .collect();
+        if fresh.iter().any(|id| self.stages_unit(*id)) {
+            return Err("These batteries have already allocated their fire.");
+        }
+        match joins {
+            Some(i) => match &mut self.specials[i] {
+                FireOrder::BreachWall { firers, .. } | FireOrder::SinkChain { firers } => {
+                    firers.extend(fresh);
+                }
+                FireOrder::Attack(_) => unreachable!("specials hold no plain attacks"),
+            },
+            None => self.specials.push(order),
+        }
+        Ok(())
+    }
+
+    /// The breach card's joined batteries changed after its lead's shot was
+    /// staged: the staged shot takes the new set (those not staged in
+    /// another order), so the tick boxes and the tray agree.
+    pub fn rejoin_special(
+        &mut self,
+        lead: omdurman_rules::UnitId,
+        joined: &[omdurman_rules::UnitId],
+    ) {
+        let Some(i) = self.specials.iter().position(|s| match s {
+            FireOrder::BreachWall { firers, .. } | FireOrder::SinkChain { firers } => {
+                firers.first() == Some(&lead)
+            }
+            FireOrder::Attack(_) => false,
+        }) else {
+            return;
+        };
+        let elsewhere = |id: omdurman_rules::UnitId, this: &Self| {
+            this.orders()
+                .iter()
+                .enumerate()
+                .any(|(k, o)| k != this.attacks.len() + i && o.shots().iter().any(|s| s.unit == id))
+        };
+        let mut set = vec![lead];
+        set.extend(joined.iter().copied().filter(|id| !elsewhere(*id, self)));
+        if let FireOrder::BreachWall { firers, .. } | FireOrder::SinkChain { firers } =
+            &mut self.specials[i]
+        {
+            *firers = set;
+        }
+    }
+
     /// Drop everything staged.
     fn clear_staged(&mut self) {
         self.attacks.clear();
@@ -105,15 +175,34 @@ pub fn handle_fire_allocation_click(
     if !peers.may_act(firing_player) {
         return;
     }
-    let Some(group) = fire_selection(&state, &placed_units, &gs.0) else {
-        return;
-    };
     // A release on a friendly or empty hex (e.g. the selecting click itself)
     // is not an attempted shot: stay quiet about it below.
     let enemy_there =
         gs.0.units.iter().any(|u| {
             u.position == target && u.profile.identity.owner() == firing_player.opponent()
         });
+    let Some(group) = fire_selection(&state, &placed_units, &gs.0) else {
+        // Nothing selected may fire (disrupted, say): a shot at an enemy
+        // hex -- or a click on the disrupted counters themselves -- is told
+        // why instead of doing nothing.
+        let selected = crate::picker::selected_unit_ids(&state, &placed_units);
+        let all_disrupted = !selected.is_empty()
+            && selected.iter().all(|id| {
+                gs.0.find_unit(*id).is_some_and(|u| {
+                    u.state.disrupted && u.profile.identity.owner() == firing_player
+                })
+            });
+        if !allocation.committed && (enemy_there || all_disrupted) && !selected.is_empty() {
+            dispatches.refuse(
+                "Field Telegraph",
+                format!(
+                    "Fire refused — {}.",
+                    crate::fire::fire_refusal_reason(&gs.0, &selected, target)
+                ),
+            );
+        }
+        return;
+    };
     if allocation.committed {
         // §6.41: a sub-phase's fire is allocated, then resolved -- after the
         // resolution nothing more may be allocated. Say so rather than
@@ -130,28 +219,19 @@ pub fn handle_fire_allocation_click(
         return;
     }
     let kinds = fire_group_kinds(&gs.0, &group);
-    if kinds.is_empty() {
-        return;
-    }
-
+    // `kinds` may be empty -- no main weapon with a role in this sub-phase
+    // (an unnamed gunboat in the howitzer sub-phase, §6.42/§6.64) -- and a
+    // named gunboat's Maxims may still fire; else the refusal says why.
     let attacks = crate::fire::click_attacks(&gs.0, &group, &kinds, target, &allocation.attacks);
     if attacks.is_empty() {
         if !enemy_there {
             return;
         }
-        // No unit of the group may fire at this hex: say why (the engine's
-        // reason for the first unit -- out of range, no line of sight, a
-        // wrong weapon for the target...) instead of ignoring the click.
-        let Some(&(firer, kind)) = kinds.first() else {
-            return;
-        };
-        let reason = match gs.0.can_fire_at(firer, target, kind) {
-            Err(omdurman_rules::effects::RuleError::LineOfSightBlocked(_, _)) => {
-                "no line of sight (§6.3)".to_string()
-            }
-            Err(error) => error.to_string(),
-            Ok(()) => "the selected units cannot fire there".to_string(),
-        };
+        // No weapon of the group may fire at this hex: say why, weapon by
+        // weapon (out of range and how far it reaches, what blocks the
+        // line of sight, a wrong weapon for the target or sub-phase...)
+        // instead of ignoring the click.
+        let reason = crate::fire::fire_refusal_reason(&gs.0, &group.units, target);
         dispatches.refuse("Field Telegraph", format!("Fire refused — {reason}."));
         return;
     }
@@ -209,14 +289,21 @@ pub fn handle_fire_allocation_click(
         // targeted hex joins that attack instead of opening a second one
         // (which the engine would refuse at resolution) -- Maxim second
         // fire joining a shell makes one howitzer attack (§6.42).
-        let joined = allocation.attacks.iter_mut().find_map(|existing| {
-            let combined = (existing.target_hex == attack.target_hex)
-                .then(|| omdurman_rules::effects::combine_fire_attacks(&gs.0, existing, attack))
-                .flatten()?;
-            Some((existing, combined))
-        });
-        if let Some((existing, combined)) = joined {
-            *existing = combined;
+        // A staged shot aimed at a garrisoned fort itself takes the joiner's
+        // artillery at the fort too (§6.54/§6.62); fire that cannot join is
+        // refused with the reason -- staged as a second attack on the hex,
+        // the whole allocation would be refused at Resolve (§6.14).
+        if let Some(existing) = allocation
+            .attacks
+            .iter_mut()
+            .find(|existing| existing.target_hex == attack.target_hex)
+        {
+            match crate::fire::align_and_combine(&gs.0, existing, attack) {
+                Ok(combined) => *existing = combined,
+                Err(reason) => {
+                    dispatches.refuse("Fire Allocation", format!("Fire refused — {reason}."))
+                }
+            }
             continue;
         }
         allocation.attacks.push(attack.clone());
@@ -265,6 +352,67 @@ pub(crate) fn target_label(
     format!("{what} {hex}")
 }
 
+/// `attack` without the Maxims of the gunboats whose artillery fires in it
+/// (§2.32): the Maxims of a gunboat staged only for them stay. The factor
+/// row and the mandatory modifiers are re-derived. `None` when no such
+/// Maxims are in it.
+pub(crate) fn without_own_maxims(
+    gs: &omdurman_rules::effects::GameState,
+    attack: &FireAttack,
+) -> Option<FireAttack> {
+    let keep: Vec<omdurman_rules::UnitId> = attack
+        .gunboat_maxims
+        .iter()
+        .copied()
+        .filter(|g| !attack.firers.contains(g))
+        .collect();
+    if keep.len() == attack.gunboat_maxims.len() {
+        return None;
+    }
+    let base = FireAttack {
+        gunboat_maxims: Vec::new(),
+        // Maxim second fire joined to a shell made the attack a howitzer
+        // attack (§6.42); without the Maxims it stays one.
+        ..attack.clone()
+    };
+    omdurman_rules::effects::with_gunboat_maxims(gs, &base, &keep)
+}
+
+/// Named gunboats staged this sub-phase for their artillery whose Maxims
+/// (§2.32) are neither staged nor fired -- the tray reminds the player they
+/// may still fire.
+pub(crate) fn unfired_gunboat_maxims(
+    gs: &omdurman_rules::effects::GameState,
+    allocation: &FireAllocationState,
+) -> Vec<omdurman_rules::UnitId> {
+    let Some(kind) = crate::fire::gunboat_maxim_kind(gs) else {
+        return Vec::new();
+    };
+    let mut out: Vec<omdurman_rules::UnitId> = allocation
+        .attacks
+        .iter()
+        .flat_map(|a| a.firers.iter().copied())
+        .filter(|id| {
+            gs.find_unit(*id).is_some_and(|u| {
+                u.fire_factor(omdurman_rules::FireMount::GunboatMaxims)
+                    .is_some()
+            }) && !allocation
+                .attacks
+                .iter()
+                .any(|a| a.gunboat_maxims.contains(id))
+                && gs.units.iter().any(|enemy| {
+                    enemy.profile.identity.owner() == gs.phase_player().opponent()
+                        && gs
+                            .can_fire_gunboat_maxims_at(*id, enemy.position, kind)
+                            .is_ok()
+                })
+        })
+        .collect();
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
 /// The staged attacks, drawn in the command rail under the "Next step"
 /// heading: one row per attack with a remove button, per-firer factors and
 /// the specific die modifiers (§6.24, §5.54, §6.23, §9.231/§9.232) it
@@ -290,6 +438,14 @@ pub(crate) fn draw_staged_attacks(
         for (i, order) in allocation.specials.iter().enumerate() {
             draw_special_row(ui, gs, order, &mut remove_special, i);
             ui.add_space(4.0);
+        }
+        // A gunboat whose artillery is staged but whose Maxims could
+        // still fire somewhere (§2.32).
+        for gunboat in unfired_gunboat_maxims(gs, allocation) {
+            ui.label(crate::ui::text::note(format!(
+                "{}'s Maxims have not fired: select it and click a hex in their range.",
+                crate::combat_ui::unit_name(gunboat, gs)
+            )));
         }
         // §6.41: the sub-phase's fire resolves together -- a player who
         // resolved one attack to see how it went found the rest refused.
@@ -335,6 +491,13 @@ pub(crate) fn draw_staged_attacks(
             allocation.attacks.swap(idx, idx + 1)
         }
         RowAction::Earlier | RowAction::Later => {}
+        RowAction::DetachMaxims => {
+            if let Some(attack) = allocation.attacks.get_mut(idx)
+                && let Some(detached) = without_own_maxims(gs, attack)
+            {
+                *attack = detached;
+            }
+        }
         RowAction::ToggleAim => {
             let Some(attack) = allocation.attacks.get_mut(idx) else {
                 return;
@@ -407,6 +570,9 @@ pub(crate) enum RowAction {
     /// resolve in (§6.41: "in any order he wishes").
     Earlier,
     Later,
+    /// Take a named gunboat's Maxims out of the attack its artillery makes
+    /// (a click stages both, §6.14), to fire them at another hex (§2.32).
+    DetachMaxims,
 }
 
 fn draw_allocation_row(
@@ -550,6 +716,40 @@ fn draw_allocation_row(
             .player_units_in_hex(attack.target_hex, attack.firing_player.opponent())
             .iter()
             .any(|u| !matches!(u.profile.kind, omdurman_types::UnitKind::Fort { .. }));
+        // §6.64: each shell rolls its own impact -- the tray stages one
+        // attack, the resolution may make several.
+        let shells = attack
+            .firers
+            .iter()
+            .filter(|id| gs.find_unit(**id).is_some_and(|u| u.carries_howitzer()))
+            .count();
+        if attack.kind == FireKind::Howitzer && shells > 0 {
+            let text = if shells == 1 {
+                "    The shell rolls for impact: on target on 7\u{2013}10, else it scatters and \
+                 strikes whoever is where it lands (§6.64)."
+            } else {
+                "    Each shell rolls its own impact (7\u{2013}10 on target, §6.64): the shells \
+                 on target fire together, each scattered one alone where it lands."
+            };
+            crate::rulebook::refs_rich(ui, text, 11.0, |t| t.color(crate::ui::palette::PANEL_DIM));
+        }
+        // A named gunboat's two weapons fire together on a click; its Maxims
+        // may instead go to another hex (§2.32).
+        if !attack.gunboat_maxims.is_empty()
+            && attack
+                .gunboat_maxims
+                .iter()
+                .any(|g| attack.firers.contains(g))
+            && ui
+                .small_button("Fire the Maxims elsewhere")
+                .on_hover_text(
+                    "Take the gunboats' Maxims out of this attack; select the gunboat and \
+                     click another hex to fire them there.",
+                )
+                .clicked()
+        {
+            action = Some(RowAction::DetachMaxims);
+        }
         if garrisoned && omdurman_rules::effects::aim_at_fort(gs, attack).is_some() {
             let label = if attack.at_fort {
                 "Aimed at the fort (§6.62) -- aim at the garrison instead"
@@ -964,5 +1164,57 @@ mod arrow_key_tests {
         }
         app.update();
         assert!(!app.world().resource::<FireAllocationState>().committed);
+    }
+}
+
+#[cfg(test)]
+mod special_staging_tests {
+    use super::*;
+    use omdurman_rules::UnitId;
+    use omdurman_types::{HexCoord, HexsideRef};
+
+    fn ids() -> [UnitId; 3] {
+        [UnitId::ALL[0], UnitId::ALL[1], UnitId::ALL[2]]
+    }
+
+    fn breach(firers: &[UnitId], wall: HexsideRef) -> FireOrder {
+        FireOrder::BreachWall {
+            firers: firers.to_vec(),
+            target: wall,
+        }
+    }
+
+    /// Two batteries clicked onto one wall make one combined shot (§6.14),
+    /// whichever way round the hexside is named -- staged apart, Resolve
+    /// refused the whole allocation as a target allocated twice.
+    #[test]
+    fn a_second_shot_at_a_staged_wall_joins_it() {
+        let [a, b, c] = ids();
+        let wall = HexsideRef::new(HexCoord::new(2, 0), HexCoord::new(3, 0));
+        let flipped = HexsideRef::new(HexCoord::new(3, 0), HexCoord::new(2, 0));
+        let mut allocation = FireAllocationState::default();
+        allocation.stage_special(breach(&[a], wall)).unwrap();
+        allocation.stage_special(breach(&[b], flipped)).unwrap();
+        // A battery already in the shot clicking the wall again adds nothing.
+        allocation.stage_special(breach(&[a, c], wall)).unwrap();
+        assert_eq!(allocation.specials, vec![breach(&[a, b, c], wall)]);
+        // Another wall is its own shot, and a battery staged once is refused.
+        let other = HexsideRef::new(HexCoord::new(5, 0), HexCoord::new(6, 0));
+        assert!(allocation.stage_special(breach(&[b], other)).is_err());
+        assert_eq!(allocation.specials.len(), 1);
+    }
+
+    /// Ticking batteries on the card after its shot is staged updates the
+    /// staged shot.
+    #[test]
+    fn joined_batteries_follow_the_card_after_staging() {
+        let [a, b, c] = ids();
+        let wall = HexsideRef::new(HexCoord::new(2, 0), HexCoord::new(3, 0));
+        let mut allocation = FireAllocationState::default();
+        allocation.stage_special(breach(&[a], wall)).unwrap();
+        allocation.rejoin_special(a, &[b, c]);
+        assert_eq!(allocation.specials, vec![breach(&[a, b, c], wall)]);
+        allocation.rejoin_special(a, &[c]);
+        assert_eq!(allocation.specials, vec![breach(&[a, c], wall)]);
     }
 }

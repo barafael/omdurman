@@ -61,6 +61,10 @@ const UI_SUPPORTED: &[(&str, &str)] = &[
         "attacker's \"Resolve Melee\" button in the reaction panel (melee.rs)",
     ),
     (
+        "TakeLosses",
+        "\"Choose your losses (§7.7)\" panel → \"Take these losses\" (losses.rs)",
+    ),
+    (
         "RetreatBeforeMelee",
         "defender clicks a highlighted retreat hex (retreat.rs)",
     ),

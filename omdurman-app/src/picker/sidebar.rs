@@ -484,10 +484,11 @@ fn section_paragraph(section_name: SectionName) -> &'static str {
         KhalifaAbdullah | Sherif | AliWadHelu | SheikElDin | Yakub | OsmanDigna => "2.31",
         Taiasha | Hadendowa | Baggara | Jehadia | Mulazmin | Kehena | Degheim | Danagla
         | JaalinI | JaalinII => "2.31",
+        // FALL OF KHARTOUM's Mulazmin print runs are Dervish spearmen too.
+        MulazminI | MulazminII => "2.31",
         HadendowaForts => "2.31",
         // Anglo-Egyptian units (§2.32).
         BritishArmy | EgyptianArmy | Kitchener | BritishBoats => "2.32",
-        MulazminI | MulazminII => "2.32",
         // FALL OF KHARTOUM's Forts Makran and Buri: the fort rules.
         BritishForts => "6.54",
     }
@@ -911,6 +912,20 @@ pub fn unit_picker_ui(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A Dervish counter's tooltip cites the Dervish weapons (§2.31) -- the
+    /// Fall of Khartoum Mulazmin cited the Anglo-Egyptian ones (§2.32).
+    #[test]
+    fn dervish_counters_cite_the_dervish_weapons() {
+        for section in [
+            SectionName::MulazminI,
+            SectionName::MulazminII,
+            SectionName::Mulazmin,
+        ] {
+            assert_eq!(section_paragraph(section), "2.31", "{section:?}");
+        }
+        assert_eq!(section_paragraph(SectionName::BritishArmy), "2.32");
+    }
 
     /// The whole tray as `spawn_picker_assets` builds it (no textures).
     fn full_tray() -> Vec<PickerUnit> {

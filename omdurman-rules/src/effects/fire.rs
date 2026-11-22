@@ -488,11 +488,11 @@ pub(crate) fn fire_outcome(
     }
 }
 
-/// The units of a fire attack's target hex that may fall to a numbered
-/// result, the owner's to choose from (§7.7, §CombatResults) -- every one
-/// but an Anglo-Egyptian leader (§6.51), the rank and file first.
-pub(crate) fn fire_casualty_candidates(state: &GameState, target_units: &[UnitId]) -> Vec<UnitId> {
-    let fighting: Vec<UnitId> = target_units
+/// The units of `units` that may fall to a numbered fire or melee result,
+/// the owner's to choose from (§7.7, §CombatResults) -- every one but an
+/// Anglo-Egyptian leader (§6.51; GORDON, §9.346), the rank and file first.
+pub(crate) fn casualty_candidates(state: &GameState, units: &[UnitId]) -> Vec<UnitId> {
+    let fighting: Vec<UnitId> = units
         .iter()
         .copied()
         .filter(|id| {
@@ -516,7 +516,7 @@ pub(crate) fn fort_occupants(
         .copied()
         .filter(|&id| id != fort)
         .collect();
-    fire_casualty_candidates(state, &occupants)
+    casualty_candidates(state, &occupants)
 }
 
 /// Resolve an already-validated fire attack against `target_units` in
@@ -1168,8 +1168,19 @@ pub fn mandatory_fire_modifiers(state: &GameState, attack: &FireAttack) -> Vec<F
     // §6.24: "+1 modifier to their die roll" for all Anglo-Egyptian *direct*
     // fire attacks -- aimed fire at a hex the firer can see, which a Maxim's
     // second fire (§6.42) is as much as its first. Howitzer fire is indirect
-    // (it ignores line of sight and scatters, §6.64) and gets no +1.
-    let direct = matches!(attack.kind, FireKind::Direct | FireKind::MaximSecondFire);
+    // (it ignores line of sight and scatters, §6.64) and gets no +1 -- but a
+    // shell on target combined with Maxims (§6.42) keeps the Maxims' +1:
+    // their aim does not suffer for the shell joining them.
+    let maxims_join = !attack.gunboat_maxims.is_empty()
+        || attack.firers.iter().any(|id| {
+            state
+                .find_unit(*id)
+                .is_some_and(|u| u.profile.weapon == crate::WeaponClass::Maxims)
+        });
+    let direct = match attack.kind {
+        FireKind::Direct | FireKind::MaximSecondFire => true,
+        FireKind::Howitzer => maxims_join,
+    };
     if direct && attack.firing_player == Player::AngloEgyptian {
         modifiers.push(FireModifier::AngloEgyptianDirectFire);
     }
@@ -1207,47 +1218,52 @@ pub fn mandatory_fire_modifiers(state: &GameState, attack: &FireAttack) -> Vec<F
     // to Anglo-Egyptian fire.
     // The hedge hampers fire that crosses it (the line of fire from any
     // firer passes a thorn-hedge hexside); the trench protects the units
-    // entrenched behind it, whichever way they are fired at.
+    // entrenched behind it against fire across it -- the line of fire passes
+    // a trench hexside -- not against fire from inside the Zariba or from the
+    // river behind them.
     if attack.firing_player == Player::Dervish {
         // The firing units are `firers` plus the gunboats' Maxims
         // (`all_firing_units`, without needing its dedup for an `any`).
-        if attack
-            .firers
-            .iter()
-            .chain(attack.gunboat_maxims.iter())
-            .any(|id| {
-                state.find_unit(*id).is_some_and(|u| {
-                    fire_crosses_thorn_hedge(state, u, attack.target_hex, attack.kind)
+        let any_ray_crosses = |side: fn(omdurman_types::HexsideKind) -> bool| {
+            attack
+                .firers
+                .iter()
+                .chain(attack.gunboat_maxims.iter())
+                .any(|id| {
+                    state.find_unit(*id).is_some_and(|u| {
+                        fire_crosses_hexside(state, u, attack.target_hex, attack.kind, side)
+                    })
                 })
-            })
-        {
+        };
+        if any_ray_crosses(omdurman_types::HexsideKind::is_zariba_thorn_hedge) {
             modifiers.push(FireModifier::ZaribaThornHedge);
         }
-        if state.is_zariba_entrenched(attack.target_hex) {
+        if state.is_zariba_entrenched(attack.target_hex)
+            && any_ray_crosses(omdurman_types::HexsideKind::is_zariba_trench)
+        {
             modifiers.push(FireModifier::ZaribaTrenchEntrenched);
         }
     }
     modifiers
 }
 
-/// Whether the line of fire of `firer` at `to` crosses a thorn-hedge
-/// hexside (§9.231), read through the effective hexsides (in the Campaign,
-/// only a constructed Zariba, §5.3). Walks the ray the shot is seen along
+/// Whether the line of fire of `firer` at `to` crosses a Zariba hexside
+/// `side` accepts -- a thorn hedge (§9.231) or a trench (§9.232) -- read
+/// through the effective hexsides (in the Campaign, only a constructed
+/// Zariba, §5.3). Walks the ray the shot is seen along
 /// ([`GameState::fire_rays`], the clear side of the LOS check's line, §6.3);
 /// where both sides of a hexside tie are clear, the defender-favourable
-/// reading applies -- the hedge counts if either crosses it.
-fn fire_crosses_thorn_hedge(
+/// reading applies -- the hexside counts if either crosses it.
+fn fire_crosses_hexside(
     state: &GameState,
     firer: &UnitPlacement,
     to: HexCoord,
     kind: FireKind,
+    side: fn(omdurman_types::HexsideKind) -> bool,
 ) -> bool {
     state.fire_rays(firer, to, kind).iter().any(|ray| {
-        ray.windows(2).any(|w| {
-            state
-                .hexside_effective(w[0], w[1])
-                .is_some_and(omdurman_types::HexsideKind::is_zariba_thorn_hedge)
-        })
+        ray.windows(2)
+            .any(|w| state.hexside_effective(w[0], w[1]).is_some_and(side))
     })
 }
 

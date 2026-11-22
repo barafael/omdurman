@@ -156,7 +156,7 @@ pub enum RuleError {
     GunboatOffNile(HexCoord),
 
     #[error(
-        "gunboat moved upstream, so its upstream allowance {allowance} caps the turn, but the move costs {cost} (§5.24)"
+        "going upstream caps a gunboat's turn at its upstream allowance of {allowance} MP, and this move brings the turn to {cost} (§5.24)"
     )]
     GunboatUpstreamCap {
         cost: MovementPoints,
@@ -201,7 +201,9 @@ pub enum RuleError {
     #[error("target {target} out of range from {firer}")]
     TargetOutOfRange { firer: HexCoord, target: HexCoord },
 
-    #[error("unit {0} kind may not melee attack")]
+    #[error(
+        "{0} may not melee attack: only infantry, cavalry, camels and Dervish leaders do (§7.4)"
+    )]
     KindMayNotMelee(UnitId),
 
     #[error("target {to} is not adjacent to {from}")]
@@ -308,9 +310,6 @@ pub enum RuleError {
     #[error("Friendlies transport requires Isa Zachneih to be eliminated first (§5.21)")]
     FriendliesIsaZachneihAlive,
 
-    #[error("a Friendlies transport mission is already in progress (§5.21)")]
-    FriendliesTransportInProgress,
-
     #[error("Friendlies unit must be adjacent to the gunboat to load (§5.21)")]
     FriendliesNotAdjacentToGunboat,
 
@@ -358,9 +357,7 @@ pub enum RuleError {
     #[error("unit {0} is aboard a gunboat: it moves with it and leaves it by disembarking (§5.21)")]
     LoadedOnGunboat(UnitId),
 
-    #[error(
-        "gunboat {0} took the \"Friendlies\" aboard this turn and carries them next turn (§5.21)"
-    )]
+    #[error("{0} took the \"Friendlies\" aboard this turn and carries them next turn (§5.21)")]
     TransportLoadingTurn(UnitId),
 
     #[error("no untriggered river mine in hex {0} (§10.13)")]

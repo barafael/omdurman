@@ -664,8 +664,8 @@ mod verification {
     }
 
     /// §5.52: two Dervish non-leader, non-gunboat units stack exactly when
-    /// they belong to the same stacking group (tribe, or the artillery as
-    /// its own group). With both units Dervish, group purity is the only
+    /// they are not of two different tribes (the artillery is no tribe and
+    /// stacks with any). With both units Dervish, tribe purity is the only
     /// rule that can fire, so the biconditional is exact.
     // §5.52
     #[traceability_macro::rulebook("§5.52")]
@@ -685,13 +685,20 @@ mod verification {
         kani::assume(j <= 10);
         let a = stack_unit(group_of(i), UnitId::ALL[0]);
         let b = stack_unit(group_of(j), UnitId::ALL[1]);
-        let same_group = a.profile.identity.dervish_stacking_group()
-            == b.profile.identity.dervish_stacking_group();
+        // Two tribes of different names mix; the artillery (no tribe)
+        // stacks with anything.
+        let mixed = match (
+            a.profile.identity.dervish_stacking_group(),
+            b.profile.identity.dervish_stacking_group(),
+        ) {
+            (Some(x), Some(y)) => x != y,
+            _ => false,
+        };
         let verdict = stacking_rule(&[&a, &b]);
-        if same_group {
-            assert_eq!(verdict, Ok(()));
-        } else {
+        if mixed {
             assert_eq!(verdict, Err(StackingError::DervishTribeMix));
+        } else {
+            assert_eq!(verdict, Ok(()));
         }
     }
 

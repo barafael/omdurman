@@ -172,10 +172,11 @@ impl GameState {
                 RuleError::StruckMine(unit.id)
             });
         }
-        if let Some(TransportState::Loaded { gunboat, since, .. }) = self.friendlies_transport
-            && gunboat == unit.id
-            && since == self.current_turn
-        {
+        if self.friendlies_transports.iter().any(|t| match *t {
+            TransportState::Loaded { gunboat, since, .. } => {
+                gunboat == unit.id && since == self.current_turn
+            }
+        }) {
             return Err(RuleError::TransportLoadingTurn(unit.id));
         }
         Ok(())
@@ -650,10 +651,11 @@ impl GameState {
     /// Read-only check of a §5.21 Friendlies-transport action.
     ///
     /// * `Load` -- Anglo-Egyptian Movement phase, the Isa Zachneih already
-    ///   eliminated ("after, and only after"), no other transport under way;
-    ///   an undisrupted "Friendlies" unit and an Anglo-Egyptian gunboat that
-    ///   "start their turn adjacent" (neither has moved yet), the gunboat
-    ///   otherwise alone.
+    ///   eliminated ("after, and only after"); an undisrupted "Friendlies"
+    ///   unit and an Anglo-Egyptian gunboat that "start their turn adjacent"
+    ///   (neither has moved yet), the gunboat carrying no one but other
+    ///   "Friendlies", and fewer than four of them (§5.51). Other missions may
+    ///   be under way: the sequence is per unit.
     /// * `Disembark` -- the unit's own gunboat, Movement phase of turn N+2 or
     ///   later, onto an adjacent west-bank land hex the unit could step to
     ///   and afford.
@@ -677,9 +679,6 @@ impl GameState {
                 });
                 if !self.isa_zachneih_eliminated && isa_on_the_map {
                     return Err(RuleError::FriendliesIsaZachneihAlive);
-                }
-                if self.friendlies_transport.is_some() {
-                    return Err(RuleError::FriendliesTransportInProgress);
                 }
                 let u = self.unit_or_err(unit)?;
                 let g = self.unit_or_err(gunboat)?;
@@ -709,27 +708,34 @@ impl GameState {
                 if self.mp_spent(unit) > 0 || self.mp_spent(gunboat) > 0 {
                     return Err(RuleError::FriendliesMustStartTurnAdjacent);
                 }
-                if self
+                // Only "Friendlies" aboard may share the gunboat's hex (§5.51
+                // "Exception: 5.21"), and no more than four of them.
+                let mut aboard = 0;
+                for o in self
                     .units
                     .iter()
-                    .any(|o| o.position == g.position && o.id != gunboat)
+                    .filter(|o| o.position == g.position && o.id != gunboat)
                 {
-                    return Err(RuleError::Stacking(crate::StackingError::GunboatStack));
+                    if o.state.loaded_on != Some(gunboat) {
+                        return Err(RuleError::Stacking(crate::StackingError::GunboatStack));
+                    }
+                    aboard += 1;
+                }
+                if aboard >= crate::effects::STACKING_LIMIT {
+                    return Err(RuleError::Stacking(crate::StackingError::OverLimit));
                 }
                 Ok(())
             }
             FriendliesAction::Disembark { unit, gunboat, to } => {
-                let Some(TransportState::Loaded {
-                    unit: aboard,
-                    gunboat: carrier,
-                    since,
-                }) = self.friendlies_transport
-                else {
+                let Some(since) = self.friendlies_transports.iter().find_map(|t| match *t {
+                    TransportState::Loaded {
+                        unit: aboard,
+                        gunboat: carrier,
+                        since,
+                    } => ((aboard, carrier) == (unit, gunboat)).then_some(since),
+                }) else {
                     return Err(RuleError::FriendliesNotLoaded);
                 };
-                if (aboard, carrier) != (unit, gunboat) {
-                    return Err(RuleError::FriendliesNotLoaded);
-                }
                 let earliest = since.value().saturating_add(2);
                 if self.current_turn.value() < earliest {
                     return Err(RuleError::FriendliesDisembarkTooEarly(earliest));
@@ -757,34 +763,41 @@ impl GameState {
     }
 
     /// The Friendlies-transport actions the rules would accept now (§5.21),
-    /// given the locally selected unit: loading the selected "Friendlies"
-    /// unit onto an adjacent gunboat, or -- once the mission has reached its
-    /// third turn -- disembarking onto each legal west-bank hex. Pairs with
+    /// given the locally selected unit: a "Friendlies" unit ashore may load
+    /// onto each adjacent gunboat; one aboard may disembark -- once its
+    /// mission has reached its third turn -- onto each legal west-bank hex;
+    /// a gunboat offers the landings of every unit it carries. Pairs with
     /// [`GameEffect::FriendliesTransport`] so the UI offers exactly what the
     /// engine accepts.
     pub fn friendlies_transport_offers(&self, selected: Option<UnitId>) -> Vec<FriendliesAction> {
-        let candidates: Vec<FriendliesAction> = match self.friendlies_transport {
-            None => {
-                let Some(unit) = selected.and_then(|id| self.find_unit(id)) else {
-                    return Vec::new();
-                };
-                self.units
-                    .iter()
-                    .filter(|g| g.position.is_adjacent_to(unit.position))
-                    .map(|g| FriendliesAction::Load {
-                        unit: unit.id,
-                        gunboat: g.id,
-                    })
-                    .collect()
-            }
-            Some(TransportState::Loaded { unit, gunboat, .. }) => self
-                .find_unit(gunboat)
+        let Some(picked) = selected.and_then(|id| self.find_unit(id)) else {
+            return Vec::new();
+        };
+        let landings = |unit: UnitId, gunboat: UnitId| {
+            self.find_unit(gunboat)
                 .map(|g| g.position.neighbors().to_vec())
                 .unwrap_or_default()
                 .into_iter()
-                .map(|to| FriendliesAction::Disembark { unit, gunboat, to })
-                .collect(),
+                .map(move |to| FriendliesAction::Disembark { unit, gunboat, to })
         };
+        let mut candidates: Vec<FriendliesAction> = Vec::new();
+        for t in &self.friendlies_transports {
+            let TransportState::Loaded { unit, gunboat, .. } = *t;
+            if picked.id == unit || picked.id == gunboat {
+                candidates.extend(landings(unit, gunboat));
+            }
+        }
+        if picked.state.loaded_on.is_none() {
+            candidates.extend(
+                self.units
+                    .iter()
+                    .filter(|g| g.position.is_adjacent_to(picked.position))
+                    .map(|g| FriendliesAction::Load {
+                        unit: picked.id,
+                        gunboat: g.id,
+                    }),
+            );
+        }
         candidates
             .into_iter()
             .filter(|a| self.can_friendlies_transport(*a).is_ok())

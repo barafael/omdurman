@@ -72,6 +72,11 @@ pub fn handle_picker_clicks(
                 dispatches.refuse(crate::submit::REFUSED_HEADER, reason);
             }
         }
+        if let Some(notice) = picker_ctx.movement_path.notice.take()
+            && let Some(dispatches) = dispatches.as_deref_mut()
+        {
+            dispatches.push("Stack Order", notice);
+        }
     }
 }
 
@@ -298,6 +303,23 @@ fn picker_click(
             remaining_mp,
             forced_stop,
         } if (matches!(game_state.0.phase, omdurman_rules::Phase::Movement)) => {
+            // A press on the selected counter's own hex, before any step is
+            // plotted, picks within the stack: another counter under the
+            // cursor, or -- on the selected one again -- the next in turn.
+            if pressed
+                && picker_ctx.movement_path.legs.is_empty()
+                && cycle_stack_selection(
+                    picker_ctx,
+                    source,
+                    coord,
+                    &click,
+                    game_state,
+                    restrict_to,
+                    peers,
+                )
+            {
+                return None;
+            }
             let mut plan = SingleRoute {
                 remaining_mp,
                 forced_stop,
@@ -352,8 +374,19 @@ fn picker_click(
                     click.hex_size,
                 )
                 .is_some_and(|entity| entity == source);
-                if !holds_foreign
-                    && !same_counter
+                // The selected counter clicked again: the next one of its
+                // stack (a single click otherwise always took the top one).
+                if same_counter {
+                    cycle_stack_selection(
+                        picker_ctx,
+                        source,
+                        coord,
+                        &click,
+                        game_state,
+                        restrict_to,
+                        peers,
+                    );
+                } else if !holds_foreign
                     && select_single_unit(
                         &mut picker_ctx.state,
                         &mut picker_ctx.commands,
@@ -541,6 +574,93 @@ fn select_single_unit(
     true
 }
 
+/// The counters of `coord` a click may select alone, in a stable order:
+/// those of `owner` this seat commands (§1.1).
+fn stack_members(
+    placed_units: &Query<(Entity, &PlacedUnit)>,
+    coord: HexCoord,
+    owner: Option<omdurman_types::Player>,
+    peers: &crate::peers::Peers,
+) -> Vec<Entity> {
+    let mut members: Vec<Entity> = placed_units
+        .iter()
+        .filter(|(_, u)| u.coord == coord)
+        .filter(|(_, u)| omdurman_rules::unit_profiles::section_owner(u.section_name) == owner)
+        .filter(|(_, u)| {
+            omdurman_rules::unit_profiles::identity_for_counter(u.section_name, u.col, u.row)
+                .is_none_or(|identity| peers.scope_allows(&identity))
+        })
+        .map(|(e, _)| e)
+        .collect();
+    members.sort_by_key(|e| e.to_bits());
+    members
+}
+
+/// The counter after `current` in `members`, round to the first.
+fn next_member(members: &[Entity], current: Entity) -> Option<Entity> {
+    let at = members.iter().position(|&e| e == current)?;
+    members
+        .get((at + 1) % members.len())
+        .copied()
+        .filter(|&e| e != current)
+}
+
+/// A press on the hex of the single selected counter `source`: select the
+/// stack-mate under the cursor, or -- the selected counter clicked again --
+/// the next counter of the stack, so every counter of a stack (a leader under
+/// his battalions) is one or more single clicks away. `false` (nothing
+/// changed) off the selection's hex, or with no other counter to take.
+fn cycle_stack_selection(
+    ctx: &mut PickerContext,
+    source: Entity,
+    coord: HexCoord,
+    click: &ClickGeometry,
+    game_state: &crate::GameStateResource,
+    restrict_to: Option<omdurman_types::Player>,
+    peers: &crate::peers::Peers,
+) -> bool {
+    let Ok((_, selected)) = ctx.placed_units.get(source) else {
+        return false;
+    };
+    if selected.coord != coord {
+        return false;
+    }
+    let owner = omdurman_rules::unit_profiles::section_owner(selected.section_name);
+    if restrict_to.is_some_and(|f| owner != Some(f)) {
+        return false;
+    }
+    let members = stack_members(&ctx.placed_units, coord, owner, peers);
+    let under_cursor = nearest_placed_unit_at(
+        &ctx.placed_units,
+        coord,
+        click.center,
+        click.hit,
+        click.stack_spread,
+        click.hex_size,
+    )
+    .filter(|e| members.contains(e));
+    let next = match under_cursor {
+        Some(e) if e != source => Some(e),
+        _ => next_member(&members, source),
+    };
+    let Some(next) = next else {
+        return false;
+    };
+    let Ok((_, placed)) = ctx.placed_units.get(next) else {
+        return false;
+    };
+    let remaining_mp = unit_remaining_mp(game_state, placed);
+    ctx.commands.entity(source).remove::<Selected>();
+    ctx.commands.entity(next).try_insert(Selected);
+    *ctx.state = PickerState::Selected {
+        source: next,
+        start_coord: coord,
+        remaining_mp,
+        forced_stop: false,
+    };
+    true
+}
+
 /// Double-click stack selection: select *every* friendly unit on the hex for a
 /// group move (movement phase). Units are kept in stable entity-id order and
 /// each carries its own remaining-movement budget (`unit_remaining_mp`), which
@@ -583,6 +703,32 @@ fn handle_stack_double_click(
         return;
     }
     movement_path.reset();
+    // Say who of the hex stays: a disrupted counter cannot move (it was
+    // left behind without a word, and the stack went on without it).
+    let stay: Vec<String> = placed_units
+        .iter()
+        .filter(|(_, u)| u.coord == coord && u.disrupted)
+        .filter(|(_, u)| match restrict_to {
+            Some(faction) => {
+                omdurman_rules::unit_profiles::section_owner(u.section_name) == Some(faction)
+            }
+            None => true,
+        })
+        .filter_map(|(_, u)| u.unit_id)
+        .map(|id| crate::combat_ui::unit_name(id, &game_state.0))
+        .collect();
+    if !stay.is_empty() {
+        movement_path.notice = Some(format!(
+            "{} {} behind: disrupted units may not move until they recover at the end of \
+             their side's turn.",
+            crate::combat_ui::tally_names(stay.clone()).join(", "),
+            if stay.len() == 1 {
+                "is disrupted and stays"
+            } else {
+                "are disrupted and stay"
+            },
+        ));
+    }
     // Clear stale markers from whichever single selection the first click of
     // the pair left behind (if it isn't part of the stack).
     match &*state {
@@ -928,13 +1074,20 @@ fn place_click(
 /// movement points, terrain, zones of control, blocked hexsides): what the
 /// cheapest route would cost, when there is one at any price, with the rule
 /// that usually explains it for this kind of mover.
-fn no_route_reason(goal: HexCoord, budget: i16, cheapest: Option<i16>, boat: bool) -> String {
-    let why = if boat {
-        "going upstream a gunboat has its smaller upstream allowance, §5.24"
+fn no_route_reason(goal: HexCoord, budget: i16, cheapest: Option<i16>, why: RouteWhy) -> String {
+    let RouteWhy { boat, night } = why;
+    let mut why = if boat {
+        "going upstream a gunboat has its smaller upstream allowance, §5.24; it stops on \
+         entering an enemy gunboat's zone of control, §5.41, §5.43"
+            .to_string()
     } else {
         "Rough and Swamp cost 3 MP a hex, a khor +5, and no route passes through an \
          enemy zone of control: §5.11, §5.43"
+            .to_string()
     };
+    if night {
+        why.push_str("; at night Anglo-Egyptian movement allowances are halved, §8.1");
+    }
     match cheapest {
         Some(cost) => format!(
             "{goal} is out of reach: the cheapest route costs {cost} MP, this move has \
@@ -945,6 +1098,15 @@ fn no_route_reason(goal: HexCoord, budget: i16, cheapest: Option<i16>, boat: boo
              terrain and hexsides block every way there."
         ),
     }
+}
+
+/// What a refusal's explanation depends on besides the numbers.
+#[derive(Clone, Copy, Default)]
+struct RouteWhy {
+    /// A gunboat (§5.24 allowances, gunboat ZOC) rather than a land unit.
+    boat: bool,
+    /// A night turn halving this mover's allowance (§8.1).
+    night: bool,
 }
 
 /// Price a goal the route finder could not reach within the move's budget:
@@ -1020,32 +1182,93 @@ fn unroutable_reason(
             format!("{goal} is the Nile: only gunboats move on the river (§5.22).")
         };
     }
+    // A unit whose allowance this turn is spent: it already moved -- not "out
+    // of reach … 0 MP left" (§5.11, §5.13).
+    if budget <= 0
+        && let Some(&id) = movers.iter().find(|&&id| gs.mp_spent(id) > 0)
+    {
+        let name = crate::combat_ui::unit_name(id, gs);
+        return format!(
+            "{name} has already moved this turn and has no movement points left (§5.11, \
+             §5.13: unused points are lost, never carried over)."
+        );
+    }
     let stacking_refusal = movers.iter().find_map(|&id| {
         let mover = gs.find_unit(id)?;
         gs.check_stacking(mover, goal).err()
     });
-    match stacking_refusal {
-        Some(error) => format!("Cannot end a move on {goal}: {error}."),
-        // Nothing reaches the goal at any price, and it lies against a city
-        // wall: the wall is what stands in the way.
-        None if cheapest.is_none()
-            && (goal.neighbors().iter().any(|&n| {
-                gs.hexside_effective_is(goal, n, |k| k == omdurman_types::HexsideKind::Wall)
-            })) =>
-        {
-            format!(
-                "No route to {goal}: the city wall is in the way. Units cross it only at a \
-                 gate or a breach -- artillery can breach it (§6.63)."
-            )
-        }
-        None => {
-            let boat = movers
-                .iter()
-                .filter_map(|&id| gs.find_unit(id))
-                .any(|u| u.profile.kind.is_boat());
-            no_route_reason(goal, budget, cheapest, boat)
-        }
+    if let Some(error) = stacking_refusal {
+        return format!("Cannot end a move on {goal}: {error}.");
     }
+    let units: Vec<&omdurman_rules::UnitPlacement> =
+        movers.iter().filter_map(|&id| gs.find_unit(id)).collect();
+    // §5.23: only some units may enter the walled city of Omdurman -- a gate
+    // or breach does not help the others, so do not send them looking.
+    let barred = units.iter().find(|u| {
+        gs.scenario != omdurman_types::Scenario::FallOfKhartoum
+            && gs.board.is_walled_city(goal)
+            && !gs.board.is_walled_city(u.position)
+            && !u.profile.identity.may_enter_walled_city()
+    });
+    if let Some(unit) = barred {
+        let name = crate::combat_ui::unit_name(unit.id, gs);
+        let who = match unit.profile.identity.owner() {
+            omdurman_types::Player::Dervish => {
+                "of the Dervish only the Khalifa, the artillery and the Taiasha may enter it"
+            }
+            omdurman_types::Player::AngloEgyptian => {
+                "gunboats and the \"Friendlies\" may not enter it"
+            }
+        };
+        return format!("{name} may not enter the walled city of Omdurman: {who} (§5.23).");
+    }
+    // Nothing reaches the goal at any price, and it lies against a city
+    // wall: the wall is what stands in the way.
+    if cheapest.is_none()
+        && goal
+            .neighbors()
+            .iter()
+            .any(|&n| gs.hexside_effective_is(goal, n, |k| k == omdurman_types::HexsideKind::Wall))
+    {
+        return format!(
+            "No route to {goal}: the city wall is in the way. Units cross it only at a \
+             gate or a breach -- artillery can breach it (§6.63)."
+        );
+    }
+    // A move into or out of the Zariba: it is entered and left only by its
+    // two end hexsides on the Nile, at +2 MP (§9.233) -- the hedge and
+    // trench in between are no way through.
+    // (Only once it stands: the Campaign's Zariba is built in play, §5.3.)
+    let zariba_stands = gs.board.zariba.iter().any(|&hex| {
+        hex.neighbors()
+            .into_iter()
+            .any(|n| gs.hexside_effective_is(hex, n, omdurman_types::HexsideKind::is_zariba))
+    });
+    if let Some(start) = units.first().map(|u| u.position)
+        && zariba_stands
+        && gs.board.is_zariba(start) != gs.board.is_zariba(goal)
+    {
+        let cost = cheapest.map_or(String::new(), |c| {
+            format!(" The cheapest route that way costs {c} MP; this move has {budget} MP left.")
+        });
+        return format!(
+            "{goal} lies {} the Zariba: units enter and leave it only by its two end \
+             hexsides on the Nile, at +2 MP (§9.233).{cost}",
+            if gs.board.is_zariba(goal) {
+                "inside"
+            } else {
+                "outside"
+            },
+        );
+    }
+    let why = RouteWhy {
+        boat: units.iter().any(|u| u.profile.kind.is_boat()),
+        night: gs.day_night == omdurman_types::DayNight::Night
+            && units
+                .iter()
+                .any(|u| u.profile.identity.owner() == omdurman_types::Player::AngloEgyptian),
+    };
+    no_route_reason(goal, budget, cheapest, why)
 }
 
 /// A selected unit's budget while its route is plotted.
@@ -1237,6 +1460,17 @@ fn single_click(
             "path leg rejected",
         );
         ctx.movement_path.refused = Some(coord);
+        // Say why, where a rule explains it (the click was silent).
+        if let Some(reason) = rejected_leg_reason(
+            &game_state.0,
+            placed.unit_id,
+            &ctx.movement_path,
+            (start_coord, coord),
+            &leg,
+            plan.forced_stop,
+        ) {
+            return Err(reason);
+        }
         // A rejected click does not discard the work already plotted: the
         // selection and the accumulated legs stay, so the player can click
         // a legal continuation, Backspace-undo a leg, Enter-confirm, or
@@ -1245,6 +1479,56 @@ fn single_click(
         // whole path.)
         Ok(())
     }
+}
+
+/// Why the picker refused the step `from -> to` for `mover`, when a rule
+/// says so plainly: a unit that never moves (a fort, §5.25) or may not move
+/// now (disrupted, stopped in a ZOC, ...), one that already used its
+/// allowance this turn, a land unit stepping into the Nile (§5.22), a route
+/// already stopped by an enemy zone of control (§5.43). `None` leaves the
+/// refusal to the flash on the hex.
+fn rejected_leg_reason(
+    gs: &omdurman_rules::effects::GameState,
+    mover: Option<omdurman_rules::UnitId>,
+    path: &MovementPath,
+    (from, to): (HexCoord, HexCoord),
+    leg: &MovementLegCheck,
+    forced_stop: bool,
+) -> Option<String> {
+    let id = mover?;
+    let unit = gs.find_unit(id)?;
+    let name = crate::combat_ui::unit_name(id, gs);
+    if path.legs.is_empty() {
+        if matches!(
+            unit.profile.movement,
+            omdurman_rules::UnitMovement::Immobile
+        ) {
+            return Some(format!(
+                "{name} never moves: a fort stays where it was placed (§5.25)."
+            ));
+        }
+        if let Some(why) = gs.movement_blocker(id) {
+            return Some(format!("{name} cannot move this turn: {why}."));
+        }
+        if gs.remaining_movement(id) <= 0 && gs.mp_spent(id) > 0 {
+            return Some(format!(
+                "{name} has already moved this turn and has no movement points left \
+                 (§5.11, §5.13)."
+            ));
+        }
+    }
+    if forced_stop {
+        return Some(format!(
+            "The route stops at {from}: it entered an enemy zone of control, and a unit \
+             goes no further that turn (§5.43). Backspace undoes the last step."
+        ));
+    }
+    if !leg.passable && !unit.profile.kind.is_boat() && gs.board.is_nile(to) {
+        return Some(format!(
+            "{to} is the Nile: only gunboats move on the river (§5.22)."
+        ));
+    }
+    None
 }
 
 /// Commit the accumulated multi-leg path as a single MoveUnit event.
@@ -1463,6 +1747,35 @@ fn stack_click(
         );
 
     if leg.accepted(affordable, plan.forced_stop) {
+        // Who of the stack reaches the new end, and who stopped short of it
+        // -- told before the order is confirmed: a stack order once split
+        // silently, and leaders ran on alone to be overrun (§6.51).
+        let costs: Vec<i16> = ctx
+            .movement_path
+            .legs
+            .iter()
+            .chain(std::iter::once(&(start_coord, coord)))
+            .map(|&(from, to)| floor_movement_cost(&game_state.0, from, to, placed.is_boat))
+            .collect();
+        let units: Vec<Option<omdurman_rules::UnitId>> = sources
+            .iter()
+            .map(|&s| ctx.placed_units.get(s).ok().and_then(|(_, p)| p.unit_id))
+            .collect();
+        match stack_split(
+            &game_state.0,
+            &units,
+            &plan.initial_mp,
+            &costs,
+            start_coord,
+            coord,
+        ) {
+            StackSplit::Together => {}
+            StackSplit::Notice(notice) => ctx.movement_path.notice = Some(notice),
+            StackSplit::LeadersAlone(reason) => {
+                ctx.movement_path.refused = Some(coord);
+                return Err(reason);
+            }
+        }
         let new_remaining: Vec<i16> = plan
             .remaining_mp
             .iter()
@@ -1503,6 +1816,16 @@ fn stack_click(
             "stack path leg rejected",
         );
         ctx.movement_path.refused = Some(coord);
+        if let Some(reason) = rejected_leg_reason(
+            &game_state.0,
+            placed.unit_id,
+            &ctx.movement_path,
+            (start_coord, coord),
+            &leg,
+            plan.forced_stop,
+        ) {
+            return Err(reason);
+        }
         // Keep the group and the plotted path: a rejected click (an
         // over-cap friendly pass-through hex per §5.51, a non-adjacent or
         // out-of-budget hex, or a post-ZOC stop) must not discard the route
@@ -1510,6 +1833,91 @@ fn stack_click(
         // Backspace-undo, Enter-confirm, or right-click/Delete to cancel.
         Ok(())
     }
+}
+
+/// How many of the path's legs (`costs`, in order) each budget covers --
+/// the longest affordable prefix, as [`commit_stack_path`] moves each unit.
+fn legs_reached(initial_mp: &[i16], costs: &[i16]) -> Vec<usize> {
+    initial_mp
+        .iter()
+        .map(|&budget| {
+            let mut spent = 0i16;
+            costs
+                .iter()
+                .take_while(|&&cost| {
+                    spent += cost;
+                    spent <= budget
+                })
+                .count()
+        })
+        .collect()
+}
+
+/// What a stack's newest plotted leg (`from` -> `to`, the last of `costs`)
+/// does to the group.
+#[derive(Debug, PartialEq)]
+enum StackSplit {
+    /// Every unit still on the route goes on.
+    Together,
+    /// Some units stop at `from` while the rest go on: say so (§5.11).
+    Notice(String),
+    /// Only leaders would go on, leaving their troops behind: refused -- a
+    /// leader alone is overrun by the first attack (§6.51). Moving him on
+    /// alone stays one single-counter order away.
+    LeadersAlone(String),
+}
+
+fn stack_split(
+    gs: &omdurman_rules::effects::GameState,
+    units: &[Option<omdurman_rules::UnitId>],
+    initial_mp: &[i16],
+    costs: &[i16],
+    from: HexCoord,
+    to: HexCoord,
+) -> StackSplit {
+    let n = costs.len();
+    let reach = legs_reached(initial_mp, costs);
+    let name = |i: usize| {
+        units[i]
+            .map(|id| crate::combat_ui::unit_name(id, gs))
+            .unwrap_or_else(|| "a unit".into())
+    };
+    let is_leader = |i: usize| {
+        units[i].and_then(|id| gs.find_unit(id)).is_some_and(|u| {
+            matches!(
+                u.profile.kind,
+                omdurman_types::UnitKind::BritishLeader { .. }
+                    | omdurman_types::UnitKind::DervishLeader { .. }
+            )
+        })
+    };
+    let goers: Vec<usize> = (0..units.len()).filter(|&i| reach[i] >= n).collect();
+    // Units that came this far and stop here, at the leg's start.
+    let stoppers: Vec<usize> = (0..units.len())
+        .filter(|&i| n > 0 && reach[i] == n - 1)
+        .collect();
+    if stoppers.is_empty() || goers.is_empty() {
+        return StackSplit::Together;
+    }
+    let list = |ids: &[usize]| {
+        crate::combat_ui::tally_names(ids.iter().map(|&i| name(i)).collect()).join(", ")
+    };
+    let troops_left = (0..units.len()).any(|i| reach[i] < n && !is_leader(i));
+    if goers.iter().all(|&i| is_leader(i)) && troops_left {
+        return StackSplit::LeadersAlone(format!(
+            "Only {} could go on to {to}: {} stop at {from}, and a leader alone is overrun \
+             by the first attack (§6.51). Plot a shorter route for the stack, or select \
+             the leader alone to send him on.",
+            list(&goers),
+            list(&stoppers),
+        ));
+    }
+    StackSplit::Notice(format!(
+        "{} stop at {from} (no movement left); {} go on to {to} -- each unit has its own \
+         movement allowance (§5.11).",
+        list(&stoppers),
+        list(&goers),
+    ))
 }
 
 /// Commit the plotted path as one `MoveUnit` per unit, each along the
@@ -2060,5 +2468,169 @@ mod tests {
             Some(19),
         );
         assert!(reason.contains("costs 19 MP"), "{reason}");
+    }
+
+    /// Each unit of a stack covers the longest prefix of the route its own
+    /// budget pays for (as the commit moves it).
+    #[test]
+    fn each_stack_member_reaches_what_its_budget_pays() {
+        assert_eq!(legs_reached(&[15, 8, 3], &[3, 3, 3, 3]), vec![4, 2, 1]);
+        assert_eq!(legs_reached(&[0], &[1]), vec![0]);
+    }
+
+    fn put(gs: &mut omdurman_rules::effects::GameState, id: UnitId, at: HexCoord) {
+        gs.units.push(omdurman_rules::UnitPlacement {
+            id,
+            position: at,
+            profile: omdurman_rules::unit_profiles::profile_for_unit(id).expect("a counter"),
+            state: Default::default(),
+        });
+    }
+
+    /// A stack order says who stops and who goes on; one that would send
+    /// only the leader on, leaving his troops behind, is refused (§6.51).
+    #[test]
+    fn a_stack_split_is_told_and_a_lone_leader_is_held_back() {
+        let mut gs = omdurman_rules::effects::GameState::new(omdurman_types::Scenario::Campaign);
+        let leader = UnitId::ALL
+            .iter()
+            .copied()
+            .find(|&id| {
+                omdurman_rules::unit_profiles::profile_for_unit(id).is_some_and(|p| {
+                    matches!(p.kind, omdurman_types::UnitKind::BritishLeader { .. })
+                })
+            })
+            .expect("an Anglo-Egyptian leader");
+        let battalion = UnitId::ALL
+            .iter()
+            .copied()
+            .find(|&id| {
+                omdurman_rules::unit_profiles::profile_for_unit(id).is_some_and(|p| {
+                    p.identity.owner() == omdurman_types::Player::AngloEgyptian
+                        && matches!(p.kind, omdurman_types::UnitKind::Infantry { .. })
+                })
+            })
+            .expect("a battalion");
+        let cavalry = UnitId::ALL
+            .iter()
+            .copied()
+            .find(|&id| {
+                omdurman_rules::unit_profiles::profile_for_unit(id).is_some_and(|p| {
+                    p.identity.owner() == omdurman_types::Player::AngloEgyptian
+                        && matches!(p.kind, omdurman_types::UnitKind::Cavalry { .. })
+                })
+            })
+            .expect("a cavalry unit");
+        let at = HexCoord::new(10, 10);
+        for id in [leader, battalion, cavalry] {
+            put(&mut gs, id, at);
+        }
+        let (from, to) = (HexCoord::new(11, 10), HexCoord::new(12, 10));
+        // Everyone affords both legs: together.
+        let units = [Some(leader), Some(battalion), Some(cavalry)];
+        assert_eq!(
+            stack_split(&gs, &units, &[15, 8, 12], &[3, 3], from, to),
+            StackSplit::Together
+        );
+        // The battalion stops after the first leg, cavalry and leader go on.
+        let StackSplit::Notice(notice) = stack_split(&gs, &units, &[15, 4, 12], &[3, 3], from, to)
+        else {
+            panic!("a split is told");
+        };
+        assert!(
+            notice.contains("stop at (11, 10)") || notice.contains("stop at"),
+            "{notice}"
+        );
+        // Only the leader could go on: refused.
+        assert!(matches!(
+            stack_split(&gs, &units, &[15, 4, 4], &[3, 3], from, to),
+            StackSplit::LeadersAlone(_)
+        ));
+        // A leader alone with no troops left behind is no split at all.
+        assert_eq!(
+            stack_split(&gs, &[Some(leader)], &[15], &[3, 3], from, to),
+            StackSplit::Together
+        );
+    }
+
+    /// Clicking the selected counter again cycles round its stack.
+    #[test]
+    fn the_next_member_wraps_round_the_stack() {
+        let mut world = World::new();
+        let a = world.spawn_empty().id();
+        let b = world.spawn_empty().id();
+        let c = world.spawn_empty().id();
+        let members = [a, b, c];
+        assert_eq!(next_member(&members, a), Some(b));
+        assert_eq!(next_member(&members, c), Some(a));
+        assert_eq!(next_member(&[a], a), None);
+    }
+
+    /// The reasons a refused move gives name the rule that bars it: a
+    /// unit that already moved, the §5.23 walled-city eligibility.
+    #[test]
+    fn refusals_name_the_rule_that_bars_the_move() {
+        let mut gs = omdurman_rules::effects::GameState::new(omdurman_types::Scenario::Campaign);
+        gs.board = omdurman_rules::board_data::board_info(omdurman_types::MapKind::Campaign);
+        gs.phase = omdurman_rules::Phase::Movement;
+        gs.active_player = omdurman_types::Player::Dervish;
+        let baggara = UnitId::Baggara_0_0;
+        put(&mut gs, baggara, HexCoord::new(9, 9));
+        gs.mp_spent_this_turn.insert(baggara, 9);
+        let reason = unroutable_reason(&gs, &[baggara], HexCoord::new(12, 12), 0, Some(3));
+        assert!(reason.contains("already moved"), "{reason}");
+        // A Baggara may not enter the walled city (§5.23): no "breach it".
+        gs.mp_spent_this_turn.clear();
+        let city = *gs
+            .board
+            .walled_city
+            .iter()
+            .find(|h| gs.board.terrain_at(**h).is_some())
+            .expect("Omdurman's walled city");
+        let reason = unroutable_reason(&gs, &[baggara], city, 9, None);
+        assert!(reason.contains("§5.23"), "{reason}");
+        assert!(!reason.contains("breach"), "{reason}");
+    }
+
+    /// After the §9.345 crossing (six upstream MP) a gunboat has what its
+    /// upstream allowance leaves, not its downstream one: the path panel
+    /// read "10 left after" for a boat with 4.
+    #[test]
+    fn the_crossing_leaves_the_upstream_remainder() {
+        let mut gs =
+            omdurman_rules::effects::GameState::new(omdurman_types::Scenario::FallOfKhartoum);
+        gs.board = omdurman_rules::board_data::board_info(omdurman_types::MapKind::FallOfKhartoum);
+        gs.phase = omdurman_rules::Phase::Movement;
+        gs.active_player = omdurman_types::Player::AngloEgyptian;
+        gs.day_night = omdurman_types::DayNight::Day;
+        let white = gs
+            .board
+            .hex_of_location(omdurman_types::Location::WhiteNileMouth)
+            .expect("the White Nile mouth");
+        let blue = *gs
+            .nile_mouth_crossings(white)
+            .first()
+            .expect("a Blue Nile mouth");
+        let boat = UnitId::ALL
+            .iter()
+            .copied()
+            .find(|&id| {
+                omdurman_rules::unit_profiles::profile_for_unit(id).is_some_and(|p| {
+                    p.kind.is_boat() && p.identity.owner() == omdurman_types::Player::AngloEgyptian
+                })
+            })
+            .expect("a gunboat");
+        put(&mut gs, boat, white);
+        let unit = gs.find_unit(boat).unwrap();
+        let up = gs.gunboat_allowances(unit).unwrap().upstream.value() as i16;
+        let path = MovementPath {
+            legs: vec![(white, blue)],
+            cost_so_far: omdurman_rules::effects::NILE_MOUTH_CROSSING_MP,
+            ..Default::default()
+        };
+        assert_eq!(
+            crate::picker::left_after_path(&gs, boat, &path),
+            up - omdurman_rules::effects::NILE_MOUTH_CROSSING_MP
+        );
     }
 }

@@ -315,7 +315,10 @@ fn turn_status(
                 // possibly the side whose turn it is not.
                 if peers.commands_faction(choice.player) {
                     (
-                        "\u{25b6} Your move: choose your losses (§7.7)".to_string(),
+                        format!(
+                            "\u{25b6} Your move: choose your losses ({})",
+                            crate::losses::pending_loss_rule(gs)
+                        ),
                         palette::GOLD,
                     )
                 } else {

@@ -64,6 +64,7 @@ impl Plugin for CombatCardPlugin {
                     .after(crate::events::drain_observations)
                     .run_if(resource_exists::<crate::events::PendingObservations>),
             )
+            .add_systems(Update, report_lost_shells.after(drain_combat_observations))
             .add_systems(
                 EguiPrimaryContextPass,
                 // Runs after the charts sheet so the card can shift left of
@@ -123,6 +124,9 @@ struct CombatCardEntry {
     /// Palace") -- empty for a normal hex. Useful because the cell is what
     /// the CRT row indexes, not the units standing on it.
     hex_label: String,
+    /// §6.64: the hex a howitzer shell was aimed at, when it scattered to
+    /// `target_hex` instead -- the result applies where it landed.
+    aimed_from: Option<String>,
     attacker: CombatSide,
     /// `None` for fire (single-sided resolution); `Some` for melee, where
     /// both sides roll simultaneously and each result applies to the other.
@@ -224,6 +228,9 @@ fn drain_combat_observations(
                 // §6.64: where the shell landed, and on what roll.
                 if let Some((impact_roll, landed)) = impact {
                     card.note = Some(impact_note(*impact_roll, *landed, attack.target_hex, gs));
+                    if *landed != attack.target_hex {
+                        relocate_scattered(&mut card, attack, *result, eliminations, *landed, gs);
+                    }
                     if !card.focus.contains(landed) {
                         card.focus.push(*landed);
                     }
@@ -266,6 +273,61 @@ fn drain_combat_observations(
         dispatches.log_line(log_line(&entry));
         queue.push(entry, dispatches.next_feed_seq());
     }
+}
+
+/// §6.64: a howitzer shell that scatters off the map resolves nothing -- no
+/// combat card, no log line; the engine notes it only in its turn events.
+/// Report each such shell once, as it appears there (the first run only
+/// takes note of the ones already recorded, e.g. by a replay).
+fn report_lost_shells(
+    game_state: Res<GameStateResource>,
+    mut dispatches: ResMut<crate::dispatch::Dispatches>,
+    mut seen: Local<Option<usize>>,
+) {
+    if !game_state.is_changed() {
+        return;
+    }
+    let gs = &game_state.0;
+    let lost: Vec<String> = gs
+        .turn_events
+        .iter()
+        .filter_map(|e| match e {
+            omdurman_rules::turn_summary::TurnEventRecord::HowitzerImpact {
+                gunboat,
+                aimed,
+                at,
+                lost: true,
+                ..
+            } => Some(lost_shell_text(*gunboat, *aimed, *at, gs)),
+            _ => None,
+        })
+        .collect();
+    // The turn's events are drained at the end of each player turn.
+    let already = match *seen {
+        Some(n) if n <= lost.len() => n,
+        Some(_) => 0,
+        None => lost.len(),
+    };
+    for text in &lost[already..] {
+        dispatches.push("Howitzer Fire", text.clone());
+    }
+    *seen = Some(lost.len());
+}
+
+/// The report of a shell scattered off the map (§6.64).
+fn lost_shell_text(
+    gunboat: UnitId,
+    aimed: HexCoord,
+    at: HexCoord,
+    gs: &omdurman_rules::effects::GameState,
+) -> String {
+    let aimed = place_label(aimed, &target_hex_label(aimed, gs));
+    format!(
+        "{}'s shell aimed at {aimed} scattered off the map ({},{}): no effect (§6.64).",
+        crate::combat_ui::unit_name(gunboat, gs),
+        at.q,
+        at.r
+    )
 }
 
 /// The table's result, and -- when it was not enough against a fort or a
@@ -336,6 +398,7 @@ fn build_fire_card(
         kind: CombatKind::Fire,
         target_hex: attack.target_hex,
         hex_label,
+        aimed_from: None,
         attacker,
         defender: None,
         paragraphs: paragraphs.to_vec(),
@@ -348,6 +411,89 @@ fn build_fire_card(
     }
 }
 
+/// What a melee did beyond its two results, for the card and the log line:
+/// the mandatory Dervish advance (§7.6) -- and who stayed behind because
+/// disrupted units may not move -- and Anglo-Egyptian leaders lost, whom no
+/// combat result takes: they fall to the advance into their hex, or with the
+/// last of their units (§6.51, §9.346).
+fn melee_note(
+    attack: &MeleeAttack,
+    mandatory_advance: Option<u8>,
+    attacker: &MeleeSide,
+    defender: &MeleeSide,
+    leaders_alone: bool,
+    gs: &omdurman_rules::effects::GameState,
+) -> Option<String> {
+    let is_ae_leader = |id: &UnitId| {
+        omdurman_rules::unit_profiles::profile_for_unit(*id)
+            .is_some_and(|p| matches!(p.kind, omdurman_types::UnitKind::BritishLeader { .. }))
+    };
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(n) = mandatory_advance {
+        let units = if n == 1 { "unit" } else { "units" };
+        if leaders_alone {
+            parts.push(format!(
+                "A leader alone does not hold a hex: {n} attacking {units} entered it and he \
+                 fell, whatever the dice (§6.51)."
+            ));
+        } else {
+            parts.push(format!(
+                "{n} surviving attacking {units} advanced into the hex (mandatory, §7.6)."
+            ));
+        }
+    }
+    // The defenders' hex emptied: Dervish survivors that are disrupted
+    // stay where they are (back cover: disrupted units may not move).
+    let cleared = attack
+        .defenders
+        .iter()
+        .all(|id| defender.losses.contains(id));
+    if cleared && attack.attacker_player == omdurman_types::Player::Dervish {
+        let stayed: Vec<UnitId> = attack
+            .attackers
+            .iter()
+            .copied()
+            .filter(|id| !attacker.losses.contains(id))
+            .filter(|id| {
+                gs.find_unit(*id)
+                    .is_some_and(|u| u.state.disrupted && u.position == attack.attacker_hex)
+            })
+            .collect();
+        if !stayed.is_empty() {
+            parts.push(format!(
+                "{} stayed behind: disrupted units may not advance (§7.6).",
+                list_unit_names(&stayed, gs).join(", ")
+            ));
+        }
+    }
+    let leaders: Vec<UnitId> = defender
+        .losses
+        .iter()
+        .chain(&attacker.losses)
+        .copied()
+        .filter(is_ae_leader)
+        .collect();
+    if !leaders.is_empty() && !leaders_alone {
+        let how = if mandatory_advance.is_some()
+            && leaders.iter().any(|id| defender.losses.contains(id))
+        {
+            "to the advance into the hex"
+        } else {
+            "with the last of their units"
+        };
+        let gordon = leaders.iter().any(|id| {
+            omdurman_rules::unit_profiles::profile_for_unit(*id)
+                .is_some_and(|p| p.identity.is_gordon())
+        });
+        parts.push(format!(
+            "{} fell {how}, not to the dice: no combat result takes a leader ({}).",
+            list_unit_names(&leaders, gs).join(", "),
+            if gordon { "§6.51, §9.346" } else { "§6.51" }
+        ));
+    }
+    (!parts.is_empty()).then(|| parts.join(" "))
+}
+
 fn build_melee_card(
     attack: &MeleeAttack,
     mandatory_advance: Option<u8>,
@@ -356,6 +502,15 @@ fn build_melee_card(
     paragraphs: &[String],
     gs: &omdurman_rules::effects::GameState,
 ) -> CombatCardEntry {
+    // A side with no melee strength (a leader alone, §6.51) strikes nothing:
+    // "No effect on the attackers" read as if he had fought.
+    let struck = |side: &MeleeSide, whom: &str| {
+        if side.factor == 0 {
+            "no melee strength, no roll".to_string()
+        } else {
+            format!("{} on the {whom}", describe_result(side.result))
+        }
+    };
     let attacker_card = CombatSide {
         player: attack.attacker_player,
         units_label: list_units(&attack.attackers, gs),
@@ -370,7 +525,7 @@ fn build_melee_card(
         // Melee is simultaneous: each roll strikes the other side, so the
         // result says whom -- beside "lost:", the side's own casualties, a
         // bare "→ Disrupt" read as what befell the side itself.
-        result_label: format!("{} on the defenders", describe_result(attacker.result)),
+        result_label: struck(attacker, "defenders"),
         losses: list_unit_names(&attacker.losses, gs),
     };
     let defender_card = CombatSide {
@@ -384,7 +539,7 @@ fn build_melee_card(
         modifiers: melee_modifier_lines(&attack.defender_modifiers, defender.total_modifier),
         net_modifier: defender.total_modifier,
         modified_roll: defender.modified_roll,
-        result_label: format!("{} on the attackers", describe_result(defender.result)),
+        result_label: struck(defender, "attackers"),
         losses: list_unit_names(&defender.losses, gs),
     };
     let hex_label = target_hex_label(attack.defender_hex, gs);
@@ -398,21 +553,19 @@ fn build_melee_card(
             omdurman_rules::unit_profiles::profile_for_unit(*id)
                 .is_some_and(|p| matches!(p.kind, omdurman_types::UnitKind::BritishLeader { .. }))
         });
-    let note = mandatory_advance.map(|n| {
-        let units = if n == 1 { "unit" } else { "units" };
-        if leaders_alone {
-            format!(
-                "A leader alone does not hold a hex: {n} attacking {units} entered it and he \
-                 fell, whatever the dice (§6.51)."
-            )
-        } else {
-            format!("{n} surviving attacking {units} advanced into the hex (mandatory, §7.6).")
-        }
-    });
+    let note = melee_note(
+        attack,
+        mandatory_advance,
+        attacker,
+        defender,
+        leaders_alone,
+        gs,
+    );
     CombatCardEntry {
         kind: CombatKind::Melee,
         target_hex: attack.defender_hex,
         hex_label,
+        aimed_from: None,
         attacker: attacker_card,
         defender: Some(defender_card),
         paragraphs,
@@ -513,6 +666,45 @@ fn impact_note(
     )
 }
 
+/// §6.64: a scattered shell's result applies where it landed, to whoever
+/// stands there (friend or foe), not at the hex it was aimed at -- move the
+/// card there, keep the aim as a note, and read the result against the
+/// landing hex: a shell in an empty hex did nothing, and the "a miss (… needed)"
+/// gloss belongs to a fort or gunboat it actually fell on.
+fn relocate_scattered(
+    card: &mut CombatCardEntry,
+    attack: &FireAttack,
+    result: omdurman_rules::CombatResult,
+    eliminations: &[UnitId],
+    landed: HexCoord,
+    gs: &omdurman_rules::effects::GameState,
+) {
+    card.aimed_from = Some(place_label(attack.target_hex, &card.hex_label));
+    card.target_hex = landed;
+    card.hex_label = target_hex_label(landed, gs);
+    // Fire takes no unit off a hex it does not eliminate, so a hex empty
+    // now (with no eliminations) was empty when the shell struck it.
+    card.attacker.result_label = if eliminations.is_empty() && gs.units_in_hex(landed).is_empty() {
+        "No effect \u{2014} the shell fell on an empty hex".to_string()
+    } else {
+        let at_landing = FireAttack {
+            target_hex: landed,
+            at_fort: false,
+            ..attack.clone()
+        };
+        fire_result_label(&at_landing, result, eliminations, gs)
+    };
+}
+
+/// A hex as a card or log line names it: its place name, or its coordinates.
+fn place_label(hex: HexCoord, label: &str) -> String {
+    if label.is_empty() {
+        format!("({},{})", hex.q, hex.r)
+    } else {
+        label.to_string()
+    }
+}
+
 pub(crate) fn target_hex_label(hex: HexCoord, gs: &omdurman_rules::effects::GameState) -> String {
     gs.board
         .location_at(hex)
@@ -529,11 +721,7 @@ const COLUMN_WIDTH: f32 = 360.0;
 
 /// A combat result as one line of the session log.
 fn log_line(entry: &CombatCardEntry) -> String {
-    let place = if entry.hex_label.is_empty() {
-        format!("({},{})", entry.target_hex.q, entry.target_hex.r)
-    } else {
-        entry.hex_label.clone()
-    };
+    let place = place_label(entry.target_hex, &entry.hex_label);
     let side = |side: &CombatSide| {
         let mut text = format!("{}: {}", side.units_label, side.result_label);
         if !side.losses.is_empty() {
@@ -542,12 +730,40 @@ fn log_line(entry: &CombatCardEntry) -> String {
         text
     };
     match (&entry.kind, &entry.defender) {
-        (CombatKind::Melee, Some(defender)) => format!(
-            "Melee at {place}: {} / {}",
-            side(&entry.attacker),
-            side(defender)
-        ),
-        _ => format!("Fire at {place}: {}", side(&entry.attacker)),
+        (CombatKind::Melee, Some(defender)) => {
+            // Each side's result is what it dealt the other; its losses are
+            // its own -- listed apart, so a "Disrupt" is never read as the
+            // cause of the losses printed next to it.
+            let lost = |s: &CombatSide| {
+                if s.losses.is_empty() {
+                    "none".to_string()
+                } else {
+                    s.losses.join(", ")
+                }
+            };
+            let mut line = format!(
+                "Melee at {place}: attackers {} \u{2192} {}; defenders {} \u{2192} {}. \
+                 Lost \u{2014} attackers: {}; defenders: {}.",
+                entry.attacker.units_label,
+                entry.attacker.result_label,
+                defender.units_label,
+                defender.result_label,
+                lost(&entry.attacker),
+                lost(defender),
+            );
+            if let Some(note) = &entry.note {
+                line.push(' ');
+                line.push_str(note);
+            }
+            line
+        }
+        _ => match &entry.aimed_from {
+            Some(aimed) => format!(
+                "Shell aimed at {aimed} scattered to {place} (§6.64): {}",
+                side(&entry.attacker)
+            ),
+            None => format!("Fire at {place}: {}", side(&entry.attacker)),
+        },
     }
 }
 
@@ -738,10 +954,10 @@ fn draw_card(
                 ui.add_space(2.0);
                 // Target line.
                 // A named place reads better than its coordinates.
-                let hex_str = if entry.hex_label.is_empty() {
-                    format!("at ({},{})", entry.target_hex.q, entry.target_hex.r)
-                } else {
-                    format!("at {}", entry.hex_label)
+                let place = place_label(entry.target_hex, &entry.hex_label);
+                let hex_str = match &entry.aimed_from {
+                    Some(aimed) => format!("at {place} \u{2014} aimed at {aimed}, scattered"),
+                    None => format!("at {place}"),
                 };
                 ui.label(
                     egui::RichText::new(hex_str)
@@ -883,6 +1099,160 @@ mod impact_tests {
         assert_eq!(
             note,
             "Impact roll 4: the shell scattered to (24,10) (§6.64)."
+        );
+    }
+
+    /// A melee log line keeps each side's losses apart from the result it
+    /// dealt, and says a leader fell to the advance, not the dice (§6.51,
+    /// §9.346); a side with no melee strength made no roll.
+    #[test]
+    fn a_melee_line_names_each_sides_own_losses() {
+        use omdurman_rules::effects::MeleeSide;
+        let mut gs =
+            omdurman_rules::effects::GameState::new(omdurman_types::Scenario::FallOfKhartoum);
+        let palace = HexCoord::new(13, 5);
+        let from = HexCoord::new(13, 6);
+        let (a, b) = (UnitId::MulazminI_0_0, UnitId::MulazminI_0_1);
+        // The survivors advanced into the palace; `b` is disrupted and stayed.
+        for (id, at, disrupted) in [(a, palace, false), (b, from, true)] {
+            gs.units.push(omdurman_rules::UnitPlacement {
+                id,
+                position: at,
+                profile: omdurman_rules::unit_profiles::profile_for_unit(id).unwrap(),
+                state: omdurman_rules::UnitState {
+                    disrupted,
+                    ..Default::default()
+                },
+            });
+        }
+        let gordon = UnitId::BritishBoats_3_1;
+        let battalion = UnitId::BritishArmy_0_0;
+        let attack = MeleeAttack {
+            attacker_player: Player::Dervish,
+            attacker_hex: from,
+            defender_hex: palace,
+            attackers: vec![a, b],
+            defenders: vec![gordon, battalion],
+            attacker_modifiers: Vec::new(),
+            defender_modifiers: Vec::new(),
+        };
+        let side = |factor, result, losses: Vec<UnitId>| MeleeSide {
+            roll: DieRoll::Five,
+            total_modifier: 0,
+            modified_roll: DieRoll::Five,
+            result,
+            factor,
+            losses,
+        };
+        let card = build_melee_card(
+            &attack,
+            Some(1),
+            &side(12, CombatResult::Eliminate(1), Vec::new()),
+            &side(5, CombatResult::Disrupt, vec![gordon, battalion]),
+            &[],
+            &gs,
+        );
+        let line = log_line(&card);
+        assert!(
+            line.contains("Lost \u{2014} attackers: none; defenders: Gordon, Cavalry."),
+            "{line}"
+        );
+        assert!(
+            line.contains("Gordon fell to the advance into the hex, not to the dice"),
+            "{line}"
+        );
+        assert!(line.contains("§9.346"), "{line}");
+        assert!(
+            line.contains("Mulazmin stayed behind: disrupted units may not advance"),
+            "{line}"
+        );
+        let lone = build_melee_card(
+            &MeleeAttack {
+                defenders: vec![gordon],
+                ..attack.clone()
+            },
+            Some(1),
+            &side(12, CombatResult::Eliminate(1), Vec::new()),
+            &side(0, CombatResult::NoEffect, vec![gordon]),
+            &[],
+            &gs,
+        );
+        assert!(
+            log_line(&lone).contains("defenders Gordon \u{2192} no melee strength, no roll"),
+            "{}",
+            log_line(&lone)
+        );
+    }
+
+    /// A shell scattered off the map is reported too (§6.64) -- it makes no
+    /// combat card.
+    #[test]
+    fn a_shell_off_the_map_is_reported() {
+        let gs = omdurman_rules::effects::GameState::new(omdurman_types::Scenario::Campaign);
+        let text = lost_shell_text(
+            UnitId::BritishBoats_3_0,
+            HexCoord::new(23, 10),
+            HexCoord::new(24, -1),
+            &gs,
+        );
+        assert!(
+            text.contains("scattered off the map (24,-1): no effect (§6.64)"),
+            "{text}"
+        );
+    }
+
+    /// A scattered shell is reported where it landed: the log line and the
+    /// card name the landing hex (the aim kept as a note), and a shell in an
+    /// empty hex did nothing -- not the table's "Eliminate 2" at the aimed
+    /// hex, nor a gunboat's "a miss" gloss there.
+    #[test]
+    fn a_scattered_shell_is_logged_where_it_landed() {
+        let gs = omdurman_rules::effects::GameState::new(omdurman_types::Scenario::Campaign);
+        let attack = FireAttack {
+            firing_player: Player::AngloEgyptian,
+            phase: omdurman_rules::Phase::OffensiveFire(
+                omdurman_rules::FireSubPhase::MaximSecondAndHowitzer,
+            ),
+            kind: omdurman_rules::FireKind::Howitzer,
+            firers: vec![UnitId::BritishArmy_0_0],
+            target_hex: HexCoord::new(23, 10),
+            at_fort: false,
+            factor_row: FireFactorRow::Row01to05,
+            modifiers: Vec::new(),
+            gunboat_maxims: Vec::new(),
+        };
+        let mut card = build_fire_card(
+            &attack,
+            FireResolution {
+                roll: DieRoll::Nine,
+                total_modifier: 0,
+                modified_roll: DieRoll::Nine,
+                factor_row: FireFactorRow::Row01to05,
+                effective_factor: 2,
+                result: CombatResult::Eliminate(2),
+            },
+            &[],
+            &[],
+            &gs,
+        );
+        let landed = HexCoord::new(24, 10);
+        relocate_scattered(
+            &mut card,
+            &attack,
+            CombatResult::Eliminate(2),
+            &[],
+            landed,
+            &gs,
+        );
+        assert_eq!(card.target_hex, landed);
+        let line = log_line(&card);
+        assert!(
+            line.starts_with("Shell aimed at ") && line.contains(" scattered to (24,10) (§6.64): "),
+            "{line}"
+        );
+        assert!(
+            line.ends_with("No effect \u{2014} the shell fell on an empty hex"),
+            "{line}"
         );
     }
 }

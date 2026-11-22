@@ -183,36 +183,44 @@ pub(crate) fn desertion_panel_ui(
             // list it shifted every row under the pointer mid-selection. The
             // list stays open when the count is reached, so a pick can still
             // be taken back.
+            // The list scrolls: open, it ran past the bottom of the window
+            // and took the Confirm button with it.
+            let list_height = (ui.ctx().content_rect().height() * 0.4).max(160.0);
             ui.collapsing("Available units", |ui| {
-                for (_entity, placed) in placed_units.iter() {
-                    let Some(unit_id) = placed.unit_id else {
-                        continue;
-                    };
-                    if let Some(unit) = gs.0.find_unit(unit_id) {
-                        if unit.profile.identity.owner() != Player::Dervish {
-                            continue;
-                        }
-                        let label = unit.profile.identity.short_label();
-                        // The Khalifa, gunboats, artillery and forts may not
-                        // desert (§8.2): listed, greyed out, saying why.
-                        if unit.profile.identity.is_desertion_exempt() {
-                            ui.add_enabled(false, egui::Button::selectable(false, label))
+                egui::ScrollArea::vertical()
+                    .max_height(list_height)
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| {
+                        for (_entity, placed) in placed_units.iter() {
+                            let Some(unit_id) = placed.unit_id else {
+                                continue;
+                            };
+                            if let Some(unit) = gs.0.find_unit(unit_id) {
+                                if unit.profile.identity.owner() != Player::Dervish {
+                                    continue;
+                                }
+                                let label = unit.profile.identity.short_label();
+                                // The Khalifa, gunboats, artillery and forts may not
+                                // desert (§8.2): listed, greyed out, saying why.
+                                if unit.profile.identity.is_desertion_exempt() {
+                                    ui.add_enabled(false, egui::Button::selectable(false, label))
                                 .on_disabled_hover_text(
                                     "Exempt (§8.2): the Khalifa, gunboats, artillery and forts \
                                      never desert.",
                                 );
-                            continue;
-                        }
-                        let is_selected = desertion.selected.contains(&unit.id);
-                        if ui.selectable_label(is_selected, label).clicked() {
-                            if is_selected {
-                                desertion.selected.retain(|id| id != &unit.id);
-                            } else if desertion.selected.len() < count {
-                                desertion.selected.push(unit.id);
+                                    continue;
+                                }
+                                let is_selected = desertion.selected.contains(&unit.id);
+                                if ui.selectable_label(is_selected, label).clicked() {
+                                    if is_selected {
+                                        desertion.selected.retain(|id| id != &unit.id);
+                                    } else if desertion.selected.len() < count {
+                                        desertion.selected.push(unit.id);
+                                    }
+                                }
                             }
                         }
-                    }
-                }
+                    });
             });
             ui.label(crate::ui::text::note(
                 "Deserters leave the game: they score no victory points for either side (§8.2).",

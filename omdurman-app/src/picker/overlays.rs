@@ -547,7 +547,25 @@ pub fn movement_overlay_mesh(
             }
         }
     }
-    let reached: HashSet<HexCoord> = best.keys().map(|&(hex, _)| hex).collect();
+    let mut reached: HashSet<HexCoord> = best.keys().map(|&(hex, _)| hex).collect();
+    // §9.345 (FALL OF KHARTOUM): a gunboat on one river's mouth may cross
+    // off the board to the other's -- no neighbour step, so the search never
+    // finds it; outline the mouths the engine would accept (the crossing
+    // was only found by clicking a mouth).
+    if let Some(uid) = placed.unit_id
+        && placed.is_boat
+        && movement_path.legs.is_empty()
+    {
+        let cost =
+            omdurman_rules::MovementPoints::new(omdurman_rules::effects::NILE_MOUTH_CROSSING_MP);
+        reached.extend(
+            gs_ref
+                .0
+                .nile_mouth_crossings(start_coord)
+                .into_iter()
+                .filter(|&to| gs_ref.0.can_move_gunboat(uid, to, &[to], cost).is_ok()),
+        );
+    }
 
     let mut gray_spawned = 0u32;
     let mut zoc_spawned = 0u32;

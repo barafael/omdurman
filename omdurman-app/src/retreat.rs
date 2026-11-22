@@ -164,14 +164,19 @@ pub fn retreat_overlay_mesh(
         return;
     }
     draw.clear(existing.iter());
+    // Green, doubled: a safe destination, set apart from the orange melee
+    // targets and thick enough to find on a busy board (the single orange
+    // outline was hard to see).
     for target in &key.1 {
-        draw.ring(
-            RetreatTargetRing,
-            *target,
-            1.5,
-            1.0,
-            draw.hex.assets.orange.clone(),
-        );
+        for scale in [1.0, 0.9] {
+            draw.ring(
+                RetreatTargetRing,
+                *target,
+                1.5,
+                scale,
+                draw.hex.assets.green.clone(),
+            );
+        }
     }
     if let Some([from, mid, to]) = path {
         for (a, b) in [(from, mid), (mid, to)] {
@@ -217,7 +222,16 @@ pub fn handle_retreat(
     let Some(unit) = selected_threatened_unit(&state, &placed_units, &gs.0) else {
         return;
     };
-    if gs.0.can_retreat_before_melee(unit, to).is_err() {
+    // A click on a hex the unit may not retreat to says why (§7.5: exactly
+    // two hexes, empty, no enemy or closed hexside on the way) -- it was
+    // ignored without a word.
+    if let Err(error) = gs.0.can_retreat_before_melee(unit, to) {
+        if let Some(dispatches) = submit.dispatches.as_deref_mut() {
+            dispatches.refuse(
+                "Field Telegraph",
+                format!("Retreat refused — {error}. The green hexes are where it may go (§7.5)."),
+            );
+        }
         return;
     }
 

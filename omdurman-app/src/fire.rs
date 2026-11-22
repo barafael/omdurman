@@ -200,10 +200,13 @@ pub(crate) fn gunboat_maxim_attacks_for(
 /// The attacks a click on `target` would allocate from this firing group,
 /// given the attacks already `allocated` this sub-phase: the main weapons'
 /// attacks ([`group_attacks_for`]), with a named gunboat's Maxims (§2.32)
-/// standing in for its artillery once that is allocated or cannot fire at
-/// this hex -- a click allocates the artillery first, the Maxims second.
-/// Shared by the click handler and the hover preview, so the preview always
-/// shows the shot the click would take.
+/// joining its artillery when both reach the hex (§6.14: one gunboat's two
+/// weapons combine at one hex) -- one click fires the whole gunboat; a click
+/// that allocated only the artillery left the Maxims silently unfired. The
+/// Maxims stand in alone once the artillery is allocated or cannot fire
+/// here, so a player who detached them in the tray (to fire them at another
+/// hex) gets them with the next click. Shared by the click handler and the
+/// hover preview, so the preview always shows the shot the click would take.
 pub(crate) fn click_attacks(
     gs: &GameState,
     group: &FireGroupSelection,
@@ -212,21 +215,302 @@ pub(crate) fn click_attacks(
     allocated: &[FireAttack],
 ) -> Vec<FireAttack> {
     let mut attacks = group_attacks_for(gs, group, kinds, target);
-    let primary_offered = |id: UnitId, attacks: &[FireAttack]| {
-        attacks.iter().any(|a| a.firers.contains(&id))
-            && !allocated.iter().any(|a| a.firers.contains(&id))
-    };
+    let primary_allocated = |id: UnitId| allocated.iter().any(|a| a.firers.contains(&id));
     for maxims in gunboat_maxim_attacks_for(gs, group, target) {
         let gunboat = maxims.gunboat_maxims[0];
         let maxims_allocated = allocated
             .iter()
             .any(|a| a.gunboat_maxims.contains(&gunboat));
-        if !maxims_allocated && !primary_offered(gunboat, &attacks) {
-            attacks.retain(|a| !a.firers.contains(&gunboat));
-            attacks.push(maxims);
+        if maxims_allocated {
+            continue;
+        }
+        let with_primary = attacks
+            .iter()
+            .position(|a| a.firers.contains(&gunboat))
+            .filter(|_| !primary_allocated(gunboat));
+        match with_primary.and_then(|i| {
+            omdurman_rules::effects::combine_fire_attacks(gs, &attacks[i], &maxims)
+                .map(|combined| (i, combined))
+        }) {
+            Some((i, combined)) => attacks[i] = combined,
+            None if with_primary.is_none() => {
+                attacks.retain(|a| !a.firers.contains(&gunboat));
+                attacks.push(maxims);
+            }
+            None => {}
         }
     }
     attacks
+}
+
+/// The attack the hover preview details for a click's `planned` attack:
+/// folded into the attack already staged at the same hex, as the click
+/// handler folds it (§6.14: a hex is fired at once a phase, so later fire
+/// joins the staged attack) -- the combined factors, row and odds, not the
+/// newcomer's alone (which read "cannot succeed" against a gunboat the
+/// whole attack could sink).
+pub(crate) fn preview_attack(
+    gs: &GameState,
+    planned: &FireAttack,
+    allocated: &[FireAttack],
+) -> FireAttack {
+    allocated
+        .iter()
+        .filter(|staged| staged.target_hex == planned.target_hex)
+        .find_map(|staged| align_and_combine(gs, staged, planned).ok())
+        .unwrap_or_else(|| planned.clone())
+}
+
+/// Join `joining` to the `staged` attack on the same hex (§6.14), first
+/// taking the staged attack's aim at a garrisoned fort (§6.54/§6.62): a
+/// staged shot aimed at the fort itself takes only artillery, which then
+/// aims at the fort too. `Err` says why the two cannot be one attack.
+pub(crate) fn align_and_combine(
+    gs: &GameState,
+    staged: &FireAttack,
+    joining: &FireAttack,
+) -> Result<FireAttack, String> {
+    let aligned = if staged.at_fort && !joining.at_fort {
+        omdurman_rules::effects::aim_at_fort(gs, joining).ok_or_else(|| {
+            format!(
+                "the attack staged on {} is aimed at the fort itself, which only artillery \
+                 may fire at (§6.62) -- aim it at the garrison in the tray, or fire these \
+                 units elsewhere",
+                staged.target_hex
+            )
+        })?
+    } else if !staged.at_fort && joining.at_fort {
+        FireAttack {
+            at_fort: false,
+            ..joining.clone()
+        }
+    } else {
+        joining.clone()
+    };
+    omdurman_rules::effects::combine_fire_attacks(gs, staged, &aligned).ok_or_else(|| {
+        format!(
+            "these units cannot join the attack staged on {} (§6.14: a hex is fired at once \
+             a sub-phase)",
+            staged.target_hex
+        )
+    })
+}
+
+/// The range a firer's weapon reaches by day, in the player's words: "rifles
+/// fire at up to 4 hexes (§6.22)", "howitzers fire at 4 to 10 hexes
+/// (§6.64)". `None` for a weapon with no range at all.
+pub(crate) fn weapon_reach(
+    gs: &GameState,
+    firer: UnitId,
+    mount: omdurman_rules::FireMount,
+    kind: FireKind,
+) -> Option<String> {
+    use omdurman_rules::WeaponClass;
+    let unit = gs.find_unit(firer)?;
+    let weapon = unit.weapon_line(mount, kind);
+    // §6.52/§9.343: the table the unit fires on.
+    let table = if gs.scenario == omdurman_types::Scenario::FallOfKhartoum
+        || unit.profile.identity.is_friendlies()
+    {
+        omdurman_types::Player::Dervish
+    } else {
+        unit.profile.identity.owner()
+    };
+    let reach: Vec<u16> = (1..=20)
+        .filter(|&d| {
+            omdurman_rules::effects::range_band_for(
+                gs.scenario,
+                table,
+                weapon,
+                omdurman_rules::HexDistance::new(d),
+            )
+            .in_range()
+        })
+        .collect();
+    let (&lo, &hi) = (reach.first()?, reach.last()?);
+    let (name, section) = match weapon {
+        WeaponClass::Melee => ("spears", "§6.22"),
+        WeaponClass::Rifles => ("rifles", "§6.22"),
+        WeaponClass::Maxims => ("Maxims", "§6.22"),
+        WeaponClass::Artillery => ("artillery", "§6.22"),
+        WeaponClass::Howitzer => ("howitzers", "§6.64"),
+    };
+    let span = match (lo, hi) {
+        (1, 1) => "1 hex".to_string(),
+        (1, hi) => format!("up to {hi} hexes"),
+        (lo, hi) if lo == hi => format!("{lo} hexes"),
+        (lo, hi) => format!("{lo} to {hi} hexes"),
+    };
+    let night = if gs.day_night == omdurman_types::DayNight::Night {
+        ", halved at night (§8.1)"
+    } else {
+        ""
+    };
+    Some(format!("{name} fire at {span} ({section}){night}"))
+}
+
+/// What blocks the line of sight from `firer` to `target` (§6.3), when the
+/// table can say: "huts at (12, 5)", "a wall between (21, 9) and (22, 9)".
+pub(crate) fn los_blocker(
+    gs: &GameState,
+    firer: UnitId,
+    target: HexCoord,
+    kind: FireKind,
+) -> Option<String> {
+    use omdurman_rules::los_table::LosStepResult;
+    let unit = gs.find_unit(firer)?;
+    let firer_level =
+        omdurman_rules::los_table::los_level_for_unit(unit.profile.kind, unit.position, gs.board);
+    omdurman_rules::los_table::los_path_analysis(
+        gs.board,
+        unit.position,
+        target,
+        kind,
+        firer_level,
+        gs.target_los_level(target),
+        gs.los_unit_blocker(),
+        |a, b| gs.wall_is_breached(a, b),
+    )
+    .into_iter()
+    .find_map(|(_, step)| match step {
+        LosStepResult::Blocked { feature, hex } => Some(format!("{feature} at {hex}")),
+        LosStepResult::BlockedHexside { a, b, feature } => {
+            Some(format!("{feature} between {a} and {b}"))
+        }
+        LosStepResult::Clear => None,
+    })
+}
+
+/// One weapon's refusal in the player's terms: the engine's reason, with
+/// the line-of-sight blocker named and an out-of-range shot told the
+/// weapon's reach.
+pub(crate) fn fire_refusal_text(
+    gs: &GameState,
+    shot: omdurman_rules::Shot,
+    target: HexCoord,
+    kind: FireKind,
+    error: &omdurman_rules::effects::RuleError,
+) -> String {
+    use omdurman_rules::effects::RuleError;
+    let name = crate::combat_ui::unit_name(shot.unit, gs);
+    match error {
+        RuleError::LineOfSightBlocked(..) => match los_blocker(gs, shot.unit, target, kind) {
+            Some(blocker) => format!("no line of sight: {blocker} block it (§6.3)"),
+            None => "no line of sight (§6.3)".to_string(),
+        },
+        RuleError::TargetOutOfRange { .. } | RuleError::OutOfRangeAtNight { .. } => {
+            let distance = gs
+                .find_unit(shot.unit)
+                .map(|u| u.position.distance(target))
+                .unwrap_or(0);
+            let base = format!("{target} is {distance} hexes away, out of range");
+            let base = if matches!(error, RuleError::OutOfRangeAtNight { .. }) {
+                format!("{base} at night (§8.1)")
+            } else {
+                base
+            };
+            match weapon_reach(gs, shot.unit, shot.mount, kind) {
+                Some(reach) => format!("{base}: {reach}"),
+                None => base,
+            }
+        }
+        RuleError::OnlyHowitzerMayFireHowitzer(_) => format!(
+            "{name} carries no howitzer: only the five named gunboats fire howitzer (§6.64)"
+        ),
+        RuleError::Disrupted(_) => {
+            format!("{name} is disrupted and may not fire until it recovers (Combat Results: D)")
+        }
+        RuleError::AlreadyFired(_) => format!("{name} has already fired this sub-phase (§6.13)"),
+        other => other.to_string(),
+    }
+}
+
+/// Why no weapon of the selection may fire at `target` (§6.13: each unit
+/// fires on its own merits), weapon by weapon -- a mixed stack once
+/// reported only its first unit's reason (range) when another was blocked
+/// by line of sight. Identical reasons are merged; a lone reason reads
+/// plainly. `selected` is every selected unit, so one that cannot fire at
+/// all in this sub-phase (disrupted, no weapon for it) is explained too.
+pub(crate) fn fire_refusal_reason(gs: &GameState, selected: &[UnitId], target: HexCoord) -> String {
+    use omdurman_rules::{FireMount, Shot};
+    let mut reasons: Vec<(String, Vec<String>)> = Vec::new();
+    let mut add = |who: String, why: String| match reasons.iter_mut().find(|(r, _)| *r == why) {
+        Some((_, names)) => names.push(who),
+        None => reasons.push((why, vec![who])),
+    };
+    for &id in selected {
+        let Some(unit) = gs.find_unit(id) else {
+            continue;
+        };
+        if unit.profile.fire.is_none() {
+            continue;
+        }
+        let main = Shot {
+            unit: id,
+            mount: FireMount::Main,
+        };
+        let why = match fire_kind_for(gs, id) {
+            Some(kind) => match gs.can_fire_at(id, target, kind) {
+                Err(error) => Some(fire_refusal_text(gs, main, target, kind, &error)),
+                Ok(()) => None,
+            },
+            // No weapon of this counter has a role in the sub-phase
+            // (§6.42) -- say so plainly (an unnamed gunboat carries no
+            // howitzer), unless its Maxims do.
+            None if unit.state.disrupted => Some(fire_refusal_text(
+                gs,
+                main,
+                target,
+                FireKind::Direct,
+                &omdurman_rules::effects::RuleError::Disrupted(id),
+            )),
+            None if matches!(unit.profile.kind, omdurman_types::UnitKind::Gunboat { .. })
+                && !unit.carries_howitzer() =>
+            {
+                Some(fire_refusal_text(
+                    gs,
+                    main,
+                    target,
+                    FireKind::Howitzer,
+                    &omdurman_rules::effects::RuleError::OnlyHowitzerMayFireHowitzer(id),
+                ))
+            }
+            None => {
+                Some(omdurman_rules::effects::RuleError::WrongWeaponForSubphase(id).to_string())
+            }
+        };
+        if let Some(why) = why {
+            add(crate::combat_ui::shot_name(main, gs), why);
+        }
+        // A named gunboat's Maxims are a weapon of their own (§2.32).
+        if unit.fire_factor(FireMount::GunboatMaxims).is_some()
+            && let Some(kind) = gunboat_maxim_kind(gs)
+            && let Err(error) = gs.can_fire_gunboat_maxims_at(id, target, kind)
+        {
+            let shot = Shot {
+                unit: id,
+                mount: FireMount::GunboatMaxims,
+            };
+            add(
+                crate::combat_ui::shot_name(shot, gs),
+                fire_refusal_text(gs, shot, target, kind, &error),
+            );
+        }
+    }
+    match reasons.as_slice() {
+        [] => "the selected units cannot fire there".to_string(),
+        [(why, _)] => why.clone(),
+        many => many
+            .iter()
+            .map(|(why, names)| {
+                format!(
+                    "{}: {why}",
+                    crate::combat_ui::tally_names(names.clone()).join(", ")
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("; "),
+    }
 }
 
 /// Whether `attack` uses a weapon already allocated this sub-phase (§6.13/
@@ -782,10 +1066,9 @@ pub fn fire_combat_preview_ui(
                 .any(|u| u.position == target && u.profile.identity.owner() != firing_player);
         if enemy_there
             && target != group.firer_hex
-            && let Some(&(firer, kind)) = kinds.first()
-            && let Err(reason) = gs.0.can_fire_at(firer, target, kind)
             && let Ok(ctx) = contexts.ctx_mut()
         {
+            let reason = fire_refusal_reason(&gs.0, &group.units, target);
             crate::ui::passive_stacked_card(
                 ctx,
                 &mut layout,
@@ -819,42 +1102,44 @@ pub fn fire_combat_preview_ui(
     if planned_stale {
         let planned_key = (target, group.units.clone(), allocated.len());
         let planned_attacks = click_attacks(&gs.0, &group, &kinds, target, allocated);
+        // Each shown as the click would stage it: joined to the attack
+        // already staged on this hex (§6.14).
         let attacks: Vec<FireAttack> = planned_attacks
             .into_iter()
             .filter(|a| !uses_allocated_weapon(a, allocated))
+            .map(|a| preview_attack(&gs.0, &a, allocated))
             .collect();
         *planned = Some((planned_key, attacks));
     }
     let attacks = &planned.as_ref().expect("just cached").1;
-    let any_planned = !attacks.is_empty();
-    let Some(attack) = attacks.first() else {
-        if any_planned && let Ok(ctx) = contexts.ctx_mut() {
-            // Their fire is staged against this very hex (the usual case
-            // right after the click): a confirmation, not a refusal.
-            let staged_here = allocated.iter().any(|a| a.target_hex == target);
-            let (text, color) = if staged_here {
-                (
-                    "Fire staged against this hex \u{2014} resolve it in the tray.",
-                    crate::ui::palette::TEXT_MUTED,
-                )
-            } else {
-                (
-                    "These units have already allocated their fire this sub-phase (\u{a7}6.41).",
-                    crate::ui::palette::REFUSED,
-                )
-            };
+    // With the selection's fire already staged on this hex (the usual case
+    // right after the click), the card details that staged attack -- the
+    // whole combined shot -- as a confirmation.
+    let staged_here = allocated.iter().find(|a| {
+        a.target_hex == target && a.all_firing_units().iter().any(|u| group.units.contains(u))
+    });
+    // Whether the click joins an attack already staged here (§6.14).
+    let joins_staged = !attacks.is_empty() && allocated.iter().any(|a| a.target_hex == target);
+    let Some(attack) = attacks.first().or(staged_here) else {
+        if let Ok(ctx) = contexts.ctx_mut() {
             crate::ui::passive_stacked_card(
                 ctx,
                 &mut layout,
                 egui::Id::new("fire_preview_refused"),
                 crate::ui::frames::card(crate::ui::palette::CARD_FIRE),
                 |ui| {
-                    crate::rulebook::refs_label(ui, text, color, 12.0);
+                    crate::rulebook::refs_label(
+                        ui,
+                        "These units have already allocated their fire this sub-phase (\u{a7}6.41).",
+                        crate::ui::palette::REFUSED,
+                        12.0,
+                    );
                 },
             );
         }
         return;
     };
+    let is_staged_view = attacks.is_empty();
     // The group's firer hex; the representative weapon comes from the first
     // attack's own firers below (kind may differ per attack, §6.42).
     let firer_hex = group.firer_hex;
@@ -1017,6 +1302,18 @@ pub fn fire_combat_preview_ui(
                 crate::ui::palette::CARD_TITLE,
                 format!("{kind_str} at ({},{})", target.q, target.r,),
             );
+            if is_staged_view {
+                ui.label(crate::ui::text::note(
+                    "Staged \u{2014} resolve it in the tray.",
+                ));
+            } else if joins_staged {
+                crate::rulebook::refs_label(
+                    ui,
+                    "Joins the attack staged on this hex (\u{a7}6.14): the combined fire below.",
+                    crate::ui::palette::PANEL_DIM,
+                    11.0,
+                );
+            }
             // A whole-tile selection with mixed weapons splits into several
             // attacks (§6.42) -- note the ones the preview isn't detailing.
             if attacks.len() > 1 {
@@ -1369,32 +1666,146 @@ mod tests {
         (gs, group, target)
     }
 
+    /// One click fires the whole named gunboat -- its artillery and its
+    /// Maxims at one hex (§2.32, §6.14); detached in the tray, the Maxims
+    /// come with the next click on their own.
     #[test]
-    fn a_click_takes_the_artillery_then_the_maxims_then_nothing_new() {
+    fn a_click_takes_both_weapons_and_detached_maxims_come_next() {
         let (gs, group, target) = naser_in_direct_fire();
         let kinds = fire_group_kinds(&gs, &group);
         let naser = UnitId::BritishBoats_3_0;
 
-        // Nothing allocated: the artillery (the main weapon) first.
         let first = click_attacks(&gs, &group, &kinds, target, &[]);
         assert_eq!(first.len(), 1);
         assert_eq!(first[0].firers, vec![naser]);
+        assert_eq!(first[0].gunboat_maxims, vec![naser]);
         assert!(!uses_allocated_weapon(&first[0], &[]));
+        // Nothing left unfired to remind the player of.
+        let staged = crate::fire_allocation::FireAllocationState {
+            attacks: first.clone(),
+            ..Default::default()
+        };
+        assert!(crate::fire_allocation::unfired_gunboat_maxims(&gs, &staged).is_empty());
 
-        // The artillery allocated: the Maxims stand in (§2.32) -- what the
-        // hover preview must show, not the spent artillery.
-        let second = click_attacks(&gs, &group, &kinds, target, &first);
+        // "Fire the Maxims elsewhere": the artillery stays, the Maxims are
+        // free -- and the tray says so.
+        let artillery = crate::fire_allocation::without_own_maxims(&gs, &first[0])
+            .expect("the gunboat's own Maxims");
+        assert_eq!(artillery.firers, vec![naser]);
+        assert!(artillery.gunboat_maxims.is_empty());
+        let staged = crate::fire_allocation::FireAllocationState {
+            attacks: vec![artillery.clone()],
+            ..Default::default()
+        };
+        assert_eq!(
+            crate::fire_allocation::unfired_gunboat_maxims(&gs, &staged),
+            vec![naser]
+        );
+        let second = click_attacks(
+            &gs,
+            &group,
+            &kinds,
+            target,
+            std::slice::from_ref(&artillery),
+        );
         assert_eq!(second.len(), 1);
         assert!(second[0].firers.is_empty());
         assert_eq!(second[0].gunboat_maxims, vec![naser]);
-        assert!(!uses_allocated_weapon(&second[0], &first));
 
-        // Both allocated: whatever a click would offer is already spent, so
-        // the preview has no shot to show (and the click is refused).
-        let both: Vec<FireAttack> = first.iter().chain(&second).cloned().collect();
-        let third = click_attacks(&gs, &group, &kinds, target, &both);
-        assert!(!third.is_empty());
-        assert!(third.iter().all(|a| uses_allocated_weapon(a, &both)));
+        // Everything allocated: whatever a click would offer is spent.
+        let third = click_attacks(&gs, &group, &kinds, target, &first);
+        assert!(third.iter().all(|a| uses_allocated_weapon(a, &first)));
+    }
+
+    /// The hover preview of a second firer shows the attack it joins
+    /// (§6.14): the staged firers' factors and its own, together.
+    #[test]
+    fn the_preview_shows_the_staged_attack_it_joins() {
+        let (mut gs, _, target) = naser_in_direct_fire();
+        let sultan = UnitId::ALL
+            .iter()
+            .copied()
+            .find(|&id| {
+                id != UnitId::BritishBoats_3_0
+                    && omdurman_rules::unit_profiles::profile_for_unit(id).is_some_and(|p| {
+                        matches!(p.identity, omdurman_rules::UnitIdentity::AngloEgyptianGunboat(gb) if gb.has_howitzer())
+                    })
+            })
+            .expect("a second named gunboat");
+        gs.units.push(UnitPlacement {
+            id: sultan,
+            position: HexCoord::new(0, 1),
+            profile: omdurman_rules::unit_profiles::profile_for_unit(sultan).unwrap(),
+            state: UnitState::default(),
+        });
+        let naser = UnitId::BritishBoats_3_0;
+        let staged = omdurman_rules::effects::build_fire_attack_from(
+            &gs,
+            HexCoord::new(0, 0),
+            &[naser],
+            target,
+            FireKind::Direct,
+        )
+        .expect("Abu Klea fires");
+        let joining = omdurman_rules::effects::build_fire_attack_from(
+            &gs,
+            HexCoord::new(0, 1),
+            &[sultan],
+            target,
+            FireKind::Direct,
+        )
+        .expect("the second boat fires");
+        let shown = preview_attack(&gs, &joining, std::slice::from_ref(&staged));
+        let mut both = vec![naser, sultan];
+        both.sort_unstable();
+        assert_eq!(shown.firers, both);
+        // Nothing staged there: the newcomer alone.
+        assert_eq!(preview_attack(&gs, &joining, &[]), joining);
+    }
+
+    /// A refusal names what blocks and how far the weapon reaches, weapon
+    /// by weapon when they differ (§6.13, §6.22, §6.3, §6.64).
+    #[test]
+    fn a_refusal_says_why_per_weapon() {
+        let (mut gs, _, _) = naser_in_direct_fire();
+        // Spears reach one hex.
+        let baggara = UnitId::Baggara_0_0;
+        gs.units.push(UnitPlacement {
+            id: baggara,
+            position: HexCoord::new(0, 3),
+            profile: omdurman_rules::unit_profiles::profile_for_unit(baggara).unwrap(),
+            state: UnitState::default(),
+        });
+        let rifles = UnitId::BritishArmy_0_0;
+        gs.units.push(UnitPlacement {
+            id: rifles,
+            position: HexCoord::new(0, 5),
+            profile: omdurman_rules::unit_profiles::profile_for_unit(rifles).unwrap(),
+            state: UnitState::default(),
+        });
+        gs.active_player = Player::Dervish;
+        let reason = fire_refusal_reason(&gs, &[baggara], HexCoord::new(0, 5));
+        assert!(
+            reason.contains("out of range") && reason.contains("spears fire at 1 hex"),
+            "{reason}"
+        );
+        // Howitzers: 4 to 10 hexes.
+        gs.active_player = Player::AngloEgyptian;
+        gs.phase = Phase::OffensiveFire(FireSubPhase::MaximSecondAndHowitzer);
+        let reach = weapon_reach(
+            &gs,
+            UnitId::BritishBoats_3_0,
+            omdurman_rules::FireMount::Main,
+            FireKind::Howitzer,
+        );
+        assert_eq!(
+            reach.as_deref(),
+            Some("howitzers fire at 4 to 10 hexes (§6.64)")
+        );
+        // A disrupted gunboat says so rather than nothing.
+        gs.units[0].state.disrupted = true;
+        let reason = fire_refusal_reason(&gs, &[UnitId::BritishBoats_3_0], HexCoord::new(3, 0));
+        assert!(reason.contains("disrupted"), "{reason}");
     }
 }
 
@@ -1527,6 +1938,66 @@ mod fort_aim_tests {
         let at_fort = omdurman_rules::effects::aim_at_fort(&gs, &attack).expect("artillery");
         let rolls = super::fort_destroying_rolls(&gs, &at_fort);
         assert!((1..=10).contains(&rolls), "{rolls}");
+    }
+
+    /// Fire joining a shot staged at the fort itself takes the fort as its
+    /// aim too (artillery), or is refused with the reason (anything else)
+    /// -- staged as a second attack on the hex, the whole allocation would
+    /// be refused at Resolve (§6.14, §6.62).
+    #[test]
+    fn fire_joining_a_fort_aimed_shot_takes_its_aim_or_says_why() {
+        let mut gs = omdurman_rules::effects::GameState::new(Scenario::Campaign);
+        gs.phase = Phase::OffensiveFire(omdurman_rules::FireSubPhase::DirectFire);
+        gs.active_player = Player::AngloEgyptian;
+        let find = |want: fn(&omdurman_rules::UnitIdentity) -> bool| -> Vec<UnitId> {
+            UnitId::ALL
+                .iter()
+                .copied()
+                .filter(|id| {
+                    omdurman_rules::unit_profiles::profile_for_unit(*id)
+                        .is_some_and(|p| want(&p.identity))
+                })
+                .collect()
+        };
+        let fort = find(|i| matches!(i, omdurman_rules::UnitIdentity::DervishFort))[0];
+        let batteries = find(|i| matches!(i, omdurman_rules::UnitIdentity::AngloEgyptianArtillery));
+        let rifles = UnitId::BritishArmy_0_0;
+        let target = HexCoord::new(1, 0);
+        for (id, hex) in [
+            (batteries[0], HexCoord::new(0, 0)),
+            (batteries[1], HexCoord::new(0, 1)),
+            (rifles, HexCoord::new(2, 0)),
+            (fort, target),
+            (UnitId::Baggara_0_0, target),
+        ] {
+            gs.units.push(UnitPlacement {
+                id,
+                position: hex,
+                profile: omdurman_rules::unit_profiles::profile_for_unit(id).unwrap(),
+                state: Default::default(),
+            });
+        }
+        let shot = |firer: UnitId, from: HexCoord| {
+            omdurman_rules::effects::build_fire_attack_from(
+                &gs,
+                from,
+                &[firer],
+                target,
+                FireKind::Direct,
+            )
+            .expect("may fire")
+        };
+        let staged =
+            omdurman_rules::effects::aim_at_fort(&gs, &shot(batteries[0], HexCoord::new(0, 0)))
+                .expect("artillery aims at the fort");
+        let joined =
+            super::align_and_combine(&gs, &staged, &shot(batteries[1], HexCoord::new(0, 1)))
+                .expect("a battery joins at the fort");
+        assert!(joined.at_fort);
+        assert_eq!(joined.firers.len(), 2);
+        let refused = super::align_and_combine(&gs, &staged, &shot(rifles, HexCoord::new(2, 0)))
+            .expect_err("rifles may not fire at a fort");
+        assert!(refused.contains("only artillery"), "{refused}");
     }
 }
 

@@ -301,6 +301,19 @@ fn next_step(
                 .color(crate::ui::palette::RAIL_TEXT)
                 .size(13.0),
         );
+        // One counter of a stack: say how to reach the others.
+        if selected_ids.len() == 1 {
+            let mates = state.0.units_in_hex(unit.position).len();
+            if mates > 1 {
+                ui.colored_label(
+                    crate::ui::palette::RAIL_DIM,
+                    format!(
+                        "1 of {mates} counters here: click it again for the next one, \
+                         double-click the hex for the whole stack."
+                    ),
+                );
+            }
+        }
         if selected_ids.len() > 1 {
             // Every member, clickable: narrows the selection to that counter
             // (a unit buried in a stack is otherwise a few pixels of edge).
@@ -423,11 +436,9 @@ fn next_step(
         // budget before it (for a stack, its slowest member).
         let left_after = selected_ids
             .iter()
-            .map(|&id| state.0.remaining_movement(id))
+            .map(|&id| crate::picker::left_after_path(&state.0, id, movement_path))
             .min()
-            .map_or(String::new(), |left| {
-                format!(", {} left after", (left - total).max(0))
-            });
+            .map_or(String::new(), |left| format!(", {left} left after"));
         ui.label(
             egui::RichText::new(format!(
                 "{legs} step{}, {total} MP total{left_after}",
@@ -509,7 +520,10 @@ fn collect_hints(
         let s = if choice.count == 1 { "" } else { "s" };
         out.push(hint(
             &format!("Choose {} unit{s} to lose in the panel", choice.count),
-            Some("§7.7: the owner picks the units a combat result takes".into()),
+            Some(format!(
+                "{}: the owner picks the units a combat result takes",
+                crate::losses::pending_loss_rule(gs)
+            )),
         ));
         return;
     }
@@ -533,6 +547,15 @@ fn collect_hints(
                 out.push(hint("Pick a counter above, then a highlighted hex", None));
             } else {
                 out.push(hint("Nothing (more) to deploy \u{2014} press Ready", None));
+            }
+            // FALL OF KHARTOUM: the set-up rings come in two colours; say
+            // what the amber ones mean (they went unexplained).
+            if gs.scenario == omdurman_types::Scenario::FallOfKhartoum && cx.tray_open {
+                out.push(hint(
+                    "Green rings: set up here. Amber rings: legal too, but north of the Blue \
+                     Nile, where no land route reaches Khartoum",
+                    Some("§5.22: land units never cross the Nile".into()),
+                ));
             }
             // The Dervish set-up's own tasks, while still to do (§10.11 the
             // mines are secret: never hinted to the other side).
@@ -613,7 +636,7 @@ fn collect_hints(
                 if fire_targets.side_can_breach(gs) {
                     out.push(hint(
                         "Your artillery can fire at the wall to breach it: select a battery, \
-                         then pick a wall in the Artillery Breach card",
+                         then \"Aim at a wall\u{2026}\" in the Artillery Breach card",
                         Some("§6.63".into()),
                     ));
                 } else {
@@ -666,15 +689,28 @@ fn collect_hints(
                     out.push(hint("Retreat before melee (defender)", None));
                 }
             } else if !side_can_melee(gs) {
-                out.push(hint(
-                    "No enemy adjacent to a unit that may melee \u{2014} end the phase (E)",
-                    None,
-                ));
+                // An enemy may stand next to a unit across a khor, wall or
+                // hedge, or next to guns only: say which, not "no enemy".
+                let side: Vec<_> = gs
+                    .units
+                    .iter()
+                    .filter(|u| u.profile.identity.owner() == gs.phase_player())
+                    .map(|u| u.id)
+                    .collect();
+                out.push(match crate::melee::no_melee_reason(gs, &side) {
+                    Some(reason) => {
+                        hint("No unit may melee \u{2014} end the phase (E)", Some(reason))
+                    }
+                    None => hint(
+                        "No enemy adjacent to a unit that may melee \u{2014} end the phase (E)",
+                        None,
+                    ),
+                });
             } else if selected.is_some() {
                 out.push(match melee_target_count(gs, picker, placed_units) {
                     Some(0) | None => hint(
                         "No enemy this selection may melee \u{2014} pick another stack",
-                        None,
+                        crate::melee::no_melee_reason(gs, &selected_unit_ids(picker, placed_units)),
                     ),
                     Some(n) => hint(
                         "Click an adjacent enemy (outlined) to melee it",
@@ -857,13 +893,37 @@ fn movement_label(
     } else {
         String::new()
     };
+    // The allowance in force: at night the Anglo-Egyptians move at half
+    // (§8.1) -- the printed figure read "Move 9 MP" for a unit with 4.
+    let unit = gs.find_unit(id);
+    let night = |printed: u16, now: u16| {
+        if now < printed {
+            format!(" (printed {printed}, halved at night \u{00a7}8.1)")
+        } else {
+            String::new()
+        }
+    };
     match movement {
-        omdurman_rules::UnitMovement::Land(a) => format!("{} MP{spent}", a.value()),
-        omdurman_rules::UnitMovement::Gunboat(g) => format!(
-            "{} up / {} down MP{spent}",
-            g.upstream.value(),
-            g.downstream.value(),
-        ),
+        omdurman_rules::UnitMovement::Land(a) => {
+            let now = unit.map_or(a.value(), |u| {
+                omdurman_rules::effective_movement_at_night(
+                    *a,
+                    u.profile.identity.owner(),
+                    gs.day_night,
+                )
+                .value()
+            });
+            format!("{now} MP{}{spent}", night(a.value(), now))
+        }
+        omdurman_rules::UnitMovement::Gunboat(g) => {
+            let now = unit.and_then(|u| gs.gunboat_allowances(u)).unwrap_or(*g);
+            format!(
+                "{} up / {} down MP{}{spent}",
+                now.upstream.value(),
+                now.downstream.value(),
+                night(g.downstream.value(), now.downstream.value()),
+            )
+        }
         omdurman_rules::UnitMovement::Immobile => "immobile".into(),
     }
 }

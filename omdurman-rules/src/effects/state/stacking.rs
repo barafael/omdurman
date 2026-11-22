@@ -79,8 +79,8 @@ pub fn stacking_rule(occupants: &[&UnitPlacement]) -> Result<(), crate::Stacking
         return Err(StackingError::OverLimit);
     }
 
-    // §5.52: no two different Dervish stacking groups (tribes, plus the
-    // artillery as its own group) in the same hex.
+    // §5.52: no two different Dervish tribes in the same hex (the
+    // artillery is no tribe and mixes with any).
     let mut seen_group: Option<crate::DervishStackingGroup> = None;
     for u in occupants {
         if let Some(group) = u.profile.identity.dervish_stacking_group() {

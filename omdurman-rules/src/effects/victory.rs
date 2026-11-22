@@ -38,14 +38,15 @@ pub(crate) fn eliminate_unit(state: &mut GameState, unit_id: UnitId, cause: Elim
                 lost.push(u.id);
             }
         }
-        if let Some(TransportState::Loaded { unit, gunboat, .. }) = state.friendlies_transport
-            && gunboat == unit_id
-        {
-            if !lost.contains(&unit) {
+        for t in &state.friendlies_transports {
+            let TransportState::Loaded { unit, gunboat, .. } = *t;
+            if gunboat == unit_id && !lost.contains(&unit) {
                 lost.push(unit);
             }
-            state.friendlies_transport = None;
         }
+        state.friendlies_transports.retain(
+            |t| !matches!(*t, TransportState::Loaded { gunboat, .. } if gunboat == unit_id),
+        );
         for id in lost {
             take_off_the_board(state, id, ElimCause::LostWithTransport);
         }

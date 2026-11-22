@@ -460,11 +460,11 @@ fn with_passenger(state: &mut GameState) {
         );
         state.units[j].position = carrier.position;
         state.units[j].state.loaded_on = Some(carrier.id);
-        state.friendlies_transport = Some(TransportState::Loaded {
+        state.friendlies_transports = vec![TransportState::Loaded {
             unit: state.units[j].id,
             gunboat: carrier.id,
             since: state.current_turn,
-        });
+        }];
         assume(stacking_ok(state));
     }
 }
@@ -519,7 +519,7 @@ fn same_rule_state(a: &GameState, b: &GameState) -> bool {
         && a.eliminated == b.eliminated
         && a.game_over == b.game_over
         && a.zariba_hexsides == b.zariba_hexsides
-        && a.friendlies_transport == b.friendlies_transport
+        && a.friendlies_transports == b.friendlies_transports
         && a.optional_rules == b.optional_rules
         && a.mines == b.mines
         && chain(a) == chain(b)

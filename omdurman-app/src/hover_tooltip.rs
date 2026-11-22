@@ -393,6 +393,28 @@ fn route_hint(
                 "Route here: {cost} MP \u{2014} only the faster units get there; those with \
                  {slowest} MP stop on the way (\u{00a7}5.11)."
             ),
+            // A gunboat's onward MP depend on the route: once it runs
+            // upstream the smaller allowance caps the turn (§5.24) -- the
+            // downstream figure read "6 left after" for a boat with 1.
+            Some((route, cost)) if gunboat.is_some() => {
+                let mut at = from;
+                let upstream = route.iter().any(|&hex| {
+                    let up = crate::picker::leg_is_upstream(gs, at, hex);
+                    at = hex;
+                    up
+                });
+                let left = gunboat.map_or(slowest, |g| g.left(upstream));
+                format!(
+                    "Route here: {cost} MP, {} left after \u{2014} click to plot it \
+                     (\u{00a7}5.11{}).",
+                    (left - cost).max(0),
+                    if upstream {
+                        ", upstream \u{00a7}5.24"
+                    } else {
+                        ""
+                    }
+                )
+            }
             Some((_, cost)) => format!(
                 "Route here: {cost} MP, {} left after \u{2014} click to plot it (\u{00a7}5.11).",
                 slowest - cost
@@ -522,7 +544,7 @@ fn movement_hint(
                     "End of the plotted route: {} MP, {} left after \u{2014} Enter confirms \
                      (§5.11).",
                     movement_path.cost_so_far,
-                    (gs.remaining_movement(unit_id) - movement_path.cost_so_far).max(0),
+                    crate::picker::left_after_path(gs, unit_id, movement_path),
                 ));
             }
             // A hex the route already crosses.

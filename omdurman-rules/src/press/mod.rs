@@ -311,6 +311,9 @@ pub fn deaths(
         }
     }
     let mut last: Option<HexCoord> = None;
+    // Where the last advance after combat went: a leader overrun there
+    // (§6.51) fell in that hex.
+    let mut advanced_to: Option<HexCoord> = None;
     let mut out = Vec::new();
     for event in &summary.events {
         match event {
@@ -318,15 +321,28 @@ pub fn deaths(
             E::MeleeCombat { hex, .. } => last = Some(*hex),
             E::HowitzerImpact { at, .. } => last = Some(*at),
             E::WallBreach { hexside, .. } => last = Some(hexside.a),
-            E::UnitEliminated { unit, .. } => {
-                let at = named
-                    .iter()
-                    .find(|(u, _)| u == unit)
-                    .map(|(_, h)| *h)
-                    .or(last);
+            E::AdvanceAfterCombat { to, .. } => advanced_to = Some(*to),
+            E::UnitEliminated { unit, cause } => {
+                let named_at = named.iter().find(|(u, _)| u == unit).map(|(_, h)| *h);
+                // An overrun leader did not fall at the last combat -- a
+                // movement overrun has no combat at all, and the last one
+                // may lie across the board (the Sirdar "killed at Omdurman"
+                // beside the Zariba): the advance that overran him, or
+                // nowhere named.
+                let at = if *cause == crate::effects::ElimCause::Overrun {
+                    named_at.or(advanced_to)
+                } else {
+                    named_at.or(last)
+                };
                 out.push((*unit, at));
             }
             _ => {}
+        }
+        if !matches!(
+            event,
+            E::AdvanceAfterCombat { .. } | E::UnitEliminated { .. }
+        ) {
+            advanced_to = None;
         }
     }
     out
@@ -616,6 +632,61 @@ pub fn field_force(state: &GameState, player: omdurman_types::Player) -> Vec<Hex
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A leader overrun by movement fell where he stood, not at the turn's
+    /// last combat across the board (the Sirdar "killed at Omdurman" beside
+    /// the Zariba); one overrun by an advance fell in the hex advanced into.
+    #[test]
+    fn an_overrun_leader_did_not_fall_at_the_last_combat() {
+        use crate::effects::ElimCause;
+        use crate::turn_summary::{TurnEventRecord as E, TurnSummary};
+        let kitchener = crate::UnitId::ALL
+            .iter()
+            .copied()
+            .find(|id| {
+                crate::unit_profiles::profile_for_unit(*id).is_some_and(|p| {
+                    p.identity
+                        == crate::UnitIdentity::AngloEgyptianLeader(crate::BritishLeader::Kitchener)
+                })
+            })
+            .expect("Kitchener's counter");
+        let far = HexCoord::new(30, 38);
+        let fire = E::FireCombat {
+            attacker: crate::Player::Dervish,
+            firers: Vec::new(),
+            target: far,
+            roll: crate::DieRoll::One,
+            modifiers: Vec::new(),
+            total_modifier: 0,
+            result: crate::CombatResult::NoEffect,
+            kind: crate::FireKind::Direct,
+            eliminated: Vec::new(),
+        };
+        let overrun = E::UnitEliminated {
+            unit: kitchener,
+            cause: ElimCause::Overrun,
+        };
+        let summary = |events: Vec<E>| TurnSummary {
+            turn: crate::GameTurnIndex::new(3),
+            time: crate::turn_track::GameTime::Noon,
+            day_night: crate::DayNight::Day,
+            first_player: crate::Player::AngloEgyptian,
+            events,
+        };
+        assert_eq!(
+            deaths(&summary(vec![fire.clone(), overrun.clone()])),
+            vec![(kitchener, None)]
+        );
+        let advance = E::AdvanceAfterCombat {
+            unit: crate::UnitId::ALL[0],
+            from: HexCoord::new(35, 17),
+            to: HexCoord::new(36, 18),
+        };
+        assert_eq!(
+            deaths(&summary(vec![fire, advance, overrun])),
+            vec![(kitchener, Some(HexCoord::new(36, 18)))]
+        );
+    }
 
     #[test]
     fn places_name_the_map() {

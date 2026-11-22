@@ -3,8 +3,8 @@ use super::*;
 /// Apply a Friendlies-transport action (rulebook §5.21), validated by
 /// [`GameState::can_friendlies_transport`].
 ///
-/// * `Load`: the unit goes aboard -- onto its gunboat's hex -- and the
-///   mission starts this turn.
+/// * `Load`: the unit goes aboard -- onto its gunboat's hex -- and its
+///   mission starts this turn (other missions may be under way).
 /// * `Disembark`: the unit lands on the chosen west-bank hex, paying its
 ///   terrain cost like any first hex entered, and the mission ends.
 pub fn apply_friendlies_transport(
@@ -19,10 +19,11 @@ pub fn apply_friendlies_transport(
                 u.position = at;
                 u.state.loaded_on = Some(gunboat);
             }
-            state.friendlies_transport = Some(TransportState::Loaded {
+            let since = state.current_turn;
+            state.friendlies_transports.push(TransportState::Loaded {
                 unit,
                 gunboat,
-                since: state.current_turn,
+                since,
             });
         }
         FriendliesAction::Disembark { unit, to, .. } => {
@@ -42,7 +43,9 @@ pub fn apply_friendlies_transport(
             if state.hex_in_enemy_zoc(to, owner, kind) {
                 state.zoc_stopped_this_turn.push(unit);
             }
-            state.friendlies_transport = None;
+            state.friendlies_transports.retain(
+                |t| !matches!(*t, TransportState::Loaded { unit: aboard, .. } if aboard == unit),
+            );
             state.observations.push(Observation::FriendliesDisembarked {
                 unit_id: unit,
                 at: to,

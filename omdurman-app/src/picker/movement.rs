@@ -109,7 +109,7 @@ impl GunboatBudget {
                 || movement_path
                     .legs
                     .iter()
-                    .any(|&(a, b)| step_is_upstream(gs, a, b)),
+                    .any(|&(a, b)| leg_is_upstream(gs, a, b)),
         })
     }
 
@@ -120,6 +120,39 @@ impl GunboatBudget {
         } else {
             self.down_left
         }
+    }
+}
+
+/// Whether a plotted gunboat leg counts as upstream movement (§5.24): a
+/// step against the current, or the §9.345 off-board crossing between the
+/// two Nile mouths, which the engine prices as six upstream MP.
+pub(crate) fn leg_is_upstream(
+    gs: &omdurman_rules::effects::GameState,
+    a: HexCoord,
+    b: HexCoord,
+) -> bool {
+    step_is_upstream(gs, a, b) || gs.is_nile_mouth_crossing(a, b)
+}
+
+/// The MP `uid` has left once the plotted `path` is moved: a land unit's
+/// remaining allowance less the path, a gunboat's under the allowance the
+/// path leaves it -- the upstream one once it has gone upstream this turn
+/// or does on this path (§5.24, the §9.345 crossing included). The
+/// downstream figure read "10 left after" for a boat with 4.
+pub(crate) fn left_after_path(
+    gs: &omdurman_rules::effects::GameState,
+    uid: omdurman_rules::UnitId,
+    path: &MovementPath,
+) -> i16 {
+    let gunboat = gs.find_unit(uid).and_then(|u| gs.gunboat_allowances(u));
+    match gunboat {
+        Some(g) if gs.movement_blocker(uid).is_none() => {
+            let upstream = gs.gunboats_upstream_this_turn.contains(&uid)
+                || path.legs.iter().any(|&(a, b)| leg_is_upstream(gs, a, b));
+            let cap = if upstream { g.upstream } else { g.downstream };
+            (cap.value() as i16 - gs.mp_spent(uid) - path.cost_so_far).max(0)
+        }
+        _ => (gs.remaining_movement(uid) - path.cost_so_far).max(0),
     }
 }
 

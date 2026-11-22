@@ -143,7 +143,10 @@ pub(crate) fn melee_outcome(
     // rule, not a melee rule.)
     let (forts, garrison): (Vec<UnitId>, Vec<UnitId>) =
         attack.defenders.iter().copied().partition(is_fort);
-    let mut def_tiers = vec![super::fire::leaders_last(state, &garrison)];
+    // An Anglo-Egyptian leader is in no tier: no combat result takes him
+    // (§6.51, §9.346), so he is neither a loss the owner may choose nor one
+    // that uses up an elimination.
+    let mut def_tiers = vec![super::fire::casualty_candidates(state, &garrison)];
     if infantry_attack {
         def_tiers.push(forts);
     }
@@ -172,8 +175,8 @@ pub(crate) fn melee_outcome(
         .map(|u| u.id)
         .collect();
     let att_tiers = vec![
-        super::fire::leaders_last(state, &att_units),
-        super::fire::leaders_last(state, &hex_mates),
+        super::fire::casualty_candidates(state, &att_units),
+        super::fire::casualty_candidates(state, &hex_mates),
     ];
     MeleeOutcome {
         attacker_total,
@@ -622,10 +625,16 @@ pub fn mandatory_melee_modifiers(
         }
     };
     // §9.232: "−2 (instead of +2) melee modifier to Dervish units melee
-    // attacking an entrenched unit" -- the trench replaces the standard +2.
+    // attacking an entrenched unit" -- the trench replaces the standard +2,
+    // for an attack across it (the hexside between the two hexes is a
+    // trench): from inside the Zariba the trench is behind the defenders.
     let attacker_modifiers = if attack.attacker_player == Player::Dervish
         && state.is_zariba_entrenched(attack.defender_hex)
-    {
+        && state.hexside_effective_is(
+            attack.attacker_hex,
+            attack.defender_hex,
+            omdurman_types::HexsideKind::is_zariba_trench,
+        ) {
         vec![MeleeModifier::DervishVsTrenchedDefender]
     } else {
         vec![standard(attack.attacker_player, &attack.attackers)]

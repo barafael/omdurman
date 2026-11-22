@@ -143,7 +143,11 @@ impl Plugin for DispatchPlugin {
             // Combat resolutions (FireResolved / MeleeResolved) are surfaced
             // separately by the Combat Resolution Card; this listener handles
             // every other observation kind.
-            .add_systems(PreUpdate, queue_observation_dispatches);
+            .add_systems(PreUpdate, queue_observation_dispatches)
+            .add_systems(
+                Update,
+                announce_quiet_events.run_if(in_state(crate::state::Screen::Board)),
+            );
         // Dev: keep demo slips on screen for headless verification
         // (OMDURMAN_DISPATCH=1) by re-seeding whenever the queue empties.
         if std::env::var("OMDURMAN_DISPATCH").is_ok() {
@@ -172,7 +176,33 @@ fn queue_observation_dispatches(
     game_state: Res<crate::GameStateResource>,
 ) {
     let gs = &game_state.0;
-    for ev in reader.read() {
+    let events: Vec<&events::ObservationEvent> = reader.read().collect();
+    // A breach victim the "Wall Breached" slip already names (no choice
+    // was needed). One its owner chose later gets its own casualty slip --
+    // it was silent: the player never learnt which unit fell (§6.63).
+    let named_by_breach: Vec<omdurman_rules::UnitId> = events
+        .iter()
+        .filter_map(|ev| match &ev.observation {
+            omdurman_rules::effects::Observation::WallBreached {
+                adjacent_eliminated,
+                ..
+            } => *adjacent_eliminated,
+            _ => None,
+        })
+        .collect();
+    for ev in events {
+        if let omdurman_rules::effects::Observation::UnitEliminated {
+            id,
+            cause: omdurman_rules::effects::ElimCause::WallBreach,
+            ..
+        } = &ev.observation
+            && !named_by_breach.contains(id)
+        {
+            if let Some((header, body)) = format_observation(&ev.observation, gs) {
+                dispatches.push(header, body);
+            }
+            continue;
+        }
         // Combat results live on the Combat Resolution Card alone: the
         // resolution itself, its casualties ("lost: ..."), and the advance it
         // opens. No slip repeats them.
@@ -196,6 +226,136 @@ fn queue_observation_dispatches(
             dispatches.push(header, body);
         }
     }
+}
+
+/// A turn's record of events the engine reports no observation for, as
+/// slips: a §8.2 desertion (who and how many) and the §5.3 Zariba the
+/// builders finished at the end of their turn. They changed the board in
+/// silence -- the desertion showed only as a rail counter.
+pub(crate) fn turn_event_slip(
+    event: &omdurman_rules::turn_summary::TurnEventRecord,
+) -> Option<(String, String)> {
+    use omdurman_rules::turn_summary::TurnEventRecord;
+    match event {
+        TurnEventRecord::Desertion { units, roll } => {
+            let n = units.len();
+            let who =
+                crate::combat_ui::tally_names(units.iter().map(|id| id.to_string()).collect())
+                    .join(", ");
+            Some((
+                "Desertion".into(),
+                if n == 0 {
+                    format!(
+                        "Desertion roll {}: no Dervish unit deserts (§8.2).",
+                        roll.value()
+                    )
+                } else {
+                    format!(
+                        "Desertion roll {}: {n} Dervish unit{} desert{} in the night: {who} (§8.2).",
+                        roll.value(),
+                        if n == 1 { "" } else { "s" },
+                        if n == 1 { "s" } else { "" },
+                    )
+                },
+            ))
+        }
+        TurnEventRecord::ZaribaBuilt { hexsides, complete } => Some((
+            "Engineer Dispatch".into(),
+            format!(
+                "The builders finished {hexsides} Zariba hexside{}{} (§5.3).",
+                if *hexsides == 1 { "" } else { "s" },
+                if *complete {
+                    ": the Zariba is complete"
+                } else {
+                    ""
+                },
+            ),
+        )),
+        _ => None,
+    }
+}
+
+/// Anglo-Egyptian gunboats that lost their engines, and where they lie --
+/// to tell their §10.12 drift (they move no other way).
+fn disabled_gunboats(
+    gs: &omdurman_rules::effects::GameState,
+) -> std::collections::BTreeMap<omdurman_rules::UnitId, omdurman_types::HexCoord> {
+    gs.units
+        .iter()
+        .filter(|u| u.state.engines_lost)
+        .map(|u| (u.id, u.position))
+        .collect()
+}
+
+/// What [`announce_quiet_events`] saw last: the turn and its record's
+/// length, the side to act, and the disabled gunboats' hexes.
+#[derive(Default)]
+pub(crate) struct QuietEventCursor {
+    turn: Option<omdurman_rules::GameTurnIndex>,
+    seen: usize,
+    active: Option<omdurman_types::Player>,
+    drifting: std::collections::BTreeMap<omdurman_rules::UnitId, omdurman_types::HexCoord>,
+}
+
+/// Slips for what changes the board without an engine observation: the
+/// §10.12 drift of an engineless gunboat at the start of the
+/// Anglo-Egyptian turn, a §8.2 desertion, a §5.3 Zariba built. Only for
+/// steps of the live game (one new turn record at a time, the turn passing
+/// to the Anglo-Egyptians): a rebuild or a return from review resyncs
+/// silently.
+fn announce_quiet_events(
+    game_state: Res<crate::GameStateResource>,
+    mut dispatches: ResMut<Dispatches>,
+    mut cursor: Local<QuietEventCursor>,
+) {
+    if !game_state.is_changed() {
+        return;
+    }
+    let gs = &game_state.0;
+    let same_turn = cursor.turn == Some(gs.current_turn);
+    if same_turn && gs.turn_events.len() >= cursor.seen && gs.turn_events.len() - cursor.seen <= 8 {
+        for event in &gs.turn_events[cursor.seen..] {
+            if let Some((header, body)) = turn_event_slip(event) {
+                dispatches.push(header, body);
+            }
+        }
+    } else if !same_turn
+        && let Some(summary) = gs.turn_summaries.last()
+        && cursor.turn == Some(summary.turn)
+        && summary.events.len() >= cursor.seen
+        && summary.events.len() - cursor.seen <= 8
+    {
+        // The turn just ended: what came after our last look (a Zariba
+        // finished at the end of the second player's turn) went into the
+        // turn's summary.
+        for event in &summary.events[cursor.seen..] {
+            if let Some((header, body)) = turn_event_slip(event) {
+                dispatches.push(header, body);
+            }
+        }
+    }
+    let drifting = disabled_gunboats(gs);
+    let turn_passed_to_ae = cursor.active == Some(omdurman_types::Player::Dervish)
+        && gs.active_player == omdurman_types::Player::AngloEgyptian;
+    if turn_passed_to_ae {
+        for (id, to) in &drifting {
+            if let Some(from) = cursor.drifting.get(id)
+                && from != to
+            {
+                dispatches.push(
+                    "River Dispatch",
+                    format!(
+                        "{id}, her engines lost, drifted with the current from {from} to {to} \
+                         (§10.12)."
+                    ),
+                );
+            }
+        }
+    }
+    cursor.turn = Some(gs.current_turn);
+    cursor.seen = gs.turn_events.len();
+    cursor.active = Some(gs.active_player);
+    cursor.drifting = drifting;
 }
 
 /// Draw one slip; returns a section number if the player clicked a `§` link,
@@ -507,10 +667,23 @@ fn format_observation(
             candidates,
         } => {
             let s = if *count == 1 { "" } else { "s" };
+            // The rule the losses fall under: a fire result's (§6.22), a
+            // melee's (§7.7), a breach's (§6.63) -- and what struck, so the
+            // slip does not ask for losses before naming their cause.
+            let (rule, what) = gs
+                .pending_losses
+                .as_ref()
+                .map_or(("§7.7", String::new()), |p| {
+                    (
+                        crate::losses::loss_rule(&p.tail),
+                        format!("{}: ", crate::losses::cause(&p.tail, gs)),
+                    )
+                });
             Some((
                 "Losses".into(),
                 format!(
-                    "The {player} player chooses {count} unit{s} to lose of {} (§7.7).",
+                    "{what}{} {player} player chooses {count} unit{s} to lose of {} ({rule}).",
+                    if what.is_empty() { "The" } else { "the" },
                     candidates.len()
                 ),
             ))
@@ -528,6 +701,34 @@ fn format_observation(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A desertion and a finished Zariba get slips naming what happened --
+    /// both changed the board without a word.
+    #[test]
+    fn a_desertion_and_a_zariba_are_announced() {
+        use omdurman_rules::turn_summary::TurnEventRecord;
+        let (_, body) = turn_event_slip(&TurnEventRecord::Desertion {
+            units: vec![
+                omdurman_rules::UnitId::MulazminI_0_0,
+                omdurman_rules::UnitId::MulazminI_0_1,
+            ],
+            roll: omdurman_rules::DieRoll::Two,
+        })
+        .expect("a slip");
+        assert_eq!(
+            body,
+            "Desertion roll 2: 2 Dervish units desert in the night: 2× Mulazmin (§8.2)."
+        );
+        let (_, body) = turn_event_slip(&TurnEventRecord::ZaribaBuilt {
+            hexsides: 3,
+            complete: true,
+        })
+        .expect("a slip");
+        assert_eq!(
+            body,
+            "The builders finished 3 Zariba hexsides: the Zariba is complete (§5.3)."
+        );
+    }
 
     /// A run of refused clicks leaves only the latest refusal standing
     /// (and every one in the log); other slips stay.

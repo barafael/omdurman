@@ -99,11 +99,13 @@ pub struct GameState {
     pub eliminated: Vec<UnitId>,
     pub game_over: bool,
     pub zariba_hexsides: Vec<HexsideRef>,
-    /// The active "Friendlies" transport mission (§5.21), if any. Single-mission
-    /// at a time: the manual is ambiguous on whether multiple concurrent
-    /// transports are allowed; we model one mission for simplicity.
-    /// `None` when no transport is in progress (or after disembarkation).
-    pub friendlies_transport: Option<TransportState>,
+    /// The "Friendlies" transport missions under way (§5.21), one per unit
+    /// aboard. Several may run at once, and a gunboat may carry several
+    /// units (up to the four-unit stacking limit, §5.51): the manual's
+    /// sequence is per unit ("that unit may load onto (i.e. stack with) the
+    /// gunboat") and limits neither. A mission ends when its unit
+    /// disembarks or goes down with the gunboat.
+    pub friendlies_transports: Vec<TransportState>,
     pub optional_rules: Vec<OptionalRule>,
     pub mines: Vec<MinePlacement>,
     pub chain: Option<ChainPlacement>,
@@ -251,7 +253,7 @@ impl GameState {
             eliminated: Vec::new(),
             game_over: false,
             zariba_hexsides: Vec::new(),
-            friendlies_transport: None,
+            friendlies_transports: Vec::new(),
             optional_rules: Vec::new(),
             mines: Vec::new(),
             chain: None,
@@ -532,7 +534,7 @@ impl GameState {
             eliminated: Vec::new(),
             game_over: false,
             zariba_hexsides: Vec::new(),
-            friendlies_transport: None,
+            friendlies_transports: Vec::new(),
             optional_rules: Vec::new(),
             mines: Vec::new(),
             chain: None,

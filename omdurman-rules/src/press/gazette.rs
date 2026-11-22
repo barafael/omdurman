@@ -419,6 +419,17 @@ pub fn front_page(state: &GameState, telegrams: &[(u8, String)]) -> FrontPage {
             &[("n", &number_word(rec.bands))],
         )));
     }
+    // The score counts every unit eliminated, leaders too (§9.14, §9.24):
+    // "twenty-six bands" beside a count of 27 read as an error when an emir
+    // had also fallen. Say so, and the total the score shows.
+    let chiefs = rec.theirs_lost.len() - rec.bands - rec.works.len();
+    if rec.bands > 0 && chiefs > 0 {
+        losses.push(format!(
+            "With them fell {} of their leaders: {} of the enemy's units in all.",
+            number_word(chiefs),
+            number_word(rec.bands + chiefs)
+        ));
+    }
     if !rec.works.is_empty() {
         losses.push(say(
             L.enemy_works,

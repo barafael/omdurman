@@ -208,6 +208,71 @@ fn selected_melee_group(
         .map(|attacker| (attacker, origin))
 }
 
+/// How telling a melee refusal is: a closed hexside (§7.2, §9.231) or a
+/// spent / busy / disrupted unit says more than a counter that never
+/// melees (§7.4), and that more than a hex out of reach.
+fn refusal_rank(error: &omdurman_rules::effects::RuleError) -> u8 {
+    use omdurman_rules::effects::RuleError as E;
+    match error {
+        E::MeleeBlockedByHexside(..) => 0,
+        E::AlreadyMeleed(_) | E::BusyWithEngineering(_) | E::LoadedOnGunboat(_) => 1,
+        E::Disrupted(_) => 2,
+        E::KindMayNotMelee(_) => 3,
+        E::NoMeleeableEnemy(_) | E::TargetNotAdjacent { .. } => 5,
+        _ => 4,
+    }
+}
+
+/// Why none of `units` may melee `target`: the engine's refusal for the
+/// unit that came closest (see [`refusal_rank`]). `None` when one may.
+pub(crate) fn melee_refusal(gs: &GameState, units: &[UnitId], target: HexCoord) -> Option<String> {
+    let errors: Vec<_> = units.iter().map(|&id| gs.can_melee(id, target)).collect();
+    if errors.iter().any(Result::is_ok) {
+        return None;
+    }
+    errors
+        .into_iter()
+        .filter_map(Result::err)
+        .min_by_key(refusal_rank)
+        .map(|e| e.to_string())
+}
+
+/// Why `units` have no melee target although an enemy stands next to one
+/// of them -- across a khor, a wall or the hedge (§7.2, §9.231), or the
+/// units cannot melee (§7.4, disrupted, spent). `None` when no enemy is
+/// adjacent (nothing to explain) or one of them may melee.
+pub(crate) fn no_melee_reason(gs: &GameState, units: &[UnitId]) -> Option<String> {
+    let mut best: Option<omdurman_rules::effects::RuleError> = None;
+    for &id in units {
+        let Some(unit) = gs.find_unit(id) else {
+            continue;
+        };
+        let enemy = unit.profile.identity.owner().opponent();
+        for hex in unit.position.neighbors() {
+            let enemy_there = gs.units.iter().any(|u| {
+                u.position == hex
+                    && u.profile.identity.owner() == enemy
+                    && u.profile.kind.may_be_melee_attacked()
+            });
+            if !enemy_there || gs.board.is_nile(hex) {
+                continue;
+            }
+            match gs.can_melee(id, hex) {
+                Ok(()) => return None,
+                Err(e)
+                    if best
+                        .as_ref()
+                        .is_none_or(|b| refusal_rank(&e) < refusal_rank(b)) =>
+                {
+                    best = Some(e);
+                }
+                Err(_) => {}
+            }
+        }
+    }
+    best.map(|e| e.to_string())
+}
+
 /// Adjacent enemy-occupied hexes the selected unit may legally melee-attack.
 /// Wall/thorn-hedge hexside blocking (§7.2) is checked inside `can_melee`
 /// via `self.board`.
@@ -383,22 +448,35 @@ pub fn handle_melee_combat(
     if !peers.may_act(gs.0.phase_player()) {
         return;
     }
-    let Some((attacker, _)) = selected_melee_group(&state, &placed_units, &gs.0) else {
-        return;
-    };
-
+    let selection = selected_unit_ids(&state, &placed_units);
     // Only a click on an enemy-held hex is an attempted melee; any other
     // click -- the attacker's own hex (the second click of the double-click
     // that selects the tile), an empty or friendly hex -- is a selection, not
     // a declaration, and stays quiet.
-    let owner = gs.0.find_unit(attacker).map(|a| a.profile.identity.owner());
-    let enemy_there =
-        gs.0.units_in_hex(target)
+    let owner = selection
+        .first()
+        .and_then(|id| gs.0.find_unit(*id))
+        .map(|a| a.profile.identity.owner());
+    let enemy_there = owner.is_some()
+        && gs
+            .0
+            .units_in_hex(target)
             .iter()
             .any(|u| Some(u.profile.identity.owner()) != owner);
     if !enemy_there {
         return;
     }
+    let Some((attacker, _)) = selected_melee_group(&state, &placed_units, &gs.0) else {
+        // No selected unit may melee at all: say why (a khor, wall or
+        // hedge between, §7.2/§9.231; artillery, §7.4; disrupted) rather
+        // than ignore the click.
+        if let Some(error) = melee_refusal(&gs.0, &selection, target)
+            && let Some(dispatches) = submit.dispatches.as_deref_mut()
+        {
+            dispatches.refuse("Field Telegraph", format!("Melee refused — {error}."));
+        }
+        return;
+    };
     // The melee group (§7.4, §7.6): the selection less those held back,
     // plus units joined from neighbouring hexes.
     let attackers = choice.attackers(&gs.0, target);
@@ -509,7 +587,7 @@ pub fn melee_reaction_ui(
             } else if retreat_possible && peers.may_act(attacker_player.opponent()) {
                 ui.label("You may retreat threatened cavalry/camel: click the");
                 ui.label("attacked hex (again for its next unit), then a");
-                ui.label("highlighted hex two away.");
+                ui.label("green-ringed hex two away.");
                 // The defender's "no": the attacker (an AI attacker waits
                 // for it) may resolve at once.
                 if ui.button("Stand fast (no retreat)").clicked() {
@@ -1249,33 +1327,35 @@ mod hexside_mark_tests {
     use omdurman_rules::{Phase, UnitId, UnitPlacement};
     use omdurman_types::{HexCoord, HexsideKind, HexsideRef, Player, Scenario};
 
+    /// An Anglo-Egyptian battalion at (0,0), a Baggara at (1,0), `kind` between.
+    fn state_with(kind: HexsideKind) -> omdurman_rules::effects::GameState {
+        let mut gs = omdurman_rules::effects::GameState::new(Scenario::Campaign);
+        gs.phase = Phase::Melee;
+        gs.active_player = Player::AngloEgyptian;
+        for (id, hex) in [
+            (UnitId::BritishArmy_0_0, HexCoord::new(0, 0)),
+            (UnitId::Baggara_0_0, HexCoord::new(1, 0)),
+        ] {
+            gs.units.push(UnitPlacement {
+                id,
+                position: hex,
+                profile: omdurman_rules::unit_profiles::profile_for_unit(id).unwrap(),
+                state: Default::default(),
+            });
+        }
+        let mut board = gs.board.clone();
+        board.hexsides.insert(
+            HexsideRef::new(HexCoord::new(0, 0), HexCoord::new(1, 0)),
+            kind,
+        );
+        gs.board = board.leak();
+        gs
+    }
+
     /// §7.2: a wall between the attacker and an enemy hex is marked as
     /// barring the melee; a gate as the way through.
     #[test]
     fn walls_bar_and_gates_open_a_melee() {
-        let state_with = |kind: HexsideKind| {
-            let mut gs = omdurman_rules::effects::GameState::new(Scenario::Campaign);
-            gs.phase = Phase::Melee;
-            gs.active_player = Player::AngloEgyptian;
-            for (id, hex) in [
-                (UnitId::BritishArmy_0_0, HexCoord::new(0, 0)),
-                (UnitId::Baggara_0_0, HexCoord::new(1, 0)),
-            ] {
-                gs.units.push(UnitPlacement {
-                    id,
-                    position: hex,
-                    profile: omdurman_rules::unit_profiles::profile_for_unit(id).unwrap(),
-                    state: Default::default(),
-                });
-            }
-            let mut board = gs.board.clone();
-            board.hexsides.insert(
-                HexsideRef::new(HexCoord::new(0, 0), HexCoord::new(1, 0)),
-                kind,
-            );
-            gs.board = board.leak();
-            gs
-        };
         let edge = HexsideRef::new(HexCoord::new(0, 0), HexCoord::new(1, 0));
         let gs = state_with(HexsideKind::Wall);
         let targets = super::valid_target_hexes(UnitId::BritishArmy_0_0, &gs);
@@ -1289,6 +1369,25 @@ mod hexside_mark_tests {
             super::melee_hexsides(&gs, UnitId::BritishArmy_0_0, &targets),
             vec![(edge, true)]
         );
+    }
+
+    /// A melee across a wall or a khor is refused with its reason, in the
+    /// click's refusal and in the rail -- not ignored, nor called "no enemy
+    /// adjacent" (§7.2); through a gate there is nothing to explain.
+    #[test]
+    fn a_closed_hexside_names_itself() {
+        let unit = [UnitId::BritishArmy_0_0];
+        let target = HexCoord::new(1, 0);
+        for (kind, says) in [(HexsideKind::Wall, "a wall"), (HexsideKind::Khor, "a khor")] {
+            let gs = state_with(kind);
+            let refusal = super::melee_refusal(&gs, &unit, target).expect("refused");
+            assert!(refusal.contains(says), "{refusal}");
+            let rail = super::no_melee_reason(&gs, &unit).expect("explained");
+            assert!(rail.contains(says), "{rail}");
+        }
+        let gs = state_with(HexsideKind::Gate);
+        assert_eq!(super::melee_refusal(&gs, &unit, target), None);
+        assert_eq!(super::no_melee_reason(&gs, &unit), None);
     }
 }
 

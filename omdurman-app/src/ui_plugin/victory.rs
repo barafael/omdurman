@@ -104,11 +104,25 @@ pub(crate) fn victory_modal(
                 let width = (screen.width() - 80.0).clamp(600.0, 1180.0);
                 let height = screen.height() - 70.0;
                 ui.set_max_width(width);
+                // The arithmetic's own scroll height while it is open: the
+                // front page gives up that room, so the buttons stay on
+                // screen (the open list ran past the bottom, unscrollable).
+                const ARITHMETIC_HEIGHT: f32 = 220.0;
+                let arithmetic_id = ui.make_persistent_id("result_arithmetic");
+                let arithmetic_open =
+                    egui::collapsing_header::CollapsingState::load(ui.ctx(), arithmetic_id)
+                        .is_some_and(|s| s.is_open());
+                let reserved = 110.0
+                    + if arithmetic_open {
+                        ARITHMETIC_HEIGHT
+                    } else {
+                        0.0
+                    };
                 match &page {
                     Some(page) => {
                         egui::ScrollArea::vertical()
                             .id_salt("gazette_scroll")
-                            .max_height(height - 50.0)
+                            .max_height((height - reserved).max(200.0))
                             .show(ui, |ui| super::gazette::draw_front_page(ui, page, width));
                     }
                     None => {
@@ -126,10 +140,33 @@ pub(crate) fn victory_modal(
                 // The arithmetic behind the result (§9.14, §9.24, §9.35).
                 crate::ui::frames::modal().show(ui, |ui| {
                     ui.set_max_width(width);
-                    ui.collapsing("How the result was reached", |ui| {
-                        for line in result_arithmetic(&state.0) {
-                            crate::rulebook::refs_label(ui, &line, crate::ui::palette::INK, 13.0);
-                        }
+                    egui::collapsing_header::CollapsingState::load_with_default_open(
+                        ui.ctx(),
+                        arithmetic_id,
+                        false,
+                    )
+                    .show_header(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new("How the result was reached")
+                                .color(crate::ui::palette::TITLE),
+                        )
+                    })
+                    .body(|ui| {
+                        // Light on the dark modal: the paper's ink colour
+                        // read near-black on near-black.
+                        egui::ScrollArea::vertical()
+                            .id_salt("result_arithmetic_scroll")
+                            .max_height(ARITHMETIC_HEIGHT)
+                            .show(ui, |ui| {
+                                for line in result_arithmetic(&state.0) {
+                                    crate::rulebook::refs_label(
+                                        ui,
+                                        &line,
+                                        crate::ui::palette::PANEL_TEXT,
+                                        13.0,
+                                    );
+                                }
+                            });
                     });
                 });
                 ui.add_space(8.0);
@@ -318,19 +355,11 @@ pub(crate) fn result_arithmetic(gs: &omdurman_rules::effects::GameState) -> Vec<
             });
             let lost = gs.victory.units_eliminated_by(Player::AngloEgyptian);
             let penalty = omdurman_rules::FoKVictoryLevel::loss_penalty(lost);
-            let dervish_base = (base as i16) < 0;
-            lines.push(if !dervish_base {
-                format!(
-                    "Dervish losses {lost}: the loss penalty only takes from a Dervish \
-                     result (§9.35)."
-                )
-            } else {
-                let s = if penalty == 1 { "" } else { "s" };
-                format!(
-                    "Dervish losses {lost}: \u{2212}{penalty} level{s} (§9.35: 16/24/32 \
-                     losses cost 1/2/3)."
-                )
-            });
+            let s = if penalty == 1 { "" } else { "s" };
+            lines.push(format!(
+                "Dervish losses {lost}: \u{2212}{penalty} level{s} (§9.35: 16/24/32 \
+                 losses cost 1/2/3)."
+            ));
             let level = omdurman_rules::FoKVictoryLevel::resolve(died, end_turn, lost);
             lines.push(format!("Result: {level}."));
         }

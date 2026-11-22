@@ -273,6 +273,10 @@ pub struct MovementPath {
     /// The hex of a leg the picker just refused (taken by
     /// `fx::flash_refused_legs`, which flashes it).
     pub refused: Option<HexCoord>,
+    /// A notice the last click raised that is no refusal -- a stack whose
+    /// slower units stop while the rest go on (§5.11) -- taken by
+    /// `handle_picker_clicks` to the dispatch feed.
+    pub notice: Option<String>,
 }
 
 impl MovementPath {

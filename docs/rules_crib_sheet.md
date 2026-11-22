@@ -185,7 +185,8 @@ which the manual text does not reproduce.
 - **Trench** (§9.232): −4 to Dervish fire against entrenched units. Dervish
   melee against an entrenched unit is −2 instead of +2. Entrenched units do
   not block LOS. "Entrenched" = adjacent to, and on the Nile side of, a
-  trench hexside.
+  trench hexside. The penalties apply to attacks across the trench only
+  (engine reading): from inside the Zariba there is none.
 - Units enter and leave the Zariba only through the two end hexsides at the
   Nile, paying +2 MP (exception: advance after combat across an entrenched
   hexside) (§9.233).

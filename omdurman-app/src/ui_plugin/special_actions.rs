@@ -53,8 +53,13 @@ pub(crate) fn friendlies_transport_ui(
                                 .map_or_else(String::new, |g| g.position.to_string())
                         )
                     }
-                    omdurman_rules::FriendliesAction::Disembark { to, .. } => {
-                        format!("Disembark to {to}")
+                    // Name the unit: a gunboat may carry several (§5.21).
+                    omdurman_rules::FriendliesAction::Disembark { unit, to, .. } => {
+                        let name = gs.0.find_unit(unit).map_or_else(
+                            || "the unit".to_string(),
+                            |u| u.profile.identity.short_label(),
+                        );
+                        format!("Disembark {name} to {to}")
                     }
                 };
                 if ui.button(label).clicked() {
@@ -454,7 +459,16 @@ pub(crate) struct BreachCardMemo {
     lead: Option<omdurman_rules::UnitId>,
     joined: Vec<omdurman_rules::UnitId>,
     offer: Option<BreachOffer>,
+    /// Whether the wall list (and its numbered badges on the board) is
+    /// open. Closed for every newly selected battery: most shots go at
+    /// units, and the list -- up to 35 walls round Omdurman -- and the
+    /// badges on the wall hexsides would otherwise take the clicks meant
+    /// for targets on and beside the walls.
+    walls_open: bool,
 }
+
+/// The tallest the open wall list grows before it scrolls (points).
+const WALL_LIST_MAX_HEIGHT: f32 = 220.0;
 
 /// §6.63 Artillery Breach: with an artillery/howitzer unit selected during a
 /// fire sub-phase, list every Wall hexside the engine's `can_fire_at_wall`
@@ -564,6 +578,7 @@ pub(crate) fn artillery_breach_ui(
         .map(|&(edge, range, _)| (edge, range))
         .collect();
     let mut to_stage: Option<FireOrder> = None;
+    let mut walls_open = memo.walls_open;
     let Ok(ctx) = contexts.ctx_mut() else { return };
     crate::ui::stacked_card(
         ctx,
@@ -578,13 +593,29 @@ pub(crate) fn artillery_breach_ui(
                 crate::ui::palette::CARD_TITLE_RUST,
                 13.0,
             );
-            ui.label(
-                crate::ui::text::note("Fire at a wall: a combat result of 2 or more breaches it and eliminates one enemy unit beside it."),
-            );
-            ui.label(crate::ui::text::note(
-                "A shot is staged with the sub-phase's other fire and resolved with it (§6.41).",
-            ));
-            if !offer.partners.is_empty() {
+            let wall_count = offer.walls.len();
+            // Closed: one line and a button, so the card stays small and off
+            // the targets; the walls are an explicit choice.
+            if wall_count > 0 && !walls_open {
+                ui.horizontal(|ui| {
+                    let walls = if wall_count == 1 { "wall" } else { "walls" };
+                    ui.label(crate::ui::text::note(format!(
+                        "{wall_count} {walls} in range."
+                    )));
+                    if ui.small_button("Aim at a wall\u{2026}").clicked() {
+                        walls_open = true;
+                    }
+                });
+            }
+            if walls_open {
+                ui.label(
+                    crate::ui::text::note("Fire at a wall: a combat result of 2 or more breaches it and eliminates one enemy unit beside it."),
+                );
+                ui.label(crate::ui::text::note(
+                    "A shot is staged with the sub-phase's other fire and resolved with it (§6.41).",
+                ));
+            }
+            if !offer.partners.is_empty() && (walls_open || offer.chain.is_some()) {
                 ui.add_space(2.0);
                 ui.label(crate::ui::text::note(
                     "Batteries joining the shot (§6.14 combined fire):",
@@ -622,39 +653,52 @@ pub(crate) fn artillery_breach_ui(
                 }
             }
             let mut fire_at: Option<omdurman_types::HexsideRef> = None;
-            for (number, &(edge, range, odds)) in offer.walls.iter().enumerate() {
-                let label = format!(
-                    "{} \u{00b7} {} \u{00b7} range {range} \u{00b7} {}",
-                    number + 1,
-                    compass(unit.position, edge, &view),
-                    odds_label(odds, "breach", "breaches")
-                );
-                let button = ui
-                    .add_enabled(odds > 0, egui::Button::new(label).small())
-                    .on_disabled_hover_text(
-                        "No roll gives these batteries the combat result of 2 that breaches the wall: add batteries or close the range.",
-                    );
-                if button.hovered() {
-                    aimed.set_if_neq(crate::hexside_layer::HighlightedHexside(Some(edge)));
-                }
-                if button.clicked() {
+            if walls_open && wall_count > 0 {
+                // Nearest first; a long list (Omdurman's walls) scrolls
+                // instead of running down over the board.
+                egui::ScrollArea::vertical()
+                    .max_height(WALL_LIST_MAX_HEIGHT)
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| {
+                        for (number, &(edge, range, odds)) in offer.walls.iter().enumerate() {
+                            let label = format!(
+                                "{} \u{00b7} {} \u{00b7} range {range} \u{00b7} {}",
+                                number + 1,
+                                compass(unit.position, edge, &view),
+                                odds_label(odds, "breach", "breaches")
+                            );
+                            let button = ui
+                                .add_enabled(odds > 0, egui::Button::new(label).small())
+                                .on_disabled_hover_text(
+                                    "No roll gives these batteries the combat result of 2 that breaches the wall: add batteries or close the range.",
+                                );
+                            if button.hovered() {
+                                aimed.set_if_neq(crate::hexside_layer::HighlightedHexside(Some(edge)));
+                            }
+                            if button.clicked() {
+                                fire_at = Some(edge);
+                            }
+                        }
+                    });
+                ui.horizontal(|ui| {
+                    ui.label(crate::ui::text::note(
+                        "Or click a numbered wall on the map.",
+                    ));
+                    if ui.small_button("Close").clicked() {
+                        walls_open = false;
+                    }
+                });
+                // The numbered badges on the board, clickable like the
+                // buttons (a wall the batteries cannot breach stays inert);
+                // drawn only while the list is open.
+                if let Some(edge) = wall_badges(ui.ctx(), &walls_in_reach, &view, &mut aimed)
+                    && offer
+                        .walls
+                        .iter()
+                        .any(|&(e, _, odds)| e == edge && odds > 0)
+                {
                     fire_at = Some(edge);
                 }
-            }
-            if !offer.walls.is_empty() {
-                ui.label(crate::ui::text::note(
-                    "Or click a numbered wall on the map.",
-                ));
-            }
-            // The numbered badges on the board, clickable like the buttons
-            // (a wall the batteries cannot breach stays inert).
-            if let Some(edge) = wall_badges(ui.ctx(), &walls_in_reach, &view, &mut aimed)
-                && offer
-                    .walls
-                    .iter()
-                    .any(|&(e, _, odds)| e == edge && odds > 0)
-            {
-                fire_at = Some(edge);
             }
             if let Some(edge) = fire_at {
                 to_stage = Some(FireOrder::BreachWall {
@@ -666,22 +710,21 @@ pub(crate) fn artillery_breach_ui(
     );
     // Staged into the tray, resolved with the rest of the sub-phase's fire;
     // the "Wall Breached" / "Breach Attempt Failed" slip reports the outcome.
+    // A second shot at a staged wall (or the chain) joins it (§6.14).
     if let Some(order) = to_stage {
-        if order
-            .shots()
-            .iter()
-            .any(|shot| allocation.stages_unit(shot.unit))
-        {
-            dispatches.refuse(
-                "Fire Allocation",
-                "These batteries have already allocated their fire.",
-            );
-        } else {
-            allocation.specials.push(order);
-            allocation.panel_open = true;
+        match allocation.stage_special(order) {
+            Ok(()) => {
+                allocation.panel_open = true;
+                // The shot is staged: fold the list and its badges away so
+                // the next clicks reach the board.
+                walls_open = false;
+            }
+            Err(reason) => dispatches.refuse("Fire Allocation", reason),
         }
     }
+    memo.walls_open = walls_open;
     if joined != memo.joined {
+        allocation.rejoin_special(uid, &joined);
         memo.joined = joined;
         memo.offer = None;
     }

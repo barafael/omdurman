@@ -156,7 +156,7 @@ fn choices_for(state: &GameState, tail: &CombatTail) -> Vec<LossChoice> {
                 }
                 (Some(_), _) => None,
                 (None, CombatResult::Eliminate(n)) => {
-                    let tier = fire_casualty_candidates(state, target_units);
+                    let tier = casualty_candidates(state, target_units);
                     owner(&tier).and_then(|p| loss_choice(state, p, &[tier], n as usize))
                 }
                 (None, _) => None,

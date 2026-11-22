@@ -64,7 +64,7 @@ seat handling).
   outlives its garrison still holds the hex: no advance (§7.6), and it must
   be stormed again.]
 - **§5.51 stacking.** [Forts count against the four-unit limit; the Dervish
-  artillery is its own stacking group.]
+  artillery is no tribe and stacks with any Dervish units (§5.52).]
 - **§9.321 Fall of Khartoum set-up.** "Adjacent to any wall hex": [a hex with
   a wall or gate hexside of its own]. "Hut hexes of Khartoum": [any hut hex
   on the map, Tuti and Hogali included]. "One Egyptian battalion artillery
@@ -83,8 +83,16 @@ seat handling).
   units: at least one fell on the west bank and none stands there now.
   "Friendlies" count once carried across; on the east bank they do not.]
 - **§9.35 loss penalty.** "The Dervish player then loses one victory level".
-  [Applies only to a Dervish result (GORDON killed by turn six), which it can
-  turn into a British win; it never enlarges a British win.]
+  [One continuous ladder: the penalty shifts every result toward the British
+  end, a British win included, capped at British decisive.]
+- **§9.232 trench.** "Units are considered entrenched if they are directly
+  adjacent to (and on the Nile River side of) a trench hexside". [The −4 and
+  −2 apply to attacks across the trench only: a Dervish unit inside the
+  Zariba attacks an entrenched unit without them.]
+- **§5.21 Friendlies ferry.** [Per unit: missions run side by side, and a
+  gunboat may carry several Friendlies up to the four-unit limit.]
+- **§6.24/§6.42 Maxims with a howitzer shell.** [The combined attack keeps
+  the Maxims' +1.]
 - **§7.7 owner chooses losses.** The manual does not say who picks the
   units a numbered result eliminates. [Their owner, as the wargame
   convention has it: where a result runs out inside a tier of units that

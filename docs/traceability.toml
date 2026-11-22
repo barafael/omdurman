@@ -403,14 +403,15 @@ title = "Friendlies transport via gunboat"
 status = "implemented"
 clause = "The transport is accomplished in the following sequence: a) on any turn that a \"Friendlies\" unit and any Anglo-Egyptian gunboat start their turn adjacent, that unit may load onto (i.e. stack with) the gunboat; b) during the Anglo-Egyptian player's next turn the gunboat may move to any Nile hex adjacent to a west bank hex (up to the gunboat's movement allowance); c) on the Anglo-Egyptian player's third turn the \"Friendlies\" unit may disembark and move normally, paying the normal terrain cost for the first hex entered."
 witness = "omdurman-rules::src::effects::tests::friendlies_cross_the_nile_over_three_turns"
-approximation = "Only one Friendlies transport mission may be in progress at a time, a design choice where the manual is silent, so a second Friendlies unit cannot load while another is aboard or in transit. A unit aboard is cargo: it neither fires nor is fired at on its own (only artillery engages the gunboat, §6.61), and it boards only from the east bank -- the ferry runs one way."
-note = "Implemented: Load (Anglo-Egyptian Movement phase, Isa Zachneih eliminated, a Friendlies unit and a gunboat that start their turn adjacent -- neither has moved -- the gunboat otherwise alone) puts the unit aboard, on the gunboat's hex; the gunboat carries it as it moves from the next turn (not the load turn); Disembark from turn N+2 onto an adjacent west-bank land hex, paying its terrain cost, after which the unit moves normally. One mission at a time (design choice; the manual is silent). The UI offers exactly can_friendlies_transport's legal actions (friendlies_transport_offers)."
+approximation = "The sequence is read per unit (\"that unit may load onto (i.e. stack with) the gunboat\"): any number of missions may run at once, and a gunboat may carry several Friendlies, up to the four-unit stacking limit (§5.51); a load holds the gunboat in place that turn, delaying the passengers already aboard. A unit aboard is cargo: it neither fires nor is fired at on its own (only artillery engages the gunboat, §6.61), and it boards only from the east bank -- the ferry runs one way."
+note = "Implemented: Load (Anglo-Egyptian Movement phase, Isa Zachneih eliminated, a Friendlies unit and a gunboat that start their turn adjacent -- neither has moved -- the gunboat carrying no one but other Friendlies, fewer than four) puts the unit aboard, on the gunboat's hex; the gunboat carries it as it moves from the next turn (not the load turn); Disembark from turn N+2 onto an adjacent west-bank land hex, paying its terrain cost, after which the unit moves normally. Missions run side by side, one per unit aboard. The UI offers exactly can_friendlies_transport's legal actions (friendlies_transport_offers)."
 tests = [
     "omdurman-rules::src::effects::tests::a_loaded_friendlies_unit_may_not_fire",
     "omdurman-rules::src::effects::tests::the_friendlies_board_only_from_the_east_bank",
     "omdurman-rules::src::effects::tests::a_mined_gunboat_scores_and_takes_its_friendlies_down",
     "omdurman-rules::src::effects::tests::friendlies_transport_offer_load_requires_prerequisites",
     "omdurman-rules::src::effects::tests::friendlies_cross_the_nile_over_three_turns",
+    "omdurman-rules::src::effects::tests::several_friendlies_cross_at_once_up_to_the_stacking_limit",
     "omdurman-rules::src::effects::tests::a_gunboat_carrying_friendlies_is_judged_as_a_gunboat",
 ]
 
@@ -793,12 +794,12 @@ title = "Different Dervish tribes may not stack together"
 status = "implemented"
 clause = "The units of different Dervish tribes may not stack together, even if they are the same color (e.g. although both are green, Mulazmin and Jehadia units may not stack with each other)."
 witness = "omdurman-rules::src::effects::stacking_rule_group_purity_is_exact"
-approximation = "The Dervish artillery is treated as its own stacking group, so it may not stack with any tribe's units either (open-issues, Rules questions: \"§5.51 stacking\"); the manual only forbids mixing tribes."
+note = "The Dervish artillery is no tribe, so §5.52 does not bar it: the guns stack with any Dervish units (the four-unit limit, §5.51, and the leaders' §5.53 command check still apply)."
 tests = [
     "omdurman-rules::src::unit_profiles::green_sections_are_mulazmin_tribal_units",
     "omdurman-rules::src::effects::tests::deploy_rejects_dervish_tribe_mix",
-    "omdurman-rules::src::effects::tests::deploy_rejects_hadendowa_on_dervish_gun",
-    "omdurman-rules::src::effects::tests::dervish_guns_stack_with_guns_and_their_leader",
+    "omdurman-rules::src::effects::tests::deploy_stacks_hadendowa_with_a_dervish_gun",
+    "omdurman-rules::src::effects::tests::dervish_guns_stack_with_guns_their_leader_and_tribes",
     "omdurman-rules::src::effects::tests::validate_stacking_invariants_clean_state",
 ]
 proofs = [
@@ -1119,12 +1120,13 @@ title = "Anglo-Egyptian direct fire accuracy bonus and brigade integrity"
 status = "implemented"
 clause = "All Anglo-Egyptian direct fire attacks receive a +1 modifier to their die roll as an accuracy bonus."
 witness = "omdurman-rules::src::effects::tests::fire_modifiers_are_engine_derived_and_mismatches_rejected"
-approximation = "\"Direct fire\" is read as aimed fire at a hex the firer sees: a Maxim's second fire (§6.42) gets the +1 like its first; howitzer fire, which ignores line of sight and scatters (§6.64), does not."
+approximation = "\"Direct fire\" is read as aimed fire at a hex the firer sees: a Maxim's second fire (§6.42) gets the +1 like its first; howitzer fire, which ignores line of sight and scatters (§6.64), does not -- except that a shell on target combined with Maxims (§6.42) keeps the Maxims' +1, so joining a shell never makes their shot worse."
 proofs = [
     "omdurman-rules::src::verification::die_roll_apply_modifier_is_total",
 ]
 tests = [
     "omdurman-rules::src::effects::tests::maxim_second_fire_gets_the_direct_fire_bonus_howitzer_fire_does_not","omdurman-rules::src::effects::tests::brigade_integrity_modifier_is_engine_derived",
+    "omdurman-rules::src::effects::tests::maxims_combined_with_a_howitzer_shell_keep_the_direct_fire_bonus",
     "omdurman-rules::src::effects::tests::fire_modifiers_are_engine_derived_and_mismatches_rejected",
 ]
 
@@ -1342,13 +1344,14 @@ title = "Maxim Second Fire and Howitzer Fire Subphase"
 status = "implemented"
 clause = "Anglo-Egyptian named gunboats may now fire their artillery factor as howitzer fire (see 6.64) and all Maxim guns may fire a second time."
 witness = "omdurman-rules::src::effects::tests::maxim_may_fire_twice_per_turn"
-note = "\"Howitzer fire may be combined with Maxim fire, but only if the howitzer fire impacts in the intended hex\": a HowitzerFire attack carries its shells and any Maxims (shot_kind); the shells that land on the intended hex and the Maxims resolve there as one attack on one roll, without the §6.24 direct-fire +1 (it is howitzer fire); each scattered shell resolves alone where it lands, and with no shell on target the Maxims fire there on their own, as Maxim fire. Either way the hex has been fired at (§6.14)."
+note = "\"Howitzer fire may be combined with Maxim fire, but only if the howitzer fire impacts in the intended hex\": a HowitzerFire attack carries its shells and any Maxims (shot_kind); the shells that land on the intended hex and the Maxims resolve there as one attack on one roll, keeping the Maxims' §6.24 direct-fire +1 (the shell does not spoil their aim); each scattered shell resolves alone where it lands, and with no shell on target the Maxims fire there on their own, as Maxim fire. Either way the hex has been fired at (§6.14)."
 proofs = [
     "omdurman-types::src::lib::unit_kind_fire_and_movement_capability_law_is_exact",
 ]
 tests = [
     "omdurman-rules::src::effects::tests::a_named_gunboat_fires_its_maxims_twice_beside_its_artillery",
     "omdurman-rules::src::effects::tests::howitzer_on_target_combines_with_maxim_second_fire",
+    "omdurman-rules::src::effects::tests::maxims_combined_with_a_howitzer_shell_keep_the_direct_fire_bonus",
     "omdurman-rules::src::effects::tests::fall_of_khartoum_has_no_maxim_howitzer_subphase",
     "omdurman-rules::src::howitzer_scatter::howitzer_on_target_7_to_10",
     "omdurman-rules::src::howitzer_scatter::howitzer_scatters_below_7",
@@ -1393,6 +1396,7 @@ proofs = [
     "omdurman-types::src::lib::unit_kind_fire_and_movement_capability_law_is_exact",
 ]
 tests = [
+    "omdurman-rules::src::effects::tests::an_ae_leader_is_no_melee_loss_to_choose",
     "omdurman-rules::src::effects::tests::a_hex_holding_only_an_ae_leader_is_no_fire_target",
     "omdurman-rules::src::unit_profiles::zero_factor_is_none_not_zero",
     "omdurman-rules::src::unit_profiles::kitchener_block_resolves_leaders_friendlies_camel_and_sudanese",
@@ -1937,6 +1941,7 @@ proofs = [
 ]
 note = "\"Melee losses must be taken from meleeing units first!\": the losses fall tier by tier -- the meleeing units, then (attackers) their hex-mates, (defenders) the fort last -- and where a numbered result runs out inside a tier of units that differ, the owner chooses which fall (TakeLosses). The combat waits for the choice; so does every numbered fire result, and the one unit a destroyed fort or breached wall takes (§6.62, §6.63)."
 tests = [
+    "omdurman-rules::src::effects::tests::an_ae_leader_is_no_melee_loss_to_choose",
     "omdurman-rules::src::effects::tests::melee_losses_are_the_owners_choice",
     "omdurman-rules::src::effects::tests::fire_losses_are_the_owners_choice",
     "omdurman-rules::src::effects::tests::melee_resolves_simultaneously",
@@ -2424,12 +2429,14 @@ title = "Trench hexsides"
 status = "implemented"
 clause = "−4 to die roll on all Dervish fire attacks vs. entrenched units only; −2 (instead of +2) melee modifier to Dervish units melee attacking an entrenched unit"
 witness = "omdurman-rules::src::effects::tests::trench_entrenched_units_take_trench_modifiers"
+approximation = "The trench protects its entrenched units against attacks across it only: the -4 applies when a Dervish firer's line of fire passes a trench hexside, the -2 when the meleeing hexes share one. A Dervish unit inside the Zariba (or firing from the river behind it) attacks an entrenched unit without the penalty -- the manual's words make entrenchment a property of the defender's hex alone; this is the reading of its intent."
 proofs = [
     "omdurman-rules::src::verification::melee_modifier_keeps_roll_legal",
 ]
 tests = [
     "omdurman-rules::src::board_data::the_zariba_is_trench_in_the_north_and_hedge_in_the_south",
     "omdurman-rules::src::effects::tests::trench_entrenched_units_take_trench_modifiers",
+    "omdurman-rules::src::effects::tests::the_trench_does_not_shield_against_attacks_from_inside_the_zariba",
     "omdurman-rules::src::effects::tests::entrenched_units_do_not_block_line_of_sight",
 ]
 
@@ -2448,6 +2455,10 @@ symbol = "is_zariba_entrenched"
 [[mapping.impl]]
 file = "omdurman-rules/src/effects/fire.rs"
 symbol = "mandatory_fire_modifiers"
+
+[[mapping.impl]]
+file = "omdurman-rules/src/effects/melee.rs"
+symbol = "mandatory_melee_modifiers"
 
 [[mapping]]
 section = "§9.233"
@@ -2696,14 +2707,14 @@ title = "Victory Conditions (Bonus)"
 status = "implemented"
 clause = "The Dervish player then loses one victory level if he has lost 16–23 units, two victory levels if he has lost 24–31 units, and three victory levels if he has lost 32 units or more."
 witness = "omdurman-rules::src::verification::fok_victory_ladder_penalties_shift_monotonically"
-approximation = "The manual does not say whether the loss penalty applies when GORDON survives. It is the Dervish player losing levels, so it shifts only a Dervish result (possibly across into a British win) and never enlarges a British win."
+approximation = "The manual does not say whether the loss penalty applies when GORDON survives. The six levels are read as one continuous ladder (its worked example carries a Dervish win over into a British one), so the penalty shifts every result toward the British end, a British win included, capped at British decisive."
 proofs = [
     "omdurman-rules::src::verification::fok_victory_ladder_penalties_shift_monotonically",
 ]
 tests = [
     "omdurman-rules::src::effects::tests::gordon_dying_in_melee_ends_fall_of_khartoum",
     "omdurman-rules::src::tests::fok_victory_level_worked_example",
-    "omdurman-rules::src::tests::fok_loss_penalty_never_enlarges_a_british_win",
+    "omdurman-rules::src::tests::fok_loss_penalty_shifts_every_result_toward_the_british_end",
     "omdurman-rules::src::tests::fok_victory_level_gordon_died_early",
     "omdurman-rules::src::tests::fok_victory_level_late_gordon_death",
     "omdurman-rules::src::tests::fok_victory_level_gordon_survived",

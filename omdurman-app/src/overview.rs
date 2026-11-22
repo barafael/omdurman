@@ -154,6 +154,23 @@ pub fn unit_overview_ui(
                                                 .color(crate::ui::palette::RAIL_DIM),
                                         );
                                     }
+                                    // Stragglers of an earlier wave (kept, not lost).
+                                    if let Some(line) = crate::reinforce::late_arrivals(
+                                        &state.0,
+                                        rail.tray.available.iter().filter_map(|u| {
+                                            omdurman_rules::unit_id_for_section_pos(
+                                                u.section_name,
+                                                u.col as u8,
+                                                u.row as u8,
+                                            )
+                                        }),
+                                    ) {
+                                        ui.label(
+                                            egui::RichText::new(line)
+                                                .size(12.0)
+                                                .color(crate::ui::palette::RAIL_DIM),
+                                        );
+                                    }
                                     let stamp = crate::ui_trace::Stamp::of(state);
                                     // The tray's flags are rewritten every frame by
                                     // `unit_picker_ui` around change detection; only a pick

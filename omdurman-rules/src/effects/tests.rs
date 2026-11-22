@@ -3310,13 +3310,11 @@ mod tests {
 
     #[rulebook("§5.52")]
     #[test]
-    fn deploy_rejects_hadendowa_on_dervish_gun() {
+    fn deploy_stacks_hadendowa_with_a_dervish_gun() {
         // §5.52 as it plays in FALL OF KHARTOUM (§9.322): the three Dervish
-        // artillery counters are not a tribe, but they are also not Hadendowa
-        // (or Kehena, or Degheim, or Mulazmin) -- the guns form their own
-        // stacking group, so a tribal counter may not share their hex and vice
-        // versa. Regression: a Hadendowa placed on a Dervish gun during setup
-        // was silently accepted (only the four-unit count was checked).
+        // artillery counters are not a tribe, so the "different tribes" bar
+        // does not touch them -- a tribal counter may share a gun's hex, in
+        // either order (the four-unit limit still holds).
         let mut state = GameState::new(Scenario::FallOfKhartoum); // permissive zone
         // The Anglo-Egyptians set up first (§9.211/§9.321); they are done.
         state.setup_ready_ae = true;
@@ -3341,23 +3339,20 @@ mod tests {
             state: Default::default(),
         };
 
-        // Hadendowa onto the gun's hex -> rejected, and nothing is deployed.
+        // Hadendowa onto the gun's hex.
         apply_effect(
             &mut state,
             &GameEffect::DeployUnit(place(gun_id, gun_profile, hex)),
         )
         .unwrap();
-        assert!(matches!(
-            apply_effect(
-                &mut state,
-                &GameEffect::DeployUnit(place(hadendowa_id, hadendowa_profile, hex))
-            )
-            .unwrap_err(),
-            RuleError::Stacking(crate::StackingError::DervishTribeMix)
-        ));
-        assert_eq!(state.units.len(), 1);
+        apply_effect(
+            &mut state,
+            &GameEffect::DeployUnit(place(hadendowa_id, hadendowa_profile, hex)),
+        )
+        .unwrap();
+        assert_eq!(state.units.len(), 2);
 
-        // And in the other order: a gun onto a Hadendowa hex is the same mix.
+        // And in the other order: a gun onto a Hadendowa hex.
         let mut state = GameState::new(Scenario::FallOfKhartoum);
         // The Anglo-Egyptians set up first (§9.211/§9.321); they are done.
         state.setup_ready_ae = true;
@@ -3366,14 +3361,12 @@ mod tests {
             &GameEffect::DeployUnit(place(hadendowa_id, hadendowa_profile, hex)),
         )
         .unwrap();
-        assert!(matches!(
-            apply_effect(
-                &mut state,
-                &GameEffect::DeployUnit(place(gun_id, gun_profile, hex))
-            )
-            .unwrap_err(),
-            RuleError::Stacking(crate::StackingError::DervishTribeMix)
-        ));
+        apply_effect(
+            &mut state,
+            &GameEffect::DeployUnit(place(gun_id, gun_profile, hex)),
+        )
+        .unwrap();
+        assert_eq!(state.units.len(), 2);
 
         // Guns stack with guns (two of the three §9.322 artillery counters).
         let mut state = GameState::new(Scenario::FallOfKhartoum);
@@ -3394,11 +3387,11 @@ mod tests {
 
     #[rulebook("§5.52")]
     #[test]
-    fn dervish_guns_stack_with_guns_and_their_leader() {
+    fn dervish_guns_stack_with_guns_their_leader_and_tribes() {
         // The §5.23 household grouping: the Khalifa may stack with his
         // artillery (his §5.53 command check binds tribes and other leaders),
-        // two guns stack together, but a Taiasha bodyguard counter (a tribe)
-        // may not share the guns' hex. Synthetic profiles + the Campaign
+        // two guns stack together, and a Taiasha bodyguard counter shares the
+        // guns' hex -- the guns are no tribe (§5.52). Synthetic profiles + the Campaign
         // (where the Khalifa and his artillery are §9.111-in-play at setup;
         // FoK's §9.322 force has no leaders at all).
         let mut state = GameState::new(Scenario::Campaign);
@@ -3451,17 +3444,28 @@ mod tests {
         }
         assert_eq!(state.units.len(), 3, "guns + the Khalifa stack freely");
 
-        // A Taiasha tribal counter in the guns' hex is a §5.52 mix.
+        // A Taiasha tribal counter joins the guns and their Khalifa.
         let taiasha = canon(UnitPlacement {
             id: state.alloc_unit_id(),
             position: hex,
             profile: dervish_tribal_profile_with(DervishTribe::Taiasha),
             state: Default::default(),
         });
-        assert!(matches!(
-            apply_effect(&mut state, &GameEffect::DeployUnit(taiasha)).unwrap_err(),
-            RuleError::Stacking(crate::StackingError::DervishTribeMix)
-        ));
+        apply_effect(&mut state, &GameEffect::DeployUnit(taiasha)).unwrap();
+        // Another tribe beside the Taiasha is still a §5.52 mix: the guns do
+        // not make the hex neutral.
+        let baggara = canon(UnitPlacement {
+            id: state.alloc_unit_id(),
+            position: hex,
+            profile: dervish_tribal_profile_with(DervishTribe::Baggara),
+            state: Default::default(),
+        });
+        let mut occupants = state.units_in_hex(hex);
+        occupants.push(&baggara);
+        assert_eq!(
+            crate::effects::state::stacking_rule(&occupants),
+            Err(crate::StackingError::DervishTribeMix)
+        );
     }
 
     #[rulebook("§5.51", "§6.51")]
@@ -6367,6 +6371,91 @@ mod tests {
         );
     }
 
+    // §9.232: the trench protects its entrenched units against attacks
+    // across it, not from inside the Zariba: a Dervish unit that got in
+    // fires without the -4 and melees at its standard +2.
+    #[rulebook("§9.232")]
+    #[test]
+    fn the_trench_does_not_shield_against_attacks_from_inside_the_zariba() {
+        // Two Zariba hexes: (1,1) behind the trench, (2,1) beside it behind
+        // the thorn hedge; the Nile closes them to the east.
+        let mut state = GameState::new(Scenario::Historical);
+        edit_board(&mut state, |board| {
+            for hex in [(1, 1), (2, 1), (0, 0), (0, 1), (1, 0), (2, 0)] {
+                board
+                    .terrain
+                    .insert(HexCoord::new(hex.0, hex.1), Terrain::Clear);
+            }
+            for hex in [(2, 2), (1, 2), (3, 1), (3, 2)] {
+                board.terrain.insert(
+                    HexCoord::new(hex.0, hex.1),
+                    Terrain::Nile {
+                        direction: HexDirection::East,
+                    },
+                );
+            }
+            for outside in [(0, 0), (0, 1), (1, 0)] {
+                board.hexsides.insert(
+                    HexsideRef::new(HexCoord::new(1, 1), HexCoord::new(outside.0, outside.1)),
+                    HexsideKind::ZaribaTrench,
+                );
+            }
+            for outside in [(1, 0), (2, 0)] {
+                board.hexsides.insert(
+                    HexsideRef::new(HexCoord::new(2, 1), HexCoord::new(outside.0, outside.1)),
+                    HexsideKind::ZaribaThornHedge,
+                );
+            }
+            board.zariba = board.compute_zariba();
+            assert_eq!(board.zariba.len(), 2);
+        });
+        state.phase = Phase::OffensiveFire(FireSubPhase::DirectFire);
+        state.active_player = Player::Dervish;
+        let target_hex = HexCoord::new(1, 1);
+        let target = make_ae_infantry(&mut state, target_hex);
+        assert!(state.is_zariba_entrenched(target_hex));
+        let inside = make_dervish_tribal(&mut state, HexCoord::new(2, 1));
+        let across = make_dervish_tribal(&mut state, HexCoord::new(1, 0));
+        let fire_mods = |state: &GameState, firer: UnitId| {
+            let attack = FireAttack {
+                firing_player: Player::Dervish,
+                phase: state.phase,
+                kind: FireKind::Direct,
+                firers: vec![firer],
+                target_hex,
+                at_fort: false,
+                factor_row: FireFactorRow::Row01to05,
+                modifiers: vec![],
+                gunboat_maxims: Vec::new(),
+            };
+            mandatory_fire_modifiers(state, &attack)
+        };
+        let melee_mods = |state: &GameState, attacker: UnitId| {
+            let melee = MeleeAttack {
+                attacker_player: Player::Dervish,
+                attacker_hex: state.find_unit(attacker).unwrap().position,
+                defender_hex: target_hex,
+                attackers: vec![attacker],
+                defenders: vec![target],
+                attacker_modifiers: vec![],
+                defender_modifiers: vec![],
+            };
+            mandatory_melee_modifiers(state, &melee).0
+        };
+        // From inside the Zariba: no trench penalty either way.
+        assert!(!fire_mods(&state, inside).contains(&FireModifier::ZaribaTrenchEntrenched));
+        assert_eq!(
+            melee_mods(&state, inside),
+            vec![MeleeModifier::DervishStandard]
+        );
+        // Across the trench: -4 fire, -2 melee.
+        assert!(fire_mods(&state, across).contains(&FireModifier::ZaribaTrenchEntrenched));
+        assert_eq!(
+            melee_mods(&state, across),
+            vec![MeleeModifier::DervishVsTrenchedDefender]
+        );
+    }
+
     // §9.342: every hex of the Fall-of-Khartoum mini-map is playable,
     // including half hexes -- the authored board excludes nothing.
     #[rulebook("§9.342")]
@@ -6586,11 +6675,11 @@ mod tests {
         let gb = make_profiled_unit(&mut state, from, ae_gunboat_profile());
         let friendly = make_profiled_unit(&mut state, from, friendlies_infantry_profile());
         state.find_unit_mut(friendly).unwrap().state.loaded_on = Some(gb);
-        state.friendlies_transport = Some(TransportState::Loaded {
+        state.friendlies_transports = vec![TransportState::Loaded {
             unit: friendly,
             gunboat: gb,
             since: GameTurnIndex::new(0),
-        });
+        }];
         state.mines.push(crate::MinePlacement {
             hex: to,
             triggered: false,
@@ -8356,7 +8445,7 @@ mod tests {
         };
 
         // On target: one attack, the shell (howitzer line) and the Maxims
-        // (Maxims line) summed, with no §6.24 direct-fire +1.
+        // (Maxims line) summed, keeping the Maxims' §6.24 direct-fire +1.
         let (mut state, gb) = set_up();
         let attack = combined(&state, gb);
         let factor = total_fire_factor(&firer_contributions(&state, &attack));
@@ -8689,6 +8778,42 @@ mod tests {
             build_fire_attack_from(&state, HexCoord::new(0, 0), &[gb], far, FireKind::Howitzer)
                 .unwrap();
         assert!(howitzer.modifiers.is_empty());
+    }
+
+    // §6.24/§6.42: "Howitzer fire may be combined with Maxim fire" -- the
+    // combined attack keeps the Maxims' +1; a shell joining them must not
+    // make their shot worse. A howitzer alone still has none.
+    #[rulebook("§6.24", "§6.42")]
+    #[test]
+    fn maxims_combined_with_a_howitzer_shell_keep_the_direct_fire_bonus() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::OffensiveFire(FireSubPhase::MaximSecondAndHowitzer);
+        state.active_player = Player::AngloEgyptian;
+        let maxim = make_maxim(&mut state, HexCoord::new(0, 1));
+        let gb = make_named_gunboat(&mut state, HexCoord::new(0, 0));
+        let other = make_named_gunboat(&mut state, HexCoord::new(1, 2));
+        let target_hex = HexCoord::new(5, 0);
+        make_dervish_tribal(&mut state, target_hex);
+        let attack = |firers: Vec<UnitId>, gunboat_maxims: Vec<UnitId>| FireAttack {
+            firing_player: Player::AngloEgyptian,
+            phase: state.phase,
+            kind: FireKind::Howitzer,
+            firers,
+            target_hex,
+            at_fort: false,
+            factor_row: FireFactorRow::Row01to05,
+            modifiers: vec![],
+            gunboat_maxims,
+        };
+        let bonus = |a: &FireAttack| {
+            mandatory_fire_modifiers(&state, a).contains(&FireModifier::AngloEgyptianDirectFire)
+        };
+        // A Maxim battery joining the shell.
+        assert!(bonus(&attack(vec![gb, maxim], vec![])));
+        // Another gunboat's Maxims joining it.
+        assert!(bonus(&attack(vec![gb], vec![other])));
+        // Shells alone: no +1.
+        assert!(!bonus(&attack(vec![gb, other], vec![])));
     }
 
     // §6.64
@@ -10276,21 +10401,129 @@ mod tests {
         ));
 
         turn(&mut state, 3);
-        assert_eq!(
-            state.friendlies_transport_offers(None),
-            vec![FriendliesAction::Disembark {
-                unit: friendlies,
-                gunboat,
-                to: HexCoord::new(18, 10),
-            }],
-            "only the west bank"
-        );
+        // Offered with the unit or its gunboat selected; nothing unselected.
+        for picked in [friendlies, gunboat] {
+            assert_eq!(
+                state.friendlies_transport_offers(Some(picked)),
+                vec![FriendliesAction::Disembark {
+                    unit: friendlies,
+                    gunboat,
+                    to: HexCoord::new(18, 10),
+                }],
+                "only the west bank"
+            );
+        }
+        assert!(state.friendlies_transport_offers(None).is_empty());
         apply_effect(&mut state, &disembark).unwrap();
         let u = state.find_unit(friendlies).unwrap();
         assert_eq!(u.position, HexCoord::new(18, 10));
         assert_eq!(u.state.loaded_on, None);
         assert_eq!(state.mp_spent(friendlies), 1, "clear ground costs 1 MP");
-        assert!(state.friendlies_transport.is_none());
+        assert!(state.friendlies_transports.is_empty());
+    }
+
+    // §5.21: the sequence is per unit -- "that unit may load onto (i.e.
+    // stack with) the gunboat" -- so missions run side by side, and one
+    // gunboat may take several "Friendlies" aboard, up to the four-unit
+    // stacking limit (§5.51); each lands on its own third turn.
+    #[rulebook("§5.21")]
+    #[test]
+    fn several_friendlies_cross_at_once_up_to_the_stacking_limit() {
+        let mut state = playing(Scenario::Campaign);
+        state.active_player = Player::AngloEgyptian;
+        state.isa_zachneih_eliminated = true;
+        let west = HexCoord::new(18, 10);
+        let east = HexCoord::new(21, 10);
+        edit_board(&mut state, |board| {
+            board.terrain.insert(west, Terrain::default());
+            for q in [19, 20] {
+                board.terrain.insert(
+                    HexCoord::new(q, 10),
+                    Terrain::Nile {
+                        direction: HexDirection::East,
+                    },
+                );
+            }
+            board.terrain.insert(east, Terrain::default());
+        });
+        let boat = old_gunboat_at(&mut state, HexCoord::new(20, 10));
+        let ashore: Vec<UnitId> = (0..4)
+            .map(|_| make_profiled_unit(&mut state, east, friendlies_infantry_profile()))
+            .collect();
+        // (Five on one hex is no legal stack, but nothing here moves them
+        // by land: the fixture only needs a fifth unit beside the boat.)
+        let fifth = make_profiled_unit(&mut state, east, friendlies_infantry_profile());
+        let load = |unit| {
+            GameEffect::FriendliesTransport(FriendliesAction::Load {
+                unit,
+                gunboat: boat,
+            })
+        };
+        state.current_turn = GameTurnIndex::new(1);
+        // Three go aboard on turn 1, one on turn 2: four missions at once.
+        for &unit in &ashore[..3] {
+            apply_effect(&mut state, &load(unit)).unwrap();
+        }
+        assert_eq!(state.friendlies_transports.len(), 3);
+        state.current_turn = GameTurnIndex::new(2);
+        state.mp_spent_this_turn.clear();
+        apply_effect(&mut state, &load(ashore[3])).unwrap();
+        assert_eq!(state.friendlies_transports.len(), 4);
+        // A fifth would make five units in the hex (§5.51).
+        assert!(matches!(
+            assert_rejected_untouched(&mut state, load(fifth)),
+            RuleError::Stacking(crate::StackingError::OverLimit)
+        ));
+        // The boat may not sail on the turn it took one aboard: the fourth
+        // holds the other three back too.
+        assert!(matches!(
+            state.can_move_unit_to(boat, Some(HexCoord::new(19, 10)), MovementPoints::new(1)),
+            Err(RuleError::TransportLoadingTurn(_))
+        ));
+        // Turn 3: she sails alongside the west bank with all four, and the
+        // first three land; the fourth (loaded on turn 2) not yet.
+        state.current_turn = GameTurnIndex::new(3);
+        state.mp_spent_this_turn.clear();
+        apply_effect(
+            &mut state,
+            &GameEffect::MoveUnit {
+                unit_id: boat,
+                to: HexCoord::new(19, 10),
+                path: vec![HexCoord::new(19, 10)],
+            },
+        )
+        .unwrap();
+        for &unit in &ashore {
+            assert_eq!(
+                state.find_unit(unit).unwrap().position,
+                HexCoord::new(19, 10)
+            );
+        }
+        let landings = state.friendlies_transport_offers(Some(boat));
+        assert_eq!(landings.len(), 3, "{landings:?}");
+        for &unit in &ashore[..3] {
+            apply_effect(
+                &mut state,
+                &GameEffect::FriendliesTransport(FriendliesAction::Disembark {
+                    unit,
+                    gunboat: boat,
+                    to: west,
+                }),
+            )
+            .unwrap();
+        }
+        assert!(matches!(
+            assert_rejected_untouched(
+                &mut state,
+                GameEffect::FriendliesTransport(FriendliesAction::Disembark {
+                    unit: ashore[3],
+                    gunboat: boat,
+                    to: west,
+                })
+            ),
+            RuleError::FriendliesDisembarkTooEarly(4)
+        ));
+        assert_eq!(state.friendlies_transports.len(), 1);
     }
 
     // -----------------------------------------------------------------------
@@ -10832,11 +11065,11 @@ mod tests {
             friendlies_infantry_profile(),
         );
         state.find_unit_mut(friendly).unwrap().state.loaded_on = Some(gb);
-        state.friendlies_transport = Some(TransportState::Loaded {
+        state.friendlies_transports = vec![TransportState::Loaded {
             unit: friendly,
             gunboat: gb,
             since: state.current_turn,
-        });
+        }];
         state.mines.push(MinePlacement {
             hex,
             triggered: false,
@@ -10855,7 +11088,7 @@ mod tests {
         .unwrap();
         assert!(state.find_unit(gb).is_none());
         assert!(state.find_unit(friendly).is_none());
-        assert!(state.friendlies_transport.is_none());
+        assert!(state.friendlies_transports.is_empty());
         let sources: Vec<VpSource> = state.victory.events.iter().map(|e| e.source).collect();
         assert!(sources.contains(&VpSource::BritishGunboatSunk));
         assert!(sources.iter().any(|s| matches!(
@@ -13938,6 +14171,92 @@ mod tests {
             twins.units.iter().filter(|u| u.position == target).count(),
             1
         );
+    }
+
+    // §6.51, §9.346: no melee result takes an Anglo-Egyptian leader, so he
+    // is no loss the owner may choose and uses up no elimination. He used
+    // to be offered among the candidates (GORDON in the palace's "choose
+    // your losses"), a pick of him fell on a battalion instead, and a
+    // result taking every battalion still stopped for a choice.
+    #[rulebook("§6.51", "§7.7")]
+    #[test]
+    fn an_ae_leader_is_no_melee_loss_to_choose() {
+        let mut state = playing(Scenario::Campaign);
+        state.phase = Phase::Melee;
+        state.active_player = Player::Dervish;
+        let (from, target) = (HexCoord::new(0, 0), HexCoord::new(1, 0));
+        let attackers: Vec<UnitId> = (0..4)
+            .map(|_| make_dervish_tribal(&mut state, from))
+            .collect();
+        // A fresh and a shaken battalion: not interchangeable, so one loss
+        // between them is a choice.
+        let fresh = make_ae_infantry(&mut state, target);
+        let shaken = make_ae_infantry(&mut state, target);
+        state.find_unit_mut(shaken).unwrap().state.disrupted = true;
+        let leader = make_ae_leader(&mut state, target);
+        // The Dervish die that eliminates exactly `n` (+2, §7.7).
+        let row = crate::combat_results_table::FireFactorRow::from_total(melee_strength(
+            &state, &attackers,
+        ));
+        let die_for = |n: u8| {
+            (1..=10u16)
+                .map(|v| DieRoll::try_from(v).unwrap())
+                .find(|&roll| {
+                    let modified = DieRoll::try_from((roll.value() + 2).min(10)).unwrap();
+                    combat_results_table(row, modified) == CombatResult::Eliminate(n)
+                })
+                .expect("a die for the result")
+        };
+
+        // Both battalions fall to an Eliminate(2): nothing to choose.
+        let mut both = state.clone();
+        declare_melee_on(
+            &mut both,
+            attackers.clone(),
+            target,
+            die_for(2),
+            DieRoll::One,
+        )
+        .unwrap();
+        apply_effect(&mut both, &GameEffect::ResolveMelee).unwrap();
+        assert!(
+            both.pending_losses.is_none(),
+            "the leader is no third candidate"
+        );
+        assert!(both.find_unit(fresh).is_none() && both.find_unit(shaken).is_none());
+
+        // One of the two falls: the owner chooses between the battalions.
+        declare_melee_on(&mut state, attackers, target, die_for(1), DieRoll::One).unwrap();
+        apply_effect(&mut state, &GameEffect::ResolveMelee).unwrap();
+        let choice = state.open_loss_choice().expect("a choice of one battalion");
+        assert_eq!(choice.count, 1);
+        assert!(
+            !choice.candidates.contains(&leader),
+            "the leader is not on offer"
+        );
+        assert!(matches!(
+            apply_effect(
+                &mut state,
+                &GameEffect::TakeLosses {
+                    player: Player::AngloEgyptian,
+                    units: vec![leader],
+                },
+            ),
+            Err(RuleError::NotALossCandidate(id)) if id == leader
+        ));
+        apply_effect(
+            &mut state,
+            &GameEffect::TakeLosses {
+                player: Player::AngloEgyptian,
+                units: vec![shaken],
+            },
+        )
+        .unwrap();
+        assert!(
+            state.find_unit(shaken).is_none(),
+            "the chosen battalion falls"
+        );
+        assert!(state.find_unit(fresh).is_some() && state.find_unit(leader).is_some());
     }
 
     // §6.51(b): an Anglo-Egyptian leader is eliminated "if all of the combat
