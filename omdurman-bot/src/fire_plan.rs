@@ -37,6 +37,14 @@ pub fn unit_value(state: &GameState, u: &UnitPlacement) -> f64 {
         // A fort scores nothing (§9.14) but fires every turn, even alone,
         // out to the artillery line's 7 hexes (§6.54, §6.22).
         UnitIdentity::DervishFort | UnitIdentity::AngloEgyptianFort => 2.0,
+        // §9.14: "Friendlies" score by the bank they die on -- 1 pt east,
+        // 3 west (the other scenarios count units, not points).
+        _ if u.profile.identity.is_friendlies()
+            && state.scenario == Scenario::Campaign
+            && state.board.bank_of(u.position) != Some(omdurman_rules::board::NileBank::West) =>
+        {
+            1.0
+        }
         _ => match u.profile.identity.owner() {
             // §9.14: 3 VP per Anglo-Egyptian land unit; in Fall of Khartoum
             // every defender lost is a hole in the wall line.
@@ -52,6 +60,33 @@ pub fn unit_value(state: &GameState, u: &UnitPlacement) -> f64 {
             Player::Dervish => 1.0,
         },
     }
+}
+
+/// The values of `units` in the order their owner gives them up when the
+/// choice of losses is theirs (§7.7, as [`crate::actions::choose_losses`]
+/// chooses): the rank and file cheapest first, the leaders last.
+fn loss_order(state: &GameState, units: &[&UnitPlacement]) -> Vec<f64> {
+    let mut ranked: Vec<(bool, f64)> = units
+        .iter()
+        .map(|u| {
+            let leader = matches!(
+                u.profile.kind,
+                UnitKind::DervishLeader { .. } | UnitKind::BritishLeader { .. }
+            );
+            (leader, unit_value(state, u))
+        })
+        .collect();
+    ranked.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then(a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+    });
+    ranked.into_iter().map(|(_, v)| v).collect()
+}
+
+/// What eliminating `n` of a stack is worth: the first `n` of its
+/// [`loss_order`].
+fn given_up(values: &[f64], n: u8) -> f64 {
+    values.iter().take(usize::from(n)).sum()
 }
 
 /// Expected value (victory points destroyed, plus a little for disruption)
@@ -96,8 +131,7 @@ pub fn fire_value(state: &GameState, attack: &FireAttack) -> f64 {
     } else {
         None
     };
-    let mut values: Vec<f64> = units.iter().map(|u| unit_value(state, u)).collect();
-    values.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+    let values = loss_order(state, &units);
     let mean = values.iter().sum::<f64>() / values.len() as f64;
     let undisrupted = units.iter().filter(|u| !u.state.disrupted).count();
     let mut ev = 0.0;
@@ -109,7 +143,7 @@ pub fn fire_value(state: &GameState, attack: &FireAttack) -> f64 {
         ev += match (special, result) {
             (Some((value, needed)), CombatResult::Eliminate(n)) if n >= needed => value,
             (Some(_), _) => 0.0,
-            (None, CombatResult::Eliminate(n)) => mean * (n as usize).min(values.len()) as f64,
+            (None, CombatResult::Eliminate(n)) => given_up(&values, n),
             (None, CombatResult::Disrupt) => {
                 // §CombatResults: half (round up) disrupted -- they may not
                 // move, fire or melee until their turn ends.
@@ -391,10 +425,8 @@ pub fn melee_value(state: &GameState, attack: &omdurman_rules::MeleeAttack) -> f
     let att_mod: i16 = att_mods.iter().map(|m| m.die_modifier()).sum();
     let def_mod: i16 = def_mods.iter().map(|m| m.die_modifier()).sum();
     let side = |ids: &[omdurman_rules::UnitId]| -> Vec<f64> {
-        ids.iter()
-            .filter_map(|id| state.find_unit(*id))
-            .map(|u| unit_value(state, u))
-            .collect()
+        let units: Vec<&UnitPlacement> = ids.iter().filter_map(|id| state.find_unit(*id)).collect();
+        loss_order(state, &units)
     };
     let att_values = side(&attack.attackers);
     let def_values = side(&attack.defenders);
@@ -410,7 +442,7 @@ pub fn melee_value(state: &GameState, attack: &omdurman_rules::MeleeAttack) -> f
                 continue;
             };
             ev += match combat_results_table(row, roll.apply_modifier(modifier)) {
-                CombatResult::Eliminate(n) => mean * (n as usize).min(victims.len()) as f64,
+                CombatResult::Eliminate(n) => given_up(victims, n),
                 CombatResult::Disrupt => 0.3 * mean * victims.len().div_ceil(2) as f64,
                 CombatResult::NoEffect => 0.0,
             };

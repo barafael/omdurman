@@ -1321,12 +1321,14 @@ pub fn decider(state: &GameState) -> Option<Player> {
 }
 
 /// The losses a commander gives up when the choice is its own (§7.7): the
-/// least valuable first, the rank and file before any leader.
+/// least valuable first, the rank and file before any leader; of equal
+/// worth to the enemy, the weakest first -- the fewest fire and melee
+/// factors (§6.2, §7.2), so the stack keeps its fight.
 pub fn choose_losses(
     state: &GameState,
     choice: &omdurman_rules::effects::LossChoice,
 ) -> Vec<UnitId> {
-    let mut ranked: Vec<(bool, f64, usize, UnitId)> = choice
+    let mut ranked: Vec<(bool, f64, i32, usize, UnitId)> = choice
         .candidates
         .iter()
         .enumerate()
@@ -1337,13 +1339,22 @@ pub fn choose_losses(
                 omdurman_types::UnitKind::DervishLeader { .. }
                     | omdurman_types::UnitKind::BritishLeader { .. }
             );
-            Some((leader, crate::fire_plan::unit_value(state, u), i, *id))
+            let fight = i32::from(u.profile.fire.map_or(0, |f| f.value()))
+                + i32::from(u.profile.melee.map_or(0, |m| m.value()));
+            Some((
+                leader,
+                crate::fire_plan::unit_value(state, u),
+                fight,
+                i,
+                *id,
+            ))
         })
         .collect();
     ranked.sort_by(|a, b| {
         a.0.cmp(&b.0)
             .then(a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
             .then(a.2.cmp(&b.2))
+            .then(a.3.cmp(&b.3))
     });
     ranked
         .into_iter()

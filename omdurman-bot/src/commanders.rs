@@ -1543,6 +1543,23 @@ fn kitchener_goal(
                 // 3. The palace ring as the last-line reserve (§9.346).
                 let threat = nearest_enemy_unit(state, palace, enemy)
                     .or_else(|| nearest_enemy_unit(state, unit.position, enemy));
+                let rifleman =
+                    matches!(unit.profile.kind, omdurman_types::UnitKind::Infantry { .. });
+                // The line is turned: the enemy stands nearer the palace
+                // than any plug, so the walls hold nothing back any more --
+                // every man falls back on GORDON (§9.346), the guard first,
+                // the rest in the ring round it.
+                if line_turned(state, palace, enemy) {
+                    if rifleman && combat_count_in(state, palace, player) < PALACE_GUARD
+                        || unit.position == palace
+                    {
+                        return Some(Goal::Hex(palace));
+                    }
+                    return Some(Goal::Band {
+                        target: palace,
+                        standoff: 1,
+                    });
+                }
                 // A plug the enemy is coming at keeps the garrison it has:
                 // walking off to fill another opens this corridor.
                 if threat_at(state, unit.position, enemy) > 0
@@ -1554,8 +1571,6 @@ fn kitchener_goal(
                 // walks into his hex (§9.346); a stack there must be
                 // meleed out first, whatever gate has fallen.
                 let guard = combat_count_in(state, palace, player);
-                let rifleman =
-                    matches!(unit.profile.kind, omdurman_types::UnitKind::Infantry { .. });
                 if rifleman
                     && (guard < PALACE_GUARD || (unit.position == palace && guard <= PALACE_GUARD))
                 {
@@ -1642,6 +1657,24 @@ fn plug_hexes(state: &GameState, palace: HexCoord) -> Vec<HexCoord> {
         }
     }
     plugs
+}
+
+/// Whether `enemy` has turned the wall line: one of its land units stands
+/// nearer the palace than every plug ([`plug_hexes`]) does.
+fn line_turned(state: &GameState, palace: HexCoord, enemy: Player) -> bool {
+    let Some(line) = plug_hexes(state, palace)
+        .into_iter()
+        .map(|p| p.distance(palace))
+        .min()
+    else {
+        return false;
+    };
+    state.units.iter().any(|u| {
+        u.profile.identity.owner() == enemy
+            && !u.profile.kind.is_boat()
+            && u.profile.identity != UnitIdentity::DervishFort
+            && u.position.distance(palace) < line
+    })
 }
 
 /// How many of `enemy`'s units stand within a night's march of `hex` (six
