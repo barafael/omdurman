@@ -5874,7 +5874,7 @@ dependencies = [
 
 [[package]]
 name = "omdurman-app"
-version = "1.0.0-rc.1"
+version = "1.0.0"
 dependencies = [
  "bevy",
  "bevy_egui",
@@ -5907,7 +5907,7 @@ dependencies = [
 
 [[package]]
 name = "omdurman-board-ui"
-version = "1.0.0-rc.1"
+version = "1.0.0"
 dependencies = [
  "bevy",
  "bevy_egui",
@@ -5918,7 +5918,7 @@ dependencies = [
 
 [[package]]
 name = "omdurman-bot"
-version = "1.0.0-rc.1"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "omdurman-net",
@@ -5932,7 +5932,7 @@ dependencies = [
 
 [[package]]
 name = "omdurman-harness"
-version = "1.0.0-rc.1"
+version = "1.0.0"
 dependencies = [
  "omdurman-types",
  "serde",
@@ -5941,7 +5941,7 @@ dependencies = [
 
 [[package]]
 name = "omdurman-hexmap"
-version = "1.0.0-rc.1"
+version = "1.0.0"
 dependencies = [
  "bevy",
  "omdurman-types",
@@ -5949,7 +5949,7 @@ dependencies = [
 
 [[package]]
 name = "omdurman-net"
-version = "1.0.0-rc.1"
+version = "1.0.0"
 dependencies = [
  "bevy",
  "bevy_matchbox",
@@ -5977,7 +5977,7 @@ dependencies = [
 
 [[package]]
 name = "omdurman-rules"
-version = "1.0.0-rc.1"
+version = "1.0.0"
 dependencies = [
  "indexmap 2.14.2",
  "omdurman-types",
@@ -5996,7 +5996,7 @@ dependencies = [
 
 [[package]]
 name = "omdurman-types"
-version = "1.0.0-rc.1"
+version = "1.0.0"
 dependencies = [
  "serde",
  "serde_with",
@@ -8015,7 +8015,7 @@ checksum = "8df9b6e13f2d32c91b9bd719c00d1958837bc7dec474d94952798cc8e69eeec3"
 
 [[package]]
 name = "traceability-lsp"
-version = "1.0.0-rc.1"
+version = "1.0.0"
 dependencies = [
  "crossbeam-channel",
  "lsp-server",
@@ -8027,7 +8027,7 @@ dependencies = [
 
 [[package]]
 name = "traceability-macro"
-version = "1.0.0-rc.1"
+version = "1.0.0"
 dependencies = [
  "quote",
  "syn 2.0.119",
@@ -8035,7 +8035,7 @@ dependencies = [
 
 [[package]]
 name = "traceability-typst"
-version = "1.0.0-rc.1"
+version = "1.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -9683,7 +9683,7 @@ checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 
 [[package]]
 name = "xtask"
-version = "1.0.0-rc.1"
+version = "1.0.0"
 dependencies = [
  "clap",
  "omdurman-harness",
