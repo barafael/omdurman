@@ -429,6 +429,25 @@ fn melee_note(
             .is_some_and(|p| matches!(p.kind, omdurman_types::UnitKind::BritishLeader { .. }))
     };
     let mut parts: Vec<String> = Vec::new();
+    // Mounted defenders charged by mounted attackers alone had no retreat to
+    // offer: the AI resolves at once, so without this the defender never
+    // learns why the §7.5 choice did not come up.
+    let kind_of =
+        |id: &UnitId| omdurman_rules::unit_profiles::profile_for_unit(*id).map(|p| p.kind);
+    let mounted_defenders = attack
+        .defenders
+        .iter()
+        .any(|id| kind_of(id).is_some_and(|k| k.may_retreat_before_melee()));
+    let infantry_attack = attack
+        .attackers
+        .iter()
+        .any(|id| matches!(kind_of(id), Some(omdurman_types::UnitKind::Infantry { .. })));
+    if mounted_defenders && !infantry_attack {
+        parts.push(
+            "No retreat: cavalry and camels may retreat only from an infantry melee (§7.5)."
+                .to_string(),
+        );
+    }
     if let Some(n) = mandatory_advance {
         let units = if n == 1 { "unit" } else { "units" };
         if leaders_alone {
@@ -1182,6 +1201,49 @@ mod impact_tests {
             "{}",
             log_line(&lone)
         );
+    }
+
+    /// Camels charging cavalry give it no §7.5 retreat, and the line says
+    /// so; an infantry charge on the same cavalry does not draw the note.
+    #[test]
+    fn a_mounted_charge_says_why_no_retreat_was_offered() {
+        use omdurman_rules::effects::MeleeSide;
+        let gs = omdurman_rules::effects::GameState::new(omdurman_types::Scenario::Campaign);
+        let side = |result, losses: Vec<UnitId>| MeleeSide {
+            roll: DieRoll::Five,
+            total_modifier: 0,
+            modified_roll: DieRoll::Five,
+            result,
+            factor: 6,
+            losses,
+        };
+        let charge = |attackers: Vec<UnitId>| MeleeAttack {
+            attacker_player: Player::Dervish,
+            attacker_hex: HexCoord::new(36, 37),
+            defender_hex: HexCoord::new(36, 38),
+            attackers,
+            // The Egyptian cavalry and the 21st Lancers of game b.
+            defenders: vec![UnitId::EgyptianArmy_1_0, UnitId::BritishArmy_0_0],
+            attacker_modifiers: Vec::new(),
+            defender_modifiers: Vec::new(),
+        };
+        let line = |attack: &MeleeAttack| {
+            log_line(&build_melee_card(
+                attack,
+                None,
+                &side(CombatResult::NoEffect, Vec::new()),
+                &side(CombatResult::NoEffect, Vec::new()),
+                &[],
+                &gs,
+            ))
+        };
+        let camels = line(&charge(vec![UnitId::JaalinII_2_1, UnitId::JaalinII_3_1]));
+        assert!(
+            camels.contains("only from an infantry melee (§7.5)"),
+            "{camels}"
+        );
+        let infantry = line(&charge(vec![UnitId::AliWadHelu_2_0]));
+        assert!(!infantry.contains("§7.5"), "{infantry}");
     }
 
     /// A shell scattered off the map is reported too (§6.64) -- it makes no

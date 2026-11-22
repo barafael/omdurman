@@ -1386,7 +1386,8 @@ fn single_click(
         if !ctx.movement_path.legs.is_empty() {
             return Err(format!(
                 "The off-board crossing to {coord} is a move of its own (§9.345): \
-                 undo the plotted steps first."
+                 confirm the plotted route (Enter), then select the gunboat again and \
+                 click {coord}."
             ));
         }
         let cost = omdurman_rules::effects::NILE_MOUTH_CROSSING_MP;
